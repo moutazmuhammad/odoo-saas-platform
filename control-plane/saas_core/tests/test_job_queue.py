@@ -1,8 +1,10 @@
 import json
+from contextlib import nullcontext
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from odoo import fields
+from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase, tagged
 
 
@@ -311,6 +313,88 @@ class TestDbOpViaQueue(TransactionCase):
         self.assertEqual(job.channel, 'dbop')
         self.assertEqual(job.lock_key, 'instance:%s' % self.instance.id)
         self.assertFalse(job.idempotent)
+
+    # ---- B.1.3 follow-up: create/duplicate ALSO call hosting_db_list()
+    # first (unlike drop, which enqueues directly with no pre-check) —
+    # these two need self.docker_server_id._get_ssh_connection() +
+    # self._compute_driver() mocked too. This is exactly the success-path
+    # coverage that was attempted via HttpCase in
+    # test_security_billing_fixes.py and found to corrupt other tests
+    # there (a real job._spawn_worker background thread that HttpCase
+    # can't reliably suppress) — TransactionCase (this class already
+    # suppresses _spawn_worker in setUp) is the correct, safe place for
+    # it, per that finding. -------------------------------------------
+
+    def _mock_hosting_db_list(self, existing_db_names=()):
+        server = self.env['saas.server'].sudo().create(
+            {'name': 'dq-fake-host', 'is_docker_host': True})
+        self.instance.docker_server_id = server.id
+        stdout_lines = ['---SAAS_DB_LIST_BEGIN---']
+        stdout_lines += ['%s|' % n for n in existing_db_names]
+        stdout_lines.append('---SAAS_DB_LIST_END---')
+        fake_driver = MagicMock()
+        fake_driver.service_exec.return_value = MagicMock(
+            rc=0, stdout='\n'.join(stdout_lines) + '\n', stderr='')
+        p1 = patch.object(type(server), '_get_ssh_connection',
+                          lambda self: nullcontext(MagicMock()))
+        p2 = patch.object(type(self.instance), '_compute_driver',
+                          return_value=fake_driver)
+        for p in (p1, p2):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_create_async_enqueues_dbop_job(self):
+        # Unlike drop/duplicate, create deliberately does NOT go through
+        # saas.job (see the SEC-002 comment right above run_in_background(
+        # in hosting_db_create_async): the queue persists its args, which
+        # would put the new DB's plaintext admin password in a durable DB
+        # row. It uses the older run_in_background() utility instead - a
+        # raw thread that commits the current transaction to hand off to
+        # it, which TransactionCase forbids, so that call itself must be
+        # patched (no saas.job row to check here, on purpose).
+        self._mock_hosting_db_list()  # no existing DBs
+        with patch(
+            'odoo.addons.saas_core.models.saas_instance.run_in_background',
+            lambda *a, **kw: None,
+        ):
+            op = self.instance.hosting_db_create_async(
+                name='newdb', login='admin', password='adminpass1')
+        self.assertEqual(op.state, 'running')
+        self.assertEqual(op.db_name, self.instance._hosting_db_full_name('newdb'))
+        self.assertEqual(op.operation, 'create')
+        self.assertFalse(self.Job.sudo().search(
+            [('model', '=', 'saas.instance.db.operation'), ('res_id', '=', op.id)]),
+            "create must NOT persist a saas.job row (SEC-002: would store "
+            "the plaintext password)")
+
+    def test_create_async_rejects_existing_name(self):
+        full = self.instance._hosting_db_full_name('dup')
+        self._mock_hosting_db_list(existing_db_names=[full])
+        with self.assertRaises(UserError):
+            self.instance.hosting_db_create_async(
+                name='dup', login='admin', password='adminpass1')
+        self.assertFalse(self.Job.sudo().search(
+            [('model', '=', 'saas.instance.db.operation')]),
+            "a rejected create must not enqueue anything")
+
+    def test_duplicate_async_enqueues_dbop_job(self):
+        source = self.instance._hosting_db_full_name('prod')
+        self._mock_hosting_db_list(existing_db_names=[source])
+        op = self.instance.hosting_db_duplicate_async(
+            source='prod', new_name='prodcopy')
+        self.assertEqual(op.state, 'running')
+        self.assertEqual(op.source_db, source)
+        job = self.Job.sudo().search([
+            ('model', '=', 'saas.instance.db.operation'),
+            ('res_id', '=', op.id)], limit=1)
+        self.assertTrue(job, "db duplicate must enqueue a durable job")
+        self.assertEqual(job.method, '_run_duplicate')
+
+    def test_duplicate_async_rejects_missing_source(self):
+        self._mock_hosting_db_list()  # no existing DBs at all
+        with self.assertRaises(UserError):
+            self.instance.hosting_db_duplicate_async(
+                source='doesnotexist', new_name='newcopy')
 
     def test_heartbeat_tick_keeps_dbop_fresh(self):
         op = self.env['saas.instance.db.operation'].sudo().create({

@@ -453,3 +453,11 @@ file reproduces byte-identical versions (diffed pip freeze); confirmed
 paramiko 5.0.0's removal of DSSKey is already safely handled by an
 existing hasattr() guard in saas_core/utils.py, no code change needed —
 commit: fdb2e9b
+
+2026-09-14 — Step A.2 — Applied non-breaking frontend security patches
+(`npm audit fix`, no `--force`): closed fflate/nanoid/postcss/
+postcss-selector-parser (7 of 11 findings) within existing semver ranges
+(package.json unchanged). Remaining 4 (esbuild/vite, react-router) need
+major bumps — left for A.3.2/A.3.4, not force-fixed — verified: `npm run
+build` (tsc --noEmit + vite build) green, rebuilt SPA output committed —
+commit: bc36fb1

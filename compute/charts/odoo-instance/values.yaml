@@ -1,0 +1,80 @@
+# Default values for the odoo-instance chart. Every key here maps
+# directly onto OdooInstanceSpec (operator/api/v1alpha1/odooinstance_types.go)
+# — see that file for authoritative field documentation. This chart adds
+# no fields, defaults, or validation of its own beyond what the CRD
+# already provides, specifically to avoid two sources of truth for the
+# same schema.
+
+# The instance name becomes both the OdooInstance's metadata.name and,
+# combined with the platform's fixed prefix, its tenant namespace
+# ("odoo-tenant-<name>").
+nameOverride: ""
+
+version: "18.0"
+
+image:
+  repository: registry.example.com/odoo-saas/odoo
+  tag: ""
+  pullPolicy: IfNotPresent
+  pullSecretRefs: []
+
+domain:
+  hostname: ""
+  tls:
+    enabled: true
+    secretName: ""
+    issuerRef: {}
+
+database:
+  mode: Managed
+  version: "16"
+  storage:
+    size: 20Gi
+    storageClassName: ""
+  credentialsSecretRef: ""
+
+storage:
+  filestore:
+    size: 50Gi
+    storageClassName: ""
+    accessMode: ReadWriteOnce
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+
+addons: []
+
+workers:
+  count: 2
+  maxCronThreads: 1
+
+replicas: 1
+
+autoscaling:
+  enabled: false
+
+backup:
+  enabled: false
+  schedule: "0 2 * * *"
+  retention: 7
+  destination:
+    type: PVC
+    objectStorageSecretRef: ""
+    bucket: ""
+    prefix: ""
+
+networking:
+  networkPolicy:
+    enabled: true
+  routeAnnotations: {}
+
+tenancy:
+  namespaceOverride: ""
+  resourceQuota: {}
+
+suspended: false

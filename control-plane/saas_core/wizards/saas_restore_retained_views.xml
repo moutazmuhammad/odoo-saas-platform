@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="saas_restore_retained_wizard_form" model="ir.ui.view">
+        <field name="name">saas.restore.retained.wizard.form</field>
+        <field name="model">saas.restore.retained.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Restore Retained Backup">
+                <group>
+                    <group string="Source (Cancelled Instance)">
+                        <field name="source_instance_id"/>
+                        <field name="partner_id"/>
+                        <field name="retained_backup_path"/>
+                    </group>
+                    <group string="Restore To">
+                        <field name="target_instance_id"/>
+                    </group>
+                </group>
+                <group string="Billing">
+                    <field name="restoration_fee"/>
+                    <field name="delete_retained_after"/>
+                </group>
+                <footer>
+                    <button string="Send Invoice (restore after payment)"
+                            name="action_send_invoice_and_schedule"
+                            type="object" class="btn-primary"
+                            invisible="restoration_fee &lt;= 0"/>
+                    <button string="Restore Now (Free)"
+                            name="action_restore_now_free"
+                            type="object" class="btn-secondary"/>
+                    <button string="Cancel" class="btn-default"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_restore_retained_wizard" model="ir.actions.act_window">
+        <field name="name">Restore Retained Backup</field>
+        <field name="res_model">saas.restore.retained.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Root Menu -->
+    <menuitem id="saas_master_menu_root"
+              name="SaaS Manager"
+              sequence="50"
+              web_icon="saas_core,static/description/icon.png"
+              groups="base.group_user"/>
+
+    <!-- Instances -->
+    <menuitem id="saas_master_menu_instances"
+              name="Instances"
+              parent="saas_master_menu_root"
+              sequence="10"/>
+
+    <menuitem id="saas_master_menu_instances_all"
+              name="All Instances"
+              parent="saas_master_menu_instances"
+              action="saas_instance_action"
+              sequence="1"/>
+
+    <menuitem id="saas_master_menu_instances_services"
+              name="Service Instances"
+              parent="saas_master_menu_instances"
+              action="saas_instance_action_services"
+              sequence="10"/>
+
+    <menuitem id="saas_master_menu_instances_hosting"
+              name="Hosting Instances"
+              parent="saas_master_menu_instances"
+              action="saas_instance_action_hosting"
+              sequence="20"/>
+
+    <!-- Billing (A1/A4) -->
+    <menuitem id="saas_master_menu_billing"
+              name="Billing"
+              parent="saas_master_menu_root"
+              sequence="20"/>
+    <menuitem id="saas_master_menu_wallets"
+              name="Customer Wallets"
+              parent="saas_master_menu_billing"
+              action="saas_wallet_action"
+              sequence="10"/>
+    <menuitem id="saas_master_menu_payment_methods"
+              name="Saved Payment Methods"
+              parent="saas_master_menu_billing"
+              action="saas_payment_method_action"
+              sequence="20"/>
+    <menuitem id="saas_master_menu_payment_attempts"
+              name="Payment Attempts"
+              parent="saas_master_menu_billing"
+              action="saas_payment_attempt_action"
+              sequence="30"/>
+    <menuitem id="saas_master_menu_margins"
+              name="Tenant Margins"
+              parent="saas_master_menu_billing"
+              action="action_saas_tenant_margins"
+              sequence="35"/>
+
+    <!-- Configuration -->
+    <menuitem id="saas_master_menu_configuration"
+              name="Configuration"
+              parent="saas_master_menu_root"
+              sequence="90"/>
+
+    <!-- Configuration > Payment Provider Routing -->
+    <menuitem id="saas_master_menu_payment_routing"
+              name="Payment Provider Routing"
+              parent="saas_master_menu_configuration"
+              action="saas_payment_provider_config_action"
+              sequence="60"/>
+
+    <!-- Configuration > Services -->
+    <menuitem id="saas_master_menu_services"
+              name="Services"
+              parent="saas_master_menu_configuration"
+              action="saas_product_action"
+              sequence="10"/>
+
+    <!-- Configuration > Plans -->
+    <menuitem id="saas_master_menu_plans"
+              name="Plans"
+              parent="saas_master_menu_configuration"
+              action="saas_plan_action"
+              sequence="20"/>
+
+    <!-- Configuration > Add-ons -->
+    <menuitem id="saas_master_menu_addons"
+              name="Add-ons"
+              parent="saas_master_menu_configuration"
+              action="saas_addon_action"
+              sequence="22"/>
+
+    <!-- Configuration > Support Plans -->
+    <menuitem id="saas_master_menu_support_plans"
+              name="Support Plans"
+              parent="saas_master_menu_configuration"
+              action="saas_support_plan_action"
+              sequence="24"/>
+
+    <!-- Configuration > Base Domains -->
+    <menuitem id="saas_master_menu_based_domain"
+              name="Base Domains"
+              parent="saas_master_menu_configuration"
+              action="saas_odoo_based_domain_action"
+              sequence="30"/>
+
+    <!-- Configuration > Odoo Versions -->
+    <menuitem id="saas_master_menu_odoo_version"
+              name="Odoo Versions"
+              parent="saas_master_menu_configuration"
+              action="saas_odoo_version_action"
+              sequence="40"/>
+
+    <!-- Configuration > Regions -->
+    <menuitem id="saas_master_menu_regions"
+              name="Regions"
+              parent="saas_master_menu_configuration"
+              action="saas_region_action"
+              sequence="55"/>
+
+    <!-- Configuration > Servers -->
+    <menuitem id="saas_master_menu_servers"
+              name="Servers"
+              parent="saas_master_menu_configuration"
+              action="saas_server_action"
+              sequence="50"/>
+
+    <!-- Configuration > Settings -->
+    <menuitem id="saas_master_menu_settings"
+              name="Settings"
+              parent="saas_master_menu_configuration"
+              action="action_saas_master_config_settings"
+              sequence="70"/>
+
+</odoo>

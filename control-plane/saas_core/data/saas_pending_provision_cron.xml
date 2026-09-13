@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="ir_cron_saas_retry_pending_provision" model="ir.cron">
+        <field name="name">SaaS: Retry Pending Provision</field>
+        <field name="model_id" ref="model_saas_instance"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_retry_pending_provision()</field>
+        <field name="interval_number">15</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+    </record>
+
+    <record id="ir_cron_saas_recover_stuck_provisioning" model="ir.cron">
+        <field name="name">SaaS: Recover Stuck Provisioning</field>
+        <field name="model_id" ref="model_saas_instance"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_recover_stuck_provisioning()</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+    </record>
+
+    <record id="ir_cron_saas_verify_webhooks" model="ir.cron">
+        <field name="name">SaaS: Verify Webhooks</field>
+        <field name="model_id" ref="model_saas_instance"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_verify_webhooks()</field>
+        <field name="interval_number">6</field>
+        <field name="interval_type">hours</field>
+        <field name="active">True</field>
+    </record>
+
+</odoo>

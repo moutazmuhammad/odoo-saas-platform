@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Durable job queue (ARCH-004). Phase 0 ships the engine with no
+         enqueuers yet, so these crons are harmless no-ops until call sites
+         are migrated. -->
+
+    <!-- Claim + run due jobs. -->
+    <record id="ir_cron_saas_run_jobs" model="ir.cron">
+        <field name="name">SaaS: Run Durable Jobs</field>
+        <field name="model_id" ref="model_saas_job"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_run_jobs()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+    </record>
+
+    <!-- Recover jobs whose worker died (stale heartbeat). -->
+    <record id="ir_cron_saas_reap_jobs" model="ir.cron">
+        <field name="name">SaaS: Reap Stuck Durable Jobs</field>
+        <field name="model_id" ref="model_saas_job"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_reap_jobs()</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+    </record>
+
+</odoo>

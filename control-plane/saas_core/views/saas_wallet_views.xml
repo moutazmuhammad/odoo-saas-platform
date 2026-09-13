@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ================= Wallet ================= -->
+    <record id="saas_wallet_action" model="ir.actions.act_window">
+        <field name="name">Customer Wallets</field>
+        <field name="res_model">saas.wallet</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No wallets yet</p>
+            <p>Wallets hold non-refundable platform credit. Unused prepaid
+               subscription value is converted into wallet credit and
+               automatically consumed by future invoices.</p>
+        </field>
+    </record>
+
+    <record id="saas_wallet_view_list" model="ir.ui.view">
+        <field name="name">saas.wallet.list</field>
+        <field name="model">saas.wallet</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="partner_id"/>
+                <field name="balance_funded" string="Your balance"/>
+                <field name="balance_bonus" string="Bonus"/>
+                <field name="balance" string="Total"/>
+                <field name="transaction_count"/>
+                <field name="currency_id" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="saas_wallet_view_form" model="ir.ui.view">
+        <field name="name">saas.wallet.form</field>
+        <field name="model">saas.wallet</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_view_transactions" type="object"
+                            string="View Ledger" class="btn-secondary"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="partner_id"/>
+                            <field name="currency_id"/>
+                        </group>
+                        <group>
+                            <field name="balance_funded" string="Your balance (never expires)"/>
+                            <field name="balance_bonus" string="Bonus credit (may expire)"/>
+                            <field name="balance" string="Total"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Credit Lots">
+                            <field name="lot_ids" readonly="1">
+                                <list>
+                                    <field name="credit_class"/>
+                                    <field name="amount_initial"/>
+                                    <field name="amount_remaining"/>
+                                    <field name="expiry_date"/>
+                                    <field name="state" widget="badge"/>
+                                    <field name="source_origin"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Ledger">
+                            <field name="transaction_ids" readonly="1">
+                                <list>
+                                    <field name="create_date"/>
+                                    <field name="kind"/>
+                                    <field name="credit_class"/>
+                                    <field name="reason"/>
+                                    <field name="move_id"/>
+                                    <field name="amount"/>
+                                    <field name="balance_after"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="saas_wallet_transaction_action" model="ir.actions.act_window">
+        <field name="name">Wallet Ledger</field>
+        <field name="res_model">saas.wallet.transaction</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="saas_wallet_transaction_view_list" model="ir.ui.view">
+        <field name="name">saas.wallet.transaction.list</field>
+        <field name="model">saas.wallet.transaction</field>
+        <field name="arch" type="xml">
+            <list create="0">
+                <field name="create_date"/>
+                <field name="partner_id"/>
+                <field name="kind"/>
+                <field name="credit_class"/>
+                <field name="reason"/>
+                <field name="move_id"/>
+                <field name="instance_id"/>
+                <field name="amount"/>
+                <field name="balance_after"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============ Payment methods ============ -->
+    <record id="saas_payment_method_action" model="ir.actions.act_window">
+        <field name="name">Saved Payment Methods</field>
+        <field name="res_model">saas.payment.method</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="saas_payment_method_view_list" model="ir.ui.view">
+        <field name="name">saas.payment.method.list</field>
+        <field name="model">saas.payment.method</field>
+        <field name="arch" type="xml">
+            <list create="0">
+                <field name="partner_id"/>
+                <field name="provider_code"/>
+                <field name="display_label"/>
+                <field name="country_id"/>
+                <field name="is_default"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="saas_payment_method_view_form" model="ir.ui.view">
+        <field name="name">saas.payment.method.form</field>
+        <field name="model">saas.payment.method</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="partner_id"/>
+                            <field name="provider_id"/>
+                            <field name="display_label"/>
+                            <field name="country_id"/>
+                        </group>
+                        <group>
+                            <field name="is_default"/>
+                            <field name="active"/>
+                            <field name="external_customer_ref"/>
+                            <field name="external_token_ref"/>
+                            <field name="token_id"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ===== Payment provider routing (per country) ===== -->
+    <record id="saas_payment_provider_config_action" model="ir.actions.act_window">
+        <field name="name">Payment Provider Routing</field>
+        <field name="res_model">saas.payment.provider.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Route customers to a
+               payment provider by country</p>
+            <p>Map countries to Odoo payment providers (Stripe, Adyen, …) so
+               different countries use different gateways. Mark one row as
+               the default catch-all.</p>
+        </field>
+    </record>
+
+    <record id="saas_payment_provider_config_view_list" model="ir.ui.view">
+        <field name="name">saas.payment.provider.config.list</field>
+        <field name="model">saas.payment.provider.config</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="provider_id"/>
+                <field name="country_ids" widget="many2many_tags"/>
+                <field name="is_default"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="saas_payment_provider_config_view_form" model="ir.ui.view">
+        <field name="name">saas.payment.provider.config.form</field>
+        <field name="model">saas.payment.provider.config</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="provider_id"/>
+                        <field name="country_ids" widget="many2many_tags"/>
+                        <field name="is_default"/>
+                        <field name="active"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="saas_payment_attempt_action" model="ir.actions.act_window">
+        <field name="name">Payment Attempts</field>
+        <field name="res_model">saas.payment.attempt</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="saas_payment_attempt_view_list" model="ir.ui.view">
+        <field name="name">saas.payment.attempt.list</field>
+        <field name="model">saas.payment.attempt</field>
+        <field name="arch" type="xml">
+            <list create="0">
+                <field name="create_date"/>
+                <field name="instance_id"/>
+                <field name="move_id"/>
+                <field name="attempt_no"/>
+                <field name="state"/>
+                <field name="message"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Menus live in saas_menus.xml (loaded last, after the root /
+         configuration parent menus exist). -->
+</odoo>

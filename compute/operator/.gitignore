@@ -1,0 +1,11 @@
+# Build artifacts
+/bin/
+/manager
+cover.out
+
+# Go
+*.test
+
+# IDE
+.idea/
+*.swp

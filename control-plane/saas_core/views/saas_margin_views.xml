@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Phase 4: per-tenant margin dashboard (revenue − infra cost) -->
+    <record id="view_saas_instance_margin_list" model="ir.ui.view">
+        <field name="name">saas.instance.margin.list</field>
+        <field name="model">saas.instance</field>
+        <field name="arch" type="xml">
+            <list string="Tenant Margins" default_order="monthly_margin asc"
+                  decoration-danger="not is_profitable"
+                  decoration-success="margin_pct >= 60">
+                <field name="subdomain"/>
+                <field name="partner_id"/>
+                <field name="plan_id"/>
+                <field name="billing_period"/>
+                <field name="docker_server_id"/>
+                <field name="monthly_revenue" sum="Revenue"/>
+                <field name="monthly_cost" sum="Cost"/>
+                <field name="monthly_margin" sum="Margin"/>
+                <field name="margin_pct" widget="percentage" optional="show"/>
+                <field name="is_profitable" widget="boolean_toggle" readonly="1"/>
+                <field name="margin_currency_id" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_saas_instance_margin_pivot" model="ir.ui.view">
+        <field name="name">saas.instance.margin.pivot</field>
+        <field name="model">saas.instance</field>
+        <field name="arch" type="xml">
+            <pivot string="Tenant Margins">
+                <field name="docker_server_id" type="row"/>
+                <field name="monthly_revenue" type="measure"/>
+                <field name="monthly_cost" type="measure"/>
+                <field name="monthly_margin" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="action_saas_tenant_margins" model="ir.actions.act_window">
+        <field name="name">Tenant Margins</field>
+        <field name="res_model">saas.instance</field>
+        <field name="view_mode">list,pivot,form</field>
+        <field name="domain">[('parent_id', '=', False), ('plan_id', '!=', False)]</field>
+        <field name="context">{'search_default_group_server': 0}</field>
+        <field name="view_id" ref="view_saas_instance_margin_list"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiley_face">No billable tenants yet.</p>
+            <p>Revenue − infra cost per tenant. Set each server's rate card
+               (cost / CPU / RAM / storage) for the cost side to populate.</p>
+        </field>
+    </record>
+    <!-- Menu lives in saas_menus.xml (loaded after this file) so its parent
+         saas_master_menu_billing exists when the menuitem is created. -->
+
+</odoo>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 190 48" font-family="Inter, 'Segoe UI', sans-serif">
+  <rect x="4" y="4" width="40" height="40" rx="9" fill="#203c86"/>
+  <g transform="translate(4,4) scale(1.25)">
+    <polygon points="8,8 16,24 24,8 20,8 16,18 12,8" fill="#FAFAFA"/>
+  </g>
+  <text x="56" y="33" font-size="26" font-weight="800" letter-spacing="-0.5">
+    <tspan fill="#FAFAFA">VELT</tspan><tspan fill="#3656b8">NEX</tspan>
+  </text>
+</svg>

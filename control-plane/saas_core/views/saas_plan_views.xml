@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Search view with filters -->
+    <record id="saas_plan_view_search" model="ir.ui.view">
+        <field name="name">saas.plan.search</field>
+        <field name="model">saas.plan</field>
+        <field name="arch" type="xml">
+            <search string="Search Plans">
+                <field name="name"/>
+                <field name="saas_product_ids"/>
+                <separator/>
+                <filter name="filter_main" string="Main Plans"
+                        domain="[('is_custom', '=', False)]"/>
+                <filter name="filter_custom" string="Custom Plans"
+                        domain="[('is_custom', '=', True)]"/>
+                <separator/>
+                <filter name="filter_trial" string="Trial Plans"
+                        domain="[('is_trial_plan', '=', True)]"/>
+                <filter name="filter_paid" string="Paid Plans"
+                        domain="[('is_trial_plan', '=', False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="saas_plan_view_list" model="ir.ui.view">
+        <field name="name">saas.plan.list</field>
+        <field name="model">saas.plan</field>
+        <field name="arch" type="xml">
+            <list string="SaaS Plans">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="saas_product_ids" string="Services" widget="many2many_tags"/>
+                <field name="is_trial_plan"/>
+                <field name="is_custom"/>
+                <field name="is_public_tier" string="Public"/>
+                <field name="price" widget="monetary"/>
+                <field name="currency_id" column_invisible="1"/>
+                <field name="cpu_limit" optional="show"/>
+                <field name="ram_limit" optional="show"/>
+                <field name="storage_limit" optional="show"/>
+                <field name="instance_count"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="saas_plan_view_form" model="ir.ui.view">
+        <field name="name">saas.plan.form</field>
+        <field name="model">saas.plan</field>
+        <field name="arch" type="xml">
+            <form string="SaaS Plan">
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="e.g. Basic, Pro, Enterprise"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="General">
+                            <field name="saas_product_ids" string="Services" widget="many2many_tags"/>
+                            <field name="sequence"/>
+                            <field name="is_trial_plan"/>
+                            <field name="is_custom" readonly="1"/>
+                            <field name="instance_count"/>
+                        </group>
+                        <group string="Pricing" invisible="is_trial_plan">
+                            <!-- For named tiers the price is auto-derived from
+                                 resources minus the discount. Tick "Set price
+                                 manually" (or just type a price) to override it
+                                 by hand — a manual price is never repriced by
+                                 the formula or a global rate change. -->
+                            <field name="manual_price"
+                                   string="Set price manually"
+                                   invisible="not is_public_tier"/>
+                            <field name="discount_amount" widget="monetary"
+                                   string="Plan Discount ($/mo)"
+                                   invisible="not is_public_tier or manual_price"/>
+                            <field name="price" widget="monetary" string="Monthly Price"/>
+                            <field name="yearly_price" widget="monetary"/>
+                            <field name="yearly_discount_pct" string="Yearly Savings"/>
+                            <field name="currency_id" groups="base.group_multi_currency"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Resource Limits">
+                            <field name="cpu_limit"/>
+                            <field name="ram_limit"/>
+                            <field name="workers"/>
+                            <field name="storage_limit"/>
+                        </group>
+                        <group string="Public Storefront" invisible="is_trial_plan or is_custom">
+                            <field name="is_public_tier"
+                                   string="Show as a tier card on the website"/>
+                            <field name="is_recommended" invisible="not is_public_tier"/>
+                            <field name="badge" invisible="not is_public_tier"
+                                   placeholder="e.g. Most popular"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="saas_plan_action" model="ir.actions.act_window">
+        <field name="name">Plans</field>
+        <field name="res_model">saas.plan</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="saas_plan_view_search"/>
+        <field name="context">{'search_default_filter_main': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first SaaS plan
+            </p>
+            <p>Plans define pricing, resource limits, and features for instances.
+               A plan can be shared across multiple services.</p>
+        </field>
+    </record>
+
+</odoo>

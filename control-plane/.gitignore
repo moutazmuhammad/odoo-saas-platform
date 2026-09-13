@@ -1,0 +1,30 @@
+# Python bytecode / caches (must never be committed)
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# Frontend dev (VELTNEX SPA build toolchain)
+node_modules/
+veltnex/dist/
+.vite/
+# NOTE: saas_website/static/spa/ IS intentionally tracked — it's the built
+# SPA that Odoo serves in production. Do not ignore it.
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+*.orig
+*.rej
+*.bak
+.#*
+
+# Logs
+*.log
+
+# Local-dev artifacts (see scripts/devctl.sh)
+.odoo-req.filtered.txt

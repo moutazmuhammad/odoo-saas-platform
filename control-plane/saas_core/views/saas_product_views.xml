@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ List View ============ -->
+    <record id="saas_product_view_list" model="ir.ui.view">
+        <field name="name">saas.product.list</field>
+        <field name="model">saas.product</field>
+        <field name="arch" type="xml">
+            <list string="SaaS Services">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="subtitle"/>
+                <field name="icon"/>
+                <field name="is_published"/>
+                <field name="is_hosting"/>
+                <field name="plan_count" string="Plans"/>
+                <field name="instance_count" string="Instances"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============ Form View ============ -->
+    <record id="saas_product_view_form" model="ir.ui.view">
+        <field name="name">saas.product.form</field>
+        <field name="model">saas.product</field>
+        <field name="arch" type="xml">
+            <form string="SaaS Service">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_plans" type="object"
+                                class="oe_stat_button" icon="fa-list-ul">
+                            <field name="plan_count" widget="statinfo" string="Plans"/>
+                        </button>
+                        <button name="action_view_instances" type="object"
+                                class="oe_stat_button" icon="fa-server">
+                            <field name="instance_count" widget="statinfo" string="Instances"/>
+                        </button>
+                    </div>
+                    <field name="image" widget="image" class="oe_avatar"
+                           options="{'preview_image': 'image'}"/>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="e.g. Pharmacy Management"/>
+                        </h1>
+                        <field name="subtitle" placeholder="Short tagline..."/>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="icon"/>
+                            <field name="sequence"/>
+                            <field name="is_published"/>
+                            <field name="is_hosting"/>
+                            <field name="odoo_version_id" invisible="is_hosting"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Snapshot" name="snapshot">
+                            <group string="Pre-built Database Snapshot">
+                                <group>
+                                    <field name="backup_bucket_path"
+                                           placeholder="e.g. pharmacy/2026-03-20/snapshot.zip"/>
+                                </group>
+                                <group>
+                                    <div class="text-muted">
+                                        Bucket credentials are configured in
+                                        <b>Settings → Snapshot Storage</b>.
+                                    </div>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Repositories" name="repos">
+                            <field name="repo_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="repo_url"
+                                           placeholder="https://github.com/user/repo.git"/>
+                                    <field name="branch"/>
+                                    <field name="github_token" password="True"
+                                           placeholder="ghp_... (private repos only)"/>
+                                    <field name="addons_subdir"
+                                           placeholder="e.g. addons/ (optional)"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Description" name="description">
+                            <field name="description"/>
+                        </page>
+                        <page string="Key Features" name="features">
+                            <field name="feature_line_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="icon"/>
+                                    <field name="name"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Plans" name="plans">
+                            <field name="plan_ids" widget="many2many_tags"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============ Action ============ -->
+    <record id="saas_product_action" model="ir.actions.act_window">
+        <field name="name">Services</field>
+        <field name="res_model">saas.product</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first SaaS service
+            </p>
+            <p>
+                Services represent the products you offer (e.g. Pharmacy Management,
+                Sales Management, POS). Each service can have multiple plans.
+            </p>
+        </field>
+    </record>
+
+</odoo>

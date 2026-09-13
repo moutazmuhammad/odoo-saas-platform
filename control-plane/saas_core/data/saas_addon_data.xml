@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate so an admin's edits aren't overwritten on module upgrade. -->
+    <data noupdate="1">
+        <!-- Daily Snapshots: usage-based pricing. The config param holds the
+             per-GB monthly rate; a fresh instance has no data yet, so the
+             checkout charge equals the 1 GB minimum = exactly this rate.
+             Renewals re-price from the ACTUAL snapshot footprint via
+             saas.instance._get_daily_backup_price (single source of truth:
+             saas.pricing.engine.daily_backup_price). -->
+        <record id="saas_addon_daily_snapshots" model="saas.addon">
+            <field name="name">Daily Snapshots</field>
+            <field name="code">daily_snapshots</field>
+            <field name="applies_to">hosting</field>
+            <field name="price_config_param">saas_master.snapshot_price_per_gb</field>
+            <field name="sequence">10</field>
+            <field name="description">Daily deduplicated full-instance snapshots (restic), 7-day retention. Billed on the same period as your subscription (merged into the plan renewal) by used storage (rounded up to the next whole GB, 1 GB minimum).</field>
+        </record>
+    </data>
+</odoo>

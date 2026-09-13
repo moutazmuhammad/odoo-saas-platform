@@ -1,0 +1,31 @@
+# Phase 2.2.3 — platform-generated immutable TENANT image.
+#
+# FROM the immutable base (Odoo source baked in), then bake this tenant's
+# custom modules + pip packages so deploy is a pull-by-SHA with nothing mounted
+# but data/config. Layer order matters for cache reuse: the pip/requirements
+# layer comes BEFORE the modules layer, so editing a module does NOT reinstall
+# pip (and vice-versa).
+#
+# Rendered by saas.instance._render_tenant_dockerfile(); built by the sandboxed
+# build worker (2.2.5), never on the production docker host.
+FROM {{ base_image }}
+
+USER root
+
+{% if pip_packages -%}
+# --- pip layer (cached unless requirements.txt changes) ---
+COPY requirements.txt /etc/odoo/requirements.txt
+RUN pip3 install --no-warn-script-location --target=/var/lib/odoo/pip_packages \
+        -r /etc/odoo/requirements.txt
+ENV PYTHONPATH=/var/lib/odoo/pip_packages
+{% endif -%}
+
+{% if has_addons -%}
+# --- custom modules layer (changes most often -> last) ---
+# Bake to /opt/tenant-addons (NOT /mnt/extra-addons, which the official image
+# declares as a VOLUME — an anonymous volume would shadow baked content / go
+# stale on redeploy). odoo.conf's addons_path points here in immutable mode.
+COPY --chown=odoo:odoo addons /opt/tenant-addons
+{% endif -%}
+
+USER odoo

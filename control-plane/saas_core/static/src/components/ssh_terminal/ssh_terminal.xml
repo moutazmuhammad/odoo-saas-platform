@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="saas_core.SshTerminal">
+        <div class="o_ssh_terminal d-flex flex-column"
+             style="height: calc(100vh - 50px); min-height: 300px;">
+            <!-- Toolbar -->
+            <div class="d-flex align-items-center gap-2 px-3 py-2"
+                 style="background: #1e1e2e; border-bottom: 1px solid #45475a;">
+                <i class="fa fa-terminal" style="color: #a6e3a1; font-size: 16px;"/>
+                <span class="fw-bold" style="color: #cdd6f4;">
+                    SSH Terminal
+                </span>
+                <span class="text-muted mx-1">|</span>
+                <span style="color: #89b4fa;">
+                    <t t-esc="state.serverName"/>
+                </span>
+
+                <span t-if="state.connecting" class="badge ms-2"
+                      style="background: #f9e2af; color: #1e1e2e;">
+                    <i class="fa fa-spinner fa-spin me-1" style="font-size: 10px;"/>CONNECTING
+                </span>
+                <span t-elif="state.connected" class="badge ms-2"
+                      style="background: #a6e3a1; color: #1e1e2e;">
+                    <i class="fa fa-circle me-1" style="font-size: 8px;"/>CONNECTED
+                </span>
+                <span t-else="" class="badge ms-2"
+                      style="background: #585b70; color: #cdd6f4;">
+                    DISCONNECTED
+                </span>
+
+                <div class="ms-auto d-flex gap-1">
+                    <button t-if="state.connected" class="btn btn-sm"
+                            style="color: #f38ba8; border-color: #f38ba8;"
+                            t-on-click="onDisconnect" title="Disconnect">
+                        <i class="fa fa-power-off"/> Disconnect
+                    </button>
+                    <button t-if="!state.connected and !state.connecting"
+                            class="btn btn-sm"
+                            style="color: #a6e3a1; border-color: #a6e3a1;"
+                            t-on-click="onReconnect" title="Reconnect">
+                        <i class="fa fa-plug"/> Reconnect
+                    </button>
+                </div>
+            </div>
+
+            <!-- Error banner -->
+            <div t-if="state.error"
+                 class="px-3 py-2"
+                 style="background: #45475a; color: #f38ba8; font-size: 13px;">
+                <i class="fa fa-exclamation-triangle me-1"/>
+                <t t-esc="state.error"/>
+            </div>
+
+            <!-- Terminal container -->
+            <div t-ref="terminalContainer"
+                 class="flex-grow-1 overflow-hidden"
+                 style="background: #1e1e2e; padding: 4px 4px 0 4px;"/>
+        </div>
+    </t>
+</templates>

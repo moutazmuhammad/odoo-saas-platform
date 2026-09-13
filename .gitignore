@@ -1,0 +1,15 @@
+# Root-level, cross-component ignores. Each component also has its own
+# nested .gitignore (control-plane/, frontend/veltnex/, compute/operator/)
+# for its own tooling's artifacts — this file only covers OS/editor junk and
+# anything that could otherwise land at the repo root.
+
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+*.orig
+*.rej
+*.bak
+.#*
+*.log

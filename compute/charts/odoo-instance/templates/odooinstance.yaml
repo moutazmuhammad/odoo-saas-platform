@@ -1,0 +1,108 @@
+apiVersion: saas.odoo.example.com/v1alpha1
+kind: OdooInstance
+metadata:
+  name: {{ default .Release.Name .Values.nameOverride }}
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
+spec:
+  version: {{ .Values.version | quote }}
+
+  image:
+    repository: {{ .Values.image.repository }}
+    tag: {{ required "image.tag is required (an immutable, platform-built Odoo image tag)" .Values.image.tag | quote }}
+    pullPolicy: {{ .Values.image.pullPolicy }}
+    {{- with .Values.image.pullSecretRefs }}
+    pullSecretRefs:
+      {{- range . }}
+      - name: {{ . }}
+      {{- end }}
+    {{- end }}
+
+  domain:
+    hostname: {{ required "domain.hostname is required" .Values.domain.hostname | quote }}
+    tls:
+      enabled: {{ .Values.domain.tls.enabled }}
+      {{- with .Values.domain.tls.secretName }}
+      secretName: {{ . }}
+      {{- end }}
+      {{- with .Values.domain.tls.issuerRef }}
+      issuerRef:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+  database:
+    mode: {{ .Values.database.mode }}
+    version: {{ .Values.database.version | quote }}
+    {{- if eq .Values.database.mode "Managed" }}
+    storage:
+      size: {{ .Values.database.storage.size }}
+      {{- with .Values.database.storage.storageClassName }}
+      storageClassName: {{ . }}
+      {{- end }}
+    {{- end }}
+    {{- with .Values.database.credentialsSecretRef }}
+    credentialsSecretRef:
+      name: {{ . }}
+    {{- end }}
+
+  storage:
+    filestore:
+      size: {{ .Values.storage.filestore.size }}
+      accessMode: {{ .Values.storage.filestore.accessMode }}
+      {{- with .Values.storage.filestore.storageClassName }}
+      storageClassName: {{ . }}
+      {{- end }}
+
+  resources:
+    {{- toYaml .Values.resources | nindent 4 }}
+
+  {{- with .Values.addons }}
+  addons:
+    {{- range . }}
+    - name: {{ . }}
+    {{- end }}
+  {{- end }}
+
+  workers:
+    count: {{ .Values.workers.count }}
+    maxCronThreads: {{ .Values.workers.maxCronThreads }}
+
+  replicas: {{ .Values.replicas }}
+
+  autoscaling:
+    enabled: {{ .Values.autoscaling.enabled }}
+
+  backup:
+    enabled: {{ .Values.backup.enabled }}
+    {{- if .Values.backup.enabled }}
+    schedule: {{ .Values.backup.schedule | quote }}
+    retention: {{ .Values.backup.retention }}
+    destination:
+      type: {{ .Values.backup.destination.type }}
+      {{- with .Values.backup.destination.objectStorageSecretRef }}
+      objectStorageSecretRef:
+        name: {{ . }}
+      {{- end }}
+      {{- with .Values.backup.destination.bucket }}
+      bucket: {{ . }}
+      {{- end }}
+      {{- with .Values.backup.destination.prefix }}
+      prefix: {{ . }}
+      {{- end }}
+    {{- end }}
+
+  networking:
+    networkPolicy:
+      enabled: {{ .Values.networking.networkPolicy.enabled }}
+    {{- with .Values.networking.routeAnnotations }}
+    routeAnnotations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+  {{- with .Values.tenancy.namespaceOverride }}
+  tenancy:
+    namespaceOverride: {{ . }}
+  {{- end }}
+
+  suspended: {{ .Values.suspended }}

@@ -1,0 +1,74 @@
+services:
+
+  odoo:
+{%- if tenant_image %}
+    # Phase 2.2: immutable image by SHA — Odoo source + custom modules + pip all
+    # baked in; nothing mounted but data/config (+ object-store filestore).
+    image: {{ tenant_image }}
+{%- else %}
+    image: {{ odoo_image | default("odoo") }}:{{ odoo_version }}
+{%- endif %}
+    container_name: odoo_{{ subdomain }}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    # Tenant-isolation hardening (SEC-003): the workload already runs as the
+    # non-root `odoo` user (UID 100), so it needs no Linux capabilities; drop
+    # them all and forbid privilege escalation (setuid) to shrink the
+    # container-breakout surface on shared hosts. Docker's default seccomp
+    # profile stays in effect.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    ports:
+      - "{{ host_ip | default('127.0.0.1') }}:{{ xmlrpc_port }}:8069"
+      - "{{ host_ip | default('127.0.0.1') }}:{{ longpolling_port }}:8072"
+    volumes:
+{%- if not tenant_image %}
+      - /opt/odoo-source/{{ odoo_version }}:/opt/odoo:ro
+{%- endif %}
+      - ./data/odoo:/var/lib/odoo
+{%- if filestore_mount %}
+      # Phase 2: filestore on object storage (JuiceFS) — keeps compute disposable
+      - {{ filestore_mount }}:/var/lib/odoo/filestore
+{%- endif %}
+      - ./config:/etc/odoo
+{%- if not tenant_image %}
+      - ./addons:/mnt/extra-addons
+      - ./requirements.txt:/etc/odoo/requirements.txt:ro
+{%- if pip_packages %}
+      - ./pip_install.sh:/etc/odoo/pip_install.sh:ro
+    entrypoint: ["bash", "/etc/odoo/pip_install.sh"]
+    environment:
+      - PYTHONPATH=/var/lib/odoo/pip_packages
+{%- endif %}
+{%- endif %}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8069/web/login || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - {{ network_name | default("net") }}
+{%- if docker_cpu %}
+    cpus: {{ docker_cpu }}
+{%- endif %}
+{%- if docker_mem %}
+    mem_limit: {{ docker_mem }}
+{%- endif %}
+{%- if docker_swap %}
+    memswap_limit: {{ docker_swap }}
+{%- endif %}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+networks:
+  {{ network_name | default("net") }}:
+    driver: bridge

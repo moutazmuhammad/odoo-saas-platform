@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "odoo-operator.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "odoo-operator.labels" . | nindent 4 }}
+spec:
+  # More than 1 replica requires leaderElection: true (values.yaml) so only
+  # one instance actively reconciles; extra replicas otherwise stand by
+  # purely for faster failover, not for load-splitting (this controller is
+  # not sharded).
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "odoo-operator.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "odoo-operator.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "odoo-operator.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: manager
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - --leader-elect={{ .Values.leaderElection }}
+            - --metrics-secure={{ .Values.metrics.secure }}
+            - --networking-provider={{ .Values.networking.provider }}
+            - --gateway-namespace={{ .Values.networking.gateway.namespace }}
+            - --gateway-name={{ .Values.networking.gateway.name }}
+            - --gateway-pod-selector={{ range $k, $v := .Values.networking.gateway.podSelector }}{{ $k }}={{ $v }},{{ end }}
+            {{- if .Values.networking.ingressClassName }}
+            - --ingress-class-name={{ .Values.networking.ingressClassName }}
+            {{- end }}
+            {{- if .Values.backup.toolImage }}
+            - --backup-tool-image={{ .Values.backup.toolImage }}
+            {{- end }}
+            {{- if .Values.restore.toolImage }}
+            - --restore-tool-image={{ .Values.restore.toolImage }}
+            {{- end }}
+            - --supported-odoo-versions={{ join "," .Values.supportedOdooVersions }}
+            - --allow-mutable-tags={{ .Values.allowMutableTags }}
+            {{- range .Values.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: 8443
+              protocol: TCP
+            - name: healthz
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: healthz
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

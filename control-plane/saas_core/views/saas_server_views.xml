@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Form View -->
+    <record id="saas_server_view_form" model="ir.ui.view">
+        <field name="name">saas.server.form</field>
+        <field name="model">saas.server</field>
+        <field name="arch" type="xml">
+            <form string="Server">
+                <header>
+                    <button name="action_test_connection"
+                            string="Test Connection"
+                            type="object"
+                            class="oe_highlight"/>
+                    <button name="action_open_terminal"
+                            string="Terminal"
+                            type="object"
+                            icon="fa-terminal"/>
+                    <button name="action_refresh_containers"
+                            string="Refresh Containers"
+                            type="object"
+                            icon="fa-refresh"
+                            invisible="not is_docker_host"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="e.g. EU Production 1"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Roles">
+                            <field name="is_docker_host"/>
+                            <field name="is_db_server"/>
+                            <field name="is_proxy_server"/>
+                        </group>
+                        <group string="Region &amp; Topology">
+                            <field name="region_id"
+                                   options="{'no_create_edit': True}"/>
+                            <field name="db_server_id" invisible="not is_docker_host"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="SSH Configuration">
+                            <field name="ssh_key_pair_id"/>
+                            <field name="ssh_user"/>
+                            <field name="ssh_port"/>
+                            <field name="ssh_connect_using"/>
+                        </group>
+                        <group string="Network">
+                            <field name="ip_v4"/>
+                            <field name="private_ip_v4"/>
+                            <field name="docker_base_path" invisible="not is_docker_host"/>
+                            <field name="psql_port" invisible="not is_db_server"/>
+                        </group>
+                    </group>
+                    <group string="Health">
+                        <group>
+                            <field name="health_state"
+                                   decoration-success="health_state == 'ok'"
+                                   decoration-danger="health_state == 'unreachable'"
+                                   widget="badge"/>
+                            <field name="last_health_check"/>
+                        </group>
+                        <group>
+                            <field name="last_health_error"
+                                   invisible="health_state != 'unreachable'"/>
+                        </group>
+                    </group>
+                    <group string="Capacity" invisible="not is_docker_host">
+                        <group>
+                            <field name="max_instances"/>
+                            <field name="max_cpu_cores"/>
+                            <field name="max_ram_gb"/>
+                            <field name="allow_overcommit"/>
+                        </group>
+                        <group>
+                            <field name="instance_count"/>
+                            <field name="allocated_cpu"/>
+                            <field name="allocated_ram_gb"/>
+                        </group>
+                    </group>
+                    <group string="Cost model (per-tenant margin) &amp; immutable images"
+                           invisible="not is_docker_host">
+                        <group string="Infra cost rate card (per month)">
+                            <field name="cost_per_cpu_month"/>
+                            <field name="cost_per_gb_ram_month"/>
+                            <field name="cost_per_gb_storage_month"/>
+                            <field name="monthly_cost"/>
+                        </group>
+                        <group string="Phase 2 (disposable compute)">
+                            <field name="compute_driver"/>
+                            <field name="object_filestore_mount"/>
+                            <field name="registry_host"/>
+                        </group>
+                    </group>
+                    <notebook invisible="not is_docker_host">
+                        <page string="Docker Containers">
+                            <field name="docker_container_ids" nolabel="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- List View -->
+    <record id="saas_server_view_list" model="ir.ui.view">
+        <field name="name">saas.server.list</field>
+        <field name="model">saas.server</field>
+        <field name="arch" type="xml">
+            <list string="Servers">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="region_id" optional="show"/>
+                <field name="ip_v4"/>
+                <field name="private_ip_v4"/>
+                <field name="is_docker_host"/>
+                <field name="is_db_server"/>
+                <field name="is_proxy_server"/>
+                <field name="instance_count" string="Instances" optional="show"/>
+                <field name="max_instances" optional="hide"/>
+                <field name="ssh_connect_using"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="saas_server_view_search" model="ir.ui.view">
+        <field name="name">saas.server.search</field>
+        <field name="model">saas.server</field>
+        <field name="arch" type="xml">
+            <search string="Search Servers">
+                <field name="name"/>
+                <field name="ip_v4"/>
+                <field name="region_id"/>
+                <separator/>
+                <filter string="Docker Hosts" name="docker_hosts"
+                        domain="[('is_docker_host', '=', True)]"/>
+                <filter string="Database Servers" name="db_servers"
+                        domain="[('is_db_server', '=', True)]"/>
+                <filter string="Proxy Servers" name="proxy_servers"
+                        domain="[('is_proxy_server', '=', True)]"/>
+                <separator/>
+                <filter string="Region" name="group_region"
+                        context="{'group_by': 'region_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="saas_server_action" model="ir.actions.act_window">
+        <field name="name">Servers</field>
+        <field name="res_model">saas.server</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="saas_server_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Add your first server
+            </p>
+            <p>
+                A server can act as a Docker host, database server,
+                reverse proxy, or any combination of the three.
+            </p>
+        </field>
+    </record>
+
+</odoo>

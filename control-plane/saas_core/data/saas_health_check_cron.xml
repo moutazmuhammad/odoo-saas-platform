@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Phase 3: the reconciliation loop (desired → actual). Was the
+         ad-hoc container health check; now drives every tenant to its
+         desired_state idempotently. -->
+    <record id="ir_cron_saas_container_health" model="ir.cron">
+        <field name="name">SaaS: Reconcile Tenants (desired → actual)</field>
+        <field name="model_id" ref="model_saas_instance"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_reconcile()</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+    </record>
+
+</odoo>

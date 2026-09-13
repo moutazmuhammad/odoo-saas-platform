@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate so admin edits aren't overwritten on upgrade. A single
+         default region at multiplier 1.0 keeps pricing & allocation
+         identical to today until more regions are configured. -->
+    <data noupdate="1">
+        <record id="saas_region_default" model="saas.region">
+            <field name="name">Default</field>
+            <field name="code">default</field>
+            <field name="is_default">1</field>
+            <field name="price_multiplier">1.0</field>
+            <field name="sequence">1</field>
+        </record>
+    </data>
+</odoo>

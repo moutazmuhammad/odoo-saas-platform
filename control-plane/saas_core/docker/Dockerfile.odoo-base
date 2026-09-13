@@ -1,0 +1,25 @@
+# Phase 2.2 — immutable Odoo BASE image (source baked in).
+#
+# Builds on odoo-light (official Odoo image minus the .deb source, with the
+# import symlink + entrypoint) and BAKES the Odoo source into /opt/odoo, so a
+# tenant image built FROM this needs no host source mount — it is fully
+# self-contained and portable across hosts (the Phase-2 "disposable compute"
+# requirement).
+#
+# Build context MUST be the Odoo source tree for the version, e.g.:
+#   docker build -f Dockerfile.odoo-base --build-arg BASE_TAG=18.0 \
+#       -t <registry>/odoo-base:18.0 /opt/odoo-source/18.0
+# (Dockerfile is passed via -f from outside the context.)
+#
+# Prereq: odoo-light:<ver> exists locally (saas_core/docker/build-all.sh).
+
+ARG BASE_TAG=18.0
+FROM odoo-light:${BASE_TAG}
+
+USER root
+# Bake the source the runtime symlink (/usr/.../site-packages/odoo -> /opt/odoo/odoo)
+# already points at. Source files are world-readable, so USER odoo can read them
+# without a chown (a `chown -R` would rewrite ~50k files into a wasteful ~1 GB
+# duplicate layer). --chown on COPY sets ownership in-place, single layer.
+COPY --chown=odoo:odoo . /opt/odoo
+USER odoo

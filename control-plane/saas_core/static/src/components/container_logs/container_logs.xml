@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="saas_core.ContainerLogsStream">
+        <div class="o_container_logs d-flex flex-column position-relative"
+             style="height: calc(100vh - 50px); min-height: 300px;">
+            <!-- Toolbar -->
+            <div class="d-flex align-items-center gap-2 p-2 bg-dark text-light border-bottom">
+                <span class="fw-bold">
+                    <i class="fa fa-terminal me-1"/>
+                    <t t-esc="containerName"/>
+                </span>
+                <span t-if="state.connected" class="badge bg-success">
+                    <i class="fa fa-circle me-1" style="font-size: 8px;"/>LIVE
+                </span>
+                <span t-else="" class="badge bg-secondary">
+                    DISCONNECTED
+                </span>
+                <span class="text-muted ms-2" style="font-size: 12px;">
+                    <t t-esc="state.lines.length"/> lines
+                </span>
+                <span t-if="!state.autoScroll" class="badge bg-warning text-dark ms-1" style="font-size: 11px;">
+                    <i class="fa fa-pause me-1"/>Auto-scroll paused
+                </span>
+                <div class="ms-auto d-flex gap-1">
+                    <button t-if="state.connected" class="btn btn-sm btn-outline-danger"
+                            t-on-click="onStop" title="Stop streaming">
+                        <i class="fa fa-stop"/> Stop
+                    </button>
+                    <button t-if="!state.connected" class="btn btn-sm btn-outline-success"
+                            t-on-click="onReconnect" title="Reconnect">
+                        <i class="fa fa-play"/> Start
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning"
+                            t-on-click="onClear" title="Clear logs">
+                        <i class="fa fa-eraser"/>
+                    </button>
+                </div>
+            </div>
+            <!-- Error -->
+            <div t-if="state.error" class="alert alert-danger m-2 mb-0" role="alert">
+                <i class="fa fa-exclamation-triangle me-1"/>
+                <t t-esc="state.error"/>
+            </div>
+            <!-- Log output -->
+            <pre t-ref="logContainer"
+                 class="flex-grow-1 m-0 overflow-auto bg-black text-success"
+                 style="font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace; font-size: 13px; line-height: 1.4; white-space: pre-wrap; word-break: break-all; padding: 8px 8px 3em 8px;"
+                 t-esc="logText"/>
+            <!-- Jump to bottom button (only visible when scrolled up) -->
+            <button t-if="!state.autoScroll"
+                    class="btn btn-primary btn-sm position-absolute shadow"
+                    style="bottom: 20px; right: 20px; z-index: 10; opacity: 0.9;"
+                    t-on-click="onScrollToBottom"
+                    title="Jump to latest logs">
+                <i class="fa fa-arrow-down me-1"/> Jump to bottom
+            </button>
+        </div>
+    </t>
+</templates>

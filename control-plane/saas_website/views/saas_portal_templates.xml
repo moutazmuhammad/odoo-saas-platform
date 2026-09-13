@@ -1,0 +1,1263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============================================================
+         Portal Home: replace with CloudOdoo-styled dashboard
+         ============================================================ -->
+
+    <template id="portal_my_home_saas" name="CloudOdoo Portal Home"
+              inherit_id="portal.portal_my_home" customize_show="False">
+
+        <!-- Replace the entire portal home content -->
+        <xpath expr="//div[hasclass('o_portal_my_home')]" position="replace">
+            <div class="o_portal_my_home">
+                <div style="padding-top:20px;">
+
+                    <!-- Welcome header -->
+                    <div class="d-flex flex-wrap align-items-center justify-content-between mb-4">
+                        <div>
+                            <h2 class="mb-1">
+                                Welcome back, <t t-esc="request.env.user.name"/>
+                            </h2>
+                            <p class="mb-0" style="color:var(--co-text-muted, #71717A);">
+                                Manage your account, instances, and billing from here.
+                            </p>
+                        </div>
+                        <!-- The Services section is hidden site-wide when the
+                             operator disables it from Settings → SaaS. Skip
+                             the dropdown entirely in that case — go straight
+                             to /hosting (the only remaining option). -->
+                        <t t-set="_show_services"
+                           t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_services_section', 'True') != 'False'"/>
+                        <t t-if="_show_services">
+                            <div class="dropdown mt-2 mt-md-0">
+                                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                    <i class="fas fa-plus me-1"></i>New Instance
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="/services"><i class="fas fa-cubes me-2"></i>Service</a></li>
+                                    <li><a class="dropdown-item" href="/hosting"><i class="fas fa-server me-2"></i>Hosting</a></li>
+                                </ul>
+                            </div>
+                        </t>
+                        <t t-else="">
+                            <a href="/hosting" class="btn btn-primary mt-2 mt-md-0">
+                                <i class="fas fa-plus me-1"></i>New Hosting
+                            </a>
+                        </t>
+                    </div>
+
+                    <!-- Quick action cards -->
+                    <div class="row g-3 mb-4">
+
+                        <!-- SaaS Instances card -->
+                        <div class="col-md-6 col-lg-4">
+                            <a href="/my/instances" class="text-decoration-none">
+                                <div class="info-card h-100" style="transition:all 0.2s ease;border-left:3px solid var(--co-primary, #203c86);">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="d-flex align-items-center justify-content-center rounded"
+                                             style="width:48px;height:48px;background:rgba(32,60,134,0.1);color:var(--co-primary, #203c86);font-size:1.25rem;flex-shrink:0;">
+                                            <i class="fas fa-server"></i>
+                                        </div>
+                                        <div>
+                                            <h6 class="mb-0 fw-semibold">My Instances</h6>
+                                            <p class="mb-0 small" style="color:var(--co-text-muted, #71717A);">
+                                                Manage your cloud instances
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+
+                        <!-- Orders card -->
+                        <div class="col-md-6 col-lg-4">
+                            <a href="/my/orders" class="text-decoration-none">
+                                <div class="info-card h-100" style="transition:all 0.2s ease;border-left:3px solid var(--co-success, #10B981);">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="d-flex align-items-center justify-content-center rounded"
+                                             style="width:48px;height:48px;background:rgba(16,185,129,0.1);color:var(--co-success, #10B981);font-size:1.25rem;flex-shrink:0;">
+                                            <i class="fas fa-file-invoice-dollar"></i>
+                                        </div>
+                                        <div>
+                                            <h6 class="mb-0 fw-semibold">Orders</h6>
+                                            <p class="mb-0 small" style="color:var(--co-text-muted, #71717A);">
+                                                View your purchase history
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+
+                        <!-- Invoices card -->
+                        <div class="col-md-6 col-lg-4">
+                            <a href="/my/invoices" class="text-decoration-none">
+                                <div class="info-card h-100" style="transition:all 0.2s ease;border-left:3px solid var(--co-warning, #F59E0B);">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="d-flex align-items-center justify-content-center rounded"
+                                             style="width:48px;height:48px;background:rgba(245,158,11,0.1);color:var(--co-warning, #F59E0B);font-size:1.25rem;flex-shrink:0;">
+                                            <i class="fas fa-receipt"></i>
+                                        </div>
+                                        <div>
+                                            <h6 class="mb-0 fw-semibold">Invoices</h6>
+                                            <p class="mb-0 small" style="color:var(--co-text-muted, #71717A);">
+                                                View and pay invoices
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+
+                        <!-- Security card -->
+                        <div class="col-md-6 col-lg-4">
+                            <a href="/my/security" class="text-decoration-none">
+                                <div class="info-card h-100" style="transition:all 0.2s ease;border-left:3px solid var(--co-info, #3B82F6);">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="d-flex align-items-center justify-content-center rounded"
+                                             style="width:48px;height:48px;background:rgba(59,130,246,0.1);color:var(--co-info, #3B82F6);font-size:1.25rem;flex-shrink:0;">
+                                            <i class="fas fa-shield-alt"></i>
+                                        </div>
+                                        <div>
+                                            <h6 class="mb-0 fw-semibold">Security</h6>
+                                            <p class="mb-0 small" style="color:var(--co-text-muted, #71717A);">
+                                                Password &amp; connection settings
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+
+                        <!-- Browse Services card -->
+                        <div class="col-md-6 col-lg-4">
+                            <a href="/services" class="text-decoration-none">
+                                <div class="info-card h-100" style="transition:all 0.2s ease;border-left:3px solid #8B5CF6;">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="d-flex align-items-center justify-content-center rounded"
+                                             style="width:48px;height:48px;background:rgba(139,92,246,0.1);color:#8B5CF6;font-size:1.25rem;flex-shrink:0;">
+                                            <i class="fas fa-th-large"></i>
+                                        </div>
+                                        <div>
+                                            <h6 class="mb-0 fw-semibold">Browse Services</h6>
+                                            <p class="mb-0 small" style="color:var(--co-text-muted, #71717A);">
+                                                Explore available cloud solutions
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+
+                    </div>
+
+                    <!-- Keep original portal docs for any other modules that inject entries -->
+                    <div class="o_portal_docs row g-2" style="display:none !important;">
+                        <div t-if="portal_alert_category_enable" class="o_portal_category row g-2 mt-3" id="portal_alert_category"/>
+                        <div t-if="portal_client_category_enable" class="o_portal_category row g-2 mt-3" id="portal_client_category"/>
+                        <div t-if="portal_service_category_enable" class="o_portal_category row g-2 mt-3" id="portal_service_category"/>
+                        <div t-if="portal_vendor_category_enable" class="o_portal_category row g-2 mt-3" id="portal_vendor_category"/>
+                        <div class="o_portal_category row g-2 mt-3" id="portal_common_category">
+                            <t t-call="portal.portal_docs_entry" t-if="False"/>
+                        </div>
+                        <div class="o_portal_doc_spinner spinner-border text-o-color-2 align-self-center mt-5"/>
+                    </div>
+
+                </div>
+            </div>
+        </xpath>
+    </template>
+
+    <!-- ============================================================
+         My Instances List  —  /my/instances
+         ============================================================ -->
+
+    <!-- Recursive folder tree for sidebar -->
+    <template id="portal_folder_tree_items" name="Folder Tree Items">
+        <t t-foreach="folder_list" t-as="f">
+            <li class="sidebar-folder-entry">
+                <a t-attf-href="/my/instances?sortby=#{sortby}&amp;folder=#{f.id}"
+                   t-attf-class="sidebar-folder-item #{str(active_folder_id) == str(f.id) and 'active' or ''}"
+                   t-attf-style="padding-left: #{12 + indent * 16}px;">
+                    <i t-attf-class="fas #{f.child_ids and 'fa-folder-open' or 'fa-folder'} sidebar-folder-icon"></i>
+                    <span class="sidebar-folder-name" t-esc="f.name"/>
+                    <span class="sidebar-folder-count" t-esc="f.total_instance_count"/>
+                </a>
+                <div class="sidebar-folder-actions">
+                    <a href="#" class="sidebar-folder-action folder-add-sub-btn"
+                       title="Add subfolder"
+                       t-att-data-folder-id="f.id"
+                       t-att-data-folder-name="f.name">
+                        <i class="fas fa-plus"></i>
+                    </a>
+                    <a href="#" class="sidebar-folder-action folder-rename-btn"
+                       title="Rename"
+                       t-att-data-folder-id="f.id"
+                       t-att-data-folder-name="f.name">
+                        <i class="fas fa-pen"></i>
+                    </a>
+                    <a t-if="not f.child_ids" href="#"
+                       class="sidebar-folder-action text-danger folder-delete-btn"
+                       title="Delete"
+                       t-att-data-folder-id="f.id"
+                       t-att-data-folder-name="f.name">
+                        <i class="fas fa-trash"></i>
+                    </a>
+                </div>
+                <t t-if="f.child_ids">
+                    <ul class="sidebar-folder-list sidebar-folder-children">
+                        <t t-call="saas_website.portal_folder_tree_items">
+                            <t t-set="folder_list" t-value="f.child_ids"/>
+                            <t t-set="indent" t-value="indent + 1"/>
+                        </t>
+                    </ul>
+                </t>
+            </li>
+        </t>
+    </template>
+
+
+    <!-- ============================================================
+         Instance Detail  —  /my/instances/<id>
+         ============================================================ -->
+
+
+    <!-- ============================================================
+         Upgrade Plan (Trial to Paid)  —  /my/instances/<id>/upgrade
+         ============================================================ -->
+
+    <template id="portal_instance_upgrade" name="Upgrade Plan">
+        <t t-call="saas_website.cloudodoo_layout">
+            <section class="py-6">
+                <div class="container">
+                    <div class="page-header">
+                        <nav aria-label="breadcrumb">
+                            <ol class="breadcrumb">
+                                <li class="breadcrumb-item"><a href="/my/instances">My Instances</a></li>
+                                <li class="breadcrumb-item">
+                                    <a t-attf-href="/my/instances/#{instance.id}"
+                                       t-esc="instance.subdomain or instance.name"/>
+                                </li>
+                                <li class="breadcrumb-item active">Upgrade</li>
+                            </ol>
+                        </nav>
+                        <h1>Upgrade Your Plan</h1>
+                        <p>
+                            Your trial instance <strong t-esc="instance.subdomain"/> is currently on the
+                            <strong t-esc="instance.plan_id.name"/> plan (Free Trial).
+                            Configure your resources below to keep your data and instance running.
+                        </p>
+                    </div>
+
+                    <!-- Trial info banner -->
+                    <div class="alert-banner alert-info mb-4">
+                        <i class="fas fa-info-circle"></i>
+                        <div>
+                            <strong>What happens when you upgrade?</strong>
+                            <ul class="list-unstyled mb-0 mt-2" style="color:var(--co-text-secondary, #A1A1AA);">
+                                <li class="mb-1"><i class="fas fa-check text-success me-2"></i>Your data and configuration are preserved</li>
+                                <li class="mb-1"><i class="fas fa-check text-success me-2"></i>Resources are upgraded instantly (zero downtime)</li>
+                                <li class="mb-1"><i class="fas fa-check text-success me-2"></i>Backups become available</li>
+                                <li class="mb-1"><i class="fas fa-check text-success me-2"></i>Your subdomain stays the same</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <t t-if="error">
+                        <div class="alert-banner alert-danger mb-4">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <div t-esc="error"/>
+                        </div>
+                    </t>
+
+                    <!-- Custom Plan Builder -->
+                    <div class="custom-builder-section">
+                        <div class="custom-builder-card">
+                            <!-- Billing Toggle -->
+                            <div class="text-center mb-4" id="upgrade-billing-toggle">
+                                <div class="billing-toggle">
+                                    <button class="toggle-btn active" data-billing="monthly">Monthly</button>
+                                    <button class="toggle-btn" data-billing="yearly">
+                                        Yearly <span class="yearly-badge">Save <t t-esc="custom_config.get('yearly_discount_pct', 20)"/>%</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="row g-4">
+                                <!-- Left: Sliders -->
+                                <div class="col-lg-7">
+                                    <div class="slider-group" id="upgrade-workers-slider-group">
+                                        <div class="slider-header">
+                                            <div class="slider-label">
+                                                <i class="fas fa-cogs me-2"></i>Workers
+                                            </div>
+                                            <div class="slider-value" id="upgrade-workers-value">
+                                                <input type="number" class="slider-input" id="upgrade-workers-input"
+                                                       t-att-min="custom_config.get('min_workers', 2)"
+                                                       t-att-max="custom_config.get('max_workers', 8)"
+                                                       step="1" t-att-value="custom_config.get('min_workers', 2)"
+                                                       />
+                                                <span>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" title="How many people can use your instance at the same time — more workers = more simultaneous users." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
+                                            </div>
+                                        </div>
+                                        <div class="slider-container">
+                                            <input type="range" class="custom-slider" id="upgrade-workers-slider"
+                                                   t-att-min="custom_config.get('min_workers', 2)"
+                                                   t-att-max="custom_config.get('max_workers', 8)"
+                                                   step="1"
+                                                   t-att-value="custom_config.get('min_workers', 2)"/>
+                                            <div class="slider-ticks" id="upgrade-workers-ticks"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="slider-group mt-4" id="upgrade-storage-slider-group">
+                                        <div class="slider-header">
+                                            <div class="slider-label">
+                                                <i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" title="Total space for your database and files (documents, images, attachments). Backups are stored separately." aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
+                                            </div>
+                                            <div class="slider-value" id="upgrade-storage-value">
+                                                <input type="number" class="slider-input" id="upgrade-storage-input"
+                                                       t-att-min="custom_config.get('min_storage', 5)"
+                                                       t-att-max="custom_config.get('max_storage', 200)"
+                                                       step="1" t-att-value="custom_config.get('min_storage', 5)"
+                                                       />
+                                                <span>GB</span>
+                                            </div>
+                                        </div>
+                                        <div class="slider-container">
+                                            <input type="range" class="custom-slider" id="upgrade-storage-slider"
+                                                   t-att-min="custom_config.get('min_storage', 5)"
+                                                   t-att-max="custom_config.get('max_storage', 200)"
+                                                   step="1"
+                                                   t-att-value="custom_config.get('min_storage', 5)"/>
+                                            <div class="slider-ticks" id="upgrade-storage-ticks"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Right: Price Summary -->
+                                <div class="col-lg-5">
+                                    <div class="custom-price-card">
+                                        <h5 class="mb-3">Your Custom Plan</h5>
+                                        <!-- Per-resource pricing is an internal calculation —
+                                             the customer sees the resources they're getting and
+                                             one final total only. -->
+                                        <div class="price-breakdown">
+                                            <div class="breakdown-row">
+                                                <span class="breakdown-label">
+                                                    <i class="fas fa-cogs me-2"></i>Workers
+                                                </span>
+                                                <span class="breakdown-value">
+                                                    <span id="upgrade-summary-workers" style="font-weight:700;">2</span>
+                                                </span>
+                                            </div>
+                                            <div class="breakdown-row">
+                                                <span class="breakdown-label">
+                                                    <i class="fas fa-hdd me-2"></i>Storage
+                                                </span>
+                                                <span class="breakdown-value">
+                                                    <span id="upgrade-summary-storage" style="font-weight:700;">5</span> GB
+                                                </span>
+                                            </div>
+                                            <div class="breakdown-divider"></div>
+                                            <div id="upgrade-summary-monthly-display">
+                                                <div class="breakdown-total">
+                                                    <span>Monthly Total</span>
+                                                    <span class="total-amount" id="upgrade-summary-monthly-total">$0.00</span>
+                                                </div>
+                                            </div>
+                                            <div id="upgrade-summary-yearly-display" style="display:none;">
+                                                <div class="breakdown-total">
+                                                    <span>Yearly Total</span>
+                                                    <span class="total-amount" id="upgrade-summary-yearly-total">$0.00</span>
+                                                </div>
+                                                <div class="mt-2 p-2" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:8px;">
+                                                    <div style="font-size:0.85rem;font-weight:600;color:var(--success);">
+                                                        <i class="fas fa-piggy-bank me-1"></i>
+                                                        You save <span id="upgrade-summary-yearly-savings">$0</span> per year
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <form t-attf-action="/my/instances/#{instance.id}/subscribe" method="post" id="upgrade-form" class="mt-3">
+                                            <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+                                            <input type="hidden" name="workers" id="upgrade-form-workers" value="2"/>
+                                            <input type="hidden" name="storage" id="upgrade-form-storage" value="5"/>
+                                            <input type="hidden" name="billing_period" id="upgrade-form-billing" value="monthly"/>
+                                            <button type="submit" class="btn btn-primary btn-lg w-100"
+                                                    data-loading-text="Upgrading...">
+                                                <i class="fas fa-rocket me-2"></i>Upgrade Now
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hidden config data for JavaScript -->
+                    <div id="upgrade-plan-config" style="display:none;"
+                         t-att-data-calc-url="'/saas/hosting-plan/calculate' if instance.is_hosting else '/saas/custom-plan/calculate'"
+                         t-att-data-region-id="instance.region_id.id"
+                         t-att-data-min-workers="custom_config.get('min_workers', 2)"
+                         t-att-data-max-workers="custom_config.get('max_workers', 8)"
+                         t-att-data-min-storage="custom_config.get('min_storage', 5)"
+                         t-att-data-max-storage="custom_config.get('max_storage', 200)"
+                         t-att-data-yearly-discount-pct="custom_config.get('yearly_discount_pct', 20)"
+                         t-att-data-currency="custom_config.get('currency', 'USD')"
+                         t-att-data-min-backups="custom_config.get('min_backups', 5)"
+                         data-mode="upgrade"
+                         data-current-workers="0"
+                         data-current-storage="0">
+                    </div>
+
+                    <div class="text-center mt-4">
+                        <a t-attf-href="/my/instances/#{instance.id}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Instance
+                        </a>
+                    </div>
+                </div>
+            </section>
+        </t>
+    </template>
+
+    <!-- ============================================================
+         Checkout  —  /my/instances/<id>/checkout
+         ============================================================ -->
+
+    <template id="portal_checkout" name="Checkout">
+        <t t-call="saas_website.cloudodoo_layout">
+            <section class="py-4 vx-checkout">
+                <div class="container">
+                    <div class="mb-3">
+                        <h1 class="h4 mb-0">Complete Your Order</h1>
+                        <p class="text-muted small mb-0">Secure payment powered by SSL encryption</p>
+                    </div>
+
+                    <div class="row g-3">
+                        <!-- Order Summary -->
+                        <div class="col-lg-7">
+                            <div class="info-card">
+                                <div class="d-flex align-items-center gap-3 mb-3">
+                                    <div class="service-icon" style="width:44px;height:44px;font-size:1.25rem;">
+                                        <t t-if="instance.saas_product_id.icon">
+                                            <i t-att-class="instance.saas_product_id.icon"/>
+                                        </t>
+                                        <t t-else=""><i class="fas fa-cubes"/></t>
+                                    </div>
+                                    <div>
+                                        <h5 class="mb-0" t-esc="instance.saas_product_id.name"/>
+                                        <span class="text-muted small" t-esc="target_plan.name"/>
+                                    </div>
+                                </div>
+
+                                <!-- Billing period and savings info -->
+                                <t t-set="checkout_period" t-value="instance.pending_billing_period or instance.billing_period or 'monthly'"/>
+                                <t t-set="checkout_is_yearly" t-value="checkout_period == 'yearly'"/>
+
+                                <t t-if="checkout_is_yearly and target_plan.yearly_discount_pct > 0">
+                                    <div class="mb-4 p-3" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:10px;">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <span style="background:#10B981;color:white;font-size:0.7rem;font-weight:700;padding:0.2rem 0.6rem;border-radius:20px;margin-right:0.5rem;">
+                                                <i class="fas fa-tag me-1"></i>SAVE <t t-esc="'%.0f' % target_plan.yearly_discount_pct"/>%
+                                            </span>
+                                            <span style="font-size:0.9rem;font-weight:600;color:var(--success);">Annual billing discount applied!</span>
+                                        </div>
+                                        <div style="font-size:0.85rem;color:var(--text-secondary,#A1A1AA);">
+                                            Regular price: <span style="text-decoration:line-through;"><t t-esc="'${:,.0f}'.format(target_plan.price * 12)"/>/yr</span>
+                                            <i class="fas fa-arrow-right mx-2" style="font-size:0.7rem;"></i>
+                                            Your price: <strong><t t-esc="'${:,.2f}'.format(target_plan.yearly_price)"/>/yr</strong>
+                                        </div>
+                                        <div style="font-size:0.9rem;font-weight:600;color:var(--success);margin-top:6px;">
+                                            <i class="fas fa-piggy-bank me-1"></i>
+                                            You're saving <t t-esc="'${:,.0f}'.format(target_plan.price * 12 - target_plan.yearly_price)"/> per year
+                                        </div>
+                                    </div>
+                                </t>
+
+                                <!-- ===== Configuration (full spec of what's purchased) ===== -->
+                                <div class="vx-sec-label">Configuration</div>
+                                <div class="vx-config-grid mb-3">
+                                    <div class="vx-config-item">
+                                        <span class="vx-config-label">Service</span>
+                                        <span class="vx-config-value" t-esc="instance.saas_product_id.name or '—'"/>
+                                    </div>
+                                    <div class="vx-config-item">
+                                        <span class="vx-config-label">Instance</span>
+                                        <span class="vx-config-value"><t t-esc="instance.subdomain"/>.<t t-esc="instance.domain_id.name"/></span>
+                                    </div>
+                                    <div class="vx-config-item">
+                                        <span class="vx-config-label">Plan</span>
+                                        <span class="vx-config-value" t-esc="target_plan.name"/>
+                                    </div>
+                                    <div class="vx-config-item" t-if="instance.region_id">
+                                        <span class="vx-config-label">Region</span>
+                                        <span class="vx-config-value" t-esc="instance.region_id.name"/>
+                                    </div>
+                                    <div class="vx-config-item" t-if="instance.odoo_version_id">
+                                        <span class="vx-config-label">Odoo Version</span>
+                                        <span class="vx-config-value" t-esc="instance.odoo_version_id.name"/>
+                                    </div>
+                                    <div class="vx-config-item">
+                                        <span class="vx-config-label">Billing</span>
+                                        <span class="vx-config-value">
+                                            <t t-if="checkout_is_yearly">Yearly<t t-if="target_plan.yearly_discount_pct > 0"> (-<t t-esc="'%.0f' % target_plan.yearly_discount_pct"/>%)</t></t>
+                                            <t t-else="">Monthly</t>
+                                        </span>
+                                    </div>
+                                    <div class="vx-config-item">
+                                        <span class="vx-config-label">Workers</span>
+                                        <span class="vx-config-value"><t t-esc="target_plan.workers"/></span>
+                                    </div>
+                                    <div class="vx-config-item">
+                                        <span class="vx-config-label">Storage</span>
+                                        <span class="vx-config-value"><t t-esc="int(target_plan.storage_limit)"/>GB</span>
+                                    </div>
+                                    <div class="vx-config-item" t-if="instance.support_plan_id">
+                                        <span class="vx-config-label">Support</span>
+                                        <span class="vx-config-value" t-esc="instance.support_plan_id.name"/>
+                                    </div>
+                                    <div class="vx-config-item">
+                                        <span class="vx-config-label">Daily Backup</span>
+                                        <span class="vx-config-value">
+                                            <t t-if="instance.daily_backup_enabled">Included</t>
+                                            <t t-else="">Not included</t>
+                                        </span>
+                                    </div>
+                                    <div class="vx-config-item" t-if="instance.is_hosting and instance.child_env_ids">
+                                        <span class="vx-config-label">Environments</span>
+                                        <span class="vx-config-value" t-esc="', '.join([(e.environment or '').capitalize() for e in instance.child_env_ids])"/>
+                                    </div>
+                                </div>
+
+                                <!-- ===== Charges =====
+                                     Configuration already spells out the plan / billing /
+                                     resources, so a single charge line would just repeat it.
+                                     Only itemize when there are 2+ lines (add-ons, credits,
+                                     proration); the totals always show below. -->
+                                <t t-set="charge_lines" t-value="invoice.invoice_line_ids.filtered(lambda l: l.display_type == 'product')"/>
+                                <div class="vx-sec-label"><t t-if="len(charge_lines) &gt; 1">Charges</t><t t-else="">Payment</t></div>
+                                <table class="table table-dark-custom vx-charges mb-0">
+                                    <tbody>
+                                        <t t-if="len(charge_lines) &gt; 1">
+                                            <t t-foreach="charge_lines" t-as="line">
+                                                <tr>
+                                                    <td>
+                                                        <!-- Clean label: drop the product-code prefix line
+                                                             and the trailing "— &lt;instance&gt;". -->
+                                                        <t t-set="charge_label" t-value="(line.name or '').split('\n')[-1].split(' — ')[0].strip()"/>
+                                                        <t t-esc="charge_label or line.name"/>
+                                                        <t t-if="line.quantity and line.quantity != 1">
+                                                            <span style="color:var(--text-muted);">&#215; <t t-esc="line.quantity"/></span>
+                                                        </t>
+                                                    </td>
+                                                    <td class="text-end" style="white-space:nowrap;">
+                                                        <t t-esc="line.price_subtotal" t-options="{'widget': 'monetary', 'display_currency': currency}"/>
+                                                    </td>
+                                                </tr>
+                                            </t>
+                                        </t>
+                                    </tbody>
+                                    <tfoot>
+                                        <t t-if="invoice.amount_tax">
+                                            <tr style="color:var(--text-secondary,#A1A1AA);">
+                                                <td>Subtotal</td>
+                                                <td class="text-end">
+                                                    <t t-esc="invoice.amount_untaxed" t-options="{'widget': 'monetary', 'display_currency': currency}"/>
+                                                </td>
+                                            </tr>
+                                            <tr style="color:var(--text-secondary,#A1A1AA);">
+                                                <td>Tax</td>
+                                                <td class="text-end">
+                                                    <t t-esc="invoice.amount_tax" t-options="{'widget': 'monetary', 'display_currency': currency}"/>
+                                                </td>
+                                            </tr>
+                                        </t>
+                                        <tr>
+                                            <td class="fw-bold fs-5">Total Due Today</td>
+                                            <td class="text-end fw-bold fs-5">
+                                                <t t-esc="amount" t-options="{'widget': 'monetary', 'display_currency': currency}"/>
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Payment Form -->
+                        <div class="col-lg-5">
+                            <div class="info-card">
+                                <h5>Payment Method</h5>
+                                <t t-call="payment.form"/>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Override payment redirect: go to instance page instead of /payment/status -->
+                <script>
+                    (function () {
+                        var instanceUrl = '/my/instances/<t t-esc="instance.id"/>?payment=success';
+
+                        // Monitor all navigation attempts and redirect /payment/status to instance page
+                        var observer = new MutationObserver(function () {
+                            if (window.location.pathname === '/payment/status') {
+                                window.location.replace(instanceUrl);
+                            }
+                        });
+                        observer.observe(document, { childList: true, subtree: true });
+
+                        // Intercept pushState
+                        var origPush = history.pushState;
+                        history.pushState = function () {
+                            if (arguments[2] &amp;&amp; String(arguments[2]).indexOf('/payment/status') !== -1) {
+                                window.location.replace(instanceUrl);
+                                return;
+                            }
+                            return origPush.apply(this, arguments);
+                        };
+
+                        // Intercept replaceState
+                        var origReplace = history.replaceState;
+                        history.replaceState = function () {
+                            if (arguments[2] &amp;&amp; String(arguments[2]).indexOf('/payment/status') !== -1) {
+                                window.location.replace(instanceUrl);
+                                return;
+                            }
+                            return origReplace.apply(this, arguments);
+                        };
+
+                        // Periodic check as fallback
+                        var checkInterval = setInterval(function () {
+                            if (window.location.pathname === '/payment/status') {
+                                clearInterval(checkInterval);
+                                window.location.replace(instanceUrl);
+                            }
+                        }, 500);
+
+                        // Stop checking after 60 seconds
+                        setTimeout(function () { clearInterval(checkInterval); }, 60000);
+                    })();
+                </script>
+            </section>
+        </t>
+    </template>
+
+    <!-- ============================================================
+         Change Plan (Paid to Paid)  —  /my/instances/<id>/change-plan
+         ============================================================ -->
+
+    <template id="portal_instance_change_plan" name="Change Plan">
+        <t t-call="saas_website.cloudodoo_layout">
+            <section class="py-6">
+                <div class="container">
+                    <div class="page-header">
+                        <nav aria-label="breadcrumb">
+                            <ol class="breadcrumb">
+                                <li class="breadcrumb-item"><a href="/my/instances">My Instances</a></li>
+                                <li class="breadcrumb-item">
+                                    <a t-attf-href="/my/instances/#{instance.id}"
+                                       t-esc="instance.subdomain or instance.name"/>
+                                </li>
+                                <li class="breadcrumb-item active">Change Plan</li>
+                            </ol>
+                        </nav>
+                        <h1>Change Plan</h1>
+                        <p style="color:var(--co-text-secondary, #A1A1AA);">
+                            Adjust your resources. Upgrades take effect immediately.
+                            Worker reductions take effect at your next billing cycle.
+                        </p>
+                    </div>
+
+                    <!-- Current plan summary card -->
+                    <div class="info-card mb-4" style="border-left:3px solid var(--co-primary, #203c86);">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between">
+                            <div>
+                                <div class="small" style="color:var(--co-text-muted,#71717A);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">Your Current Plan</div>
+                                <div class="d-flex align-items-center gap-3 mt-1">
+                                    <h4 class="mb-0"><t t-esc="current_workers"/> Workers / <t t-esc="current_storage"/>GB Storage</h4>
+                                    <span class="badge bg-primary"><t t-esc="instance.billing_period or 'monthly'"/></span>
+                                </div>
+                                <div class="mt-1" style="color:var(--co-text-secondary, #A1A1AA);">
+                                    <t t-if="(instance.billing_period or 'monthly') == 'yearly'">
+                                        <t t-esc="'${:,.2f}'.format(current_plan.yearly_price)"/>/yr
+                                        (<t t-esc="'${:,.2f}'.format(current_plan.yearly_price / 12)"/>/mo)
+                                    </t>
+                                    <t t-else="">
+                                        <t t-esc="'${:,.2f}'.format(current_plan.price)"/>/mo
+                                    </t>
+                                    <span class="mx-2">|</span>
+                                    <t t-esc="current_plan.workers"/> Workers
+                                    <t t-if="not instance.is_hosting">
+                                        <span class="mx-1">·</span>
+                                        7 Backups
+                                    </t>
+                                </div>
+                            </div>
+                            <t t-if="instance.next_invoice_date">
+                                <div class="text-end mt-2 mt-md-0">
+                                    <div class="small" style="color:var(--co-text-muted,#71717A);">Next billing</div>
+                                    <div t-esc="instance.next_invoice_date" t-options="{'widget': 'date'}"/>
+                                </div>
+                            </t>
+                        </div>
+                    </div>
+
+                    <t t-if="error">
+                        <div class="alert-banner alert-danger mb-4">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <div t-esc="error"/>
+                        </div>
+                    </t>
+
+                    <!-- Current scheduled change notice -->
+                    <t t-if="instance.scheduled_plan_id">
+                        <div class="alert-banner alert-warning mb-4">
+                            <i class="fas fa-arrow-down"></i>
+                            <div class="flex-grow-1">
+                                <strong>Change Already Scheduled</strong>
+                                <p class="mb-2">
+                                    Your plan will change to
+                                    <strong t-esc="instance.scheduled_plan_id.name"/>
+                                    (<t t-esc="instance.scheduled_billing_period or 'monthly'"/>)
+                                    at the end of your billing cycle
+                                    <t t-if="instance.next_invoice_date">
+                                        (<t t-esc="instance.next_invoice_date" t-options="{'widget': 'date'}"/>)
+                                    </t>.
+                                </p>
+                                <form t-attf-action="/my/instances/#{instance.id}/cancel-downgrade"
+                                      method="post" style="display:inline;">
+                                    <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+                                    <button type="submit" class="btn btn-sm btn-outline-light"
+                                            data-confirm="Cancel the scheduled change and keep your current plan?"
+                                            data-confirm-variant="warning"
+                                            data-confirm-yes="Yes, cancel change"
+                                            data-confirm-no="No, keep it">
+                                        <i class="fas fa-times me-1"></i>Cancel Scheduled Change
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- Custom Plan Builder -->
+                    <div class="custom-builder-section">
+                        <div class="custom-builder-card">
+                            <!-- Billing Toggle -->
+                            <div class="text-center mb-4" id="upgrade-billing-toggle">
+                                <div class="billing-toggle">
+                                    <button t-attf-class="toggle-btn #{'active' if (instance.billing_period or 'monthly') == 'monthly' else ''}" data-billing="monthly">Monthly</button>
+                                    <button t-attf-class="toggle-btn #{'active' if (instance.billing_period or 'monthly') == 'yearly' else ''}" data-billing="yearly">
+                                        Yearly <span class="yearly-badge">Save <t t-esc="custom_config.get('yearly_discount_pct', 20)"/>%</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="row g-4">
+                                <!-- Left: Sliders -->
+                                <div class="col-lg-7">
+                                    <div class="slider-group" id="upgrade-workers-slider-group">
+                                        <div class="slider-header">
+                                            <div class="slider-label">
+                                                <i class="fas fa-cogs me-2"></i>Workers
+                                            </div>
+                                            <div class="slider-value" id="upgrade-workers-value">
+                                                <input type="number" class="slider-input" id="upgrade-workers-input"
+                                                       t-att-min="custom_config.get('min_workers', 2)"
+                                                       t-att-max="custom_config.get('max_workers', 8)"
+                                                       step="1" t-att-value="current_workers"
+                                                       />
+                                                <span>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" title="How many people can use your instance at the same time — more workers = more simultaneous users." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
+                                            </div>
+                                        </div>
+                                        <div class="slider-container">
+                                            <input type="range" class="custom-slider" id="upgrade-workers-slider"
+                                                   t-att-min="custom_config.get('min_workers', 2)"
+                                                   t-att-max="custom_config.get('max_workers', 8)"
+                                                   step="1"
+                                                   t-att-value="current_workers"/>
+                                            <div class="slider-ticks" id="upgrade-workers-ticks"></div>
+                                        </div>
+                                        <!-- Worker reduction notice -->
+                                        <div class="mt-2 p-2" id="upgrade-worker-reduction-notice" style="display:none;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;font-size:0.85rem;color:var(--warning);">
+                                            <i class="fas fa-clock me-1"></i>
+                                            Worker reduction will take effect at your next billing cycle
+                                            <t t-if="instance.next_invoice_date">
+                                                (<t t-esc="instance.next_invoice_date" t-options="{'widget': 'date'}"/>)
+                                            </t>
+                                        </div>
+                                    </div>
+
+                                    <div class="slider-group mt-4" id="upgrade-storage-slider-group">
+                                        <div class="slider-header">
+                                            <div class="slider-label">
+                                                <i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" title="Total space for your database and files (documents, images, attachments). Backups are stored separately." aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
+                                            </div>
+                                            <div class="slider-value" id="upgrade-storage-value">
+                                                <input type="number" class="slider-input" id="upgrade-storage-input"
+                                                       t-att-min="current_storage"
+                                                       t-att-max="custom_config.get('max_storage', 200)"
+                                                       step="1" t-att-value="current_storage"
+                                                       />
+                                                <span>GB</span>
+                                            </div>
+                                        </div>
+                                        <div class="slider-container">
+                                            <input type="range" class="custom-slider" id="upgrade-storage-slider"
+                                                   t-att-min="current_storage"
+                                                   t-att-max="custom_config.get('max_storage', 200)"
+                                                   step="1"
+                                                   t-att-value="current_storage"/>
+                                            <div class="slider-ticks" id="upgrade-storage-ticks"></div>
+                                        </div>
+                                        <div class="mt-1" style="font-size:0.8rem;color:var(--co-text-muted,#71717A);">
+                                            <i class="fas fa-lock me-1"></i>Storage cannot be reduced below current allocation (<t t-esc="current_storage"/>GB)
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Right: Price Summary -->
+                                <div class="col-lg-5">
+                                    <div class="custom-price-card">
+                                        <h5 class="mb-3">New Plan Configuration</h5>
+                                        <!-- Per-resource pricing is an internal calculation —
+                                             the customer sees the resources they're getting and
+                                             one final total only. -->
+                                        <div class="price-breakdown">
+                                            <div class="breakdown-row">
+                                                <span class="breakdown-label">
+                                                    <i class="fas fa-cogs me-2"></i>Workers
+                                                </span>
+                                                <span class="breakdown-value">
+                                                    <span id="upgrade-summary-workers"><t t-esc="current_workers"/></span>
+                                                </span>
+                                            </div>
+                                            <div class="breakdown-row">
+                                                <span class="breakdown-label">
+                                                    <i class="fas fa-hdd me-2"></i>Storage
+                                                </span>
+                                                <span class="breakdown-value">
+                                                    <span id="upgrade-summary-storage"><t t-esc="current_storage"/></span> GB
+                                                </span>
+                                            </div>
+                                            <div class="breakdown-divider"></div>
+                                            <div id="upgrade-summary-monthly-display">
+                                                <div class="breakdown-total">
+                                                    <span>Monthly Total</span>
+                                                    <span class="total-amount" id="upgrade-summary-monthly-total">$0.00</span>
+                                                </div>
+                                            </div>
+                                            <div id="upgrade-summary-yearly-display" style="display:none;">
+                                                <div class="breakdown-total">
+                                                    <span>Yearly Total</span>
+                                                    <span class="total-amount" id="upgrade-summary-yearly-total">$0.00</span>
+                                                </div>
+                                                <div class="mt-2 p-2" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:8px;">
+                                                    <div style="font-size:0.85rem;font-weight:600;color:var(--success);">
+                                                        <i class="fas fa-piggy-bank me-1"></i>
+                                                        You save <span id="upgrade-summary-yearly-savings">$0</span> per year
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Action info banner (dynamic) -->
+                                        <div id="upgrade-action-info" class="mt-3 p-3" style="border-radius:10px;font-size:0.85rem;display:none;"></div>
+
+                                        <form t-attf-action="/my/instances/#{instance.id}/do-change-plan" method="post" id="upgrade-form" class="mt-3">
+                                            <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+                                            <input type="hidden" name="workers" id="upgrade-form-workers" t-att-value="current_workers"/>
+                                            <input type="hidden" name="storage" id="upgrade-form-storage" t-att-value="current_storage"/>
+                                            <input type="hidden" name="billing_period" id="upgrade-form-billing" t-att-value="instance.billing_period or 'monthly'"/>
+                                            <button type="submit" class="btn btn-primary btn-lg w-100" id="upgrade-submit-btn" disabled=""
+                                                    data-loading-text="Applying changes...">
+                                                <i class="fas fa-arrow-up me-2"></i>Apply Changes
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hidden config data for JavaScript -->
+                    <div id="upgrade-plan-config" style="display:none;"
+                         t-att-data-calc-url="'/saas/hosting-plan/calculate' if instance.is_hosting else '/saas/custom-plan/calculate'"
+                         t-att-data-region-id="instance.region_id.id"
+                         t-att-data-min-workers="custom_config.get('min_workers', 2)"
+                         t-att-data-max-workers="custom_config.get('max_workers', 8)"
+                         t-att-data-min-storage="current_storage"
+                         t-att-data-max-storage="custom_config.get('max_storage', 200)"
+                         t-att-data-yearly-discount-pct="custom_config.get('yearly_discount_pct', 20)"
+                         t-att-data-currency="custom_config.get('currency', 'USD')"
+                         t-att-data-min-backups="custom_config.get('min_backups', 5)"
+                         data-mode="change"
+                         t-att-data-current-workers="current_workers"
+                         t-att-data-current-storage="current_storage"
+                         t-att-data-current-billing="instance.billing_period or 'monthly'">
+                    </div>
+
+                    <div class="text-center mt-4">
+                        <a t-attf-href="/my/instances/#{instance.id}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Instance
+                        </a>
+                    </div>
+                </div>
+            </section>
+        </t>
+    </template>
+
+    <!-- ============================================================
+         Reactivate Instance  —  /my/instances/<id>/reactivate
+         ============================================================ -->
+
+    <template id="portal_instance_reactivate" name="Reactivate Instance">
+        <t t-call="saas_website.cloudodoo_layout">
+            <section class="py-6">
+                <div class="container">
+                    <div class="page-header">
+                        <nav aria-label="breadcrumb">
+                            <ol class="breadcrumb">
+                                <li class="breadcrumb-item"><a href="/my/instances">My Instances</a></li>
+                                <li class="breadcrumb-item">
+                                    <a t-attf-href="/my/instances/#{instance.id}"
+                                       t-esc="instance.subdomain or instance.name"/>
+                                </li>
+                                <li class="breadcrumb-item active">Reactivate</li>
+                            </ol>
+                        </nav>
+                        <h1>Reactivate Instance</h1>
+                        <p>Reactivate <strong t-esc="instance.subdomain"/> with the same subdomain and domain.</p>
+                    </div>
+
+                    <t t-if="error">
+                        <div class="alert-banner alert-danger mb-4">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <div t-esc="error"/>
+                        </div>
+                    </t>
+
+                    <div class="alert-banner alert-warning mb-4">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div>
+                            <strong>Billing will resume</strong>
+                            <p class="mb-0" style="color:var(--co-text-secondary, #A1A1AA);">
+                                Configure your plan and pay the invoice to reactivate. Your instance will be redeployed empty
+                                — your most recent snapshot is kept safely. Once the instance is running, open the Snapshots
+                                page, re-enable Daily Backups (one-time activation invoice includes a small retention surcharge),
+                                and click Restore to bring your data back yourself. No support ticket needed.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Plan Builder -->
+                    <div class="custom-builder-section">
+                        <div class="custom-builder-card">
+                            <!-- Billing Toggle -->
+                            <div class="text-center mb-4" id="upgrade-billing-toggle">
+                                <div class="billing-toggle">
+                                    <button class="toggle-btn active" data-billing="monthly">Monthly</button>
+                                    <button class="toggle-btn" data-billing="yearly">
+                                        Yearly <span class="yearly-badge">Save <t t-esc="custom_config.get('yearly_discount_pct', 20)"/>%</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="row g-4">
+                                <!-- Left: Sliders -->
+                                <div class="col-lg-7">
+                                    <div class="slider-group" id="upgrade-workers-slider-group">
+                                        <div class="slider-header">
+                                            <div class="slider-label">
+                                                <i class="fas fa-cogs me-2"></i>Workers
+                                            </div>
+                                            <div class="slider-value" id="upgrade-workers-value">
+                                                <input type="number" class="slider-input" id="upgrade-workers-input"
+                                                       t-att-min="current_workers"
+                                                       t-att-max="custom_config.get('max_workers', 8)"
+                                                       step="1" t-att-value="current_workers"/>
+                                                <span>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" title="How many people can use your instance at the same time — more workers = more simultaneous users." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
+                                            </div>
+                                        </div>
+                                        <div class="slider-container">
+                                            <input type="range" class="custom-slider" id="upgrade-workers-slider"
+                                                   t-att-min="current_workers"
+                                                   t-att-max="custom_config.get('max_workers', 8)"
+                                                   step="1"
+                                                   t-att-value="current_workers"/>
+                                            <div class="slider-ticks" id="upgrade-workers-ticks"></div>
+                                        </div>
+                                        <div class="mt-1" style="font-size:0.8rem;color:var(--co-text-muted,#71717A);">
+                                            <i class="fas fa-lock me-1"></i>Minimum <t t-esc="current_workers"/> workers (previous plan)
+                                        </div>
+                                    </div>
+
+                                    <div class="slider-group mt-4" id="upgrade-storage-slider-group">
+                                        <div class="slider-header">
+                                            <div class="slider-label">
+                                                <i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" title="Total space for your database and files (documents, images, attachments). Backups are stored separately." aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
+                                            </div>
+                                            <div class="slider-value" id="upgrade-storage-value">
+                                                <input type="number" class="slider-input" id="upgrade-storage-input"
+                                                       t-att-min="current_storage"
+                                                       t-att-max="custom_config.get('max_storage', 200)"
+                                                       step="1" t-att-value="current_storage"/>
+                                                <span>GB</span>
+                                            </div>
+                                        </div>
+                                        <div class="slider-container">
+                                            <input type="range" class="custom-slider" id="upgrade-storage-slider"
+                                                   t-att-min="current_storage"
+                                                   t-att-max="custom_config.get('max_storage', 200)"
+                                                   step="1"
+                                                   t-att-value="current_storage"/>
+                                            <div class="slider-ticks" id="upgrade-storage-ticks"></div>
+                                        </div>
+                                        <div class="mt-1" style="font-size:0.8rem;color:var(--co-text-muted,#71717A);">
+                                            <i class="fas fa-lock me-1"></i>Minimum <t t-esc="current_storage"/>GB (previous plan)
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Right: Price Summary -->
+                                <div class="col-lg-5">
+                                    <div class="custom-price-card">
+                                        <h5 class="mb-3">Plan Configuration</h5>
+                                        <!-- Per-resource pricing is an internal calculation —
+                                             the customer sees the resources they're getting and
+                                             one final total only. -->
+                                        <div class="price-breakdown">
+                                            <div class="breakdown-row">
+                                                <span class="breakdown-label">
+                                                    <i class="fas fa-cogs me-2"></i>Workers
+                                                </span>
+                                                <span class="breakdown-value">
+                                                    <span id="upgrade-summary-workers"><t t-esc="current_workers"/></span>
+                                                </span>
+                                            </div>
+                                            <div class="breakdown-row">
+                                                <span class="breakdown-label">
+                                                    <i class="fas fa-hdd me-2"></i>Storage
+                                                </span>
+                                                <span class="breakdown-value">
+                                                    <span id="upgrade-summary-storage"><t t-esc="current_storage"/></span> GB
+                                                </span>
+                                            </div>
+                                            <div class="breakdown-divider"></div>
+                                            <div id="upgrade-summary-monthly-display">
+                                                <div class="breakdown-total">
+                                                    <span>Monthly Total</span>
+                                                    <span class="total-amount" id="upgrade-summary-monthly-total">$0.00</span>
+                                                </div>
+                                            </div>
+                                            <div id="upgrade-summary-yearly-display" style="display:none;">
+                                                <div class="breakdown-total">
+                                                    <span>Yearly Total</span>
+                                                    <span class="total-amount" id="upgrade-summary-yearly-total">$0.00</span>
+                                                </div>
+                                                <div class="mt-2 p-2" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:8px;">
+                                                    <div style="font-size:0.85rem;font-weight:600;color:var(--success);">
+                                                        <i class="fas fa-piggy-bank me-1"></i>
+                                                        You save <span id="upgrade-summary-yearly-savings">$0</span> per year
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <form t-attf-action="/my/instances/#{instance.id}/do-reactivate" method="post" id="upgrade-form" class="mt-3">
+                                            <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+                                            <input type="hidden" name="workers" id="upgrade-form-workers" t-att-value="current_workers"/>
+                                            <input type="hidden" name="storage" id="upgrade-form-storage" t-att-value="current_storage"/>
+                                            <input type="hidden" name="billing_period" id="upgrade-form-billing" value="monthly"/>
+                                            <button type="submit" class="btn btn-primary btn-lg w-100" id="upgrade-submit-btn">
+                                                <i class="fas fa-redo me-2"></i>Reactivate Instance
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hidden config data for JavaScript -->
+                    <div id="upgrade-plan-config" style="display:none;"
+                         t-att-data-calc-url="'/saas/hosting-plan/calculate' if instance.is_hosting else '/saas/custom-plan/calculate'"
+                         t-att-data-region-id="instance.region_id.id"
+                         t-att-data-min-workers="current_workers"
+                         t-att-data-max-workers="custom_config.get('max_workers', 8)"
+                         t-att-data-min-storage="current_storage"
+                         t-att-data-max-storage="custom_config.get('max_storage', 200)"
+                         t-att-data-yearly-discount-pct="custom_config.get('yearly_discount_pct', 20)"
+                         t-att-data-currency="custom_config.get('currency', 'USD')"
+                         t-att-data-min-backups="custom_config.get('min_backups', 5)"
+                         data-mode="reactivate"
+                         t-att-data-current-workers="current_workers"
+                         t-att-data-current-storage="current_storage"
+                    ></div>
+
+                    <div class="text-center mt-4">
+                        <a t-attf-href="/my/instances/#{instance.id}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Instance
+                        </a>
+                    </div>
+                </div>
+            </section>
+        </t>
+    </template>
+
+    <!-- ============================================================ -->
+    <!--  Backups page (all instances)                                 -->
+    <!-- ============================================================ -->
+
+    <!-- ============================================================ -->
+    <!--  Hosting: Database Management                                 -->
+    <!-- ============================================================ -->
+    <!-- ============================================================ -->
+    <!--  Daily Backups add-on: custom checkout page                   -->
+    <!-- ============================================================ -->
+    <template id="portal_daily_backup_checkout" name="Daily Backup Checkout">
+        <t t-call="saas_website.cloudodoo_layout">
+            <section class="py-6">
+                <div class="container">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb">
+                            <li class="breadcrumb-item"><a href="/my/instances">My Instances</a></li>
+                            <li class="breadcrumb-item">
+                                <a t-attf-href="/my/instances/#{instance.id}" t-esc="instance.subdomain or instance.name"/>
+                            </li>
+                            <li class="breadcrumb-item">
+                                <a t-attf-href="/my/instances/#{instance.id}/backups">Snapshots</a>
+                            </li>
+                            <li class="breadcrumb-item active">Activate Daily Backups</li>
+                        </ol>
+                    </nav>
+
+                    <h1 class="mb-4">Activate Daily Backups</h1>
+
+                    <div class="row g-4">
+                        <!-- Order summary -->
+                        <div class="col-lg-7">
+                            <div class="info-card">
+                                <h5>Order Summary</h5>
+                                <p class="text-muted small">
+                                    Daily snapshots of your full instance for
+                                    <strong t-esc="instance.subdomain"/>.
+                                    Captures every database, your uploaded
+                                    files, your custom modules and your
+                                    instance settings on each run; keeps up to
+                                    7 most recent snapshots (the oldest is
+                                    dropped automatically). Billed as a
+                                    <strong>flat monthly fee</strong> with no
+                                    proration — the same amount is charged
+                                    whether you enable on the 1st or the
+                                    28th. Charged again on every renewal
+                                    while the feature is on.
+                                </p>
+                                <table class="table align-middle mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Item</th>
+                                            <th class="text-end">Price</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>
+                                                Daily Backups Add-on
+                                                <span class="badge ms-2 bg-info">Monthly</span>
+                                                <div class="small text-muted">
+                                                    Flat monthly fee — no proration. Once enabled, the next charge is one full month after today's payment.
+                                                </div>
+                                            </td>
+                                            <td class="text-end">
+                                                <t t-esc="monthly_price"
+                                                   t-options="{'widget': 'monetary', 'display_currency': currency}"/>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <td class="fw-bold fs-5">Total Due Today</td>
+                                            <td class="text-end fw-bold fs-5">
+                                                <t t-esc="amount"
+                                                   t-options="{'widget': 'monetary', 'display_currency': currency}"/>
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                                <p class="small text-muted mt-3 mb-0">
+                                    Invoice: <code t-esc="invoice.name"/>.
+                                    You can pay any time from
+                                    <a t-att-href="invoice.get_portal_url()">
+                                        the invoice page
+                                    </a>
+                                    too.
+                                </p>
+                            </div>
+                        </div>
+                        <!-- Payment widget -->
+                        <div class="col-lg-5">
+                            <div class="info-card">
+                                <h5>Payment Method</h5>
+                                <t t-call="payment.form"/>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-center mt-4">
+                        <a t-attf-href="/my/instances/#{instance.id}/backups"
+                           class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Cancel and go back
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Same trick as portal_checkout: rewrite the post-pay
+                     redirect target so the customer lands back on the
+                     Snapshots page, not Odoo's generic /payment/status. -->
+                <script>
+                    (function () {
+                        var url = '/my/instances/<t t-esc="instance.id"/>/backups?notice=Payment+received.+Daily+backups+are+now+active.';
+
+                        var observer = new MutationObserver(function () {
+                            if (window.location.pathname === '/payment/status') {
+                                window.location.replace(url);
+                            }
+                        });
+                        observer.observe(document, { childList: true, subtree: true });
+
+                        var origPush = history.pushState;
+                        history.pushState = function () {
+                            if (arguments[2] &amp;&amp; String(arguments[2]).indexOf('/payment/status') !== -1) {
+                                window.location.replace(url);
+                                return;
+                            }
+                            return origPush.apply(this, arguments);
+                        };
+
+                        var origReplace = history.replaceState;
+                        history.replaceState = function () {
+                            if (arguments[2] &amp;&amp; String(arguments[2]).indexOf('/payment/status') !== -1) {
+                                window.location.replace(url);
+                                return;
+                            }
+                            return origReplace.apply(this, arguments);
+                        };
+
+                        var checkInterval = setInterval(function () {
+                            if (window.location.pathname === '/payment/status') {
+                                clearInterval(checkInterval);
+                                window.location.replace(url);
+                            }
+                        }, 500);
+                        setTimeout(function () { clearInterval(checkInterval); }, 60000);
+                    })();
+                </script>
+            </section>
+        </t>
+    </template>
+
+
+</odoo>

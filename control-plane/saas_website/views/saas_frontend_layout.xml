@@ -1,0 +1,489 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============================================================
+         White-label: replace the `<meta name="generator" content="Odoo">`
+         that website.layout injects on every QWeb-rendered page (checkout,
+         /my/invoices, etc.) so the source no longer fingerprints the
+         underlying stack. The SPA shell at `/` and other `spa_shell()`
+         routes never include this meta — they ship a plain HTML doc — so
+         this only affects the legacy Odoo-rendered pages.
+         ============================================================ -->
+
+    <template id="veltnex_hide_generator" name="VELTNEX: Hide Generator"
+              inherit_id="website.layout" customize_show="False">
+        <xpath expr="//meta[@name='generator']" position="attributes">
+            <attribute name="content">VELTNEX</attribute>
+        </xpath>
+    </template>
+
+    <!-- ============================================================
+         Inject early theme script to prevent FOUC (flash of wrong theme).
+         Runs synchronously before CSS paints.
+         ============================================================ -->
+
+    <!-- ============================================================
+         SERVER-SIDE theme injection.
+         Reads the `veltnex-theme` cookie (set by both the SPA's
+         useTheme hook and the QWeb veltnex_theme.js) and stamps the
+         <html> tag with the matching `data-theme` attribute and
+         (optionally) the `.dark` class. The CSS in cloudodoo.css
+         keys on `data-theme` so this gives the correct palette from
+         the first byte of HTML — no FOUC, no JS race.
+         ============================================================ -->
+
+    <template id="cloudodoo_html_theme" name="VELTNEX: HTML data-theme"
+              inherit_id="website.layout" customize_show="False" priority="100">
+        <!--
+            Inject `data-theme` (and matching `dark` class) into the
+            html_data dict that website.layout spreads onto <html>.
+            This is more robust than `t-att-data-theme` on the same
+            element because we don't fight the existing `t-att`
+            spread — we just add a key to the dict it spreads.
+        -->
+        <xpath expr="//html" position="before">
+            <t t-set="_vx_theme"
+               t-value="request.httprequest.cookies.get('veltnex-theme') if request.httprequest.cookies.get('veltnex-theme') in ('light', 'dark') else 'dark'"/>
+            <t t-set="html_data" t-value="dict(html_data or {}, **{
+                'data-theme': _vx_theme,
+                'class': ((html_data or {}).get('class', '') + (' dark' if _vx_theme == 'dark' else '')).strip(),
+            })"/>
+        </xpath>
+    </template>
+
+    <template id="cloudodoo_theme_init" name="CloudOdoo Theme Init"
+              inherit_id="web.frontend_layout" customize_show="False">
+        <xpath expr="//head" position="inside">
+            <script>
+                (function(){
+                    // 1) Apply theme BEFORE paint (mirrors the SPA's
+                    //    inline script in veltnex/index.html so the
+                    //    same localStorage key drives both worlds).
+                    function apply(t) {
+                        document.documentElement.setAttribute('data-theme', t);
+                        document.documentElement.classList.toggle('dark', t === 'dark');
+                    }
+                    var t;
+                    try {
+                        // Trust the server-rendered `data-theme`
+                        // (cloudodoo_html_theme sets it from the
+                        // cookie). Don't re-decide — just sync
+                        // localStorage + cookie to match. This is
+                        // what eliminates the white→dark flash on
+                        // navigation: nothing flips the attribute
+                        // after the server has already set it.
+                        var server = document.documentElement.getAttribute('data-theme');
+                        if (server === 'light' || server === 'dark') {
+                            try { localStorage.setItem('veltnex-theme', server); } catch (err) {}
+                            document.cookie = 'veltnex-theme=' + server + '; path=/; max-age=31536000; SameSite=Lax';
+                            t = server;
+                        } else {
+                            t = localStorage.getItem('veltnex-theme');
+                            if (t !== 'light' &amp;&amp; t !== 'dark') {
+                                t = (window.matchMedia &amp;&amp; window.matchMedia('(prefers-color-scheme: light)').matches)
+                                    ? 'light' : 'dark';
+                            }
+                            apply(t);
+                            try { localStorage.setItem('veltnex-theme', t); } catch (err) {}
+                            document.cookie = 'veltnex-theme=' + t + '; path=/; max-age=31536000; SameSite=Lax';
+                        }
+                    } catch (e) { apply('dark'); }
+
+                    // 2) Live sync — if the user toggles theme in
+                    //    another tab (SPA toggle writes localStorage),
+                    //    repaint THIS page without a reload.
+                    window.addEventListener('storage', function(e){
+                        if (e.key === 'veltnex-theme' &amp;&amp; (e.newValue === 'light' || e.newValue === 'dark')) {
+                            apply(e.newValue);
+                        }
+                    });
+
+                    // 3) Re-sync on visibility change (catches the
+                    //    case where another tab changed it while we
+                    //    were backgrounded — storage event doesn't
+                    //    always fire for backgrounded tabs).
+                    document.addEventListener('visibilitychange', function(){
+                        if (!document.hidden) {
+                            try {
+                                var v = localStorage.getItem('veltnex-theme');
+                                if ((v === 'light' || v === 'dark') &amp;&amp;
+                                    v !== document.documentElement.getAttribute('data-theme')) {
+                                    apply(v);
+                                }
+                            } catch (e) {}
+                        }
+                    });
+
+                    // 4) Scroll-to-blur on the navbar to match the SPA
+                    //    PublicNav's transparent-at-top behaviour. The
+                    //    selector covers both the cloudodoo navbar
+                    //    (`.co-navbar`, on website.layout pages) and
+                    //    the default portal navbar (`navbar-light
+                    //    bg-light`, on /payment/* and /my/invoices/*),
+                    //    which we restyle via CSS to look the same.
+                    document.addEventListener('DOMContentLoaded', function(){
+                        var nav = document.querySelector('.co-navbar, nav.navbar.navbar-light.bg-light');
+                        if (!nav) return;
+                        var onScroll = function(){
+                            nav.classList.toggle('co-navbar--scrolled', window.scrollY > 8);
+                        };
+                        window.addEventListener('scroll', onScroll, { passive: true });
+                        onScroll();
+                    });
+                })();
+            </script>
+            <link rel="icon" type="image/svg+xml" href="/saas_website/static/src/img/veltnex-icon.svg"/>
+            <link rel="shortcut icon" href="/saas_website/static/src/img/veltnex-icon.svg"/>
+            <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" as="style"/>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"/>
+        </xpath>
+    </template>
+
+    <!-- ============================================================
+         Override Odoo's website header with VELTNEX navbar.
+         The full markup is inlined (rather than extracted to a shared
+         t-call template) so any future descendant inherits can still
+         anchor on <header>/<nav> elements that exist directly in
+         this view's arch — Odoo 18's view validator only sees the
+         immediate parent's bare arch when resolving xpaths.
+         ============================================================ -->
+
+    <template id="cloudodoo_header" name="CloudOdoo Header"
+              inherit_id="website.layout" customize_show="False">
+        <xpath expr="//header" position="replace">
+            <t t-set="show_services_section"
+               t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_services_section', 'True') != 'False'"/>
+            <t t-set="show_hosting_section"
+               t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_hosting_section', 'True') != 'False'"/>
+            <header id="top" data-anchor="true">
+                <nav class="navbar navbar-expand-lg sticky-top co-navbar"
+                     style="background: var(--bg-navbar, #ffffff) !important; border-bottom: 1px solid var(--border-color, #dadce0); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);">
+                    <div class="container">
+                        <a class="navbar-brand co-logo d-flex align-items-center" href="/">
+                            <!-- Inline SVG mark identical to the SPA Logo: a
+                                 rounded-lg box on the theme-aware primary token
+                                 (light #1a73e8 / dark #8ab4f8) with a stroked
+                                 chevron + shadow glow. -->
+                            <span class="co-logo-mark">
+                                <svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true">
+                                    <path d="M8 9 L16 23 L24 9" fill="none" stroke="#FAFAFA" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </span>
+                            <span class="co-logo-word fw-bold">VELT<span style="color:var(--primary);">NEX</span></span>
+                        </a>
+                        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#coNavbar">
+                            <span class="navbar-toggler-icon"></span>
+                        </button>
+                        <div class="collapse navbar-collapse" id="coNavbar">
+                            <!-- Dashboard-style bar: no marketing links, just the
+                                 logo + theme toggle + account menu. -->
+                            <ul class="navbar-nav me-auto align-items-center"></ul>
+                            <ul class="navbar-nav align-items-center">
+                                <li class="nav-item me-2">
+                                    <!-- Click handler wired via event delegation in
+                                         veltnex_theme.js — no inline onclick so the
+                                         page passes a `script-src` CSP without
+                                         `unsafe-inline`. -->
+                                    <button type="button" class="vx-theme-toggle vx-theme-toggle-nav"
+                                            aria-label="Toggle theme" title="Toggle theme">
+                                        <!-- Inline lucide icons to match the SPA's ThemeToggle 1:1
+                                             (FontAwesome's fa-sun reads as a cog at this size). -->
+                                        <svg class="vx-icon-sun" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                                        <svg class="vx-icon-moon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                                    </button>
+                                </li>
+                                <t t-if="not request.env.user._is_public()">
+                                    <!-- Account menu — mirrors the dashboard (PortalLayout)
+                                         app bar 1:1: a plain 36px circle avatar (no pill,
+                                         no name, no caret) opening a rounded-xl panel with a
+                                         name/email header → Settings / Sign out. -->
+                                    <li class="nav-item dropdown ms-lg-2">
+                                        <a class="nav-link dropdown-toggle vx-avatar-toggle d-flex align-items-center justify-content-center"
+                                           href="#" role="button" data-bs-toggle="dropdown"
+                                           aria-expanded="false" aria-label="Account menu">
+                                            <span class="vx-avatar d-flex align-items-center justify-content-center rounded-circle"
+                                                  style="background:var(--co-primary, #1a73e8);color:var(--primary-foreground, #fff);">
+                                                <t t-esc="''.join([w[0] for w in (request.env.user.name or 'U').split()[:2]]).upper() or 'U'"/>
+                                            </span>
+                                        </a>
+                                        <ul class="dropdown-menu dropdown-menu-end vx-account-menu">
+                                            <li class="vx-account-head">
+                                                <div class="vx-account-name text-truncate" t-esc="request.env.user.name"/>
+                                                <div class="vx-account-email text-truncate" t-esc="request.env.user.email or ''"/>
+                                            </li>
+                                            <li><hr class="dropdown-divider"/></li>
+                                            <li>
+                                                <a class="dropdown-item vx-account-item" href="/my/settings">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                                                    Settings
+                                                </a>
+                                            </li>
+                                            <li t-if="request.env.user.has_group('base.group_user')">
+                                                <a class="dropdown-item vx-account-item" href="/odoo">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+                                                    Backend
+                                                </a>
+                                            </li>
+                                            <li>
+                                                <a class="dropdown-item vx-account-item vx-account-danger" href="/web/session/logout?redirect=/">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                                                    Sign out
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </li>
+                                </t>
+                                <t t-if="request.env.user._is_public()">
+                                    <li class="nav-item ms-lg-3">
+                                        <a class="nav-link" href="/login">Sign in</a>
+                                    </li>
+                                    <li class="nav-item ms-2">
+                                        <a class="btn btn-primary btn-sm" href="/services/register">Get started</a>
+                                    </li>
+                                </t>
+                            </ul>
+                        </div>
+                    </div>
+                </nav>
+            </header>
+        </xpath>
+    </template>
+
+    <!-- ============================================================
+         Payment / portal pages (/payment/*, /my/invoices/*, ...) use
+         `portal.frontend_layout` directly, which renders its own
+         `<nav class="navbar navbar-light bg-light">` inside the page
+         header. Trying to replace that header via XML inheritance is
+         brittle in Odoo 18 (neither `web.frontend_layout` nor
+         `portal.frontend_layout` exposes the `<header>` element in
+         its *own* arch — both define it through xpath ops on
+         `web.layout`, so xpath inheritance validation can't anchor
+         on it).
+         Instead, the theme-init script in `cloudodoo_theme_init`
+         rewrites the rendered DOM at page load to swap that default
+         navbar/footer for the shared VELTNEX ones — see the JS in
+         the head template for the implementation.
+         ============================================================ -->
+
+    <!-- Override Odoo's website footer with the VELTNEX footer (inline
+         markup so descendant inherits can anchor on <footer> if needed). -->
+
+    <template id="cloudodoo_footer" name="CloudOdoo Footer"
+              inherit_id="website.layout" customize_show="False">
+        <xpath expr="//footer" position="replace">
+            <t t-set="show_services_section"
+               t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_services_section', 'True') != 'False'"/>
+            <t t-set="show_hosting_section"
+               t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_hosting_section', 'True') != 'False'"/>
+            <footer id="bottom" data-anchor="true" class="co-footer">
+                <div class="container">
+                    <!-- Mirrors the SPA Footer.tsx: logo + copyright · center links ·
+                         social icons, on the page background. -->
+                    <div class="d-flex flex-column flex-sm-row align-items-center gap-3 py-4">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="co-logo-mark co-logo-mark--sm">
+                                <svg viewBox="0 0 32 32" width="16" height="16" aria-hidden="true">
+                                    <path d="M8 9 L16 23 L24 9" fill="none" stroke="#FAFAFA" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </span>
+                            <span class="co-footer-copy">&#169; 2026 VELTNEX, Inc.</span>
+                        </div>
+                        <nav class="d-flex flex-wrap align-items-center justify-content-center gap-3">
+                            <a href="/docs" class="co-footer-link">Docs</a>
+                            <a href="/help" class="co-footer-link">Help</a>
+                            <a t-if="show_hosting_section" href="/hosting" class="co-footer-link">Hosting</a>
+                            <a t-if="show_services_section" href="/services" class="co-footer-link">Services</a>
+                        </nav>
+                        <div class="d-flex align-items-center gap-3 ms-sm-auto co-footer-social">
+                            <a href="#" aria-label="Twitter">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"/></svg>
+                            </a>
+                            <a href="#" aria-label="GitHub">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+                            </a>
+                            <a href="#" aria-label="LinkedIn">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect width="4" height="12" x="2" y="9"/><circle cx="4" cy="4" r="2"/></svg>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </footer>
+        </xpath>
+    </template>
+
+    <!-- Portal/payment footer: same story as the navbar above —
+         replaced at runtime via the head script, not via XML inheritance. -->
+
+    <!-- ============================================================
+         Remove Salesperson card from invoice portal page
+         ============================================================ -->
+
+    <template id="hide_invoice_salesperson" name="Hide Invoice Salesperson"
+              inherit_id="account.portal_invoice_page" customize_show="False">
+        <xpath expr="//div[@id='invoice_communication']" position="replace"/>
+    </template>
+
+    <!-- ============================================================
+         Remove Salesperson + Communication from Sale Order page
+         ============================================================ -->
+
+    <template id="hide_so_salesperson" name="Hide SO Salesperson"
+              inherit_id="sale.sale_order_portal_template" customize_show="False">
+        <xpath expr="//div[@id='sale_order_communication']" position="replace"/>
+    </template>
+
+    <template id="hide_so_contact" name="Hide SO Contact"
+              inherit_id="sale.sale_order_portal_template" customize_show="False">
+        <xpath expr="//div[@t-if='sale_order.user_id']" position="replace"/>
+    </template>
+
+    <!-- ============================================================
+         Remove Salesperson from invoice sidebar
+         ============================================================ -->
+
+    <template id="hide_invoice_contact" name="Hide Invoice Contact"
+              inherit_id="account.portal_invoice_page" customize_show="False">
+        <xpath expr="//div[@t-if='invoice.invoice_user_id']" position="replace"/>
+    </template>
+
+    <!-- ============================================================
+         Remove "Powered by Odoo" everywhere — override the source
+         templates to render nothing.
+         ============================================================ -->
+
+    <template id="hide_brand_message" name="Hide Brand Message"
+              inherit_id="web.brand_promotion_message" customize_show="False">
+        <xpath expr="//t[@t-set='odoo_logo']" position="replace"/>
+        <xpath expr="//t[@t-set='final_message']" position="replace"/>
+        <xpath expr="//t[@t-out]" position="replace"/>
+    </template>
+
+    <template id="hide_brand_promotion" name="Hide Brand Promotion"
+              inherit_id="web.brand_promotion" customize_show="False">
+        <xpath expr="//div[hasclass('o_brand_promotion')]" position="attributes">
+            <attribute name="style">display:none !important;</attribute>
+        </xpath>
+    </template>
+
+    <!-- The copyright bar is hidden via CSS instead of XML inheritance.
+         The original xpath `//footer[@id='bottom']` can't be located in
+         `web.frontend_layout`'s bare arch (the <footer> only exists in
+         the xpath-replacement content, which Odoo 18's inheritance
+         validator doesn't traverse). See cloudodoo.css → "Hide Odoo's
+         default copyright bar on all QWeb pages". -->
+
+    <!-- Remove "Powered by Odoo" from portal record sidebar
+         (invoice detail, sale order detail, etc.) -->
+    <template id="hide_portal_sidebar_branding" name="Hide Portal Sidebar Branding"
+              inherit_id="portal.portal_record_sidebar" customize_show="False">
+        <xpath expr="//div[hasclass('o_portal_sidebar_content')]/div[hasclass('text-muted')]" position="replace"/>
+    </template>
+
+    <!-- ============================================================
+         Restyle portal side_content (user profile card on /my/home)
+         ============================================================ -->
+
+    <template id="cloudodoo_side_content" name="CloudOdoo Side Content"
+              inherit_id="portal.side_content" customize_show="False">
+        <!-- Replace the avatar + name block -->
+        <xpath expr="//div[hasclass('d-flex','justify-content-start')]" position="replace">
+            <div class="d-flex align-items-center gap-3 mb-3 pb-3" style="border-bottom:1px solid var(--border-color, #27272A);">
+                <div class="d-flex align-items-center justify-content-center rounded-circle"
+                     style="width:50px;height:50px;background:var(--co-primary, #1a73e8);color:var(--primary-foreground, #fff);font-size:1.1rem;font-weight:600;flex-shrink:0;">
+                    <t t-esc="(user_id.name or 'U')[:2].upper()"/>
+                </div>
+                <div>
+                    <h5 class="mb-0" style="color:var(--co-text-primary, #FAFAFA);" t-out="user_id.name"/>
+                    <p t-if="user_id.company_name" class="mb-0 small" style="color:var(--co-text-muted, #71717A);" t-out="user_id.company_name"/>
+                </div>
+            </div>
+        </xpath>
+        <!-- Replace the contact details widget with icon-based layout -->
+        <xpath expr="//div[hasclass('o_portal_my_details')]" position="replace">
+            <div class="o_portal_my_details d-flex flex-column gap-2">
+                <t t-set="partner" t-value="user_id.partner_id"/>
+                <t t-if="partner.email">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-envelope" style="width:18px;color:var(--co-text-muted, #71717A);font-size:0.85rem;"></i>
+                        <a t-att-href="'mailto:' + partner.email" class="small text-break"
+                           style="color:var(--co-primary, #203c86);" t-esc="partner.email"/>
+                    </div>
+                </t>
+                <t t-if="partner.phone">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-phone" style="width:18px;color:var(--co-text-muted, #71717A);font-size:0.85rem;"></i>
+                        <span class="small" style="color:var(--co-text-secondary, #A1A1AA);" t-esc="partner.phone"/>
+                    </div>
+                </t>
+                <t t-if="partner.city or partner.country_id">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-map-marker-alt" style="width:18px;color:var(--co-text-muted, #71717A);font-size:0.85rem;"></i>
+                        <span class="small" style="color:var(--co-text-secondary, #A1A1AA);">
+                            <t t-if="partner.city" t-esc="partner.city"/>
+                            <t t-if="partner.city and partner.country_id">, </t>
+                            <t t-if="partner.country_id" t-esc="partner.country_id.name"/>
+                        </span>
+                    </div>
+                </t>
+                <t t-if="partner.street">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-home" style="width:18px;color:var(--co-text-muted, #71717A);font-size:0.85rem;"></i>
+                        <span class="small" style="color:var(--co-text-secondary, #A1A1AA);" t-esc="partner.street"/>
+                    </div>
+                </t>
+            </div>
+        </xpath>
+        <!-- Replace the edit link with a styled button -->
+        <xpath expr="//a[@href='/my/account']" position="replace">
+            <a role="button" href="/my/account" class="btn btn-outline-light btn-sm w-100 mt-3">
+                <i class="fas fa-pencil-alt me-1"></i> Edit Information
+            </a>
+        </xpath>
+    </template>
+
+    <!-- ============================================================
+         CloudOdoo Layout — wrapper for our custom pages.
+         Now just calls website.layout (which already has our
+         overridden header/footer). No CDN needed since Odoo 18
+         already provides Bootstrap 5.
+         ============================================================ -->
+
+    <template id="cloudodoo_layout" name="CloudOdoo Layout">
+        <t t-call="website.layout">
+            <t t-set="no_livechat" t-value="True"/>
+            <!-- Defensive theme + navbar handlers — runs even if the
+                 `cloudodoo_theme_init` extension of web.frontend_layout
+                 is somehow stripped (cached compiled view, override
+                 conflict, etc.). Same logic, idempotent. -->
+            <script>
+                (function(){
+                    // No initial apply — the server already set
+                    // `data-theme` from the cookie. We only need a
+                    // cross-tab `storage` listener so a toggle in a
+                    // sibling tab repaints this one without a reload.
+                    function apply(t){
+                        document.documentElement.setAttribute('data-theme', t);
+                        document.documentElement.classList.toggle('dark', t === 'dark');
+                    }
+                    try {
+                        window.addEventListener('storage', function(e){
+                            if (e.key === 'veltnex-theme'
+                                &amp;&amp; (e.newValue === 'light' || e.newValue === 'dark')) {
+                                apply(e.newValue);
+                            }
+                        });
+                    } catch(e) {}
+                })();
+            </script>
+            <div id="wrap" class="oe_structure">
+                <t t-out="0"/>
+            </div>
+        </t>
+    </template>
+
+    <!-- ============================================================
+         Home Page (Landing)
+         ============================================================ -->
+
+
+</odoo>

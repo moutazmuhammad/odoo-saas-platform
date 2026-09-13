@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============================================================
+         Override the website module's login_layout.
+         The website module (priority 20) replaces web.login_layout to:
+           <t t-call="website.layout">
+               <div class="oe_website_login_container" t-out="0"/>
+           </t>
+         We replace that with web.frontend_layout (keeps assets) but
+         with no header/footer, giving us a fully custom login page.
+         ============================================================ -->
+
+    <template id="cloudodoo_login_layout" name="CloudOdoo Login Layout"
+              inherit_id="web.login_layout" customize_show="False" priority="30">
+        <xpath expr="//t[@t-call='website.layout']" position="replace">
+            <t t-call="web.frontend_layout">
+                <t t-set="no_header" t-value="True"/>
+                <t t-set="no_footer" t-value="True"/>
+                <t t-set="x_icon" t-value="'/saas_website/static/src/img/veltnex-icon.svg'"/>
+
+                <div class="co-login-page">
+                    <!-- Floating theme toggle: same localStorage key as
+                         the SPA so the choice carries everywhere. -->
+                    <!-- Click wired via event delegation in veltnex_theme.js (no
+                         inline onclick → CSP-friendly without `unsafe-inline`). -->
+                    <button type="button" class="vx-theme-toggle"
+                            aria-label="Toggle theme" title="Toggle theme">
+                        <!-- Inline lucide icons — same set the SPA ThemeToggle uses. -->
+                        <svg class="vx-icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                        <svg class="vx-icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                    </button>
+
+                    <!-- Left panel: branding -->
+                    <div class="co-login-brand d-none d-lg-flex">
+                        <div class="co-login-brand-content">
+                            <div class="co-login-brand-logo">
+                                <img class="vx-logo-light" src="/saas_website/static/src/img/veltnex-logo-name-light.svg" alt="VELTNEX" style="height:80px;"/>
+                                <img class="vx-logo-dark" src="/saas_website/static/src/img/veltnex-logo-name.svg" alt="VELTNEX" style="height:80px;"/>
+                            </div>
+                            <h1 class="co-login-brand-title">Welcome Back</h1>
+                            <p class="co-login-brand-subtitle">
+                                Sign in to manage your cloud instances, monitor performance, and scale your business.
+                            </p>
+                            <div class="co-login-brand-features">
+                                <div class="co-login-brand-feature">
+                                    <i class="fas fa-shield-alt"></i>
+                                    <span>Enterprise-grade security</span>
+                                </div>
+                                <div class="co-login-brand-feature">
+                                    <i class="fas fa-server"></i>
+                                    <span>Isolated environments</span>
+                                </div>
+                                <div class="co-login-brand-feature">
+                                    <i class="fas fa-clock"></i>
+                                    <span>99.9% uptime SLA</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="co-login-brand-footer">
+                            <span>&#169; 2026 VELTNEX. All rights reserved.</span>
+                        </div>
+                    </div>
+
+                    <!-- Right panel: login form -->
+                    <div class="co-login-form-panel">
+                        <div class="co-login-form-wrapper">
+                            <!-- Mobile logo -->
+                            <div class="co-login-mobile-logo d-lg-none">
+                                <img class="vx-logo-light" src="/saas_website/static/src/img/veltnex-logo-name-light.svg" alt="VELTNEX" style="height:60px;"/>
+                                <img class="vx-logo-dark" src="/saas_website/static/src/img/veltnex-logo-name.svg" alt="VELTNEX" style="height:60px;"/>
+                            </div>
+
+                            <div class="co-login-form-header">
+                                <h2>Sign In</h2>
+                                <p>Enter your credentials to access your account</p>
+                            </div>
+
+                            <t t-out="0"/>
+
+                            <div class="co-login-form-footer">
+                                <p>Don't have an account? <a href="/services/register">Sign up</a></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </t>
+        </xpath>
+    </template>
+
+    <!-- ============================================================
+         Override the login form itself to style the button and labels
+         ============================================================ -->
+
+    <template id="cloudodoo_login_form" name="CloudOdoo Login Form"
+              inherit_id="web.login" customize_show="False">
+        <!-- Replace the Log in button with styled version -->
+        <xpath expr="//div[hasclass('oe_login_buttons')]" position="replace">
+            <div class="oe_login_buttons co-login-buttons d-grid gap-2 pt-3">
+                <button type="submit" class="btn co-btn-primary">
+                    <span>Sign In</span>
+                    <i class="fas fa-arrow-right ms-2"></i>
+                </button>
+                <t t-if="debug">
+                    <button type="submit" name="redirect" value="/web/become" class="btn btn-link btn-sm">Log in as superuser</button>
+                </t>
+                <div class="o_login_auth"/>
+            </div>
+        </xpath>
+
+        <!-- Add forgot password link next to password label -->
+        <xpath expr="//div[hasclass('mb-3')][.//input[@id='password']]//label" position="replace">
+            <label for="password" class="form-label d-flex justify-content-between">
+                <span>Password</span>
+                <a href="/web/reset_password" class="co-forgot-link">Forgot password?</a>
+            </label>
+        </xpath>
+    </template>
+
+    <!-- ============================================================
+         White-label the base web layout — replace every Odoo brand
+         reference visible in `view-source:` (favicon URL, title
+         default, apple-touch-icon URL, theme color) so the admin
+         shell at /web and /odoo doesn't fingerprint the stack.
+         ============================================================ -->
+
+    <template id="cloudodoo_favicon" name="CloudOdoo Favicon"
+              inherit_id="web.layout" customize_show="False">
+        <!-- Favicon (browser tab icon) -->
+        <xpath expr="//link[@rel='shortcut icon']" position="attributes">
+            <attribute name="t-att-href"/>
+            <attribute name="href">/saas_website/static/src/img/veltnex-icon.svg</attribute>
+            <attribute name="type">image/svg+xml</attribute>
+        </xpath>
+        <!-- Default <title>: was "Odoo" when no page-specific title set -->
+        <xpath expr="//title" position="attributes">
+            <attribute name="t-esc">title or 'VELTNEX'</attribute>
+        </xpath>
+    </template>
+
+    <!-- web.webclient_bootstrap (the /web and /odoo admin shell) adds
+         an apple-touch-icon whose URL literally contains "odoo" and a
+         theme-color. Re-point both to VELTNEX assets. -->
+    <template id="veltnex_webclient_branding"
+              name="VELTNEX: Webclient Branding"
+              inherit_id="web.webclient_bootstrap" customize_show="False">
+        <xpath expr="//link[@rel='apple-touch-icon']" position="attributes">
+            <attribute name="href">/saas_website/static/src/img/veltnex-icon.svg</attribute>
+        </xpath>
+        <xpath expr="//meta[@name='theme-color']" position="attributes">
+            <attribute name="content">#203c86</attribute>
+        </xpath>
+    </template>
+
+</odoo>

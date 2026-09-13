@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="saas_region_action" model="ir.actions.act_window">
+        <field name="name">Regions</field>
+        <field name="res_model">saas.region</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create a region</p>
+            <p>Each region carries a price multiplier (server cost varies by
+               region). Assign servers (proxy, docker, db) to a region; an
+               instance's three servers must share one region.</p>
+        </field>
+    </record>
+
+    <record id="saas_region_view_list" model="ir.ui.view">
+        <field name="name">saas.region.list</field>
+        <field name="model">saas.region</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="price_multiplier"/>
+                <field name="is_recommended"/>
+                <field name="is_default"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="saas_region_view_form" model="ir.ui.view">
+        <field name="name">saas.region.form</field>
+        <field name="model">saas.region</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="code"/>
+                            <field name="is_recommended"/>
+                            <field name="is_default"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Pricing">
+                            <field name="price_multiplier"/>
+                            <field name="currency_id"/>
+                        </group>
+                    </group>
+                    <field name="server_ids" readonly="1">
+                        <list>
+                            <field name="name"/>
+                            <field name="is_proxy_server"/>
+                            <field name="is_docker_host"/>
+                            <field name="is_db_server"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>

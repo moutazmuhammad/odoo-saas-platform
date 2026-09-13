@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/saas_website/static/spa/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Apply the theme class BEFORE CSS paints so there's no flash of the
+      wrong palette. Order: explicit user pref in localStorage → OS pref
+      via prefers-color-scheme → dark fallback (the site's heritage).
+    -->
+    <script>
+      (function () {
+        try {
+          // The Odoo controller (spa.py) injects `data-theme` and the
+          // matching class onto <html> at render time, reading the
+          // `veltnex-theme` cookie. The job of this script is JUST to
+          // sync localStorage + cookie to whatever the server picked —
+          // never to re-decide and flip the attribute. Re-deciding here
+          // is what produced the white→dark flash on navigation.
+          var server = document.documentElement.getAttribute("data-theme");
+          var t;
+          if (server === "light" || server === "dark") {
+            t = server;
+            try { localStorage.setItem("veltnex-theme", t); } catch (err) {}
+            document.cookie = "veltnex-theme=" + t + "; path=/; max-age=31536000; SameSite=Lax";
+          } else {
+            // Defensive — should rarely happen since the controller
+            // always rewrites <html>. Falls back to the old behaviour.
+            t = localStorage.getItem("veltnex-theme");
+            if (t !== "light" && t !== "dark") {
+              t = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light" : "dark";
+            }
+            document.documentElement.classList.toggle("dark", t === "dark");
+            document.documentElement.setAttribute("data-theme", t);
+            try { localStorage.setItem("veltnex-theme", t); } catch (err) {}
+            document.cookie = "veltnex-theme=" + t + "; path=/; max-age=31536000; SameSite=Lax";
+          }
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+    <meta
+      name="description"
+      content="VELTNEX — The Logic of Stability. Enterprise-grade managed cloud infrastructure for mission-critical business applications."
+    />
+    <meta name="generator" content="VELTNEX" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <title>VELTNEX — The Logic of Stability</title>
+    <script type="module" crossorigin src="/saas_website/static/spa/assets/index-8muVUtg-.js"></script>
+    <link rel="stylesheet" crossorigin href="/saas_website/static/spa/assets/index-CNvAt3Q0.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

@@ -1,0 +1,44 @@
+# Lightweight Odoo image — source code removed, mounted at runtime
+#
+# Usage:
+#   docker build --build-arg ODOO_VERSION=18.0 -t odoo-light:18.0 .
+#
+# Supports Odoo 14.0 through 18.0 (all official images)
+# The Odoo source is mounted read-only at /opt/odoo from the host:
+#   /opt/odoo-source/<version> -> /opt/odoo:ro
+#
+# The official image installs Odoo as a .deb package into:
+#   /usr/lib/python3/dist-packages/odoo/
+# We remove that and redirect Python imports to the mounted source.
+
+ARG ODOO_VERSION=18.0
+FROM odoo:${ODOO_VERSION}
+
+USER root
+
+# 1. Remove the Odoo source installed by the .deb package
+#    Keep everything else (Python deps, wkhtmltopdf, system libs, etc.)
+RUN rm -rf /usr/lib/python3/dist-packages/odoo \
+           /usr/lib/python3/dist-packages/odoo-*.egg-info \
+           /usr/lib/python3/dist-packages/odoo-*.dist-info \
+    && mkdir -p /opt/odoo
+
+# 2. Create a symlink so "import odoo" finds the mounted source
+#    The mounted source at /opt/odoo contains:
+#      /opt/odoo/odoo/          <- the odoo Python package
+#      /opt/odoo/odoo-bin       <- the CLI entry point
+#      /opt/odoo/addons/        <- base addons
+#      /opt/odoo/setup/         <- setup files
+RUN PYTHON_SITE=$(python3 -c "import site; print(site.getsitepackages()[0])") \
+    && ln -sf /opt/odoo/odoo "$PYTHON_SITE/odoo"
+
+# 3. Replace the entrypoint
+COPY entrypoint-light.sh /entrypoint-light.sh
+RUN chmod +x /entrypoint-light.sh
+
+# 4. Keep the original entrypoint as fallback (for DB init etc.)
+#    The original /entrypoint.sh handles wait-for-psql logic
+
+USER odoo
+ENTRYPOINT ["/entrypoint-light.sh"]
+CMD ["odoo"]

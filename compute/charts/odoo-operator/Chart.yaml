@@ -1,0 +1,17 @@
+apiVersion: v2
+name: odoo-operator
+description: |
+  Installs the Odoo SaaS platform's Kubernetes operator: the OdooInstance
+  CRD and the controller that reconciles it into a tenant namespace,
+  managed PostgreSQL, filestore, Odoo workload, routing, and backups.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/freightright/odoo-saas-platform
+keywords:
+  - odoo
+  - saas
+  - operator
+  - kubernetes
+maintainers:
+  - name: FreightRight Platform Team

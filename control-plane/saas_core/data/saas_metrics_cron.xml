@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Record a CPU/RAM/storage sample per running tenant for the customer
+         metrics dashboard. One docker stats per host (cost-scaling). -->
+    <record id="ir_cron_saas_record_metrics" model="ir.cron">
+        <field name="name">SaaS: Record Instance Metrics (history)</field>
+        <field name="model_id" ref="model_saas_instance"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_record_metrics()</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+    </record>
+
+    <!-- Enforce the 14-day retention window. -->
+    <record id="ir_cron_saas_prune_metrics" model="ir.cron">
+        <field name="name">SaaS: Prune Old Instance Metrics (14d)</field>
+        <field name="model_id" ref="model_saas_instance"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_prune_metrics()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
+
+</odoo>

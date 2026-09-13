@@ -1,0 +1,6 @@
+bin/
+*.md
+.git/
+config/
+charts/
+test/

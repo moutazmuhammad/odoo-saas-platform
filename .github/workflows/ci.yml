@@ -1,0 +1,140 @@
+name: CI
+
+# ARCH-007 — block merges that break the SPA typecheck, the Odoo test suite,
+# or the Compute operator. Runs on every PR and on pushes to the long-lived
+# branches.
+#
+# Monorepo layout (see /README.md): control-plane/ (Odoo), frontend/
+# (veltnex), compute/ (the Kubernetes operator). Each job below checks out
+# the whole repo (default) and scopes itself to its component's directory.
+on:
+  pull_request:
+  push:
+    branches: [main, newhosting, architecture-evolution]
+
+# A newer push to the same ref cancels the older in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  spa:
+    name: SPA typecheck + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/veltnex/package-lock.json
+      - name: Install deps
+        working-directory: frontend/veltnex
+        run: npm ci
+      - name: Typecheck + build (tsc --noEmit && vite build)
+        working-directory: frontend/veltnex
+        run: npm run build
+
+  odoo-tests:
+    name: Odoo test suite (saas_core + saas_website)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: System build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libldap2-dev libsasl2-dev libxml2-dev libxslt1-dev libpq-dev \
+            libjpeg-dev zlib1g-dev
+
+      - name: Clone Odoo 18 (shallow)
+        run: git clone --depth 1 --branch 18.0 https://github.com/odoo/odoo.git "$HOME/odoo"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip wheel
+          pip install -r "$HOME/odoo/requirements.txt"
+          # External deps declared in saas_core/__manifest__.py that are not
+          # part of Odoo core requirements.
+          pip install paramiko jinja2 boto3 google-cloud-storage
+
+      - name: Write odoo.conf
+        run: |
+          cat > "$HOME/odoo.conf" <<CONF
+          [options]
+          admin_passwd = ci_admin
+          db_host = localhost
+          db_port = 5432
+          db_user = odoo
+          db_password = odoo
+          addons_path = $HOME/odoo/addons,$GITHUB_WORKSPACE/control-plane
+          CONF
+
+      - name: Install modules + run tests
+        run: |
+          set -o pipefail
+          python "$HOME/odoo/odoo-bin" \
+            -c "$HOME/odoo.conf" \
+            -d ci \
+            -i saas_core,saas_website \
+            --test-enable \
+            --test-tags '/saas_core,/saas_website' \
+            --without-demo=all \
+            --http-port=8069 \
+            --stop-after-init \
+            --log-level=test 2>&1 | tee odoo.log
+
+      - name: Assert no test failures
+        run: |
+          # Odoo prints a summary line like "N failed, M error(s) of K tests".
+          # Require it to exist AND report zero failures/errors — a crash that
+          # prints no summary must also fail the job.
+          if ! grep -qE "tests when loading database" odoo.log; then
+            echo "::error::No test summary found — the run crashed before tests completed."
+            exit 1
+          fi
+          if ! grep -qE "0 failed, 0 error\(s\)" odoo.log; then
+            echo "::error::Odoo tests failed."
+            grep -E "FAIL:|ERROR:|failed, [1-9]" odoo.log || true
+            exit 1
+          fi
+          echo "All Odoo tests passed."
+
+  compute:
+    name: Compute operator (build, vet, unit + envtest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: compute/operator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: compute/operator/go.mod
+          cache-dependency-path: compute/operator/go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Unit + envtest suites
+        run: make test

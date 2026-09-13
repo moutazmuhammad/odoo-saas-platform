@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate so an admin's edited prices/names aren't overwritten on
+         upgrade. Prices are PLACEHOLDERS — set real values in
+         SaaS ▸ Configuration ▸ Support Plans. The Free tier is the default
+         (price 0) so existing/new instances without a pick are unaffected. -->
+    <data noupdate="1">
+        <record id="saas_support_plan_free" model="saas.support.plan">
+            <field name="name">Free</field>
+            <field name="code">free</field>
+            <field name="is_default">1</field>
+            <field name="monthly_price">0.0</field>
+            <field name="response_time">Best effort</field>
+            <field name="sequence">10</field>
+            <field name="description">Community / best-effort support. No guaranteed response time.</field>
+        </record>
+        <record id="saas_support_plan_standard" model="saas.support.plan">
+            <field name="name">Standard</field>
+            <field name="code">standard</field>
+            <field name="monthly_price">0.0</field>
+            <field name="response_time">24h</field>
+            <field name="sequence">20</field>
+            <field name="description">Email support with a 24-hour response target during business days.</field>
+        </record>
+        <record id="saas_support_plan_pro" model="saas.support.plan">
+            <field name="name">Pro</field>
+            <field name="code">pro</field>
+            <field name="monthly_price">0.0</field>
+            <field name="response_time">4h</field>
+            <field name="sequence">30</field>
+            <field name="description">Priority support with a 4-hour response target.</field>
+        </record>
+        <record id="saas_support_plan_enterprise" model="saas.support.plan">
+            <field name="name">Enterprise</field>
+            <field name="code">enterprise</field>
+            <field name="monthly_price">0.0</field>
+            <field name="response_time">1h</field>
+            <field name="sequence">40</field>
+            <field name="description">Mission-critical support with a 1-hour response target and escalation.</field>
+        </record>
+    </data>
+</odoo>

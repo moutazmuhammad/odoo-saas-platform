@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="saas_support_plan_action" model="ir.actions.act_window">
+        <field name="name">Support Plans</field>
+        <field name="res_model">saas.support.plan</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create a support plan</p>
+            <p>Recurring, value-based support tiers (e.g. Standard / Pro /
+               Enterprise). The customer picks one at checkout; it's a flat
+               monthly fee added after infrastructure pricing and is not
+               scaled by region. Mark exactly one as the default (free
+               best-effort tier).</p>
+        </field>
+    </record>
+
+    <record id="saas_support_plan_view_list" model="ir.ui.view">
+        <field name="name">saas.support.plan.list</field>
+        <field name="model">saas.support.plan</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="response_time"/>
+                <field name="monthly_price"/>
+                <field name="is_default"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="saas_support_plan_view_form" model="ir.ui.view">
+        <field name="name">saas.support.plan.form</field>
+        <field name="model">saas.support.plan</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="e.g. Pro"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="code" placeholder="e.g. pro"/>
+                            <field name="response_time" placeholder="e.g. 4h"/>
+                            <field name="is_default"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Pricing">
+                            <field name="monthly_price"/>
+                            <field name="currency_id"/>
+                        </group>
+                    </group>
+                    <group string="Description">
+                        <field name="description" nolabel="1"
+                               placeholder="What this support tier includes — channels, SLA, escalation…"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="saas_support_plan_view_search" model="ir.ui.view">
+        <field name="name">saas.support.plan.search</field>
+        <field name="model">saas.support.plan</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="code"/>
+                <filter string="Active" name="active" domain="[('active', '=', True)]"/>
+                <filter string="Default" name="is_default" domain="[('is_default', '=', True)]"/>
+            </search>
+        </field>
+    </record>
+</odoo>

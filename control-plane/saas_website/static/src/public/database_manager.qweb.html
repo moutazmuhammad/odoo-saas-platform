@@ -1,0 +1,529 @@
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <title>VELTNEX — Database Manager</title>
+    <meta name="generator" content="VELTNEX" />
+    <link rel="icon" type="image/svg+xml" href="/saas_website/static/src/img/veltnex-icon.svg"/>
+    <link rel="shortcut icon" href="/saas_website/static/src/img/veltnex-icon.svg"/>
+    <link rel="stylesheet" href="/web/static/src/libs/fontawesome/css/font-awesome.css" />
+    <link rel="stylesheet" href="/web/static/lib/bootstrap/dist/css/bootstrap.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet" />
+    <script src="/web/static/lib/bootstrap/js/dist/util/index.js" ></script>
+    <script src="/web/static/lib/bootstrap/js/dist/dom/data.js" ></script>
+    <script src="/web/static/lib/bootstrap/js/dist/dom/event-handler.js" ></script>
+    <script src="/web/static/lib/bootstrap/js/dist/dom/manipulator.js" ></script>
+    <script src="/web/static/lib/bootstrap/js/dist/dom/selector-engine.js" ></script>
+    <script src="/web/static/lib/bootstrap/js/dist/util/config.js" ></script>
+    <script src="/web/static/lib/bootstrap/js/dist/util/component-functions.js" ></script>
+    <script src="/web/static/lib/bootstrap/js/dist/util/backdrop.js" ></script>
+    <script src="/web/static/lib/bootstrap/js/dist/util/focustrap.js" ></script>
+    <script src="/web/static/lib/bootstrap/js/dist/util/scrollbar.js" ></script>
+    <script src="/web/static/lib/bootstrap/js/dist/base-component.js" ></script>
+    <script src="/web/static/lib/bootstrap/js/dist/modal.js" ></script>
+
+    <script>
+        // Apply theme before paint — same key the SPA uses, so the
+        // user's choice carries across the whole product.
+        (function(){
+            try {
+                var t = localStorage.getItem('veltnex-theme');
+                if (t !== 'light' &amp;&amp; t !== 'dark') {
+                    t = (window.matchMedia &amp;&amp; window.matchMedia('(prefers-color-scheme: light)').matches)
+                        ? 'light' : 'dark';
+                }
+                document.documentElement.setAttribute('data-theme', t);
+            } catch (e) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
+    <script src="/web/static/src/public/database_manager.js" ></script>
+    <style>
+        /* VELTNEX theme overlay on Bootstrap. CSS variables defined
+           per `data-theme` so the same markup renders in either palette
+           without JS-driven re-skinning. */
+        :root, [data-theme="light"] {
+            --vx-bg: #FFFFFF;
+            --vx-card: #FAFAFA;
+            --vx-border: #E4E4E7;
+            --vx-text: #18181B;
+            --vx-muted: #71717A;
+            --vx-primary: #203c86;
+            --vx-primary-glow: #3656b8;
+            --vx-danger: #EF4444;
+            --vx-success: #10B981;
+            --vx-grid: rgba(228, 228, 231, 0.6);
+            --vx-shadow: rgba(24, 24, 27, 0.08);
+        }
+        [data-theme="dark"] {
+            --vx-bg: #09090B;
+            --vx-card: #18181B;
+            --vx-border: #27272A;
+            --vx-text: #FAFAFA;
+            --vx-muted: #A1A1AA;
+            --vx-primary: #203c86;
+            --vx-primary-glow: #3656b8;
+            --vx-danger: #EF4444;
+            --vx-success: #10B981;
+            --vx-grid: rgba(39, 39, 42, 0.4);
+            --vx-shadow: rgba(0, 0, 0, 0.5);
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            background: var(--vx-bg);
+            color: var(--vx-text);
+            font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            margin: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        body {
+            background-image:
+                radial-gradient(ellipse 800px 400px at 50% -80px, rgba(32, 60, 134, 0.20), transparent 70%),
+                linear-gradient(to right, var(--vx-grid) 1px, transparent 1px),
+                linear-gradient(to bottom, var(--vx-grid) 1px, transparent 1px);
+            background-size: auto, 48px 48px, 48px 48px;
+            background-position: top center, 0 0, 0 0;
+            padding: 56px 16px 80px;
+        }
+        a { text-decoration: none; color: var(--vx-primary-glow); }
+        a:hover { color: var(--vx-text); }
+
+        .vx-brand {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 28px;
+        }
+        .vx-brand img {
+            max-height: 36px;
+            width: auto;
+        }
+        /* Two logo variants — the SVG has hardcoded text fill (white in
+           one, near-black in the other) so we can't theme it via CSS
+           variables alone. Render both and let `data-theme` pick. */
+        .vx-logo-dark { display: none; }
+        .vx-logo-light { display: block; }
+        [data-theme="dark"] .vx-logo-dark { display: block; }
+        [data-theme="dark"] .vx-logo-light { display: none; }
+        .vx-card {
+            background: var(--vx-card);
+            border: 1px solid var(--vx-border);
+            border-radius: 14px;
+            box-shadow: 0 1px 2px var(--vx-shadow), 0 16px 48px -16px var(--vx-shadow);
+            padding: 32px;
+        }
+        .vx-title {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            text-align: center;
+            margin: 0 0 4px;
+        }
+        .vx-subtitle {
+            color: var(--vx-muted);
+            text-align: center;
+            font-size: 14px;
+            margin: 0 0 28px;
+        }
+
+        /* List */
+        .list-group {
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid var(--vx-border);
+        }
+        .list-group-item {
+            background: var(--vx-bg) !important;
+            color: var(--vx-text) !important;
+            border-color: var(--vx-border) !important;
+            padding: 14px 16px;
+        }
+        .list-group-item a {
+            color: var(--vx-text);
+            font-weight: 500;
+        }
+        .list-group-item a:hover { color: var(--vx-primary-glow); }
+
+        /* Buttons */
+        .btn { font-weight: 500; border-radius: 8px; }
+        .btn-primary {
+            background: var(--vx-primary);
+            border-color: var(--vx-primary);
+        }
+        .btn-primary:hover, .btn-primary:focus {
+            background: var(--vx-primary-glow);
+            border-color: var(--vx-primary-glow);
+        }
+        .btn-secondary {
+            background: var(--vx-card);
+            border-color: var(--vx-border);
+            color: var(--vx-text);
+        }
+        .btn-secondary:hover {
+            background: var(--vx-border);
+            border-color: var(--vx-border);
+        }
+        .btn-danger { background: var(--vx-danger); border-color: var(--vx-danger); }
+        .btn-link { color: var(--vx-primary-glow); }
+
+        /* Forms */
+        .form-control, .form-select {
+            background: var(--vx-bg);
+            color: var(--vx-text);
+            border: 1px solid var(--vx-border);
+            border-radius: 8px;
+            padding: 8px 12px;
+        }
+        .form-control:focus, .form-select:focus {
+            background: var(--vx-bg);
+            color: var(--vx-text);
+            border-color: var(--vx-primary-glow);
+            box-shadow: 0 0 0 3px rgba(54, 86, 184, 0.25);
+        }
+        .form-check-input {
+            background-color: var(--vx-bg);
+            border-color: var(--vx-border);
+        }
+        .form-check-input:checked {
+            background-color: var(--vx-primary);
+            border-color: var(--vx-primary);
+        }
+        .col-form-label, .form-check-label, label { color: var(--vx-text); }
+        .form-text, .text-muted, small { color: var(--vx-muted) !important; }
+        .input-group-text {
+            background: var(--vx-card);
+            border-color: var(--vx-border);
+            color: var(--vx-muted);
+        }
+
+        /* Alerts */
+        .alert {
+            border-radius: 10px;
+            border: 1px solid transparent;
+        }
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.3);
+            color: #fcd34d;
+        }
+        .alert-danger {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+        }
+        .alert a { color: inherit; text-decoration: underline; }
+
+        /* Modal */
+        .modal-content {
+            background: var(--vx-card);
+            border: 1px solid var(--vx-border);
+            border-radius: 14px;
+            color: var(--vx-text);
+        }
+        .modal-header, .modal-footer { border-color: var(--vx-border); }
+        .modal-title { color: var(--vx-text); font-weight: 600; }
+        .btn-close { opacity: 0.6; }
+        .btn-close:hover { opacity: 1; }
+        /* Default Bootstrap close icon is dark — only invert it on dark
+           backgrounds so it stays readable in both themes. */
+        [data-theme="dark"] .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+
+        /* Container */
+        .container { max-width: 720px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="vx-brand">
+            <img class="vx-logo-light" src="/saas_website/static/src/img/veltnex-logo-name-light.svg" alt="VELTNEX"/>
+            <img class="vx-logo-dark" src="/saas_website/static/src/img/veltnex-logo-name.svg" alt="VELTNEX"/>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-10 offset-lg-1 o_database_list">
+                <div class="vx-card">
+                    <h1 class="vx-title">
+                        <t t-if="manage">Database Manager</t>
+                        <t t-else="">Select a Database</t>
+                    </h1>
+                    <p class="vx-subtitle">
+                        <t t-if="manage">Create, back up, duplicate, or remove your VELTNEX databases.</t>
+                        <t t-else="">Pick the database you want to sign in to.</t>
+                    </p>
+
+                    <t t-if="not list_db">
+                        <div class="alert alert-danger text-center">The database manager has been disabled by the administrator</div>
+                    </t>
+                    <t t-elif="insecure and databases">
+                        <div class="alert alert-warning">
+                            Warning, your VELTNEX database manager is not protected.<br/>
+                            Please <a href="#" data-bs-toggle="modal" data-bs-target=".o_database_master">set a master password</a> to secure it.
+                        </div>
+                    </t>
+                    <t t-if="error">
+                        <div class="alert alert-danger" t-out="error"></div>
+                    </t>
+
+                    <t t-if="list_db and databases">
+                        <div class="list-group">
+                            <t t-foreach="databases" t-as="db">
+                                <div class="list-group-item d-flex align-items-center">
+                                    <a t-attf-href="/odoo?db={{ db }}" class="d-block flex-grow-1">
+                                        <t t-if="db in incompatible_databases">
+                                            <i class="icon fa fa-warning float-end text-warning" title="This database may not be compatible"></i>
+                                        </t>
+                                        <t t-out="db" />
+                                    </a>
+                                    <t t-if="manage">
+                                        <div class="btn-group btn-group-sm float-end">
+                                            <button type="button" t-att-data-db="db" data-bs-target=".o_database_backup" class="o_database_action btn btn-primary">
+                                                <i class="fa fa-floppy-o fa-fw"></i> Backup
+                                            </button>
+                                            <button type="button" t-att-data-db="db" data-bs-target=".o_database_duplicate" class="o_database_action btn btn-secondary">
+                                                <i class="fa fa-files-o fa-fw"></i> Duplicate
+                                            </button>
+                                            <button type="button" t-att-data-db="db" data-bs-target=".o_database_delete" class="o_database_action btn btn-danger">
+                                                <i class="fa fa-trash-o fa-fw"></i> Delete
+                                            </button>
+                                        </div>
+                                    </t>
+                                </div>
+                            </t>
+                        </div>
+                        <t t-if="manage">
+                            <div class="d-flex mt-3 gap-2">
+                                <button type="button" data-bs-toggle="modal" data-bs-target=".o_database_create" class="btn btn-primary flex-grow-1">Create Database</button>
+                                <button type="button" data-bs-toggle="modal" data-bs-target=".o_database_restore" class="btn btn-secondary flex-grow-1">Restore Database</button>
+                                <button type="button" data-bs-toggle="modal" data-bs-target=".o_database_master" class="btn btn-secondary flex-grow-1">Set Master Password</button>
+                            </div>
+                        </t>
+                        <t t-else="">
+                            <div class="text-center mt-3">
+                                <a href="/web/database/manager">Manage databases</a>
+                            </div>
+                        </t>
+                    </t>
+                    <t t-elif="list_db">
+                        <form role="form" action="/web/database/create" method="post">
+                            <t t-call="create_form" />
+                            <input type="submit" value="Create database" class="btn btn-primary float-start"/>
+                        </form>
+                        <a role="button" data-bs-toggle="modal" data-bs-target=".o_database_restore" class="btn btn-link">or restore a database</a>
+                    </t>
+                </div>
+
+                <p class="text-center mt-4" style="color: var(--vx-muted); font-size: 12px;">
+                    Powered by VELTNEX
+                </p>
+            </div>
+        </div>
+
+        <!-- Create -->
+        <div class="modal fade o_database_create" role="dialog">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <form role="form" action="/web/database/create" method="post">
+                        <div class="modal-header">
+                            <h4 class="modal-title">Create Database</h4>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <t t-call="create_form" />
+                        </div>
+                        <div class="modal-footer">
+                            <input type="submit" value="Continue" class="btn btn-primary float-end"/>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Restore -->
+        <div class="modal fade o_database_restore" role="dialog">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h4 class="modal-title">Restore Database</h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form id="form_restore_db" role="form" action="/web/database/restore" method="post" enctype="multipart/form-data">
+                        <div class="modal-body">
+                            <t t-call="master_input" />
+                            <div class="row mb-3">
+                                <label for="backup_file" class="col-md-4 col-form-label">File</label>
+                                <div class="col-md-8">
+                                    <input id="backup_file" type="file" name="backup_file" class="required"/>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <label for="dbname_restore" class="col-md-4 col-form-label">Database Name</label>
+                                <div class="col-md-8">
+                                    <input id="dbname_restore" type="text" name="name" class="form-control" required="required" t-att-pattern="pattern" title="Only alphanumerical characters, underscore, hyphen and dot are allowed"/>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <label for="neutralize_database_restore" class="col-md-4 col-form-label">Neutralize</label>
+                                <div class="col-md-8">
+                                    <input id="neutralize_database_restore" type="checkbox" name="neutralize_database" class="form-check-input" />
+                                </div>
+                            </div>
+                            <label for="radio_copy_true">This database might have been moved or copied.</label>
+                            <p class="form-text">
+                                In order to avoid conflicts between databases, VELTNEX needs to know if this database was moved or copied.<br/>
+                                If you don't know, answer "This database is a copy".
+                            </p>
+                            <div class="form-check">
+                                <input id="radio_copy_true" name="copy" type="radio" class="form-check-input" value="true" checked="1" />
+                                <label for="radio_copy_true" class="form-check-label">This database is a copy</label>
+                            </div>
+                            <div class="form-check">
+                                <input id="radio_copy_false" name="copy" type="radio" class="form-check-input" value="false" />
+                                <label for="radio_copy_false" class="form-check-label">This database was moved</label>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <input type="submit" value="Continue" class="btn btn-primary float-end"/>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Master password -->
+        <div class="modal fade o_database_master" role="dialog">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h4 class="modal-title">Set Master Password</h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form id="form_change_pwd" role="form" action="/web/database/change_password" method="post">
+                        <div class="modal-body">
+                            <p>The master password is required to create, delete, dump or restore databases.</p>
+                            <t t-set="set_master_pwd" t-value="True" />
+                            <t t-call="master_input" />
+                            <div class="row mb-3">
+                                <label for="master_pwd_new" class="col-md-5 col-form-label">New Master Password</label>
+                                <div class="col-md-7">
+                                    <div class="input-group">
+                                        <input id="master_pwd_new" type="password" name="master_pwd_new" class="form-control" required="required" autocomplete="new-password"/>
+                                        <span class="fa fa-eye o_little_eye input-group-text" aria-hidden="true" style="cursor: pointer;"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <input type="submit" value="Continue" class="btn btn-primary float-end"/>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Duplicate DB -->
+        <div class="modal fade o_database_duplicate" role="dialog">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h4 class="modal-title">Duplicate Database</h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form id="form-duplicate-db" role="form" action="/web/database/duplicate" method="post">
+                        <div class="modal-body">
+                            <t t-set="set_master_pwd" t-value="False" />
+                            <t t-call="master_input" />
+                            <div class="row mb-3">
+                                <label for="dbname_duplicate" class="col-md-4 col-form-label">Database Name</label>
+                                <div class="col-md-8">
+                                    <input id="dbname_duplicate" type="text" name="name" class="form-control" required="required" readonly="readonly"/>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <label for="new_name" class="col-md-4 col-form-label">New Name</label>
+                                <div class="col-md-8">
+                                    <input id="new_name" type="text" name="new_name" class="form-control" required="required" t-att-pattern="pattern" title="Only alphanumerical characters, underscore, hyphen and dot are allowed"/>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <label for="neutralize_database" class="col-md-4 col-form-label">Neutralize</label>
+                                <div class="col-md-8">
+                                    <input id="neutralize_database" type="checkbox" name="neutralize_database" class="form-check-input" />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <input type="submit" value="Continue" class="btn btn-primary float-end"/>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Drop DB -->
+        <div class="modal fade o_database_delete" role="dialog">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h4 class="modal-title">Delete Database</h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form id="form_drop_db" role="form" action="/web/database/drop" method="post">
+                        <div class="modal-body">
+                            <t t-call="master_input" />
+                            <div class="row mb-3">
+                                <label for="dbname_delete" class="col-md-4 col-form-label">Database</label>
+                                <div class="col-md-8">
+                                    <input id="dbname_delete" type="text" name="name" class="form-control" required="required" readonly="readonly"/>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <input type="submit" value="Delete" class="btn btn-danger float-end"/>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Backup DB -->
+        <div class="modal fade o_database_backup" role="dialog">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h4 class="modal-title">Backup Database</h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form id="form_backup_db" role="form" action="/web/database/backup" method="post">
+                        <div class="modal-body">
+                            <t t-call="master_input" />
+                            <div class="row mb-3">
+                                <label for="dbname_backup" class="col-md-4 col-form-label">Database Name</label>
+                                <div class="col-md-8">
+                                    <input id="dbname_backup" type="text" name="name" class="form-control" required="required" readonly="readonly"/>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <label for="backup_format" class="col-md-4 col-form-label">Backup Format</label>
+                                <div class="col-md-8">
+                                    <select id="backup_format" name="backup_format" class="form-select" required="required">
+                                        <option value="zip">zip (includes filestore)</option>
+                                        <option value="dump">pg_dump custom format (without filestore)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <input type="submit" value="Backup" class="btn btn-primary float-end"/>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

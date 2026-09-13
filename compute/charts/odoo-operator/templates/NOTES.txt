@@ -1,0 +1,30 @@
+Odoo SaaS operator installed into namespace {{ .Release.Namespace }}.
+
+The OdooInstance CRD (cluster-scoped) is now available. Check the operator
+is healthy:
+
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} -f
+
+Provision your first tenant:
+
+  kubectl apply -f examples/odoo-instance-acme.yaml
+  kubectl get odooinstance customer-acme -w
+
+{{- if eq .Values.networking.provider "gateway-api" }}
+
+This release is configured to route tenants through the Gateway API. Make
+sure a Gateway named "{{ .Values.networking.gateway.name }}" exists in
+namespace "{{ .Values.networking.gateway.namespace }}" — the operator does
+not create the shared Gateway itself, only per-tenant HTTPRoutes attached
+to it. See docs/architecture.md ("Networking") for the shared-gateway
+rationale.
+{{- else }}
+
+This release is configured to route tenants through classic Ingress
+(ingressClassName: "{{ .Values.networking.ingressClassName }}"). Make sure
+an Ingress controller for that class is installed.
+{{- end }}
+
+See docs/architecture.md for the full provisioning/update/delete lifecycle
+and the SaaS API integration contract.

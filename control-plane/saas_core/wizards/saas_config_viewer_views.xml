@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_saas_config_viewer_form" model="ir.ui.view">
+        <field name="name">saas.config.viewer.form</field>
+        <field name="model">saas.config.viewer</field>
+        <field name="arch" type="xml">
+            <form string="Configuration">
+                <pre><field name="content" readonly="1" nolabel="1"/></pre>
+                <footer>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

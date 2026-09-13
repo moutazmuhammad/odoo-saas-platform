@@ -1,0 +1,443 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- List View -->
+    <record id="saas_instance_view_list" model="ir.ui.view">
+        <field name="name">saas.instance.list</field>
+        <field name="model">saas.instance</field>
+        <field name="arch" type="xml">
+            <list string="SaaS Instances"
+                  decoration-success="state == 'running'"
+                  decoration-danger="state in ('cancelled', 'cancelled_by_client', 'failed')"
+                  decoration-warning="state in ('suspended', 'pending_provision')"
+                  decoration-muted="state in ('draft', 'stopped')"
+                  decoration-info="state == 'provisioning'">
+                <field name="subdomain"/>
+                <field name="saas_product_id" string="Service" optional="show"/>
+                <field name="plan_id" optional="show"/>
+                <field name="partner_id"/>
+                <field name="odoo_version_id"/>
+                <field name="docker_server_id"/>
+                <field name="db_server_id"/>
+                <field name="is_overcommitted" optional="hide"/>
+                <field name="sale_order_id" optional="hide"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'running'"
+                       decoration-danger="state in ('cancelled', 'cancelled_by_client', 'failed')"
+                       decoration-warning="state in ('suspended', 'pending_provision')"
+                       decoration-muted="state == 'stopped'"
+                       decoration-info="state in ('draft', 'provisioning')"/>
+                <field name="last_error" optional="hide"/>
+                <field name="last_error_date" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="saas_instance_view_form" model="ir.ui.view">
+        <field name="name">saas.instance.form</field>
+        <field name="model">saas.instance</field>
+        <field name="arch" type="xml">
+            <form string="SaaS Instance">
+                <header>
+                    <!-- ===== Billing Flow ===== -->
+
+                    <!-- Confirm & Bill: draft with a plan assigned (not trial).
+                         Creates SO, confirms, invoices. Deploys automatically
+                         once payment is received (or immediately if zero-amount). -->
+                    <button name="action_confirm_and_bill"
+                            string="Confirm &amp; Bill"
+                            type="object" class="btn-primary"
+                            icon="fa-check"
+                            invisible="state != 'draft' or not plan_id or is_trial"/>
+
+                    <!-- Mark as Paid: manual fallback (wire transfers, trials) -->
+                    <button name="action_mark_as_paid"
+                            string="Mark as Paid"
+                            type="object" class="btn-secondary"
+                            icon="fa-money"
+                            invisible="state != 'pending_payment'"
+                            groups="saas_core.group_saas_manager"/>
+
+                    <!-- ===== Deployment ===== -->
+
+                    <!-- Deploy: draft without plan, draft trial, retry from failed,
+                         or retry from pending_provision -->
+                    <button name="action_deploy" string="Deploy"
+                            type="object" class="btn-primary"
+                            icon="fa-play"
+                            invisible="(state == 'draft' and plan_id and not is_trial) or state not in ('draft', 'failed', 'pending_provision')"/>
+
+                    <!-- ===== Instance Operations ===== -->
+
+                    <!-- Restart: when running, stopped, or suspended -->
+                    <button name="action_restart" string="Restart"
+                            type="object" icon="fa-refresh"
+                            invisible="state not in ('running', 'stopped', 'suspended')"/>
+
+                    <!-- Stop: only when running -->
+                    <button name="action_stop" string="Stop"
+                            type="object" icon="fa-stop"
+                            invisible="state != 'running'"
+                            confirm="Are you sure you want to stop this instance?"/>
+
+                    <!-- Suspend: when running -->
+                    <button name="action_suspend" string="Suspend"
+                            type="object" icon="fa-pause"
+                            invisible="state != 'running'"/>
+
+                    <!-- Redeploy: when running, stopped, or suspended -->
+                    <button name="action_redeploy" string="Redeploy"
+                            type="object" icon="fa-rocket"
+                            invisible="state not in ('running', 'stopped', 'suspended')"
+                            confirm="This will stop and restart the container (volumes are kept). Are you sure?"/>
+
+                    <!-- Config: when running -->
+                    <button name="action_config" string="Config"
+                            type="object" icon="fa-cog"
+                            invisible="state != 'running'"/>
+
+                    <!-- Docker Compose: when running -->
+                    <button name="action_docker_compose" string="Docker Compose"
+                            type="object" icon="fa-docker"
+                            invisible="state != 'running'"/>
+
+                    <!-- Live Logs: when running -->
+                    <button name="action_view_logs" string="Logs"
+                            type="object" icon="fa-file-text-o"
+                            invisible="state != 'running'"/>
+
+                    <!-- Create Backup: when running -->
+                    <button name="action_create_backup" string="Create Backup"
+                            type="object"
+                            invisible="state != 'running'"/>
+
+                    <!-- TEST-BUTTON-REMOVE-ME — fires the daily-backup
+                         flow on demand, bypassing the 03:00 UTC cron.
+                         Visible only to managers, only when the
+                         daily-backup flag is on. Delete this block
+                         (and `action_test_run_daily_backup` in
+                         saas_instance.py) after end-to-end QA. -->
+                    <button name="action_test_run_daily_backup"
+                            string="TEST: Run Daily Snapshot Now"
+                            type="object" class="btn-warning"
+                            icon="fa-flask"
+                            groups="saas_core.group_saas_manager"
+                            invisible="not is_hosting or state != 'running' or not daily_backup_enabled"
+                            confirm="Fire a full-instance restic snapshot right now? Same code path as the 03:00 UTC cron — produces a real billable snapshot."/>
+
+                    <!-- Cancel: deployed or pre-deployment states -->
+                    <button name="action_cancel" string="Cancel"
+                            type="object" class="btn-danger"
+                            invisible="state not in ('draft', 'pending_payment', 'paid', 'pending_provision', 'running', 'stopped', 'failed', 'suspended')"
+                            confirm="This will cancel the instance. If deployed, all infrastructure (container, database, files, Nginx) will be permanently deleted. Are you sure?"/>
+
+                    <!-- Reset to Draft: from failed, cancelled, pending_payment, paid, or pending_provision -->
+                    <button name="action_draft" string="Reset to Draft"
+                            type="object"
+                            invisible="state not in ('failed', 'cancelled', 'pending_payment', 'paid', 'pending_provision')"/>
+
+                    <!-- Statusbar -->
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,pending_payment,paid,pending_provision,provisioning,running"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_sale_order"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-shopping-cart"
+                                invisible="not sale_order_id">
+                            <field name="sale_order_count" widget="statinfo"
+                                   string="Sale Order"/>
+                        </button>
+                        <button name="action_view_invoices"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-pencil-square-o"
+                                invisible="invoice_count == 0">
+                            <field name="invoice_count" widget="statinfo"
+                                   string="Invoices"/>
+                        </button>
+                        <button name="%(saas_core.action_restore_retained_wizard)d"
+                                type="action"
+                                class="oe_stat_button"
+                                icon="fa-database"
+                                invisible="not retained_backup_path"
+                                groups="saas_core.group_saas_manager">
+                            <div class="o_field_widget o_stat_info">
+                                <span class="o_stat_value text-warning">Backup</span>
+                                <span class="o_stat_text">Restore</span>
+                            </div>
+                        </button>
+                    </div>
+                    <group>
+                        <!-- Left Column -->
+                        <group>
+                            <field name="subdomain"/>
+                            <field name="domain_id" options="{'no_open': True}"/>
+                            <field name="saas_product_id" string="Service"/>
+                            <field name="plan_id" domain="['|', ('saas_product_ids', '=', False), ('saas_product_ids', 'in', saas_product_id)]"/>
+                            <field name="support_plan_id" options="{'no_create_edit': True}"/>
+                            <field name="partner_id"/>
+                            <field name="url" widget="url"/>
+                            <field name="is_trial" widget="boolean_toggle" readonly="1"/>
+                            <field name="next_invoice_date" readonly="1"/>
+                            <field name="odoo_version_id" readonly="id"/>
+                            <field name="pending_plan_id" readonly="1"
+                                   invisible="not pending_plan_id"/>
+                            <field name="pending_change_invoice_id" readonly="1"
+                                   invisible="not pending_change_invoice_id"/>
+                        </group>
+                        <!-- Right Column -->
+                        <group>
+                            <field name="provisioning_mode"/>
+                            <field name="docker_server_id"/>
+                            <field name="db_server_id"/>
+                            <field name="is_overcommitted" invisible="not is_overcommitted"/>
+                            <field name="xmlrpc_port"/>
+                            <field name="longpolling_port"/>
+                            <field name="admin_password" password="True"/>
+                            <field name="db_user"/>
+                            <field name="db_password" password="True"/>
+                        </group>
+                    </group>
+
+                    <!-- Resource Usage -->
+                    <div class="d-flex align-items-center"
+                         invisible="state != 'running'">
+                        <h2 class="me-3">Resource Usage</h2>
+                        <button name="action_refresh_usage" string="Refresh"
+                                type="object" icon="fa-refresh"
+                                class="btn-link"/>
+                    </div>
+                    <group invisible="state != 'running'">
+                        <group>
+                            <field name="cpu_usage"/>
+                            <field name="ram_usage"/>
+                            <field name="ram_percent"/>
+                        </group>
+                        <group>
+                            <field name="disk_usage"/>
+                            <field name="db_size"/>
+                            <field name="total_storage"/>
+                            <field name="usage_last_updated"/>
+                        </group>
+                    </group>
+
+                    <group string="Reconciliation &amp; margin"
+                           groups="saas_core.group_saas_manager"
+                           invisible="state not in ('running','stopped','suspended')">
+                        <group string="Reconciler (desired → actual)">
+                            <field name="desired_state"/>
+                            <field name="actual_state"/>
+                            <field name="last_reconcile"/>
+                            <field name="deploy_image"/>
+                        </group>
+                        <group string="Margin / month">
+                            <field name="monthly_revenue"/>
+                            <field name="monthly_cost"/>
+                            <field name="monthly_margin"/>
+                            <field name="is_profitable"/>
+                            <field name="margin_currency_id" column_invisible="1"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Backups">
+                            <field name="backup_ids" nolabel="1">
+                                <list create="0" edit="0" delete="0"
+                                      decoration-success="state == 'done'"
+                                      decoration-danger="state == 'failed'"
+                                      decoration-info="state == 'running'">
+                                    <field name="name"/>
+                                    <field name="create_date" string="Date"/>
+                                    <field name="size_mb"/>
+                                    <field name="state" widget="badge"
+                                           decoration-success="state == 'done'"
+                                           decoration-danger="state == 'failed'"
+                                           decoration-info="state == 'running'"/>
+                                    <field name="download_url" widget="url"
+                                           string="Download"
+                                           invisible="state != 'done'"/>
+                                    <field name="download_url_expiry" string="Link Expires"
+                                           invisible="state != 'done'"/>
+                                    <button name="action_download" type="object"
+                                            string="Download" icon="fa-download"
+                                            invisible="state != 'done'"/>
+                                    <button name="action_restore" type="object"
+                                            string="Restore" icon="fa-undo"
+                                            invisible="state != 'done'"
+                                            confirm="This will stop the instance, replace the current database and filestore with this backup, then restart. All current data will be lost. Continue?"/>
+                                    <button name="action_delete_backup" type="object"
+                                            string="Delete" icon="fa-trash"
+                                            confirm="This will permanently delete this backup from cloud storage. Continue?"/>
+                                    <field name="error_message" optional="hide"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Custom Repos">
+                            <field name="repo_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="repo_url" placeholder="https://github.com/user/repo.git"/>
+                                    <field name="branch"/>
+                                    <field name="github_token" password="True"
+                                           placeholder="ghp_... (private repos only)"/>
+                                    <field name="addons_subdir"
+                                           placeholder="e.g. addons/ (optional)"/>
+                                    <field name="state" widget="badge"
+                                           decoration-success="state == 'cloned'"
+                                           decoration-danger="state == 'error'"
+                                           decoration-info="state == 'pending'"/>
+                                    <field name="last_pull"/>
+                                    <field name="webhook_enabled" string="Auto-Deploy"/>
+                                    <field name="webhook_registered" string="Webhook Active"
+                                           widget="boolean"
+                                           decoration-success="webhook_registered"
+                                           decoration-danger="not webhook_registered and webhook_enabled"/>
+                                    <button name="action_clone_repo" type="object"
+                                            string="Clone" icon="fa-clone"
+                                            invisible="state == 'cloned'"/>
+                                    <button name="action_pull_repo" type="object"
+                                            string="Pull" icon="fa-download"
+                                            invisible="state != 'cloned'"/>
+                                    <button name="action_reset_to_cloned" type="object"
+                                            string="Reset Status" icon="fa-check"
+                                            invisible="state != 'error'"/>
+                                    <button name="action_clone_repo" type="object"
+                                            string="Re-clone" icon="fa-refresh"
+                                            invisible="state != 'error'"/>
+                                    <button name="action_enable_webhook" type="object"
+                                            string="Enable Webhook" icon="fa-link"
+                                            invisible="webhook_enabled"/>
+                                    <button name="action_disable_webhook" type="object"
+                                            string="Disable Webhook" icon="fa-unlink"
+                                            invisible="not webhook_enabled"/>
+                                    <button name="action_check_webhook" type="object"
+                                            string="Check" icon="fa-stethoscope"
+                                            invisible="not webhook_enabled"/>
+                                    <button name="action_test_webhook" type="object"
+                                            string="Test" icon="fa-bolt"
+                                            invisible="not webhook_enabled"/>
+                                    <button name="action_remove_repo" type="object"
+                                            string="Remove" icon="fa-trash"
+                                            confirm="Remove this repo from the server?"/>
+                                    <field name="webhook_url" widget="CopyClipboardChar"
+                                           string="Webhook URL" optional="show"
+                                           invisible="not webhook_enabled"/>
+                                    <field name="webhook_secret" optional="hide"/>
+                                    <field name="webhook_last_event" optional="hide"/>
+                                    <field name="error_message" optional="hide"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Python Packages">
+                            <field name="package_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="name"
+                                           placeholder="e.g. phonenumbers or openpyxl==3.1.0"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Extra Configuration">
+                            <group string="Docker Overrides (leave empty = auto from plan)">
+                                <field name="override_docker_cpu"
+                                       placeholder="e.g. 2.0"/>
+                                <field name="override_docker_mem"
+                                       placeholder="e.g. 2g or 2500m"/>
+                                <field name="override_docker_swap"
+                                       placeholder="e.g. 3g or -1 for unlimited"/>
+                            </group>
+                            <separator string="Odoo Configuration Overrides"/>
+                            <field name="extra_config" nolabel="1"
+                                   placeholder="key = value (one per line)&#10;&#10;Examples:&#10;limit_memory_soft = 1073741824&#10;limit_memory_hard = 1395864371&#10;limit_time_real = 300&#10;workers = 4"/>
+                        </page>
+                        <page string="Provisioning Log"
+                              invisible="not provisioning_log">
+                            <group invisible="not last_error"
+                                   string="Last Error">
+                                <field name="last_error_date" readonly="1"/>
+                                <field name="last_error" readonly="1"
+                                       nolabel="1"/>
+                            </group>
+                            <field name="provisioning_log" readonly="1"
+                                   nolabel="1"/>
+                        </page>
+                        <page string="Cancellation &amp; Recovery"
+                              invisible="state not in ('cancelled', 'cancelled_by_client') and not retained_backup_path">
+                            <div class="alert alert-info mb-3"
+                                 invisible="not retained_backup_path or state not in ('cancelled', 'cancelled_by_client')">
+                                <strong>Data Recovery Workflow:</strong>
+                                <ol class="mb-0 mt-2">
+                                    <li>Client reactivates the instance from the portal (creates a fresh instance with a new plan)</li>
+                                    <li>Once the instance is running, click <b>Restore to Instance &amp; Invoice</b> below to restore the old data and charge the client</li>
+                                </ol>
+                            </div>
+                            <group invisible="not cancellation_reason"
+                                   string="Cancellation Details">
+                                <field name="cancellation_reason" readonly="1"
+                                       nolabel="1"/>
+                            </group>
+                            <group string="Retained Backup">
+                                <field name="retained_backup_path" readonly="1"/>
+                                <button name="%(saas_core.action_restore_retained_wizard)d"
+                                        string="Restore to Instance &amp; Invoice"
+                                        type="action"
+                                        class="btn-primary"
+                                        icon="fa-upload"
+                                        groups="saas_core.group_saas_manager"
+                                        invisible="not retained_backup_path"/>
+                                <div invisible="retained_backup_path"
+                                     class="text-muted">
+                                    No retained backup available. The backup may have failed during deletion.
+                                </div>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+
+    <!-- Action -->
+    <record id="saas_instance_action" model="ir.actions.act_window">
+        <field name="name">All Instances</field>
+        <field name="res_model">saas.instance</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first SaaS instance
+            </p>
+        </field>
+    </record>
+
+    <record id="saas_instance_action_services" model="ir.actions.act_window">
+        <field name="name">Service Instances</field>
+        <field name="res_model">saas.instance</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('is_hosting', '=', False)]</field>
+        <field name="context">{'default_is_hosting': False}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No service instances yet
+            </p>
+        </field>
+    </record>
+
+    <record id="saas_instance_action_hosting" model="ir.actions.act_window">
+        <field name="name">Hosting Instances</field>
+        <field name="res_model">saas.instance</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('is_hosting', '=', True)]</field>
+        <field name="context">{'default_is_hosting': True}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No hosting instances yet
+            </p>
+        </field>
+    </record>
+
+</odoo>

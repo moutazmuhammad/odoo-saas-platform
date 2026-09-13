@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Form View -->
+    <record id="saas_based_domain_view_form" model="ir.ui.view">
+        <field name="name">saas.based.domain.form</field>
+        <field name="model">saas.based.domain</field>
+        <field name="arch" type="xml">
+            <form string="Base Domain">
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="e.g. saas.example.com"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Routing">
+                            <field name="proxy_server_id"
+                                   help="When set, Nginx configs are deployed on this proxy server instead of on each Docker server. The wildcard DNS for this domain should point to this server's IP."/>
+                            <field name="region_id"
+                                   help="Derived from the proxy server's region. The configurator only offers this domain to customers in the same region."/>
+                        </group>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- List View -->
+    <record id="saas_based_domain_view_list" model="ir.ui.view">
+        <field name="name">saas.based.domain.list</field>
+        <field name="model">saas.based.domain</field>
+        <field name="arch" type="xml">
+            <list string="Base Domains">
+                <field name="name"/>
+                <field name="proxy_server_id" optional="show"/>
+                <field name="region_id" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="saas_based_domain_view_search" model="ir.ui.view">
+        <field name="name">saas.based.domain.search</field>
+        <field name="model">saas.based.domain</field>
+        <field name="arch" type="xml">
+            <search string="Search Base Domains">
+                <field name="name"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="saas_odoo_based_domain_action" model="ir.actions.act_window">
+        <field name="name">Base Domains</field>
+        <field name="res_model">saas.based.domain</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="saas_based_domain_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Add your first base domain
+            </p>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,95 @@
+# Default values for the odoo-operator chart.
+
+image:
+  repository: registry.example.com/odoo-saas/operator
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 1
+
+# leaderElection should be true whenever replicaCount > 1, so only one
+# replica is ever actively reconciling at a time.
+leaderElection: false
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+metrics:
+  # Whether to serve /metrics over HTTPS. Disable only for local
+  # development (e.g. a plain `kubectl port-forward` without a client
+  # certificate).
+  secure: true
+  # Creates a Prometheus Operator ServiceMonitor. Requires the
+  # monitoring.coreos.com CRDs to be installed; safe to leave false
+  # otherwise.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+
+# Platform-wide networking configuration. See docs/architecture.md
+# ("Networking") for why this is an operator-level setting rather than a
+# per-tenant OdooInstance field.
+networking:
+  # "gateway-api" (preferred, requires the Gateway API CRDs) or "ingress".
+  provider: gateway-api
+  gateway:
+    namespace: gateway-system
+    name: odoo-saas-gateway
+    podSelector:
+      app.kubernetes.io/name: odoo-saas-gateway
+  ingressClassName: ""
+
+# Restricts spec.version on every OdooInstance to this list. Empty
+# disables the check (development convenience only).
+supportedOdooVersions:
+  - "17.0"
+  - "18.0"
+  - "19.0"
+
+# Allows spec.image.tag values such as "latest". Leave false in production;
+# the platform's image pipeline should always produce immutable tags.
+allowMutableTags: false
+
+backup:
+  # Overrides internal/resources.DefaultBackupToolImage. Leave empty to use
+  # the compiled-in default.
+  toolImage: ""
+
+restore:
+  # Overrides internal/resources.DefaultRestoreToolImage. Leave empty to
+  # use the compiled-in default. Only used by instances that set
+  # spec.restore (see docs/architecture.md, "Restoring an Existing
+  # Backup").
+  toolImage: ""
+
+# Extra command-line args appended verbatim to the manager container.
+extraArgs: []
+
+podAnnotations: {}
+podLabels: {}

@@ -1,0 +1,52 @@
+# External-database example: points Odoo at a cloud-managed PostgreSQL
+# instance (e.g. RDS/Cloud SQL) instead of the operator's built-in Managed
+# mode. The operator creates NO database resources in this mode; it only
+# consumes the referenced Secret. That Secret (odoo-tenant-<name>/
+# customer-initech-db, keys host/port/dbname/username/password) must
+# already exist before this instance can become Ready — the platform's
+# provisioning pipeline (or an External Secrets Operator sync) is
+# responsible for creating it, typically in the same step that provisions
+# the external database itself.
+apiVersion: saas.odoo.example.com/v1alpha1
+kind: OdooInstance
+metadata:
+  name: customer-initech
+spec:
+  version: "18.0"
+
+  image:
+    repository: registry.example.com/odoo-saas/odoo
+    tag: "18.0-2026.09.01"
+    pullPolicy: IfNotPresent
+
+  domain:
+    hostname: initech.saas.example.com
+    tls:
+      enabled: true
+      issuerRef:
+        name: letsencrypt-production
+        kind: ClusterIssuer
+
+  database:
+    mode: External
+    credentialsSecretRef:
+      name: customer-initech-db
+
+  storage:
+    filestore:
+      size: 50Gi
+      accessMode: ReadWriteOnce
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  workers:
+    count: 2
+    maxCronThreads: 1
+
+  replicas: 1

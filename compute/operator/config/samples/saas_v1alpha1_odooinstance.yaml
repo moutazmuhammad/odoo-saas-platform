@@ -1,0 +1,48 @@
+# Minimal example: single-replica instance with a Managed (operator-owned)
+# PostgreSQL database, Gateway API routing, and no backups. This is what
+# `docs/architecture.md`'s walkthrough uses.
+apiVersion: saas.odoo.example.com/v1alpha1
+kind: OdooInstance
+metadata:
+  name: customer-acme
+spec:
+  version: "18.0"
+
+  image:
+    repository: docker.io/library/odoo
+    tag: "18.0"
+    pullPolicy: IfNotPresent
+
+  domain:
+    hostname: customer-acme.example.com
+    tls:
+      enabled: false
+
+  database:
+    mode: Managed
+    version: "16"
+    storage:
+      size: 20Gi
+
+  storage:
+    filestore:
+      size: 20Gi
+      accessMode: ReadWriteOnce
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  workers:
+    count: 2
+    maxCronThreads: 1
+
+  replicas: 1
+
+  networking:
+    networkPolicy:
+      enabled: true

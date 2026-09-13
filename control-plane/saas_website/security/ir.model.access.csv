@@ -1,0 +1,17 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_saas_instance_portal,saas.instance portal,saas_core.model_saas_instance,base.group_portal,1,0,0,0
+access_saas_plan_portal,saas.plan portal,saas_core.model_saas_plan,base.group_portal,1,0,0,0
+access_saas_plan_public,saas.plan public,saas_core.model_saas_plan,base.group_public,1,0,0,0
+access_saas_domain_portal,saas.based.domain portal,saas_core.model_saas_based_domain,base.group_portal,1,0,0,0
+access_saas_domain_public,saas.based.domain public,saas_core.model_saas_based_domain,base.group_public,1,0,0,0
+access_saas_version_portal,saas.odoo.version portal,saas_core.model_saas_odoo_version,base.group_portal,1,0,0,0
+access_saas_version_public,saas.odoo.version public,saas_core.model_saas_odoo_version,base.group_public,1,0,0,0
+access_saas_product_repo_portal,saas.product.repo portal,saas_core.model_saas_product_repo,base.group_portal,1,0,0,0
+access_saas_backup_portal,saas.instance.backup portal,saas_core.model_saas_instance_backup,base.group_portal,1,0,0,0
+access_saas_product_portal,saas.product portal,saas_core.model_saas_product,base.group_portal,1,0,0,0
+access_saas_product_public,saas.product public,saas_core.model_saas_product,base.group_public,1,0,0,0
+access_saas_product_feature_portal,saas.product.feature portal,saas_core.model_saas_product_feature,base.group_portal,1,0,0,0
+access_saas_product_feature_public,saas.product.feature public,saas_core.model_saas_product_feature,base.group_public,1,0,0,0
+access_saas_instance_folder_portal,saas.instance.folder portal,model_saas_instance_folder,base.group_portal,1,1,1,1
+access_saas_instance_folder_admin,saas.instance.folder admin,model_saas_instance_folder,saas_core.group_saas_manager,1,1,1,1
+access_saas_registration_otp_admin,saas.registration.otp admin,model_saas_registration_otp,saas_core.group_saas_manager,1,1,1,1

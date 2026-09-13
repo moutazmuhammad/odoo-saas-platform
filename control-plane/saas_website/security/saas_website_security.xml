@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Portal users can manage their own folders -->
+    <record id="rule_saas_instance_folder_portal" model="ir.rule">
+        <field name="name">Portal: own instance folders</field>
+        <field name="model_id" ref="model_saas_instance_folder"/>
+        <field name="domain_force">[('partner_id', '=', user.partner_id.id)]</field>
+        <field name="groups" eval="[(4, ref('base.group_portal'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <!-- Portal users can read their own instances only -->
+    <record id="rule_saas_instance_portal" model="ir.rule">
+        <field name="name">Portal: own SaaS instances</field>
+        <field name="model_id" ref="saas_core.model_saas_instance"/>
+        <field name="domain_force">[('partner_id', '=', user.partner_id.id)]</field>
+        <field name="groups" eval="[(4, ref('base.group_portal'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <!-- Portal users can read backups of their own instances -->
+    <record id="rule_saas_backup_portal" model="ir.rule">
+        <field name="name">Portal: own instance backups</field>
+        <field name="model_id" ref="saas_core.model_saas_instance_backup"/>
+        <field name="domain_force">[('instance_id.partner_id', '=', user.partner_id.id)]</field>
+        <field name="groups" eval="[(4, ref('base.group_portal'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <!-- Public + portal: read all plans -->
+    <record id="rule_saas_plan_public" model="ir.rule">
+        <field name="name">Public: read all plans</field>
+        <field name="model_id" ref="saas_core.model_saas_plan"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('base.group_public')), (4, ref('base.group_portal'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <!-- Public + portal: read all base domains -->
+    <record id="rule_saas_domain_public" model="ir.rule">
+        <field name="name">Public: read all base domains</field>
+        <field name="model_id" ref="saas_core.model_saas_based_domain"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('base.group_public')), (4, ref('base.group_portal'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <!-- Public + portal: read all Odoo versions -->
+    <record id="rule_saas_version_public" model="ir.rule">
+        <field name="name">Public: read all Odoo versions</field>
+        <field name="model_id" ref="saas_core.model_saas_odoo_version"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('base.group_public')), (4, ref('base.group_portal'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+</odoo>

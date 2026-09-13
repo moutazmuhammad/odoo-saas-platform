@@ -1,0 +1,48 @@
+{#- override_keys contains keys set in Extra Configuration.
+    Auto-generated lines are skipped when the admin overrides them,
+    so each key appears exactly once in the final file. -#}
+{%- set ov = override_keys | default([]) -%}
+[options]
+admin_passwd = {{ master_pass }}
+
+db_host = {{ db_host }}
+db_port = {{ db_port }}
+db_user = {{ db_user }}
+db_password = {{ db_password }}
+
+data_dir = /var/lib/odoo
+{%- if immutable %}
+addons_path = /opt/odoo/odoo/addons,/opt/odoo/addons,/opt/tenant-addons
+{%- else %}
+addons_path = /opt/odoo/odoo/addons,/opt/odoo/addons,/mnt/extra-addons
+{%- endif %}
+{%- for path in repo_addons_paths | default([]) -%}
+,{{ path }}
+{%- endfor %}
+
+proxy_mode = {{ proxy_mode | default(True) }}
+{% if 'workers' not in ov %}
+workers = {{ workers | default(2) }}
+{%- endif %}
+{% if 'limit_memory_soft' not in ov %}
+limit_memory_soft = {{ limit_memory_soft }}
+{%- endif %}
+{% if 'limit_memory_hard' not in ov %}
+limit_memory_hard = {{ limit_memory_hard }}
+{%- endif %}
+{% if 'limit_time_real' not in ov %}
+limit_time_real = {{ limit_time_real | default(120) }}
+{%- endif %}
+{% if 'limit_time_cpu' not in ov %}
+limit_time_cpu = {{ limit_time_cpu | default(60) }}
+{%- endif %}
+{% if 'limit_request' not in ov %}
+limit_request = {{ limit_request | default(8192) }}
+{%- endif %}
+
+{% if extra_config %}
+# Admin overrides
+{% for k,v in extra_config.items() %}
+{{ k }} = {{ v }}
+{% endfor %}
+{% endif %}

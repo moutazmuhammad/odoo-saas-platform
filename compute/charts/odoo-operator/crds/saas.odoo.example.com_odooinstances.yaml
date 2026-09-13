@@ -1,0 +1,790 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: odooinstances.saas.odoo.example.com
+spec:
+  group: saas.odoo.example.com
+  names:
+    kind: OdooInstance
+    listKind: OdooInstanceList
+    plural: odooinstances
+    shortNames:
+    - odoo
+    singular: odooinstance
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.version
+      name: Version
+      type: string
+    - jsonPath: .status.url
+      name: URL
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          OdooInstance is the single Kubernetes API a SaaS control plane needs to
+          provision, update, scale, upgrade, and delete a customer Odoo instance.
+          It is deliberately cluster-scoped: creating one causes the controller to
+          provision a dedicated, isolated tenant namespace (namespace-per-tenant)
+          rather than requiring the SaaS API to pre-create and manage namespaces
+          itself. See docs/architecture.md ("Multi-Tenancy Model") for the
+          trade-offs behind this decision.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              OdooInstanceSpec defines the desired state of an Odoo SaaS instance. It is
+              the entire contract between the SaaS control-plane API and Kubernetes:
+              the API only ever creates/updates/deletes this object and reads back
+              OdooInstanceStatus. It never creates Deployments, Services, PVCs,
+              Secrets, or Jobs directly.
+            properties:
+              addons:
+                description: |-
+                  Addons is a declarative record of the addon set this instance's
+                  image was built with. It is informational/validation metadata only:
+                  addons are baked into Image at build time by the platform's image
+                  pipeline, never installed or downloaded at runtime. See
+                  docs/architecture.md ("Addons & Image Strategy").
+                items:
+                  description: AddonSpec records one addon expected to be present
+                    in Image.
+                  properties:
+                    name:
+                      description: Name is the Odoo addon/module technical name, e.g.
+                        "sale", "account".
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              autoscaling:
+                description: Autoscaling is reserved for future use; see AutoscalingSpec.
+                properties:
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled requests Horizontal Pod Autoscaling for the stateless web
+                      tier. Not yet implemented by the controller; validated but rejected
+                      by the webhook in this API version.
+                    type: boolean
+                  maxReplicas:
+                    format: int32
+                    type: integer
+                  minReplicas:
+                    format: int32
+                    type: integer
+                  targetCPUUtilizationPercentage:
+                    format: int32
+                    type: integer
+                type: object
+              backup:
+                description: Backup configures scheduled database/filestore backups.
+                properties:
+                  destination:
+                    description: Destination configures where backup artifacts are
+                      stored.
+                    properties:
+                      bucket:
+                        description: Bucket is the target bucket/container name when
+                          Type is ObjectStorage.
+                        type: string
+                      objectStorageSecretRef:
+                        description: |-
+                          ObjectStorageSecretRef references a Secret containing object storage
+                          credentials (e.g. S3-compatible endpoint/access key/secret key) when
+                          Type is ObjectStorage. Never inlined into the spec.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      prefix:
+                        description: |-
+                          Prefix is an optional key prefix within Bucket, useful to namespace
+                          backups by tenant when sharing a bucket across instances.
+                        type: string
+                      type:
+                        default: PVC
+                        description: Type selects the storage backend for backup artifacts.
+                        enum:
+                        - PVC
+                        - ObjectStorage
+                        type: string
+                    type: object
+                  enabled:
+                    default: false
+                    description: Enabled turns on scheduled backups for this instance.
+                    type: boolean
+                  retention:
+                    default: 7
+                    description: |-
+                      Retention is the number of most recent backups to keep; older
+                      backups are pruned by the backup CronJob.
+                    format: int32
+                    maximum: 365
+                    minimum: 1
+                    type: integer
+                  schedule:
+                    description: |-
+                      Schedule is a standard cron expression, e.g. "0 2 * * *". Required
+                      when Enabled is true; enforced by the controller (not by CRD schema
+                      validation, since it is conditional on another field) — see
+                      validateSpec in internal/controller.
+                    type: string
+                type: object
+              database:
+                default:
+                  mode: Managed
+                  version: "16"
+                description: Database configures the PostgreSQL backend. See DatabaseMode.
+                properties:
+                  credentialsSecretRef:
+                    description: |-
+                      CredentialsSecretRef references a Secret holding connection details
+                      for External mode, or overrides the auto-generated credentials Secret
+                      name for Managed/CloudNativePG mode. The Secret must contain the keys
+                      `host`, `port`, `dbname`, `username`, `password` (host/port/dbname are
+                      only required in External mode; the operator populates them for
+                      Managed/CloudNativePG mode).
+
+                      The controller never reads or writes the password value into status,
+                      events, or logs.
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  mode:
+                    default: Managed
+                    description: Mode selects the database provisioning strategy.
+                      See DatabaseMode.
+                    enum:
+                    - Managed
+                    - CloudNativePG
+                    - External
+                    type: string
+                  storage:
+                    description: |-
+                      Storage describes the persistent volume used by a Managed or
+                      CloudNativePG database. Ignored in External mode.
+                    properties:
+                      size:
+                        description: Size is the requested persistent volume size,
+                          e.g. "50Gi".
+                        type: string
+                      storageClassName:
+                        description: |-
+                          StorageClassName selects a specific StorageClass. Leave empty to use
+                          the cluster default StorageClass.
+                        type: string
+                    required:
+                    - size
+                    type: object
+                  version:
+                    default: "16"
+                    description: |-
+                      Version is the PostgreSQL major version to provision. Ignored in
+                      External mode.
+                    enum:
+                    - "13"
+                    - "14"
+                    - "15"
+                    - "16"
+                    - "17"
+                    type: string
+                type: object
+              domain:
+                description: Domain configures external access and TLS.
+                properties:
+                  hostname:
+                    description: |-
+                      Hostname is the fully-qualified public hostname routed to this
+                      instance, e.g. "customer-acme.example.com". The controller creates a
+                      Gateway API HTTPRoute (preferred) or Ingress (fallback, depending on
+                      platform configuration) binding this hostname to the instance's
+                      Service.
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$
+                    type: string
+                  tls:
+                    description: TLS configures certificate termination for Hostname.
+                    properties:
+                      enabled:
+                        default: true
+                        description: |-
+                          Enabled requests TLS termination for Domain.Hostname.
+
+                          Deliberately no `omitempty`: this field defaults to true (non-zero),
+                          so a Go client (including this controller) that round-trips the
+                          object through Get/Update with Enabled explicitly set to false would,
+                          with omitempty, cause the JSON encoder to drop the key entirely
+                          (Go's encoding/json treats bool-false as "empty"), and the API
+                          server's CRD default would then silently re-flip it back to true.
+                          See docs/architecture.md ("A CRD Defaulting Gotcha").
+                        type: boolean
+                      issuerRef:
+                        description: |-
+                          IssuerRef references a cert-manager Issuer or ClusterIssuer used to
+                          request a certificate automatically. Ignored when SecretName is set.
+                        properties:
+                          group:
+                            description: Group is the API group of the referent, e.g.
+                              "cert-manager.io".
+                            type: string
+                          kind:
+                            description: Kind of the referent, e.g. "ClusterIssuer"
+                              or "Issuer".
+                            type: string
+                          name:
+                            description: Name of the referent.
+                            type: string
+                        required:
+                        - kind
+                        - name
+                        type: object
+                      secretName:
+                        description: |-
+                          SecretName is the name of the Secret (kubernetes.io/tls type) holding
+                          the certificate to serve. When empty and IssuerRef is set, the
+                          controller creates a cert-manager Certificate resource requesting a
+                          certificate into a generated Secret name. When both are empty, TLS is
+                          effectively disabled even if Enabled is true (surfaced as a
+                          Degraded/False Ready condition, never silently ignored).
+                        type: string
+                    required:
+                    - enabled
+                    type: object
+                required:
+                - hostname
+                type: object
+              image:
+                description: Image is the immutable, fully-resolved container image
+                  to run.
+                properties:
+                  pullPolicy:
+                    default: IfNotPresent
+                    description: PullPolicy is the image pull policy.
+                    type: string
+                  pullSecretRefs:
+                    description: |-
+                      PullSecretRefs references image pull secrets required by the
+                      registry hosting this image, copied into the tenant namespace by the
+                      controller if not already present there.
+                    items:
+                      description: |-
+                        LocalObjectReference contains enough information to let you locate the
+                        referenced object inside the same namespace.
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    type: array
+                  repository:
+                    description: |-
+                      Repository is the container image repository, e.g.
+                      "registry.example.com/odoo-saas/odoo".
+                    minLength: 1
+                    type: string
+                  tag:
+                    description: |-
+                      Tag is the immutable image tag to run. Using a mutable tag such as
+                      "latest" is strongly discouraged; the validating webhook rejects it
+                      unless the platform-wide `allowMutableTags` flag is set (development
+                      clusters only).
+                    minLength: 1
+                    type: string
+                required:
+                - repository
+                - tag
+                type: object
+              networking:
+                description: Networking configures tenant network isolation and routing.
+                properties:
+                  networkPolicy:
+                    description: NetworkPolicy configures tenant network isolation.
+                    properties:
+                      enabled:
+                        default: true
+                        description: |-
+                          Enabled creates a default-deny NetworkPolicy for the tenant namespace
+                          that only permits ingress from the shared gateway namespace and
+                          egress to the instance's own database, DNS, and HTTPS (for outbound
+                          email relays, payment webhooks, etc). Disabling this is strongly
+                          discouraged outside of local development.
+
+                          Deliberately no `omitempty`; see TLSSpec.Enabled's comment for why a
+                          default=true bool must always be serialized explicitly.
+                        type: boolean
+                    required:
+                    - enabled
+                    type: object
+                  routeAnnotations:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      RouteAnnotations are copied verbatim onto the generated
+                      HTTPRoute/Ingress object, e.g. for provider-specific routing
+                      behavior. The operator does not interpret these values.
+                    type: object
+                type: object
+              replicas:
+                default: 1
+                description: |-
+                  Replicas is the number of Odoo pod replicas. Defaults to 1, which is
+                  the recommended topology (see WorkersSpec and FilestoreSpec docs).
+                  Values greater than 1 require storage.filestore.accessMode set to
+                  ReadWriteMany; the webhook rejects the combination otherwise.
+                format: int32
+                maximum: 10
+                minimum: 1
+                type: integer
+              resources:
+                description: |-
+                  Resources are the compute resource requests/limits applied to the
+                  Odoo container. Requests and limits are both required by the
+                  validating webhook to keep tenant capacity planning predictable.
+                properties:
+                  claims:
+                    description: |-
+                      Claims lists the names of resources, defined in spec.resourceClaims,
+                      that are used by this container.
+
+                      This field depends on the
+                      DynamicResourceAllocation feature gate.
+
+                      This field is immutable. It can only be set for containers.
+                    items:
+                      description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                      properties:
+                        name:
+                          description: |-
+                            Name must match the name of one entry in pod.spec.resourceClaims of
+                            the Pod where this field is used. It makes that resource available
+                            inside a container.
+                          type: string
+                        request:
+                          description: |-
+                            Request is the name chosen for a request in the referenced claim.
+                            If empty, everything from the claim is made available, otherwise
+                            only the result of this request.
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  limits:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Limits describes the maximum amount of compute resources allowed.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                    type: object
+                  requests:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Requests describes the minimum amount of compute resources required.
+                      If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                      otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                    type: object
+                type: object
+              restore:
+                description: |-
+                  Restore, when set, provisions this instance from an existing
+                  database/filestore backup instead of a new empty database (see
+                  RestoreSpec). Leave unset for the normal new-instance flow, which
+                  remains entirely unchanged.
+
+                  Immutable after creation (whatever value — nil or set — this field
+                  has when the OdooInstance is first created is frozen for its
+                  lifetime; matches the same "self == oldSelf" pattern used by
+                  TenancySpec.NamespaceOverride, since CRD transition rules referencing
+                  oldSelf only evaluate on UPDATE, never CREATE): an update that sets,
+                  changes, or clears spec.restore after creation is rejected outright,
+                  so this can never silently become a "restore again" request against
+                  a database Odoo may already be serving traffic from.
+                properties:
+                  source:
+                    description: Source identifies the backup artifacts to restore
+                      from.
+                    properties:
+                      backupId:
+                        description: |-
+                          BackupID selects which timestamped backup within the destination to
+                          restore — matching the directory name (Type=PVC) or object-key
+                          prefix (Type=ObjectStorage) a backup run wrote, tied together by
+                          that run's manifest.json (see BackupSpec). Leave empty to restore
+                          the most recent backup found at the destination.
+                        type: string
+                      bucket:
+                        description: Bucket is the target bucket/container name when
+                          Type is ObjectStorage.
+                        type: string
+                      objectStorageSecretRef:
+                        description: |-
+                          ObjectStorageSecretRef references a Secret containing object storage
+                          credentials (e.g. S3-compatible endpoint/access key/secret key) when
+                          Type is ObjectStorage. Never inlined into the spec.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      prefix:
+                        description: |-
+                          Prefix is an optional key prefix within Bucket, useful to namespace
+                          backups by tenant when sharing a bucket across instances.
+                        type: string
+                      type:
+                        default: PVC
+                        description: Type selects the storage backend for backup artifacts.
+                        enum:
+                        - PVC
+                        - ObjectStorage
+                        type: string
+                    type: object
+                required:
+                - source
+                type: object
+                x-kubernetes-validations:
+                - message: spec.restore is immutable once set
+                  rule: self == oldSelf
+              storage:
+                description: Storage configures persistent volumes owned by this instance.
+                properties:
+                  filestore:
+                    description: Filestore is the Odoo attachment/document store volume.
+                    properties:
+                      accessMode:
+                        default: ReadWriteOnce
+                        description: |-
+                          AccessMode is the PVC access mode. ReadWriteOnce (default) is
+                          required whenever spec.replicas is 1, which is the recommended
+                          topology for Odoo (see architecture docs: cron workers and the
+                          filestore are effectively singletons). ReadWriteMany is only
+                          accepted when the operator can also verify replicas > 1 is
+                          intentional; the controller rejects RWO with replicas > 1 and warns
+                          prominently (Degraded condition) rather than corrupting data.
+                        enum:
+                        - ReadWriteOnce
+                        - ReadWriteMany
+                        type: string
+                      size:
+                        description: Size is the requested persistent volume size,
+                          e.g. "100Gi".
+                        type: string
+                      storageClassName:
+                        description: |-
+                          StorageClassName selects a specific StorageClass. Leave empty to use
+                          the cluster default StorageClass.
+                        type: string
+                    required:
+                    - size
+                    type: object
+                required:
+                - filestore
+                type: object
+              suspended:
+                default: false
+                description: |-
+                  Suspended pauses the instance without deleting any data: the
+                  controller scales the Odoo workload to zero replicas, keeps the
+                  database/filestore/backups intact, and reports phase "Suspended".
+                  Intended for billing suspension flows.
+                type: boolean
+              tenancy:
+                description: |-
+                  Tenancy configures the isolated namespace provisioned for this
+                  instance.
+                properties:
+                  namespaceOverride:
+                    description: |-
+                      NamespaceOverride sets an explicit target namespace name instead of
+                      the default derived name (`odoo-tenant-<instance name>`). Immutable
+                      once set: moving a live tenant between namespaces is not supported.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: tenancy.namespaceOverride is immutable
+                      rule: self == oldSelf
+                  resourceQuota:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      ResourceQuota caps the total compute/storage/object count the tenant
+                      namespace may consume, independent of what this single OdooInstance
+                      requests. Defaults are applied by the operator when omitted; see
+                      config/samples for platform-recommended defaults.
+                    type: object
+                type: object
+              version:
+                description: |-
+                  Version is the Odoo major version for this instance, e.g. "17.0",
+                  "18.0", "19.0". Changing Version triggers a controlled image update;
+                  see docs/architecture.md ("Upgrade Strategy") for how this differs
+                  from a routine image tag bump.
+                pattern: ^[0-9]+\.0$
+                type: string
+              workers:
+                default:
+                  count: 2
+                  maxCronThreads: 1
+                description: Workers configures Odoo's internal process model.
+                properties:
+                  count:
+                    default: 2
+                    description: |-
+                      Count is the number of Odoo HTTP worker processes (`--workers`). Set
+                      to 0 to run Odoo in single-threaded dev mode (not recommended for
+                      customer-facing instances; the controller surfaces a warning
+                      condition). Values above 0 automatically enable the dedicated
+                      longpolling/gevent worker.
+
+                      Deliberately no `omitempty`: 0 is a legitimate, documented explicit
+                      value here, but it is also Go's int32 zero value, so with omitempty
+                      a client round-tripping this object with Count explicitly set to 0
+                      would have the key dropped and the API server would silently
+                      re-default it to 2. See TLSSpec.Enabled's comment for the general
+                      pattern (docs/architecture.md, "A CRD Defaulting Gotcha").
+                    format: int32
+                    maximum: 32
+                    minimum: 0
+                    type: integer
+                  maxCronThreads:
+                    default: 1
+                    description: |-
+                      MaxCronThreads is the number of Odoo cron worker threads
+                      (`--max-cron-threads`). Cron workers run scheduled jobs (e.g.
+                      invoicing, mail queues) and must not be scaled per pod replica: only
+                      one pod in the deployment should run cron threads > 0 to avoid
+                      duplicate job execution, which the controller enforces by pinning
+                      cron execution to the first replica.
+
+                      Deliberately no `omitempty`; see Count's comment above for why an
+                      explicit 0 must survive a Go client round-trip against a non-zero
+                      default.
+                    format: int32
+                    maximum: 8
+                    minimum: 0
+                    type: integer
+                required:
+                - count
+                - maxCronThreads
+                type: object
+            required:
+            - domain
+            - image
+            - resources
+            - storage
+            - version
+            type: object
+          status:
+            description: |-
+              OdooInstanceStatus is the observed state of an OdooInstance, and the only
+              thing the SaaS API needs to read to know whether/how an instance is
+              usable. It never contains secret values.
+            properties:
+              adminCredentialsSecretName:
+                description: |-
+                  AdminCredentialsSecretName names the Secret (in TenantNamespace)
+                  holding the generated Odoo master/admin credentials. Never the
+                  credentials themselves.
+                type: string
+              conditions:
+                description: |-
+                  Conditions are the detailed, machine-readable status of the
+                  instance's reconciliation, following the standard Kubernetes
+                  conditions convention.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              databaseCredentialsSecretName:
+                description: |-
+                  DatabaseCredentialsSecretName names the Secret (in TenantNamespace)
+                  holding database connection credentials. Never the credentials
+                  themselves.
+                type: string
+              lastBackupStatus:
+                description: |-
+                  LastBackupStatus is a short human-readable outcome of the most recent
+                  backup Job attempt, e.g. "Succeeded" or "Failed".
+                type: string
+              lastBackupTime:
+                description: |-
+                  LastBackupTime records completion of the most recent successful
+                  backup Job, when Backup.Enabled.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the .metadata.generation last reconciled by the
+                  controller. Compare to .metadata.generation to know whether Status
+                  reflects the latest Spec.
+                format: int64
+                type: integer
+              observedImage:
+                description: |-
+                  ObservedImage is the container image currently running, which may
+                  lag Spec.Image during a controlled rollout.
+                type: string
+              phase:
+                description: Phase is a coarse summary of Conditions; see OdooInstancePhase.
+                type: string
+              readyReplicas:
+                description: ReadyReplicas is the number of those pods currently Ready.
+                format: int32
+                type: integer
+              replicas:
+                description: |-
+                  Replicas is the total number of non-terminated Odoo pods targeted by
+                  this instance's Deployment.
+                format: int32
+                type: integer
+              tenantNamespace:
+                description: |-
+                  TenantNamespace is the namespace the controller provisioned (or
+                  reused, when spec.tenancy.namespaceOverride is set) for this
+                  instance's child resources.
+                type: string
+              url:
+                description: |-
+                  URL is the fully-qualified external URL of the instance once ready,
+                  e.g. "https://customer-acme.example.com".
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

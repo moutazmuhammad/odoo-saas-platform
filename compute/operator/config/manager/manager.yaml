@@ -1,0 +1,64 @@
+# Minimal kustomize-based install path, kept for teams that prefer
+# kubectl+kustomize over Helm (see Makefile's `install`/`deploy` targets
+# and charts/odoo-operator for the primary, recommended install path,
+# which also carries RBAC and is versioned/upgradeable through Helm
+# releases). This manifest intentionally mirrors
+# charts/odoo-operator/templates/deployment.yaml's defaults; keep them in
+# sync if you edit one.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: odoo-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odoo-instance-operator
+  namespace: odoo-system
+  labels:
+    app.kubernetes.io/name: odoo-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: odoo-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: odoo-operator
+    spec:
+      serviceAccountName: odoo-instance-operator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: manager
+          image: registry.example.com/odoo-saas/operator:dev
+          args:
+            - --leader-elect=false
+            - --networking-provider=gateway-api
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: metrics
+              containerPort: 8443
+            - name: healthz
+              containerPort: 8081
+          livenessProbe:
+            httpGet: { path: /healthz, port: healthz }
+          readinessProbe:
+            httpGet: { path: /readyz, port: healthz }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: odoo-instance-operator
+  namespace: odoo-system

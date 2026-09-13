@@ -1,0 +1,8 @@
+# kubectl apply -k config/default installs CRDs + RBAC + the manager
+# Deployment in one shot without Helm. Prefer `make deploy` (Helm) for
+# anything beyond a quick local try — this path does not manage upgrades
+# or uninstalls as a single tracked release.
+resources:
+  - ../crd/bases
+  - ../rbac
+  - ../manager

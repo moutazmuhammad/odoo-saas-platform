@@ -1,0 +1,423 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Inherit base settings form to add SaaS settings -->
+    <record id="res_config_settings_view_form" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.saas_core</field>
+        <field name="model">res.config.settings</field>
+        <field name="priority" eval="50"/>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="SaaS Manager" string="SaaS Manager" name="saas_core">
+
+                    <!-- ============================================================
+                         Layout notes
+                         - Sections are ordered from the most-used (what the
+                           customer picks & pays) down to operational/infra knobs.
+                         - "Hosting / Services" pairs always show Hosting in the
+                           FIRST column and Services in the SECOND, with a header
+                           row once per card instead of a hint on every line.
+                         - Every dual card reuses the column grid: label = col-4,
+                           Hosting = col-2, Services = col-2.
+                         ============================================================ -->
+
+                    <!-- ==================== 1. Website ==================== -->
+                    <block title="Website" name="saas_website_sections_container">
+                        <setting id="saas_show_hosting_section_setting"
+                                 string="Show Hosting Section"
+                                 help="When off, the Hosting nav link, footer link, home-page card and /hosting routes are hidden. Data is preserved.">
+                            <field name="saas_show_hosting_section"/>
+                        </setting>
+                        <setting id="saas_show_services_section_setting"
+                                 string="Show Services Section"
+                                 help="When off, the Services nav link, footer link, home-page card and /services routes are hidden. Data is preserved.">
+                            <field name="saas_show_services_section"/>
+                        </setting>
+                    </block>
+
+                    <!-- ==================== 2. Plan Pricing ====================
+                         Everything the public configurator reads to quote a price:
+                         base rates, the slider bounds, what each worker gets, and
+                         the yearly discount. Hosting and Services share these
+                         knobs, shown side-by-side. -->
+                    <block title="Plan Pricing" name="saas_plan_pricing_container">
+                        <setting id="saas_plan_rates_setting"
+                                 string="Base rates (per month)"
+                                 help="Monthly price per worker and per GB of storage. These are the core rates the pricing engine multiplies by the chosen configuration.">
+                            <table class="table table-sm table-borderless mb-0 mt8" style="max-width:460px;">
+                                <thead>
+                                    <tr class="o_light_label">
+                                        <th style="width:48%;"/>
+                                        <th class="text-center fw-bold">Hosting</th>
+                                        <th class="text-center fw-bold">Services</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_worker_price" string="Per worker"/></td>
+                                        <td><field name="saas_hosting_worker_price"/></td>
+                                        <td><field name="saas_worker_price"/></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_storage_price_per_gb" string="Per GB storage"/></td>
+                                        <td><field name="saas_hosting_storage_price_per_gb"/></td>
+                                        <td><field name="saas_storage_price_per_gb"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </setting>
+                        <setting id="saas_plan_limits_setting"
+                                 string="Configurator limits"
+                                 help="The min / max the customer can pick on the slider for workers and storage (GB).">
+                            <table class="table table-sm table-borderless mb-0 mt8" style="max-width:460px;">
+                                <thead>
+                                    <tr class="o_light_label">
+                                        <th style="width:48%;"/>
+                                        <th class="text-center fw-bold">Hosting</th>
+                                        <th class="text-center fw-bold">Services</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_min_workers" string="Min workers"/></td>
+                                        <td><field name="saas_hosting_min_workers"/></td>
+                                        <td><field name="saas_custom_plan_min_workers"/></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_max_workers" string="Max workers"/></td>
+                                        <td><field name="saas_hosting_max_workers"/></td>
+                                        <td><field name="saas_custom_plan_max_workers"/></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_min_storage" string="Min storage (GB)"/></td>
+                                        <td><field name="saas_hosting_min_storage"/></td>
+                                        <td><field name="saas_custom_plan_min_storage"/></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_max_storage" string="Max storage (GB)"/></td>
+                                        <td><field name="saas_hosting_max_storage"/></td>
+                                        <td><field name="saas_custom_plan_max_storage"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </setting>
+                        <setting id="saas_plan_resources_setting"
+                                 string="Resources per worker"
+                                 help="CPU (vCPU) and RAM (MB) each worker is allocated when a plan record is auto-created.">
+                            <table class="table table-sm table-borderless mb-0 mt8" style="max-width:460px;">
+                                <thead>
+                                    <tr class="o_light_label">
+                                        <th style="width:48%;"/>
+                                        <th class="text-center fw-bold">Hosting</th>
+                                        <th class="text-center fw-bold">Services</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_cpu_per_worker" string="CPU / worker (vCPU)"/></td>
+                                        <td><field name="saas_hosting_cpu_per_worker"/></td>
+                                        <td><field name="saas_custom_plan_cpu_per_worker"/></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_ram_per_worker" string="RAM / worker (MB)"/></td>
+                                        <td><field name="saas_hosting_ram_per_worker"/></td>
+                                        <td><field name="saas_custom_plan_ram_per_worker"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </setting>
+                        <setting id="saas_plan_discount_setting"
+                                 string="Yearly discount (%)"
+                                 help="Percentage taken off when the customer chooses yearly billing. Baked into the stored yearly price.">
+                            <table class="table table-sm table-borderless mb-0 mt8" style="max-width:460px;">
+                                <thead>
+                                    <tr class="o_light_label">
+                                        <th style="width:48%;"/>
+                                        <th class="text-center fw-bold">Hosting</th>
+                                        <th class="text-center fw-bold">Services</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_yearly_discount_pct" string="Discount"/></td>
+                                        <td><field name="saas_hosting_yearly_discount_pct"/></td>
+                                        <td><field name="saas_custom_plan_yearly_discount_pct"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </setting>
+                        <setting id="saas_env_price_factor_setting"
+                                 string="Environments: per-server price factor"
+                                 help="Staging/Development servers (Odoo.sh-style) are priced at the lowest hosting spec times this factor. 1.0 = full price, 0.7 = 30% cheaper, 0 = free.">
+                            <div class="content-group">
+                                <div class="mt8">
+                                    <label for="saas_env_price_factor" string="Price factor" class="o_light_label" style="display:inline-block;min-width:120px;"/>
+                                    <field name="saas_env_price_factor" class="oe_inline" style="max-width:6rem;"/>
+                                </div>
+                            </div>
+                        </setting>
+                        <setting id="saas_services_estimate_setting"
+                                 string="Services: sizing recommendation"
+                                 help="Display-only. The concurrent-users-per-worker range shown to help a customer pick a Services size (light → heavy usage).">
+                            <div class="content-group">
+                                <div class="mt8">
+                                    <label for="saas_custom_plan_users_per_worker_min" string="Users / worker: light → heavy" class="o_light_label" style="display:inline-block;min-width:230px;"/>
+                                    <field name="saas_custom_plan_users_per_worker_min" class="oe_inline" style="max-width:5rem;"/>
+                                    <span class="text-muted mx-2">→</span>
+                                    <field name="saas_custom_plan_users_per_worker_max" class="oe_inline" style="max-width:5rem;"/>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <!-- ==================== 3. Margin Protection ====================
+                         Optional guardrails on CUSTOM (slider) configurations.
+                         All default to 0 / Off, which leaves simple linear pricing
+                         untouched — set them only when you want to defend margin. -->
+                    <block title="Margin Protection (advanced)" name="saas_margin_protection_container">
+                        <setting id="saas_minimum_monthly_setting"
+                                 string="Minimum monthly charge"
+                                 help="Floor on the FINAL monthly total, so even a tiny config covers fixed business costs (payment fees, support, monitoring). The customer just sees this as the price — there is no surcharge line. 0 = no minimum.">
+                            <table class="table table-sm table-borderless mb-0 mt8" style="max-width:460px;">
+                                <thead>
+                                    <tr class="o_light_label">
+                                        <th style="width:48%;"/>
+                                        <th class="text-center fw-bold">Hosting</th>
+                                        <th class="text-center fw-bold">Services</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_minimum_monthly" string="Minimum / month"/></td>
+                                        <td><field name="saas_hosting_minimum_monthly"/></td>
+                                        <td><field name="saas_minimum_monthly"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </setting>
+                        <setting id="saas_cost_floor_setting"
+                                 string="Cost floors"
+                                 help="Minimum monthly cost charged per worker / per GB. The engine charges max(rate, floor), so a 'cheap workers + huge storage' config can't be sold below cost. 0 = no floor.">
+                            <table class="table table-sm table-borderless mb-0 mt8" style="max-width:460px;">
+                                <thead>
+                                    <tr class="o_light_label">
+                                        <th style="width:48%;"/>
+                                        <th class="text-center fw-bold">Hosting</th>
+                                        <th class="text-center fw-bold">Services</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_worker_floor" string="Floor per worker"/></td>
+                                        <td><field name="saas_hosting_worker_floor"/></td>
+                                        <td><field name="saas_worker_floor"/></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="o_light_label align-middle"><label for="saas_hosting_storage_floor" string="Floor per GB"/></td>
+                                        <td><field name="saas_hosting_storage_floor"/></td>
+                                        <td><field name="saas_storage_floor"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </setting>
+                    </block>
+
+                    <!-- ==================== 4. Backups &amp; Snapshots ====================
+                         The paid daily-backup add-on and how snapshots interact
+                         with storage and invoicing. -->
+                    <block title="Backups &amp; Snapshots" name="saas_backups_container">
+                        <setting id="saas_snapshot_price_setting"
+                                 string="Daily backup add-on (hosting)"
+                                 help="Optional add-on at hosting checkout. Backs up every database on the instance daily and keeps the last 7 days. Billed monthly: the storage the snapshots actually consume, rounded up to the next whole GB, at the per-GB rate (1 GB minimum, re-evaluated monthly).">
+                            <div class="content-group">
+                                <div class="mt8">
+                                    <label for="saas_snapshot_price_per_gb" string="Price per GB / month" class="o_light_label" style="display:inline-block;min-width:160px;"/>
+                                    <field name="saas_snapshot_price_per_gb" class="oe_inline" style="max-width:6rem;"/>
+                                    <span class="text-muted ms-2">used space rounded up to whole GB · 1 GB minimum</span>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <!-- ==================== 5. Storage Overage ====================
+                         How storage used beyond the plan allowance is billed on
+                         the renewal invoice. -->
+                    <block title="Storage Overage" name="saas_storage_overage_container">
+                        <setting id="saas_storage_block_setting"
+                                 string="Expansion block (preferred)"
+                                 help="When a block price is set, storage above the plan allowance is billed in whole blocks of this size — predictable for the customer. Leave the price at 0 to fall back to the per-GB rate below.">
+                            <div class="content-group">
+                                <div class="mt8">
+                                    <label for="saas_storage_block_gb" string="Block size (GB)" class="o_light_label" style="display:inline-block;min-width:170px;"/>
+                                    <field name="saas_storage_block_gb" class="oe_inline" style="max-width:7rem;"/>
+                                </div>
+                                <div class="mt8">
+                                    <label for="saas_storage_block_price" string="Block price (monthly)" class="o_light_label" style="display:inline-block;min-width:170px;"/>
+                                    <field name="saas_storage_block_price" class="oe_inline" style="max-width:7rem;"/>
+                                </div>
+                            </div>
+                        </setting>
+                        <setting id="saas_extra_storage_price_per_gb_setting"
+                                 string="Per-GB rate (fallback)"
+                                 help="Charged per extra GB over the plan limit when no expansion block is configured above. Set to 0 to suspend over-quota instances instead of charging.">
+                            <div class="content-group">
+                                <div class="mt8">
+                                    <label for="saas_extra_storage_price_per_gb" string="Price per GB" class="o_light_label" style="display:inline-block;min-width:160px;"/>
+                                    <field name="saas_extra_storage_price_per_gb" class="oe_inline" style="max-width:7rem;"/>
+                                    <span class="text-muted ms-2">/ billing cycle</span>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <!-- ==================== 6. Trials &amp; Limits ==================== -->
+                    <block title="Trials &amp; Limits" name="saas_trials_container">
+                        <setting id="saas_trial_days_setting"
+                                 string="Free trial duration"
+                                 help="Days a free trial lasts. After expiry the instance is suspended until the client pays.">
+                            <div class="content-group">
+                                <div class="mt8">
+                                    <label for="saas_trial_days" string="Duration" class="o_light_label" style="display:inline-block;min-width:90px;"/>
+                                    <field name="saas_trial_days" class="oe_inline" style="max-width:6rem;"/>
+                                    <span class="text-muted ms-2">days</span>
+                                </div>
+                            </div>
+                        </setting>
+                        <setting id="saas_max_instances_per_user_setting"
+                                 string="Max instances per customer"
+                                 help="Maximum number of active instances a single customer can have. 0 = unlimited.">
+                            <div class="content-group">
+                                <div class="mt8">
+                                    <label for="saas_max_instances_per_user" string="Limit" class="o_light_label" style="display:inline-block;min-width:90px;"/>
+                                    <field name="saas_max_instances_per_user" class="oe_inline" style="max-width:6rem;"/>
+                                </div>
+                            </div>
+                        </setting>
+                        <setting id="saas_grace_period_days_setting"
+                                 string="Grace period"
+                                 help="Days after an invoice due date before the instance is suspended for non-payment. Applies to all plans. 0 = suspend the day after the due date.">
+                            <div class="content-group">
+                                <div class="mt8">
+                                    <label for="saas_grace_period_days" string="Duration" class="o_light_label" style="display:inline-block;min-width:90px;"/>
+                                    <field name="saas_grace_period_days" class="oe_inline" style="max-width:6rem;"/>
+                                    <span class="text-muted ms-2">days</span>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <!-- ==================== 7. Support ==================== -->
+                    <block title="Support" name="saas_support_container">
+                        <setting id="saas_support_email_setting"
+                                 string="Support email"
+                                 help="Shown to clients in notifications and portal pages when they need to contact support.">
+                            <div class="content-group">
+                                <div class="mt8">
+                                    <label for="saas_support_email" string="Email" class="o_light_label" style="display:inline-block;min-width:90px;"/>
+                                    <field name="saas_support_email" class="oe_inline" style="min-width:18rem;" placeholder="support@example.com"/>
+                                </div>
+                            </div>
+                        </setting>
+                        <setting id="saas_data_restoration_fee_setting"
+                                 string="Data restoration fee (computed)"
+                                 help="Charged when restoring data from a retained snapshot of a deleted instance. Computed automatically: months the snapshot was kept after deletion × snapshot size rounded up to the next whole GB × the Snapshot Price per GB (Backups &amp; Snapshots section). An invoice is generated automatically; the restore runs when it's paid."/>
+                    </block>
+
+                    <!-- ==================== 8. Infrastructure ==================== -->
+                    <block title="Infrastructure" name="saas_infrastructure_container">
+                        <setting id="saas_default_instance_starting_port_setting"
+                                 string="Default starting port"
+                                 help="First port number used when auto-assigning HTTP / longpolling ports to new instances.">
+                            <div class="content-group">
+                                <div class="mt8">
+                                    <label for="saas_default_instance_starting_port" string="Port" class="o_light_label" style="display:inline-block;min-width:90px;"/>
+                                    <field name="saas_default_instance_starting_port" class="oe_inline" style="max-width:7rem;"/>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <!-- ==================== 9. Cloud Storage ====================
+                         One bucket for both daily backups (restic-encrypted) and
+                         product snapshots — the snapshot lookup reads these same
+                         saas_backup.* parameters. -->
+                    <block title="Cloud Storage" name="saas_backup_storage_container">
+                        <setting id="saas_backup_provider_setting"
+                                 string="Cloud provider"
+                                 help="Cloud storage provider for daily backups and product snapshots (shared bucket).">
+                            <field name="saas_backup_provider"/>
+                        </setting>
+                        <setting id="saas_backup_credentials_setting"
+                                 string="Credentials"
+                                 help="Authentication credentials for the storage provider."
+                                 invisible="not saas_backup_provider">
+                            <div class="content-group">
+                                <div class="row mt8">
+                                    <label for="saas_backup_access_key" string="Access Key" class="col-3 col-lg-3 o_light_label"/>
+                                    <field name="saas_backup_access_key" class="col-4"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="saas_backup_secret_key" string="Secret Key" class="col-3 col-lg-3 o_light_label"/>
+                                    <field name="saas_backup_secret_key" password="True" class="col-4"/>
+                                </div>
+                            </div>
+                        </setting>
+                        <setting id="saas_backup_bucket_setting"
+                                 string="Bucket"
+                                 help="Bucket name, region, and endpoint. Used for both daily backups and product snapshots."
+                                 invisible="not saas_backup_provider">
+                            <div class="content-group">
+                                <div class="row mt8">
+                                    <label for="saas_backup_bucket_name" string="Bucket Name" class="col-3 col-lg-3 o_light_label"/>
+                                    <field name="saas_backup_bucket_name" class="col-4"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="saas_backup_region" string="Region" class="col-3 col-lg-3 o_light_label"/>
+                                    <field name="saas_backup_region" class="col-4" placeholder="e.g. us-east-1, nyc3, fsn1"/>
+                                </div>
+                                <div class="row mt8" invisible="saas_backup_provider in ('digitalocean', 'hetzner')">
+                                    <label for="saas_backup_endpoint" string="Endpoint URL" class="col-3 col-lg-3 o_light_label"/>
+                                    <field name="saas_backup_endpoint" class="col-4"
+                                           placeholder="https://s3.amazonaws.com"/>
+                                </div>
+                            </div>
+                        </setting>
+                        <setting id="saas_backup_cors_setting"
+                                 string="Browser uploads"
+                                 help="Let customers upload their own backup files for restore. This sets a CORS rule on the bucket allowing direct uploads from your portal — a one-time, idempotent action. Setting a bucket's CORS needs bucket-admin rights, so enter a separate, broader-privilege key here (keep the object key above least-privilege). Save settings, then click."
+                                 invisible="not saas_backup_provider">
+                            <div class="content-group">
+                                <div class="row mt8">
+                                    <label for="saas_backup_cors_access_key" string="Admin Access Key" class="col-3 col-lg-3 o_light_label"/>
+                                    <field name="saas_backup_cors_access_key" class="col-4"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="saas_backup_cors_secret_key" string="Admin Secret Key" class="col-3 col-lg-3 o_light_label"/>
+                                    <field name="saas_backup_cors_secret_key" password="True" class="col-4"/>
+                                </div>
+                                <div class="row mt8">
+                                    <button name="action_apply_bucket_cors" type="object"
+                                            string="Allow browser uploads (set bucket CORS)"
+                                            class="btn-secondary"
+                                            icon="fa-cloud-upload"/>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Action to open settings with saas_core module context -->
+    <record id="action_saas_master_config_settings" model="ir.actions.act_window">
+        <field name="name">Settings</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">inline</field>
+        <field name="context">{'module': 'saas_core', 'bin_size': False}</field>
+    </record>
+
+</odoo>

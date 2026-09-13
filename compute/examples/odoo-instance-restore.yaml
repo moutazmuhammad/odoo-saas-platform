@@ -1,0 +1,75 @@
+# Restore-onboarding example: provisions this instance from an existing
+# customer backup instead of a brand-new empty database. spec.restore is
+# immutable once the OdooInstance is created (see RestoreSpec in
+# api/v1alpha1/odooinstance_types.go) — it can only ever be set at
+# creation time, never edited afterwards, so this can never accidentally
+# turn into a second restore against a live instance.
+#
+# The controller runs a one-time restore Job (the direct inverse of the
+# backup CronJob described in docs/architecture.md, "Backups") in place of
+# the ordinary odoo-init Job: it downloads the database dump + filestore
+# archive identified below, restores them into this instance's own
+# database/filestore PVC, and only then creates the web Deployment — see
+# docs/architecture.md, "Restoring an Existing Backup".
+#
+# spec.restore.source reuses the exact same storage abstraction as
+# spec.backup.destination (BackupDestinationSpec): Type is "PVC" or
+# "ObjectStorage". This example uses ObjectStorage, since that is the
+# common case for onboarding a customer's backup from outside the
+# platform; see that section of docs/architecture.md for the PVC-source
+# alternative and its preconditions.
+apiVersion: saas.odoo.example.com/v1alpha1
+kind: OdooInstance
+metadata:
+  name: customer-migrated
+spec:
+  version: "18.0"
+
+  image:
+    repository: registry.example.com/odoo-saas/odoo
+    tag: "18.0-2026.09.01"
+    pullPolicy: IfNotPresent
+
+  domain:
+    hostname: migrated.saas.example.com
+    tls:
+      enabled: true
+      issuerRef:
+        name: letsencrypt-production
+        kind: ClusterIssuer
+
+  database:
+    mode: Managed
+    version: "16"
+    storage:
+      size: 50Gi
+
+  storage:
+    filestore:
+      size: 100Gi
+      accessMode: ReadWriteOnce
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  workers:
+    count: 2
+    maxCronThreads: 1
+
+  replicas: 1
+
+  restore:
+    source:
+      type: ObjectStorage
+      bucket: customer-migrations
+      prefix: customer-migrated
+      objectStorageSecretRef:
+        name: customer-migrated-restore-creds
+      # Optional: restore a specific backup instead of the most recent one
+      # found at bucket/prefix.
+      # backupId: "2026-09-01T02-00-00Z"

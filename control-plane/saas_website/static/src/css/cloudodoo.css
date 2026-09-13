@@ -1,0 +1,4134 @@
+/* ============================================
+   CloudOdoo - Modern SaaS Platform Styles
+   Dark/Light Theme Support
+   ============================================ */
+
+/* Font Awesome 5 — loaded via <link> in layout template for better performance */
+
+/* ============================================
+   CSS Variables / Design Tokens
+   Default = Dark theme
+   ============================================ */
+
+:root {
+    /* Google Cloud Console palette — dark (mirrors veltnex SPA `.dark`).
+       Default = dark; the `[data-theme="light"]` block below carries light. */
+    --primary: #8ab4f8;
+    --primary-hover: #aecbfa;
+    --primary-light: rgba(138, 180, 248, 0.12);
+    /* Text/icon color that sits ON a primary fill. Dark theme: the primary is
+       a LIGHT blue, so foreground must be dark for contrast (mirrors SPA). */
+    --primary-foreground: #202124;
+    --accent: #0db3d0;
+    --accent-hover: #0a95ad;
+    --success: #10B981;
+    --success-light: rgba(16, 185, 129, 0.1);
+    --warning: #F59E0B;
+    --warning-light: rgba(245, 158, 11, 0.1);
+    --danger: #EF4444;
+    --danger-light: rgba(239, 68, 68, 0.1);
+    --info: #3B82F6;
+    --info-light: rgba(59, 130, 246, 0.1);
+
+    --bg-dark: #202124;
+    --bg-card: #292a2d;
+    --bg-card-hover: #303134;
+    --bg-elevated: #303134;
+    --bg-input: #292a2d;
+    --bg-navbar: #292a2d;
+
+    --text-primary: #e8eaed;
+    --text-secondary: #9aa0a6;
+    --text-muted: #9aa0a6;
+
+    --border-color: #3c4043;
+    --border-light: #5f6368;
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-glow: 0 0 40px rgba(138, 180, 248, 0.15);
+
+    --transition-fast: 150ms ease;
+    --transition-base: 250ms ease;
+
+    /* Aliases for inline styles in QWeb templates */
+    --co-primary: var(--primary);
+    --co-text-primary: var(--text-primary);
+    --co-text-secondary: var(--text-secondary);
+    --co-text-muted: var(--text-muted);
+}
+
+/* ============================================
+   Light Theme Override
+   ============================================ */
+
+[data-theme="light"] {
+    /* Google Cloud Console palette — light (mirrors veltnex SPA `:root`). */
+    --primary: #1a73e8;
+    --primary-hover: #1967d2;
+    --primary-light: rgba(26, 115, 232, 0.1);
+    --primary-foreground: #ffffff;
+
+    --bg-dark: #f8f9fa;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f1f3f4;
+    --bg-elevated: #ffffff;
+    --bg-input: #ffffff;
+    --bg-navbar: #ffffff;
+
+    --text-primary: #202124;
+    --text-secondary: #5f6368;
+    --text-muted: #5f6368;
+
+    --border-color: #dadce0;
+    --border-light: #c4c7c5;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+    --shadow-glow: 0 0 40px rgba(26, 115, 232, 0.08);
+}
+
+/* ============================================
+   Global Polish: Transitions, Focus, Hover
+   ============================================ */
+
+/* Smooth transitions on ALL interactive elements */
+a, button, .btn, input, select, textarea,
+.info-card, .feature-card, .service-card, .plan-card,
+.action-btn, .nav-link, .badge, .progress-bar {
+    transition: all var(--transition-base);
+}
+
+/* Info cards — consistent hover effect */
+.info-card {
+    transition: all var(--transition-base);
+}
+.info-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--border-light) !important;
+}
+
+/* Focus visible — keyboard navigation highlight */
+*:focus-visible {
+    outline: 2px solid var(--primary) !important;
+    outline-offset: 2px;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: none !important;
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px var(--primary-light) !important;
+}
+
+/* Disabled buttons — clear visual state */
+.btn:disabled, .btn[disabled] {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Smooth page section reveals */
+section {
+    animation: fadeInUp 0.4s ease-out;
+}
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Selection color matching theme */
+::selection {
+    background: var(--primary);
+    color: white;
+}
+
+/* Smooth scroll for anchor links */
+html {
+    scroll-behavior: smooth;
+}
+
+/* ============================================
+   Global: Apply theme to ALL website pages
+   (including portal, login, contact, etc.)
+   ============================================ */
+
+#wrapwrap {
+    background-color: var(--bg-dark) !important;
+    color: var(--text-primary) !important;
+}
+
+#wrapwrap .container,
+#wrapwrap .oe_structure {
+    color: var(--text-primary);
+}
+
+/* Style Odoo's default form controls on portal/login */
+#wrapwrap .form-control,
+#wrapwrap .form-select {
+    /* background-COLOR (not the `background` shorthand) so the dropdown
+       caret image set on .form-select below is not wiped out. */
+    background-color: var(--bg-input) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap .form-control:focus,
+#wrapwrap .form-select:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px var(--primary-light) !important;
+}
+#wrapwrap .form-control::placeholder {
+    color: var(--text-muted) !important;
+}
+
+/* Cards and panels on portal pages */
+#wrapwrap .card,
+#wrapwrap .o_portal_wrap .card {
+    background: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap .card-header {
+    background: var(--bg-elevated) !important;
+    border-color: var(--border-color) !important;
+}
+#wrapwrap .card-footer {
+    background: var(--bg-elevated) !important;
+    border-color: var(--border-color) !important;
+}
+#wrapwrap .list-group-item {
+    background: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Tables */
+#wrapwrap .table {
+    --bs-table-bg: transparent;
+    --bs-table-border-color: var(--border-color);
+    color: var(--text-primary);
+}
+#wrapwrap .table th {
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+}
+
+/* Breadcrumbs */
+#wrapwrap .breadcrumb {
+    background: transparent;
+}
+#wrapwrap .breadcrumb-item a {
+    color: var(--text-muted);
+}
+#wrapwrap .breadcrumb-item.active {
+    color: var(--text-secondary);
+}
+
+/* Text colors for Odoo pages */
+#wrapwrap .text-muted {
+    color: var(--text-secondary) !important;
+}
+#wrapwrap h1, #wrapwrap h2, #wrapwrap h3, #wrapwrap h4, #wrapwrap h5, #wrapwrap h6 {
+    color: var(--text-primary);
+}
+/* Links — exclude buttons, nav-links, and dropdown items */
+#wrapwrap a:not(.btn):not(.nav-link):not(.navbar-brand):not(.dropdown-item):not(.action-btn):not(.badge) {
+    color: var(--primary);
+}
+#wrapwrap a:not(.btn):not(.nav-link):not(.navbar-brand):not(.dropdown-item):not(.action-btn):not(.badge):hover {
+    color: var(--primary-hover);
+}
+
+/* Dropdown menus (header, etc.) */
+#wrapwrap .dropdown-menu {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-color) !important;
+}
+#wrapwrap .dropdown-item {
+    color: var(--text-secondary) !important;
+}
+#wrapwrap .dropdown-item:hover,
+#wrapwrap .dropdown-item:focus {
+    background: var(--bg-elevated) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap .dropdown-divider {
+    border-color: var(--border-color) !important;
+}
+
+/* CloudOdoo custom header
+   Mirrors the SPA PublicNav 1:1 — h-16 (64px), max-w-7xl container,
+   transparent-at-top → scrolled→ bg+blur+border. The matching
+   `.co-navbar--scrolled` class is toggled by an inline script in
+   the QWeb head (saas_frontend_layout.xml). */
+.co-navbar {
+    /* Solid by default (like the logged-in dashboard app bar) — these
+       QWeb pages (checkout / invoices / payment) are not marketing hero
+       pages, so the header should read as a solid bar, not a transparent
+       overlay. */
+    background: var(--bg-navbar) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 !important;          /* height controlled by min-height */
+    min-height: 64px;               /* SPA: h-16 */
+    z-index: 40;                    /* SPA: z-40 */
+    transition: background-color 200ms ease, border-color 200ms ease;
+}
+.co-navbar > .container {
+    /* Full-width app bar like the SPA PublicNav/home (`w-full px-4 sm:px-6
+       lg:px-8`, NO max-width) so the logo sits flush at the left edge. */
+    max-width: none !important;
+    width: 100%;
+    padding-left: 1rem;             /* SPA: px-4 */
+    padding-right: 1rem;
+}
+@media (min-width: 640px) {
+    .co-navbar > .container { padding-left: 1.5rem; padding-right: 1.5rem; }
+}
+@media (min-width: 1024px) {
+    .co-navbar > .container { padding-left: 2rem; padding-right: 2rem; }
+}
+.co-navbar.co-navbar--scrolled {
+    background: var(--bg-navbar) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom-color: var(--border-color);
+}
+/* Brand: match SPA Logo (gap-2.5, text-base, font-bold tracking-tight) */
+.co-navbar .navbar-brand {
+    font-size: 1rem !important;     /* SPA: text-base */
+    font-weight: 700 !important;    /* SPA: font-bold */
+    letter-spacing: -0.025em;       /* SPA: tracking-tight */
+    gap: 0.625rem;                  /* SPA: gap-2.5 */
+    display: inline-flex;
+    align-items: center;
+    margin-right: 2rem;             /* SPA: gap-8 between logo block + nav */
+}
+.co-navbar .navbar-brand img {
+    height: 32px !important;        /* SPA Logo: size-8 = 32px */
+    width: auto;
+}
+/* Inline logo mark — mirrors the SPA Logo box 1:1 (size-8 rounded-lg
+   bg-primary shadow-glow). Theme-aware via --primary, so it tracks the
+   home page in both light (#1a73e8) and dark (#8ab4f8). */
+.co-logo-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;                    /* SPA: size-8 */
+    height: 32px;
+    border-radius: 0.5rem;          /* SPA: rounded-lg */
+    background: var(--primary);
+    box-shadow: var(--shadow-glow);
+    flex-shrink: 0;
+}
+.co-logo-mark--sm {
+    width: 24px;                    /* footer icon */
+    height: 24px;
+}
+.co-logo-word {
+    color: var(--text-primary);
+    font-size: 1rem;                /* SPA: text-base */
+    letter-spacing: -0.025em;       /* SPA: tracking-tight */
+}
+/* Right-side controls: gap-3 between toggle + account (SPA parity) */
+.co-navbar .navbar-nav.align-items-center {
+    gap: 0.75rem;                   /* SPA: gap-3 */
+}
+/* Left nav links sit gap-1 apart in the SPA (not gap-3). */
+.co-navbar .navbar-nav.me-auto {
+    gap: 0.25rem;                   /* SPA: gap-1 */
+}
+/* Spacing comes purely from the ul `gap` above — neutralise the
+   Bootstrap utility margins (me-2 / ms-2 / ms-lg-3) on the items so
+   the rhythm matches the SPA exactly. */
+.co-navbar .navbar-nav > .nav-item {
+    margin: 0 !important;
+}
+.co-navbar .navbar-brand {
+    font-size: 1.25rem;
+    color: var(--text-primary) !important;
+}
+.co-navbar .nav-link {
+    color: var(--text-secondary) !important;
+    font-weight: 500;
+    font-size: 0.875rem;            /* SPA: text-sm */
+    padding: 0.5rem 0.75rem !important;  /* SPA: px-3 py-2 */
+}
+.co-navbar .nav-link:hover,
+.co-navbar .nav-link.active {
+    color: var(--text-primary) !important;
+}
+
+/* Account menu — match the SPA's bordered "pill" (border + bg-card +
+   rounded-lg + small padding, 28px avatar, text-sm). */
+.co-navbar .nav-item.dropdown > .dropdown-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;                    /* SPA: gap-2 */
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    border-radius: 0.5rem;          /* SPA: rounded-lg */
+    padding: 0.375rem 0.5rem !important;  /* SPA: py-1.5 px-2 */
+    font-size: 0.875rem;            /* SPA: text-sm */
+    line-height: 1.25rem;
+    transition: background-color 150ms ease;
+}
+.co-navbar .nav-item.dropdown > .dropdown-toggle:hover {
+    background: var(--bg-card-hover, var(--border-color));
+    color: var(--text-primary) !important;
+}
+.co-navbar .nav-item.dropdown > .dropdown-toggle > div.rounded-circle {
+    width: 28px !important;         /* SPA: size-7 */
+    height: 28px !important;
+    margin-right: 0 !important;     /* gap handles spacing */
+    font-size: 0.75rem !important;  /* SPA: text-xs */
+    font-weight: 600 !important;
+}
+.co-navbar .nav-item.dropdown > .dropdown-toggle .dropdown-toggle,
+.co-navbar .nav-item.dropdown > .dropdown-toggle span {
+    font-weight: 500;               /* SPA: font-medium */
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* Replace Bootstrap's triangle caret with the lucide chevron SVG
+   (matches the SPA UserMenu's ChevronDown, incl. the open-state flip). */
+.co-navbar .nav-item.dropdown > .dropdown-toggle::after {
+    display: none;
+}
+.co-navbar .nav-item.dropdown > .dropdown-toggle .vx-chevron {
+    color: var(--text-muted, var(--text-secondary));
+    transition: transform 150ms ease;
+    flex-shrink: 0;
+}
+.co-navbar .nav-item.dropdown > .dropdown-toggle[aria-expanded="true"] .vx-chevron {
+    transform: rotate(180deg);
+}
+.co-navbar .navbar-toggler {
+    border: 1px solid var(--border-color);
+}
+/* Toggler icon: use filter to handle both themes */
+.co-navbar .navbar-toggler-icon {
+    filter: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(160,160,170,1)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+}
+
+/* CloudOdoo custom footer */
+.co-footer {
+    background: var(--bg-dark) !important;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+.co-footer h6 {
+    color: var(--text-primary);
+}
+.co-footer-link {
+    color: var(--text-muted) !important;
+    font-size: 0.875rem;
+    display: block;
+    padding: 0.25rem 0;
+    text-decoration: none;
+}
+.co-footer-link:hover {
+    color: var(--text-primary) !important;
+}
+/* Footer parity with the SPA Footer.tsx (text-xs, page bg, social row) */
+.co-footer { padding: 0; }
+/* Full-width footer like the SPA (`mx-auto w-full px-4 sm:px-6 lg:px-8`,
+   NO max-width) — mirrors the full-width header so both span edge-to-edge. */
+.co-footer > .container {
+    max-width: none !important;
+    width: 100%;
+    padding-left: 1rem;             /* px-4 */
+    padding-right: 1rem;
+}
+@media (min-width: 640px) {
+    .co-footer > .container { padding-left: 1.5rem; padding-right: 1.5rem; }
+}
+@media (min-width: 1024px) {
+    .co-footer > .container { padding-left: 2rem; padding-right: 2rem; }
+}
+.co-footer-copy {
+    font-size: 0.75rem;             /* SPA: text-xs */
+    color: var(--text-muted);
+}
+.co-footer-link {
+    font-size: 0.75rem !important;  /* SPA: text-xs */
+    padding: 0 !important;
+}
+.co-footer-social a {
+    color: var(--text-muted);
+    display: inline-flex;
+    transition: color 150ms ease;
+}
+.co-footer-social a:hover { color: var(--text-primary); }
+
+/* ============================================================
+   Checkout page — compact layout so the whole order summary
+   (Configuration + Charges) fits without scrolling.
+   ============================================================ */
+.vx-checkout .info-card { padding: 1.1rem 1.25rem; margin-bottom: 0; }
+.vx-sec-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 0.35rem;
+}
+.vx-config-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 1.5rem;
+}
+@media (max-width: 575.98px) {
+    .vx-config-grid { grid-template-columns: 1fr; }
+}
+.vx-config-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.83rem;
+    min-width: 0;
+}
+.vx-config-label { color: var(--text-muted); white-space: nowrap; }
+.vx-config-value {
+    color: var(--text-primary);
+    font-weight: 500;
+    text-align: right;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* Compact itemized charges table */
+.vx-charges td { padding: 0.4rem 0.25rem !important; font-size: 0.85rem; }
+.vx-charges tfoot tr:last-child td { padding-top: 0.6rem !important; }
+
+/* ============================================================
+   Account menu — mirror the dashboard (PortalLayout) app bar:
+   a plain 36px circle avatar (no pill / name / caret) opening a
+   rounded-xl panel with a name+email header and rounded-lg items.
+   These override the PublicNav "pill" rules above for the avatar.
+   ============================================================ */
+.co-navbar .nav-item.dropdown > .vx-avatar-toggle {
+    border: none !important;
+    background: transparent !important;
+    padding: 0.125rem !important;
+    border-radius: 9999px !important;
+}
+.co-navbar .nav-item.dropdown > .vx-avatar-toggle:hover {
+    background: transparent !important;
+}
+.co-navbar .vx-avatar {
+    width: 36px;                    /* SPA: size-9 */
+    height: 36px;
+    font-size: 0.875rem;            /* SPA: text-sm */
+    font-weight: 600;
+    box-shadow: 0 0 0 2px transparent;
+    transition: box-shadow 150ms ease;
+}
+.co-navbar .nav-item.dropdown > .vx-avatar-toggle[aria-expanded="true"] .vx-avatar {
+    box-shadow: 0 0 0 3px var(--primary-light);  /* SPA: ring-primary/30 */
+}
+/* The account panel: rounded-xl + border + bg-card + p-1.5 + shadow-2xl */
+#wrapwrap .co-navbar .vx-account-menu {
+    width: 16rem;                   /* SPA: w-64 */
+    min-width: 16rem;
+    border-radius: 0.75rem !important;  /* SPA: rounded-xl */
+    border: 1px solid var(--border-color) !important;
+    background: var(--bg-card) !important;
+    padding: 0.375rem !important;   /* SPA: p-1.5 */
+    margin-top: 0.5rem !important;  /* SPA: mt-2 */
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;  /* shadow-2xl */
+    overflow: hidden;
+}
+.vx-account-head { padding: 0.5rem 0.75rem; line-height: 1.3; }
+.vx-account-name {
+    font-size: 0.875rem;            /* SPA: text-sm */
+    font-weight: 500;
+    color: var(--text-primary);
+}
+.vx-account-email {
+    font-size: 0.75rem;             /* SPA: text-xs */
+    color: var(--text-muted);
+}
+#wrapwrap .co-navbar .vx-account-menu .dropdown-divider {
+    margin: 0.25rem 0;              /* SPA: my-1 */
+    border-color: var(--border-color);
+}
+#wrapwrap .co-navbar .vx-account-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;                   /* SPA: gap-3 */
+    border-radius: 0.5rem !important;   /* SPA: rounded-lg */
+    padding: 0.5rem 0.75rem !important; /* SPA: px-3 py-2 */
+    font-size: 0.875rem;            /* SPA: text-sm */
+    font-weight: 500;               /* SPA: font-medium */
+    color: var(--text-primary) !important;
+}
+#wrapwrap .co-navbar .vx-account-item svg { flex-shrink: 0; }
+#wrapwrap .co-navbar .vx-account-item:hover {
+    background: var(--bg-card-hover, var(--bg-elevated)) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap .co-navbar .vx-account-danger {
+    color: var(--danger) !important;
+}
+#wrapwrap .co-navbar .vx-account-danger:hover {
+    background: var(--danger-light) !important;
+    color: var(--danger) !important;
+}
+/* Footer social squares (match the VELTNEX SPA) */
+.co-social {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted) !important;
+    text-decoration: none;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+.co-social:hover {
+    color: var(--text-primary) !important;
+    border-color: var(--border-light);
+}
+
+/* Ensure fixed navbar doesn't overlap content */
+#wrapwrap > main,
+#wrapwrap > #wrap {
+    padding-top: 76px;
+}
+
+/* ==========================================================
+   Hide ALL Odoo branding, portal widgets, chatter, contact
+   cards, salesperson info, and "Powered by" from customer
+   view — across EVERY portal/website page.
+   ========================================================== */
+
+/* Chatter / Communication history / Message thread */
+.o_portal_chatter,
+#o_portal_chatter,
+.o_portal_chatter_composite,
+.o_portal_chatter_container,
+#invoice_communication,
+#sale_order_communication,
+#sale_communication,
+#purchase_communication,
+#wrapwrap #discussion {
+    display: none !important;
+}
+
+/* Salesperson / Contact card (all portal pages) */
+.o_my_contact,
+.o_portal_contact_details,
+.o_portal_contact_img,
+div[name="portal_contact"],
+.o_portal_sidebar .o_portal_contact,
+#wrapwrap .o_my_contact,
+#wrapwrap .o_portal_contact_details,
+#wrapwrap div[name="portal_contact"] {
+    display: none !important;
+}
+
+/* Salesperson block on invoice/SO detail pages */
+#wrapwrap .o_portal_sidebar .flex-grow-1:has(.o_portal_contact_details) {
+    display: none !important;
+}
+#wrapwrap .o_portal_sidebar h6:has(small) + .o_portal_contact_details,
+#wrapwrap .o_portal_sidebar .portal_my_contact {
+    display: none !important;
+}
+
+/* Powered by Odoo / Brand promotion (footer, login, everywhere) */
+.o_brand_promotion,
+.o_footer_copyright,
+.o_powered_by,
+a[href*="odoo.com"].o_logo,
+img[src*="odoo-logo"],
+#wrapwrap a[href*="www.odoo.com"],
+#wrapwrap a[href*="odoo.com"][target="_blank"],
+#wrapwrap .o_footer_copyright_name + span,
+footer .o_brand_promotion,
+footer a[href*="odoo.com"],
+.oe_login_form a[href*="odoo.com"],
+.o_login_auth a[href*="odoo.com"] {
+    display: none !important;
+}
+
+/* Portal home card hover effects */
+#wrapwrap .o_portal_my_home .info-card:hover {
+    background: var(--bg-card-hover) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Hide Odoo's default portal cards and "My account" heading */
+#wrapwrap .o_portal_my_home .o_portal_index_card {
+    display: none !important;
+}
+#wrapwrap .o_portal_my_details,
+#wrapwrap .o_portal_my_doc_table {
+    color: var(--text-primary);
+}
+
+/* Style the "My account" wrapper area */
+#wrapwrap .wrapper h3 {
+    color: var(--text-primary) !important;
+}
+
+/* Portal sidebar */
+#wrapwrap .o_portal_sidebar .card {
+    background: var(--bg-card) !important;
+}
+
+/* ============================================
+   Portal Invoice / Bill Pages — Full Restyle
+   ============================================ */
+
+/* Main container background */
+#wrapwrap .o_portal_sidebar,
+#wrapwrap .o_portal {
+    background: var(--bg-dark) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Cards and panels */
+#wrapwrap .o_portal_sidebar .card,
+#wrapwrap .o_portal .card {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-lg) !important;
+    color: var(--text-primary) !important;
+    box-shadow: none !important;
+}
+#wrapwrap .o_portal_sidebar .card-header,
+#wrapwrap .o_portal .card-header {
+    background: var(--bg-elevated) !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal_sidebar .card-body,
+#wrapwrap .o_portal .card-body {
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal_sidebar .card-footer,
+#wrapwrap .o_portal .card-footer {
+    background: var(--bg-elevated) !important;
+    border-top: 1px solid var(--border-color) !important;
+}
+
+/* Page title and breadcrumbs */
+#wrapwrap .o_portal_sidebar h1,
+#wrapwrap .o_portal_sidebar h2,
+#wrapwrap .o_portal_sidebar h3,
+#wrapwrap .o_portal_sidebar h4,
+#wrapwrap .o_portal_sidebar h5 {
+    color: var(--text-primary) !important;
+}
+#wrapwrap .breadcrumb {
+    background: transparent !important;
+}
+#wrapwrap .breadcrumb-item a {
+    color: var(--primary) !important;
+}
+#wrapwrap .breadcrumb-item.active {
+    color: var(--text-muted) !important;
+}
+
+/* Tables inside invoice */
+#wrapwrap .o_portal_sidebar table,
+#wrapwrap .o_portal table {
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal_sidebar table th,
+#wrapwrap .o_portal table th {
+    background: var(--bg-elevated) !important;
+    color: var(--text-secondary) !important;
+    border-color: var(--border-color) !important;
+}
+#wrapwrap .o_portal_sidebar table td,
+#wrapwrap .o_portal table td {
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal_sidebar table tr:hover td {
+    background: var(--bg-card-hover) !important;
+}
+#wrapwrap .o_portal_sidebar .table-light,
+#wrapwrap .o_portal_sidebar .table-light th,
+#wrapwrap .o_portal_sidebar .table-light td {
+    background: var(--bg-elevated) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Invoice amount summary */
+#wrapwrap .o_portal_sidebar .text-end strong,
+#wrapwrap .o_portal .text-end strong {
+    color: var(--text-primary) !important;
+}
+
+/* Sidebar info sections */
+#wrapwrap .o_portal_sidebar .o_portal_record_sidebar_content,
+#wrapwrap .o_portal_sidebar .sidebar_content {
+    background: var(--bg-card) !important;
+    color: var(--text-secondary) !important;
+}
+#wrapwrap .o_portal_sidebar .o_portal_record_sidebar_content label,
+#wrapwrap .o_portal_sidebar .o_portal_record_sidebar_content small {
+    color: var(--text-muted) !important;
+}
+
+/* Buttons */
+#wrapwrap .o_portal_sidebar .btn-primary,
+#wrapwrap .o_portal .btn-primary {
+    background: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+
+/* Links */
+#wrapwrap .o_portal_sidebar a:not(.btn),
+#wrapwrap .o_portal a:not(.btn) {
+    color: var(--primary);
+}
+
+/* Invoice list table */
+#wrapwrap .o_portal .table thead th {
+    background: var(--bg-elevated) !important;
+    color: var(--text-muted) !important;
+    border-color: var(--border-color) !important;
+}
+#wrapwrap .o_portal .table tbody td {
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal .table tbody tr:hover {
+    background: var(--bg-card-hover) !important;
+}
+
+/* Status badges */
+#wrapwrap .badge.text-bg-success {
+    background: var(--success-light) !important;
+    color: var(--success) !important;
+}
+#wrapwrap .badge.text-bg-warning {
+    background: var(--warning-light) !important;
+    color: var(--warning) !important;
+}
+#wrapwrap .badge.text-bg-info {
+    background: rgba(59, 130, 246, 0.1) !important;
+    color: var(--info) !important;
+}
+
+/* Pager */
+#wrapwrap .o_portal_pager .page-link {
+    background: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal_pager .page-item.active .page-link {
+    background: var(--primary) !important;
+    border-color: var(--primary) !important;
+    color: #fff !important;
+}
+
+/* Message thread / chatter */
+#wrapwrap .o_portal_chatter,
+#wrapwrap .o_portal_chatter_messages {
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal_chatter_message {
+    border-color: var(--border-color) !important;
+}
+
+/* Text colors */
+#wrapwrap .o_portal_sidebar .text-muted {
+    color: var(--text-muted) !important;
+}
+#wrapwrap .o_portal_sidebar .border-bottom {
+    border-color: var(--border-color) !important;
+}
+
+/* Background overrides for white sections */
+#wrapwrap .o_portal_sidebar .bg-white,
+#wrapwrap .o_portal_sidebar .bg-light,
+#wrapwrap .o_portal .bg-white,
+#wrapwrap .o_portal .bg-light,
+#wrapwrap .bg-white,
+#wrapwrap .bg-light {
+    background: var(--bg-card) !important;
+}
+
+/* Portal page overall background */
+#wrapwrap,
+#wrapwrap > main,
+#wrapwrap #wrap {
+    background: var(--bg-dark) !important;
+}
+
+/* All portal text */
+#wrapwrap .o_portal_sidebar *,
+#wrapwrap .o_portal * {
+    border-color: var(--border-color) !important;
+}
+
+/* Sidebar amount display */
+#wrapwrap .o_portal_sidebar h2,
+#wrapwrap .o_portal_sidebar h4 {
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal_sidebar .small,
+#wrapwrap .o_portal_sidebar small {
+    color: var(--text-muted) !important;
+}
+
+/* Alert boxes in sidebar */
+#wrapwrap .o_portal_sidebar .alert-success {
+    background: var(--success-light) !important;
+    border-color: rgba(16, 185, 129, 0.3) !important;
+    color: var(--success) !important;
+}
+#wrapwrap .o_portal_sidebar .alert-warning {
+    background: var(--warning-light) !important;
+    border-color: rgba(245, 158, 11, 0.3) !important;
+    color: var(--warning) !important;
+}
+#wrapwrap .o_portal_sidebar .alert-danger,
+#wrapwrap .o_portal_sidebar .alert-info {
+    background: rgba(59, 130, 246, 0.1) !important;
+    border-color: rgba(59, 130, 246, 0.3) !important;
+    color: var(--info) !important;
+}
+
+/* Download / action buttons in sidebar */
+#wrapwrap .o_portal_sidebar .btn-light,
+#wrapwrap .o_portal .btn-light {
+    background: var(--bg-elevated) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal_sidebar .btn-light:hover,
+#wrapwrap .o_portal .btn-light:hover {
+    background: var(--bg-card-hover) !important;
+}
+
+/* Sidebar list group / info rows */
+#wrapwrap .o_portal_sidebar .list-group-item,
+#wrapwrap .o_portal .list-group-item {
+    background: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Portal chatter / message thread */
+#wrapwrap .o_portal_chatter_composer,
+#wrapwrap .o_portal_chatter_composer textarea {
+    background: var(--bg-input) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+#wrapwrap .o_portal_chatter_message_title {
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal_chatter .o_portal_chatter_message {
+    background: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* Any remaining white/light text or bg */
+#wrapwrap .text-900,
+#wrapwrap .text-dark {
+    color: var(--text-primary) !important;
+}
+#wrapwrap .border-bottom,
+#wrapwrap .border-top {
+    border-color: var(--border-color) !important;
+}
+
+/* Form controls in portal */
+#wrapwrap .o_portal .form-control,
+#wrapwrap .o_portal_sidebar .form-control,
+#wrapwrap .o_portal .form-select,
+#wrapwrap .o_portal_sidebar .form-select {
+    /* background-COLOR (not the shorthand) so the global .form-select
+       caret image survives on portal dropdowns too. */
+    background-color: var(--bg-input) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Payment provider cards */
+#wrapwrap .o_payment_form .card,
+#wrapwrap .o_payment_option_card {
+    background: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+/* ============================================
+   Force Dark Mode on ALL Portal / Odoo Pages
+   ============================================ */
+
+/* Bootstrap bg utilities */
+#wrapwrap .bg-100,
+#wrapwrap .bg-200,
+#wrapwrap .bg-300 {
+    background-color: var(--bg-elevated) !important;
+}
+
+/* Bootstrap text utilities */
+#wrapwrap .text-600,
+#wrapwrap .text-700,
+#wrapwrap .text-800,
+#wrapwrap .text-900,
+#wrapwrap .text-dark,
+#wrapwrap .text-body {
+    color: var(--text-primary) !important;
+}
+#wrapwrap .text-muted,
+#wrapwrap .text-500,
+#wrapwrap .text-400,
+#wrapwrap .text-secondary {
+    color: var(--text-muted) !important;
+}
+
+/* Dividers */
+#wrapwrap .vr {
+    background-color: var(--border-color) !important;
+    opacity: 1 !important;
+}
+#wrapwrap hr {
+    border-color: var(--border-color) !important;
+    opacity: 0.5;
+}
+
+/* All anchors in portal */
+#wrapwrap a:not(.btn):not(.nav-link):not(.dropdown-item) {
+    color: var(--primary);
+}
+
+/* Powered by Odoo in sidebar — hide */
+#wrapwrap .o_portal_sidebar_content > .d-none.d-lg-block.small.text-center {
+    display: none !important;
+}
+
+/* Specific invoice page overrides */
+#wrapwrap #invoice_content .card {
+    background: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+}
+#wrapwrap #invoice_content .card-body {
+    color: var(--text-primary) !important;
+}
+#wrapwrap #invoice_content table {
+    --bs-table-bg: transparent !important;
+    --bs-table-striped-bg: transparent !important;
+    --bs-table-hover-bg: var(--bg-card-hover) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap #invoice_content table th {
+    background: var(--bg-elevated) !important;
+    color: var(--text-muted) !important;
+}
+#wrapwrap #invoice_content table td {
+    color: var(--text-primary) !important;
+}
+#wrapwrap #invoice_content .table > :not(caption) > * > * {
+    background-color: transparent !important;
+    box-shadow: none !important;
+}
+
+/* Portal layout wrapper — ensure all sections dark */
+#wrapwrap .o_portal,
+#wrapwrap .o_portal_sidebar,
+#wrapwrap .container.o_portal_sidebar {
+    background: transparent !important;
+    color: var(--text-primary) !important;
+}
+
+/* Override Bootstrap .card default white */
+#wrapwrap .card {
+    --bs-card-bg: var(--bg-card) !important;
+    --bs-card-border-color: var(--border-color) !important;
+    --bs-card-color: var(--text-primary) !important;
+    --bs-card-cap-bg: var(--bg-elevated) !important;
+    background-color: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Override Bootstrap .table defaults */
+#wrapwrap .table {
+    --bs-table-bg: transparent !important;
+    --bs-table-color: var(--text-primary) !important;
+    --bs-table-border-color: var(--border-color) !important;
+}
+#wrapwrap .table > :not(caption) > * > * {
+    border-bottom-color: var(--border-color) !important;
+    background-color: transparent !important;
+    color: inherit !important;
+}
+
+/* Nuclear override: force dark on ALL elements in portal pages */
+#wrapwrap .o_portal_sidebar .card-body,
+#wrapwrap .o_portal_sidebar .card-body *,
+#wrapwrap #invoice_content,
+#wrapwrap #invoice_content *,
+#wrapwrap #invoice_communication,
+#wrapwrap #invoice_communication * {
+    color: var(--text-primary);
+    background-color: transparent;
+}
+#wrapwrap #invoice_content .card,
+#wrapwrap #invoice_communication .card {
+    background-color: var(--bg-card) !important;
+}
+#wrapwrap #invoice_content thead tr,
+#wrapwrap #invoice_content thead th {
+    background-color: var(--bg-elevated) !important;
+    color: var(--text-muted) !important;
+}
+#wrapwrap #invoice_content .badge {
+    color: inherit !important;
+}
+
+/* Sidebar panel itself */
+#wrapwrap .o_portal_sidebar_content {
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal_sidebar_content * {
+    color: inherit;
+}
+#wrapwrap .o_portal_sidebar_content .btn {
+    color: var(--text-primary) !important;
+}
+
+/* Ensure the sidebar amount is visible */
+#wrapwrap .o_portal_sidebar_content h2 span,
+#wrapwrap .o_portal_sidebar_content h4 span,
+#wrapwrap .o_portal_sidebar_content .oe_currency_value {
+    color: var(--text-primary) !important;
+}
+
+/* Download button */
+#wrapwrap .o_download_btn {
+    background: var(--bg-elevated) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_download_btn:hover {
+    background: var(--bg-card-hover) !important;
+}
+
+/* ============================================
+   CloudOdoo Login Page — Full Redesign
+   ============================================ */
+
+.co-login-page {
+    display: flex;
+    min-height: 100vh;
+    width: 100%;
+    background: var(--bg-dark);
+}
+
+/* Hide default Odoo card styling on login */
+.co-login-page .card,
+.co-login-page .o_database_list {
+    display: contents !important;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    max-width: none !important;
+}
+.co-login-page .card-body {
+    display: contents;
+}
+
+/* Hide Odoo's default logo and footer on the login page */
+.co-login-page .card-body > .text-center.pb-3.border-bottom,
+.co-login-page .card-body > .text-center.small.mt-4 {
+    display: none !important;
+}
+
+/* Style database selector dropdown — same light chevron + dark,
+   legible option list as the rest of the site. */
+.co-login-page select,
+.co-login-page .form-select {
+    background-color: var(--bg-input) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 10px !important;
+    color: var(--text-primary) !important;
+    /* extra right padding leaves room for the chevron */
+    padding: 0.7rem 2.75rem 0.7rem 1rem !important;
+    font-size: 0.95rem !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%23A1A1AA' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 1rem;
+}
+.co-login-page select:focus,
+.co-login-page .form-select:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px var(--primary-light) !important;
+    outline: none !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%23FAFAFA' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+}
+.co-login-page select option,
+.co-login-page .form-select option {
+    background-color: var(--bg-elevated);
+    color: var(--text-primary);
+    padding: 0.5rem 0.75rem;
+    font-weight: 500;
+}
+.co-login-page select option:checked,
+.co-login-page select option:hover,
+.co-login-page .form-select option:checked,
+.co-login-page .form-select option:hover {
+    background-color: var(--primary);
+    color: #ffffff;
+}
+
+/* Hide Odoo branding in password manager / autofill suggestions */
+.co-login-page .o_login_auth,
+.co-login-page .o_login_auth a[href*="odoo"],
+.co-login-page .oe_login_form a[href*="odoo.com"] {
+    display: none !important;
+}
+
+/* "Choose a user" switcher component */
+.co-login-page .o_user_switch {
+    color: var(--text-primary) !important;
+}
+.co-login-page .o_user_switch p {
+    color: var(--text-secondary) !important;
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+.co-login-page .o_user_switch .list-group-item {
+    background: var(--bg-input) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+    transition: all 0.15s ease;
+}
+.co-login-page .o_user_switch .list-group-item:hover {
+    background: var(--bg-elevated) !important;
+    border-color: var(--primary) !important;
+}
+.co-login-page .o_user_switch .list-group-item .fa-times {
+    color: var(--text-muted) !important;
+    opacity: 0.5;
+}
+.co-login-page .o_user_switch .list-group-item .fa-times:hover {
+    color: var(--danger) !important;
+    opacity: 1;
+}
+.co-login-page .o_user_switch .btn-link,
+.co-login-page .o_user_switch_btn {
+    color: var(--primary) !important;
+    text-decoration: none;
+}
+.co-login-page .o_user_switch .btn-link:hover,
+.co-login-page .o_user_switch_btn:hover {
+    color: var(--primary-hover) !important;
+}
+
+/* User avatar in switcher */
+.co-login-page .o_user_switch .o_avatar {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border-color);
+}
+
+/* ---- Left Brand Panel ---- */
+.co-login-brand {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem;
+    background: linear-gradient(135deg, #0A0A0B 0%, #111827 50%, #0A0A0B 100%);
+    position: relative;
+    overflow: hidden;
+}
+[data-theme="light"] .co-login-brand {
+    background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 50%, #EFF6FF 100%);
+}
+.co-login-brand::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 30% 50%, rgba(32, 60, 134, 0.08) 0%, transparent 60%);
+    pointer-events: none;
+}
+.co-login-brand-content {
+    position: relative;
+    z-index: 1;
+    max-width: 480px;
+    margin: 0 auto;
+}
+.co-login-brand-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 3rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.co-login-brand-logo i {
+    font-size: 1.75rem;
+    color: var(--primary);
+}
+.co-login-brand-title {
+    font-size: 2.75rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, #FAFAFA 0%, #A1A1AA 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+[data-theme="light"] .co-login-brand-title {
+    background: linear-gradient(135deg, #111827 0%, #4B5563 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.co-login-brand-subtitle {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin-bottom: 2.5rem;
+}
+.co-login-brand-features {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.co-login-brand-feature {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+.co-login-brand-feature i {
+    color: var(--primary);
+    font-size: 0.85rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--primary-light);
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+.co-login-brand-footer {
+    position: absolute;
+    bottom: 2rem;
+    left: 3rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+/* ---- Right Form Panel ---- */
+.co-login-form-panel {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    background: var(--bg-dark);
+}
+.co-login-form-wrapper {
+    width: 100%;
+    max-width: 420px;
+}
+
+/* Mobile logo */
+.co-login-mobile-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 2rem;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.co-login-mobile-logo i {
+    font-size: 1.5rem;
+    color: var(--primary);
+}
+
+/* Form header */
+.co-login-form-header {
+    margin-bottom: 2rem;
+}
+.co-login-form-header h2 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+.co-login-form-header p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin: 0;
+}
+
+/* Form fields */
+.co-login-page .oe_login_form {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.co-login-page .oe_login_form .form-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 0.4rem;
+}
+.co-login-page .oe_login_form .form-control {
+    background: var(--bg-input) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 10px !important;
+    color: var(--text-primary) !important;
+    padding: 0.7rem 1rem !important;
+    font-size: 0.95rem !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+.co-login-page .oe_login_form .form-control:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px var(--primary-light) !important;
+    outline: none !important;
+}
+.co-login-page .oe_login_form .form-control::placeholder {
+    color: var(--text-muted) !important;
+}
+
+/* Forgot password link */
+.co-forgot-link {
+    color: var(--primary) !important;
+    font-size: 0.8rem;
+    font-weight: 400;
+    text-decoration: none;
+}
+.co-forgot-link:hover {
+    color: var(--primary-hover) !important;
+    text-decoration: underline;
+}
+
+/* Primary button */
+.co-btn-primary {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%) !important;
+    border: none !important;
+    border-radius: 10px !important;
+    color: var(--primary-foreground) !important;
+    font-weight: 600 !important;
+    font-size: 0.95rem !important;
+    padding: 0.75rem 1.5rem !important;
+    transition: all 0.2s ease !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.co-btn-primary:hover {
+    background: linear-gradient(135deg, var(--primary-hover) 0%, var(--accent) 100%) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(26, 115, 232, 0.3) !important;
+}
+.co-btn-primary:active {
+    transform: translateY(0);
+}
+
+/* Login buttons area */
+.co-login-buttons {
+    color: var(--text-secondary);
+}
+
+/* Form footer */
+.co-login-form-footer {
+    text-align: center;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+.co-login-form-footer p {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0;
+}
+.co-login-form-footer a {
+    color: var(--primary);
+    font-weight: 500;
+    text-decoration: none;
+}
+.co-login-form-footer a:hover {
+    color: var(--primary-hover);
+    text-decoration: underline;
+}
+
+/* Alert styling on login page */
+.co-login-page .alert-danger {
+    background: rgba(239, 68, 68, 0.1) !important;
+    border: 1px solid rgba(239, 68, 68, 0.3) !important;
+    color: #FCA5A5 !important;
+    border-radius: 10px !important;
+}
+.co-login-page .alert-success {
+    background: rgba(16, 185, 129, 0.1) !important;
+    border: 1px solid rgba(16, 185, 129, 0.3) !important;
+    color: #6EE7B7 !important;
+    border-radius: 10px !important;
+}
+[data-theme="light"] .co-login-page .alert-danger {
+    color: #DC2626 !important;
+}
+[data-theme="light"] .co-login-page .alert-success {
+    color: #059669 !important;
+}
+
+/* Override Odoo's bg-100 on body for login page */
+body.bg-100 {
+    background: var(--bg-dark) !important;
+}
+/* Remove padding from wrapwrap on login */
+#wrapwrap:has(.co-login-page) {
+    padding: 0 !important;
+}
+#wrapwrap:has(.co-login-page) > main {
+    padding: 0 !important;
+}
+
+/* Login responsive */
+@media (max-width: 991.98px) {
+    .co-login-page {
+        flex-direction: column;
+    }
+    .co-login-form-panel {
+        min-height: 100vh;
+    }
+}
+
+/* ============================================
+   Theme Toggle Button
+   ============================================ */
+
+.co-theme-toggle {
+    background: none !important;
+    border: none !important;
+    color: var(--text-secondary) !important;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: color var(--transition-fast);
+    line-height: 1;
+    padding: 0.5rem !important;
+}
+.co-theme-toggle:hover {
+    color: var(--text-primary) !important;
+}
+
+/* ============================================
+   Reset & Base Styles
+   ============================================ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--bg-dark);
+    color: var(--text-primary);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+    color: var(--primary);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+a:hover {
+    color: var(--primary-hover);
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text-primary);
+}
+
+.text-gradient {
+    background: linear-gradient(135deg, var(--primary) 0%, #0db3d0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+[data-theme="light"] .text-gradient {
+    background: linear-gradient(135deg, var(--primary) 0%, #0db3d0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.text-muted {
+    color: var(--text-secondary) !important;
+}
+
+/* Navigation */
+.navbar {
+    background: var(--bg-navbar);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0.75rem 0;
+    z-index: 1000;
+}
+
+.navbar-brand {
+    font-size: 1.25rem;
+    color: var(--text-primary) !important;
+}
+
+.navbar-nav .nav-link {
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem !important;
+    transition: color var(--transition-fast);
+}
+
+.navbar-nav .nav-link:hover {
+    color: var(--text-primary);
+}
+.navbar-nav .nav-link.active {
+    color: var(--primary);
+    position: relative;
+}
+.navbar-nav .nav-link.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 1rem;
+    right: 1rem;
+    height: 2px;
+    background: var(--primary);
+    border-radius: 1px;
+}
+
+.navbar-toggler {
+    border: 1px solid var(--border-color);
+    padding: 0.375rem 0.625rem;
+}
+
+.navbar-toggler:focus {
+    box-shadow: none;
+}
+
+/* Buttons */
+.btn {
+    font-weight: 500;
+    font-size: 0.9rem;
+    padding: 0.625rem 1.25rem;
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+    border: none;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: var(--primary-foreground);
+}
+
+.btn-primary:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(32, 60, 134, 0.3);
+}
+.btn-primary:active {
+    transform: translateY(0) scale(0.98);
+    box-shadow: none;
+}
+.btn-success:active,
+.btn-outline-secondary:active,
+.btn-outline-light:active {
+    transform: translateY(0) scale(0.98);
+}
+
+.btn-outline-light {
+    border: 1px solid var(--border-light);
+    color: var(--text-primary);
+    background: transparent;
+}
+
+.btn-outline-light:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+
+.btn-outline-secondary {
+    border: 1px solid var(--border-light);
+    color: var(--text-secondary);
+    background: transparent;
+}
+
+.btn-outline-secondary:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+
+.btn-success {
+    background: var(--success);
+    color: white;
+}
+
+.btn-success:hover {
+    background: #059669;
+}
+
+.btn-lg {
+    padding: 0.875rem 1.75rem;
+    font-size: 1rem;
+}
+
+.btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+}
+
+/* Hero Section */
+.hero-section {
+    min-height: 100vh;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+}
+
+.hero-bg {
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse at 20% 20%, rgba(32, 60, 134, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(0, 212, 255, 0.1) 0%, transparent 50%);
+}
+[data-theme="light"] .hero-bg {
+    background:
+        radial-gradient(ellipse at 20% 20%, rgba(32, 60, 134, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(0, 212, 255, 0.04) 0%, transparent 50%);
+}
+
+.hero-visual {
+    position: relative;
+}
+
+.dashboard-preview {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+}
+
+.preview-header {
+    background: var(--bg-elevated);
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.preview-dots {
+    display: flex;
+    gap: 6px;
+}
+
+.preview-dots span {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--border-light);
+}
+
+.preview-dots span:first-child { background: #EF4444; }
+.preview-dots span:nth-child(2) { background: #F59E0B; }
+.preview-dots span:last-child { background: #10B981; }
+
+.preview-title {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.preview-body {
+    display: flex;
+    min-height: 280px;
+}
+
+.preview-sidebar {
+    width: 50px;
+    background: var(--bg-elevated);
+    border-right: 1px solid var(--border-color);
+    padding: 1rem 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sidebar-item {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+}
+
+.sidebar-item.active,
+.sidebar-item:hover {
+    background: var(--primary-light);
+    color: var(--primary);
+}
+
+.preview-content {
+    flex: 1;
+    padding: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    align-content: start;
+}
+
+.stat-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* "Odoo" pill next to the URL in the hero mockup — Odoo's brand
+   purple so the viewer recognises what kind of app is hosted. */
+.preview-odoo-badge {
+    display: inline-flex;
+    align-items: center;
+    background: linear-gradient(135deg, #875A7B 0%, #714B67 100%);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 0.12rem 0.5rem;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    box-shadow: 0 0 0 1px rgba(135, 90, 123, 0.35);
+}
+
+/* Wide status banner at the top of the mockup's content grid: spans
+   every column, makes "Odoo X — Running" the focal point. */
+.preview-status-card {
+    grid-column: 1 / -1;
+    background: linear-gradient(135deg,
+        rgba(135, 90, 123, 0.08) 0%,
+        rgba(113, 75, 103, 0.04) 100%);
+    border-color: rgba(135, 90, 123, 0.25);
+}
+.preview-status-card .stat-label {
+    display: block;
+    margin-bottom: 0.15rem;
+}
+.preview-status-card .stat-value {
+    color: #875A7B;
+    font-size: 1.1rem;
+}
+
+.preview-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(16, 185, 129, 0.12);
+    color: #10B981;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.25rem 0.65rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.preview-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #10B981;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+    animation: preview-status-pulse 2s infinite;
+}
+
+@keyframes preview-status-pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(16, 185, 129, 0.55); }
+    70%  { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+    100% { box-shadow: 0 0 0 0   rgba(16, 185, 129, 0); }
+}
+
+/* Feature Cards */
+.feature-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    height: 100%;
+    transition: all var(--transition-base);
+}
+
+.feature-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-light);
+    transform: translateY(-4px);
+}
+
+.feature-icon {
+    width: 48px;
+    height: 48px;
+    background: var(--primary-light);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary);
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+}
+
+/* Stats Section */
+.bg-dark-gradient {
+    background: linear-gradient(180deg, var(--bg-dark) 0%, var(--bg-card) 100%);
+}
+
+.stat-block {
+    padding: 1.5rem;
+}
+
+.stat-number {
+    display: block;
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.stat-text {
+    display: block;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-top: 0.5rem;
+}
+
+/* CTA Card */
+.cta-card {
+    background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-elevated) 100%);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    padding: 4rem 2rem;
+}
+
+/* Footer */
+.footer {
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-color);
+    padding: 3rem 0 1.5rem;
+}
+
+.footer-link {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    display: block;
+    padding: 0.25rem 0;
+    transition: color var(--transition-fast);
+}
+
+.footer-link:hover {
+    color: var(--text-primary);
+}
+
+/* Utility Classes */
+.py-6 {
+    padding-top: 5rem;
+    padding-bottom: 5rem;
+}
+
+/* Service Cards */
+.service-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    height: 100%;
+    transition: all var(--transition-base);
+    display: flex;
+    flex-direction: column;
+}
+
+.service-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-light);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+}
+
+.service-icon {
+    width: 64px;
+    height: 64px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.75rem;
+    color: var(--primary);
+    margin-bottom: 1rem;
+}
+
+.service-card h4 {
+    font-size: 1.125rem;
+    margin-bottom: 0.25rem;
+}
+
+.service-subtitle {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+}
+
+.feature-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem 0;
+    flex: 1;
+}
+
+.feature-list li {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    padding: 0.375rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.feature-list li i {
+    color: var(--success);
+    font-size: 0.75rem;
+}
+
+.plan-count {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+/* Plan Cards */
+.plan-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.75rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    transition: all var(--transition-base);
+    position: relative;
+}
+
+.plan-card:hover {
+    border-color: var(--border-light);
+}
+
+.plan-card.popular {
+    border-color: var(--primary);
+    box-shadow: var(--shadow-glow);
+}
+
+.plan-badge {
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--primary);
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 1rem;
+    border-radius: 20px;
+}
+
+.plan-name {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.plan-price {
+    margin-bottom: 1.5rem;
+}
+
+.plan-price .amount {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #FFFFFF;
+}
+[data-theme="light"] .plan-price .amount {
+    color: var(--text-primary);
+}
+
+.plan-price .period {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.plan-price .original {
+    text-decoration: line-through;
+    color: var(--text-muted);
+    font-size: 1rem;
+    margin-right: 0.5rem;
+}
+
+.plan-specs {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.5rem 0;
+    flex: 1;
+}
+
+.plan-specs li {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.plan-specs li:last-child {
+    border-bottom: none;
+}
+
+.plan-specs li i {
+    width: 20px;
+    color: var(--text-muted);
+}
+
+/* Billing Toggle */
+.billing-toggle {
+    display: inline-flex;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 4px;
+}
+
+.billing-toggle .toggle-btn {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.billing-toggle .toggle-btn.active {
+    background: var(--primary);
+    color: white;
+}
+
+.yearly-badge {
+    display: inline-block;
+    background: var(--success-light);
+    color: var(--success);
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 20px;
+    margin-left: 0.5rem;
+}
+
+/* Trial Banner */
+.trial-banner {
+    background: linear-gradient(135deg, var(--info-light) 0%, rgba(0, 212, 255, 0.1) 100%);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.trial-banner h5 {
+    color: var(--info);
+}
+
+/* Trial Countdown Badge */
+.trial-countdown-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 0.6rem;
+    border-radius: 20px;
+    vertical-align: middle;
+}
+.trial-countdown-badge.normal {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--info);
+}
+.trial-countdown-badge.warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--warning);
+}
+.trial-countdown-badge.urgent {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* ============================================================
+   Custom Plan Builder
+   ============================================================ */
+
+.custom-builder-section {
+    margin-top: 4rem;
+    padding-top: 3rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.custom-builder-section h2 {
+    color: var(--text-primary);
+}
+
+.custom-builder-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 2rem;
+    transition: all var(--transition-base);
+}
+
+.custom-builder-card:hover {
+    border-color: var(--border-light);
+}
+
+/* Highlight animation when scrolled to */
+.builder-highlight .custom-builder-card {
+    border-color: var(--primary);
+    box-shadow: var(--shadow-glow);
+    transition: all 0.3s ease;
+}
+
+/* Slider Group */
+.slider-group {
+    position: relative;
+}
+
+.slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.slider-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.slider-tooltip-trigger {
+    color: var(--text-muted);
+    cursor: help;
+    font-size: 0.8rem;
+    transition: color 0.2s;
+}
+
+.slider-tooltip-trigger:hover {
+    color: var(--primary);
+}
+
+.slider-value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--primary);
+    background: rgba(32, 60, 134, 0.1);
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(32, 60, 134, 0.2);
+}
+
+.slider-value .value-number {
+    font-size: 1.25rem;
+}
+
+.slider-value .slider-input {
+    width: 2.5rem;
+    text-align: center;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--primary);
+    font-weight: 700;
+    font-size: 1.25rem;
+    padding: 0;
+    -moz-appearance: textfield;
+}
+.slider-value .slider-input::-webkit-outer-spin-button,
+.slider-value .slider-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.slider-value .slider-input:focus {
+    background: rgba(32, 60, 134, 0.15);
+    border-radius: 4px;
+}
+
+/* Custom Range Slider */
+.slider-container {
+    position: relative;
+    padding: 0.5rem 0 2rem 0;
+}
+
+.custom-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(
+        to right,
+        var(--primary) 0%,
+        var(--primary) var(--slider-pct, 50%),
+        var(--bg-elevated, #1a1a1d) var(--slider-pct, 50%),
+        var(--bg-elevated, #1a1a1d) 100%
+    );
+    outline: none;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.custom-slider:hover {
+    opacity: 0.9;
+}
+
+/* Slider Thumb - WebKit */
+.custom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 3px solid var(--bg-card, #111113);
+    box-shadow: 0 0 0 2px var(--primary), 0 2px 8px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.custom-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 3px var(--primary), 0 2px 12px rgba(32, 60, 134, 0.4);
+}
+
+.custom-slider::-webkit-slider-thumb:active {
+    transform: scale(1.05);
+}
+
+/* Slider Thumb - Firefox */
+.custom-slider::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 3px solid var(--bg-card, #111113);
+    box-shadow: 0 0 0 2px var(--primary), 0 2px 8px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.custom-slider::-moz-range-thumb:hover {
+    transform: scale(1.15);
+}
+
+.custom-slider::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: transparent;
+}
+
+/* Slider Ticks */
+.slider-ticks {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1.5rem;
+}
+
+.slider-tick {
+    position: absolute;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.tick-mark {
+    display: block;
+    width: 1px;
+    height: 6px;
+    background: var(--border-light, #3f3f46);
+}
+
+.tick-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    white-space: nowrap;
+}
+
+.tick-recommended .tick-label {
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.tick-recommended .tick-mark {
+    background: var(--primary);
+}
+
+/* Slider Recommendation */
+.slider-recommendation {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    padding: 0.5rem 0.75rem;
+    background: rgba(32, 60, 134, 0.06);
+    border: 1px solid rgba(32, 60, 134, 0.12);
+    border-radius: var(--radius-md);
+    margin-top: 0.5rem;
+    transition: all 0.3s ease;
+}
+
+.slider-recommendation.rec-optimal {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.2);
+    color: var(--success);
+}
+
+.slider-highlight-bar {
+    margin-top: 0.5rem;
+}
+
+.highlight-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Info Box */
+.info-box {
+    background: var(--bg-elevated, #18181b);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.info-box-header {
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--warning, #F59E0B);
+    background: rgba(245, 158, 11, 0.06);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.info-box-body {
+    padding: 1rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.usage-type {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.usage-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 20px;
+    width: fit-content;
+}
+
+.usage-badge.usage-light {
+    background: rgba(16, 185, 129, 0.12);
+    color: var(--success);
+}
+
+.usage-badge.usage-heavy {
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--danger);
+}
+
+.usage-desc {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* Custom Price Card */
+.custom-price-card {
+    background: var(--bg-elevated, #18181b);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+}
+
+.custom-price-card h5 {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Price Breakdown */
+.price-breakdown {
+    margin-top: 1rem;
+}
+
+.breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    font-size: 0.9rem;
+}
+
+.breakdown-label {
+    color: var(--text-secondary);
+}
+
+.breakdown-value {
+    font-weight: 600;
+    color: #FFFFFF;
+}
+[data-theme="light"] .breakdown-value {
+    color: var(--text-primary);
+}
+
+.breakdown-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 0.5rem 0;
+}
+
+.breakdown-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0 0.25rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #FFFFFF;
+}
+[data-theme="light"] .breakdown-total {
+    color: var(--text-primary);
+}
+
+.total-amount {
+    font-size: 1.5rem;
+    color: var(--accent);
+    font-weight: 700;
+}
+[data-theme="light"] .total-amount {
+    color: var(--primary);
+}
+
+.breakdown-yearly {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* User Estimate */
+.user-estimate {
+    font-size: 0.85rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(32, 60, 134, 0.06);
+    border: 1px solid rgba(32, 60, 134, 0.12);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+}
+
+/* Responsive: Custom Builder */
+@media (max-width: 991.98px) {
+    .custom-builder-card {
+        padding: 1.25rem;
+    }
+
+    .info-box-body .d-flex {
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .custom-builder-section {
+        margin-top: 2.5rem;
+        padding-top: 2rem;
+    }
+
+    .slider-value {
+        font-size: 0.9rem;
+    }
+
+    .slider-value .value-number {
+        font-size: 1.1rem;
+    }
+
+    .custom-slider::-webkit-slider-thumb {
+        width: 28px;
+        height: 28px;
+    }
+
+    .custom-slider::-moz-range-thumb {
+        width: 28px;
+        height: 28px;
+    }
+
+    .total-amount {
+        font-size: 1.25rem;
+    }
+}
+
+/* Form Styles */
+.form-control,
+.form-select {
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    transition: all var(--transition-fast);
+}
+
+.form-control:focus,
+.form-select:focus {
+    background-color: var(--bg-input);
+    border-color: var(--primary);
+    color: var(--text-primary);
+    box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.form-control::placeholder {
+    color: var(--text-muted);
+}
+
+/* ============================================
+   Dropdowns (<select>) — dark-theme friendly
+   Used by Region / Odoo Version / Support plan and every other
+   select. We draw our own light chevron (the Bootstrap default is a
+   dark SVG, invisible here) and style the native option list so the
+   values are dark-surfaced and legible when the menu is open.
+   ============================================ */
+.form-select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    cursor: pointer;
+    padding-right: 2.75rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%23A1A1AA' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 1rem;
+}
+
+.form-select:hover {
+    border-color: var(--border-light);
+}
+
+.form-select:focus {
+    /* brighten the chevron to match the focused border */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%23FAFAFA' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+}
+
+/* The native popup list — give every value a dark surface, readable
+   text and breathing room (respected by Chrome/Firefox on Linux &
+   Windows). The selected row picks up the brand colour. */
+.form-select option,
+.form-select optgroup {
+    background-color: var(--bg-elevated);
+    color: var(--text-primary);
+    padding: 0.5rem 0.75rem;
+    font-weight: 500;
+}
+
+.form-select option:checked,
+.form-select option:hover,
+.form-select option:focus {
+    background-color: var(--primary);
+    color: #ffffff;
+}
+
+.form-select option[value=""] {
+    color: var(--text-muted);
+}
+
+.form-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.input-group-text {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.input-icon {
+    position: relative;
+}
+
+.input-icon i {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.input-icon .form-control {
+    padding-left: 2.75rem;
+}
+
+/* Validation States */
+.form-control.is-valid {
+    border-color: var(--success);
+    background-image: none;
+}
+
+.form-control.is-invalid {
+    border-color: var(--danger);
+    background-image: none;
+}
+
+.valid-feedback {
+    color: var(--success);
+    font-size: 0.8rem;
+}
+
+.invalid-feedback {
+    color: var(--danger);
+    font-size: 0.8rem;
+}
+
+/* Subdomain Preview */
+.subdomain-preview {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1rem;
+    font-family: monospace;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.subdomain-preview .subdomain {
+    color: var(--primary);
+}
+
+/* Order Summary */
+.order-summary {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    position: sticky;
+    top: 100px;
+}
+
+.order-summary h5 {
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.summary-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    font-size: 0.875rem;
+}
+
+.summary-item .label {
+    color: var(--text-muted);
+}
+
+.summary-item .value {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.summary-total {
+    display: flex;
+    justify-content: space-between;
+    padding: 1rem 0 0;
+    margin-top: 1rem;
+    border-top: 1px solid var(--border-color);
+    font-size: 1.125rem;
+    font-weight: 600;
+}
+
+/* Status Badges */
+.badge-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.badge-running {
+    background: rgba(16, 185, 129, 0.2);
+    color: #059669;
+}
+
+.badge-provisioning {
+    background: var(--info-light);
+    color: var(--info);
+}
+
+.badge-pending {
+    background: var(--warning-light);
+    color: var(--warning);
+}
+
+.badge-stopped {
+    background: rgba(113, 113, 122, 0.2);
+    color: var(--text-muted);
+}
+
+.badge-suspended {
+    background: rgba(249, 115, 22, 0.15);
+    color: #F97316;
+}
+
+.badge-failed {
+    background: var(--danger-light);
+    color: var(--danger);
+}
+
+.badge-cancelled {
+    background: rgba(63, 63, 70, 0.5);
+    color: var(--text-muted);
+}
+
+/* Progress Bars */
+.progress {
+    height: 8px;
+    background: var(--bg-elevated);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    transition: width 0.8s ease;
+}
+
+.progress-bar.bg-success { background: var(--success) !important; }
+.progress-bar.bg-warning { background: var(--warning) !important; }
+.progress-bar.bg-danger { background: var(--danger) !important; }
+
+/* Resource Usage */
+.resource-item {
+    margin-bottom: 1rem;
+}
+
+.resource-item .resource-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.resource-item .resource-label {
+    color: var(--text-secondary);
+}
+
+.resource-item .resource-value {
+    color: var(--text-muted);
+}
+
+/* Alert Banners */
+.alert-banner {
+    border-radius: var(--radius-md);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.alert-banner i {
+    font-size: 1.125rem;
+    margin-top: 0.125rem;
+}
+
+.alert-banner.alert-info {
+    background: var(--info-light);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: var(--text-primary);
+}
+
+.alert-banner.alert-info i { color: var(--info); }
+
+.alert-banner.alert-warning {
+    background: var(--warning-light);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: var(--text-primary);
+}
+
+.alert-banner.alert-warning i { color: var(--warning); }
+
+.alert-banner.alert-danger {
+    background: var(--danger-light);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: var(--text-primary);
+}
+
+.alert-banner.alert-danger i { color: var(--danger); }
+
+.alert-banner.alert-success {
+    background: var(--success-light);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: var(--text-primary);
+}
+
+.alert-banner.alert-success i { color: var(--success); }
+
+/* Tables */
+.table-dark-custom {
+    --bs-table-bg: transparent;
+    --bs-table-border-color: var(--border-color);
+}
+
+.table-dark-custom th {
+    font-weight: 500;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.table-dark-custom td {
+    padding: 1rem;
+    vertical-align: middle;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.table-dark-custom tbody tr:hover {
+    background: var(--bg-card-hover);
+}
+
+/* Portal Sidebar */
+.portal-sidebar {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1rem;
+}
+
+.portal-sidebar .nav-link {
+    color: var(--text-secondary);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: all var(--transition-fast);
+}
+
+.portal-sidebar .nav-link:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.portal-sidebar .nav-link.active {
+    background: var(--primary-light);
+    color: var(--primary);
+}
+
+.portal-sidebar .nav-link i {
+    width: 20px;
+}
+
+/* Actions Card */
+.actions-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+}
+
+.actions-card h6 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+.action-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    margin-bottom: 0.5rem;
+}
+
+.action-btn:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+
+/* Open Instance */
+.action-btn.action-primary {
+    background: #0db3d0;
+    border-color: #0db3d0;
+    color: #000;
+    font-weight: 700;
+}
+
+.action-btn.action-primary:hover {
+    background: #0a95ad;
+    border-color: #0a95ad;
+    color: #000;
+}
+
+/* Upgrade / Change Plan */
+.action-btn.action-upgrade {
+    background: #10B981;
+    border-color: #10B981;
+    color: #000;
+    font-weight: 700;
+}
+
+.action-btn.action-upgrade:hover {
+    background: #059669;
+    border-color: #059669;
+    color: #000;
+}
+
+/* View Logs */
+.action-btn.action-logs {
+    background: #F59E0B;
+    border-color: #F59E0B;
+    color: #000;
+    font-weight: 700;
+}
+
+.action-btn.action-logs:hover {
+    background: #D97706;
+    border-color: #D97706;
+    color: #000;
+}
+
+.action-btn.action-danger {
+    color: var(--danger);
+}
+
+.action-btn.action-danger:hover {
+    background: var(--danger-light);
+    border-color: var(--danger);
+}
+
+.action-btn i {
+    width: 18px;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+}
+
+.empty-state-icon {
+    width: 80px;
+    height: 80px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1.5rem;
+    font-size: 2rem;
+    color: var(--text-muted);
+}
+
+.empty-state h5 {
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+}
+
+/* ============================================
+   Sidebar Folders
+   ============================================ */
+
+.sidebar-folders {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.sidebar-folders-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0.5rem 0.5rem;
+}
+
+.sidebar-folder-add {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 0.2rem 0.4rem;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.sidebar-folder-add:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+}
+
+.sidebar-folder-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.sidebar-folder-children {
+    margin-left: 0;
+    border-left: 1px solid var(--border-color);
+    margin-left: 12px;
+}
+
+.sidebar-folder-entry {
+    position: relative;
+}
+
+.sidebar-folder-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    padding-right: 4.5rem;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    position: relative;
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: all var(--transition-fast);
+}
+
+.sidebar-folder-item:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.sidebar-folder-item.active {
+    background: var(--primary-light);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.sidebar-folder-icon {
+    font-size: 0.8rem;
+    width: 1rem;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.sidebar-folder-name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar-folder-count {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+
+.sidebar-folder-item.active .sidebar-folder-count {
+    background: var(--primary);
+    color: #fff;
+}
+
+/* Rename / Delete actions - visible on hover */
+.sidebar-folder-actions {
+    position: absolute;
+    right: 0.4rem;
+    top: 0;
+    height: auto;
+    display: none;
+    align-items: center;
+    gap: 0.15rem;
+    /* Match the height of .sidebar-folder-item (padding + line-height) */
+    line-height: 1;
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+    z-index: 1;
+}
+
+.sidebar-folder-entry:hover > .sidebar-folder-actions {
+    display: flex;
+}
+
+/* Touch devices: always show folder actions since hover is not available */
+@media (hover: none) {
+    .sidebar-folder-actions {
+        display: flex;
+    }
+    .sidebar-folder-entry .sidebar-folder-count {
+        display: none;
+    }
+}
+
+.sidebar-folder-entry:hover > .sidebar-folder-item .sidebar-folder-count {
+    display: none;
+}
+
+.sidebar-folder-action {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    padding: 0.25rem;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    transition: all var(--transition-fast);
+}
+
+.sidebar-folder-action:hover {
+    color: var(--text-primary);
+    background: var(--bg-card-hover);
+    text-decoration: none;
+}
+
+.sidebar-folder-action.text-danger:hover {
+    color: var(--danger) !important;
+}
+
+/* ============================================
+   Navbar Instance Dropdown
+   ============================================ */
+
+.instance-dropdown-menu {
+    min-width: 300px;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 0;
+}
+
+.instance-dropdown-menu .dropdown-header {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 0.5rem 1rem 0.25rem;
+}
+
+.instance-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: background var(--transition-fast);
+}
+
+.instance-dropdown-item:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.instance-dropdown-item .inst-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.inst-status-dot.dot-running { background: var(--success); }
+.inst-status-dot.dot-stopped { background: var(--text-muted); }
+.inst-status-dot.dot-provisioning,
+.inst-status-dot.dot-pending_provision { background: var(--info); }
+.inst-status-dot.dot-suspended { background: var(--warning); }
+.inst-status-dot.dot-failed { background: var(--danger); }
+.inst-status-dot.dot-cancelled,
+.inst-status-dot.dot-cancelled_by_client { background: #52525B; }
+
+.instance-dropdown-item .inst-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.instance-dropdown-item .inst-name {
+    font-weight: 500;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.instance-dropdown-item .inst-meta {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+/* Folder collapsible toggle */
+.folder-toggle {
+    display: flex;
+    align-items: center;
+    padding: 0.55rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-decoration: none;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.folder-toggle:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.folder-count {
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    margin-left: 0.4rem;
+}
+
+.folder-arrow {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    transition: transform var(--transition-fast);
+}
+
+.folder-toggle.open .folder-arrow {
+    transform: rotate(90deg);
+}
+
+/* Folder submenu (hidden by default) */
+.folder-submenu {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: none;
+    border-left: 2px solid var(--border-color);
+    margin-left: 1.25rem;
+}
+
+.folder-submenu.show {
+    display: block;
+}
+
+.folder-submenu .instance-dropdown-item {
+    padding-left: 0.75rem;
+}
+
+.instance-dropdown-footer {
+    border-top: 1px solid var(--border-color);
+    padding: 0.5rem 1rem;
+    text-align: center;
+}
+
+/* Breadcrumbs */
+.breadcrumb {
+    background: transparent;
+    padding: 0;
+    margin-bottom: 1.5rem;
+}
+
+.breadcrumb-item {
+    font-size: 0.875rem;
+}
+
+.breadcrumb-item a {
+    color: var(--text-muted);
+}
+
+.breadcrumb-item a:hover {
+    color: var(--text-primary);
+}
+
+.breadcrumb-item.active {
+    color: var(--text-secondary);
+}
+
+.breadcrumb-item + .breadcrumb-item::before {
+    content: '/';
+    color: var(--text-muted);
+}
+
+/* Page Header */
+.page-header {
+    margin-bottom: 2rem;
+}
+
+.page-header h1 {
+    font-size: 1.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.page-header p {
+    color: var(--text-muted);
+    margin-bottom: 0;
+}
+
+/* Card Sections */
+.info-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.info-card h5 {
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* OTP Input */
+.otp-inputs {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+}
+
+.otp-input {
+    width: 50px;
+    height: 60px;
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 600;
+    background: var(--bg-input);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    transition: all var(--transition-fast);
+}
+
+.otp-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-light);
+    outline: none;
+}
+
+/* Password Strength */
+.password-strength {
+    height: 4px;
+    background: var(--bg-elevated);
+    border-radius: 2px;
+    margin-top: 0.5rem;
+    overflow: hidden;
+}
+
+.password-strength .strength-bar {
+    height: 100%;
+    transition: width var(--transition-base), background var(--transition-base);
+}
+
+.strength-weak { width: 33%; background: var(--danger); }
+.strength-medium { width: 66%; background: var(--warning); }
+.strength-strong { width: 100%; background: var(--success); }
+
+/* Step Indicator */
+.step-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+}
+
+.step {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.step-number {
+    width: 32px;
+    height: 32px;
+    background: var(--bg-elevated);
+    border: 2px solid var(--border-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.step.active .step-number {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+.step.completed .step-number {
+    background: var(--success);
+    border-color: var(--success);
+    color: white;
+}
+
+.step-label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.step.active .step-label {
+    color: var(--text-primary);
+}
+
+.step-line {
+    width: 60px;
+    height: 2px;
+    background: var(--border-color);
+}
+
+.step-line.completed {
+    background: var(--success);
+}
+
+/* Countdown Timer */
+.countdown-timer {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: monospace;
+}
+
+/* Loading Spinner */
+.spinner-sm {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Full-screen blocking overlay used while a long-running portal
+   action is in flight (create / duplicate / drop / repair feature /
+   reset password / Backup Now / Restore Snapshot, etc.). Mounted
+   programmatically by ``showLoadingOverlay`` in cloudodoo_app.js. */
+.saas-loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(11, 15, 23, 0.78);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 1.25rem;
+    color: #f4f6fb;
+    padding: 1rem;
+    text-align: center;
+    /* Block scroll on the page beneath. */
+    overflow: hidden;
+}
+.saas-loading-overlay .spinner-border {
+    width: 3.25rem;
+    height: 3.25rem;
+    border-width: 0.3rem;
+}
+.saas-loading-overlay-text {
+    max-width: 520px;
+    line-height: 1.5;
+}
+.saas-loading-overlay-text-main {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+.saas-loading-overlay-subtitle {
+    font-size: 0.85rem;
+    opacity: 0.75;
+}
+body.saas-overlay-locked {
+    overflow: hidden;
+}
+
+/* Modal Customization */
+.modal-content {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+}
+
+.modal-header {
+    border-bottom: 1px solid var(--border-color);
+    padding: 1.25rem 1.5rem;
+}
+
+.modal-header .btn-close {
+    filter: invert(1);
+}
+[data-theme="light"] .modal-header .btn-close {
+    filter: none;
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-footer {
+    border-top: 1px solid var(--border-color);
+    padding: 1rem 1.5rem;
+}
+
+/* Responsive */
+@media (max-width: 991.98px) {
+    .hero-section {
+        padding-top: 6rem;
+    }
+
+    .stat-number {
+        font-size: 2rem;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .py-6 {
+        padding-top: 3rem;
+        padding-bottom: 3rem;
+    }
+
+    .plan-price .amount {
+        font-size: 2rem;
+    }
+
+    .otp-input {
+        width: 42px;
+        height: 52px;
+        font-size: 1.25rem;
+    }
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease forwards;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-dark);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-light);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+/* ============================================
+   Log Viewer
+   ============================================ */
+.log-viewer {
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    padding: 1rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    height: 500px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    word-wrap: break-word;
+}
+.log-line {
+    padding: 1px 0;
+    white-space: pre-wrap;
+}
+.log-line:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+/* ============================================
+   Confirmation Modal (saas-confirm-modal)
+   ============================================ */
+.saas-confirm-modal .modal-dialog {
+    max-width: 520px;
+}
+.saas-confirm-content {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg, 16px);
+    box-shadow:
+        0 25px 50px -12px rgba(0, 0, 0, 0.6),
+        0 0 0 1px rgba(239, 68, 68, 0.08);
+    overflow: hidden;
+    color: var(--text-primary, #fff);
+}
+.saas-confirm-header {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 1.25rem 1.5rem 1rem;
+    background:
+        linear-gradient(135deg,
+            rgba(239, 68, 68, 0.12) 0%,
+            rgba(239, 68, 68, 0.02) 100%);
+    border-bottom: 1px solid var(--border-color);
+    position: relative;
+}
+.saas-confirm-header .modal-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin: 0;
+    flex: 1;
+    color: var(--text-primary, #fff);
+}
+.saas-confirm-header .btn-close {
+    margin: 0;
+    opacity: 0.6;
+    transition: opacity 0.15s ease;
+}
+.saas-confirm-header .btn-close:hover {
+    opacity: 1;
+}
+.saas-confirm-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--danger, #EF4444);
+    font-size: 1.2rem;
+    flex-shrink: 0;
+    box-shadow: 0 0 24px rgba(239, 68, 68, 0.15);
+}
+.saas-confirm-body {
+    padding: 1.5rem;
+    color: var(--text-secondary, #A1A1AA);
+    font-size: 0.95rem;
+    line-height: 1.55;
+}
+.saas-confirm-body strong {
+    color: var(--text-primary, #fff);
+}
+.saas-confirm-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.25rem 0;
+}
+.saas-confirm-list li {
+    background: var(--bg-elevated, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0.7rem 0.9rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.15rem;
+    font-size: 0.9rem;
+}
+.saas-confirm-list li:last-child {
+    margin-bottom: 0;
+}
+.saas-confirm-list li i {
+    margin-top: 0.18rem;
+    flex-shrink: 0;
+}
+.saas-confirm-reenable {
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    color: #93C5FD;
+    padding: 0.65rem 0.9rem;
+    border-radius: 10px;
+    font-size: 0.85rem;
+}
+.saas-confirm-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    padding: 1rem 1.5rem 1.25rem;
+    background: rgba(0, 0, 0, 0.15);
+    border-top: 1px solid var(--border-color);
+}
+.saas-confirm-footer .btn {
+    min-width: 140px;
+    font-weight: 600;
+}
+.saas-confirm-footer .btn-danger {
+    box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3);
+}
+.saas-confirm-footer .btn-danger:hover {
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+    transform: translateY(-1px);
+    transition: all 0.15s ease;
+}
+
+/* ============================================
+   Theme-aware logo variants
+   The logo-name SVG has hardcoded text fills (white "VELT" on the dark
+   variant, near-black "VELT" on the light variant). Render both <img>
+   tags and let `data-theme` pick — same pattern used in the DB manager.
+   ============================================ */
+.vx-logo-dark { display: none; }
+.vx-logo-light { display: inline-block; }
+[data-theme="dark"] .vx-logo-dark { display: inline-block; }
+[data-theme="dark"] .vx-logo-light { display: none; }
+
+/* ============================================
+   Login-page floating theme toggle button
+   ============================================ */
+.vx-theme-toggle {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 50;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: var(--shadow-sm);
+}
+.vx-theme-toggle:hover {
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+.vx-theme-toggle .vx-icon-sun,
+.vx-theme-toggle .vx-icon-moon {
+    font-size: 15px;
+    line-height: 1;
+}
+/* Show sun in dark theme (click to switch to light), moon in light */
+.vx-theme-toggle .vx-icon-sun { display: none; }
+.vx-theme-toggle .vx-icon-moon { display: inline-block; }
+[data-theme="dark"] .vx-theme-toggle .vx-icon-sun { display: inline-block; }
+[data-theme="dark"] .vx-theme-toggle .vx-icon-moon { display: none; }
+
+/* ============================================
+   Additional --co-* aliases (defensive — covers
+   inline styles in QWeb templates that reference
+   the prefixed names).
+   ============================================ */
+:root {
+    --co-info: var(--info);
+    --co-success: var(--success);
+    --co-warning: var(--warning);
+}
+
+/* ============================================
+   Navbar variant of the theme toggle button.
+   Non-floating, sits inline inside the navbar.
+   ============================================ */
+.vx-theme-toggle-nav {
+    position: static !important;     /* override the .vx-theme-toggle fixed pos */
+    top: auto !important;
+    right: auto !important;
+    width: 36px;                     /* SPA: size-9 */
+    height: 36px;
+    border-radius: 0.375rem;         /* SPA: rounded-md */
+    background: var(--bg-card);      /* SPA: bg-card */
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);    /* SPA: text-muted */
+    box-shadow: none !important;     /* SPA toggle has no shadow */
+    margin: 0;
+}
+.vx-theme-toggle-nav:hover {
+    background: var(--bg-card-hover, var(--bg-card));
+    color: var(--text-primary);
+    transform: none !important;      /* SPA toggle does not lift on hover */
+    box-shadow: none !important;
+}
+
+/* ============================================
+   Portal / payment pages — CSS-only restyle of
+   Odoo's default portal navbar + footer to match
+   cloudodoo aesthetic.
+   The portal pages (/payment/*, /my/invoices/*,
+   /my/orders/*, ...) bypass website.layout and
+   render their own <nav class="navbar navbar-light
+   bg-light"> + <footer class="bg-light o_footer">.
+   We don't replace these via XML inheritance
+   (Odoo 18 view validation can't anchor on
+   elements introduced by xpath ops of primary
+   views — see saas_frontend_layout.xml notes).
+   Instead, restyle them inline to look identical
+   to cloudodoo_navbar / cloudodoo_footer_content.
+   ============================================ */
+
+/* Navbar — fixed-top, scroll-to-blur, themed */
+nav.navbar.navbar-light.bg-light {
+    background: transparent !important;
+    border-bottom: 1px solid transparent;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 40;
+    min-height: 64px;
+    padding: 0 !important;
+    transition: background-color 200ms ease, border-color 200ms ease;
+}
+nav.navbar.navbar-light.bg-light.co-navbar--scrolled {
+    background: var(--bg-navbar) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom-color: var(--border-color);
+}
+nav.navbar.navbar-light.bg-light > .container {
+    max-width: 80rem;
+    padding-left: 1rem; padding-right: 1rem;
+}
+@media (min-width: 640px) {
+    nav.navbar.navbar-light.bg-light > .container {
+        padding-left: 1.5rem; padding-right: 1.5rem;
+    }
+}
+@media (min-width: 1024px) {
+    nav.navbar.navbar-light.bg-light > .container {
+        padding-left: 2rem; padding-right: 2rem;
+    }
+}
+
+/* Brand: hide Odoo's company-logo <img>, show our VELTNEX wordmark */
+nav.navbar.navbar-light.bg-light .navbar-brand.logo img,
+nav.navbar.navbar-light.bg-light .navbar-brand img {
+    display: none !important;
+}
+nav.navbar.navbar-light.bg-light .navbar-brand {
+    background: url('/saas_website/static/src/img/veltnex-icon.svg') no-repeat left center;
+    background-size: 28px 28px;
+    padding-left: 36px !important;
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.025em;
+    color: var(--text-primary) !important;
+    line-height: 30px;
+    margin-right: 2rem;
+}
+nav.navbar.navbar-light.bg-light .navbar-brand::after {
+    content: 'VELTNEX';
+}
+
+/* Links + dropdowns: themed */
+nav.navbar.navbar-light.bg-light .nav-link {
+    color: var(--text-secondary) !important;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+nav.navbar.navbar-light.bg-light .nav-link:hover {
+    color: var(--text-primary) !important;
+}
+nav.navbar.navbar-light.bg-light .dropdown-menu {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+nav.navbar.navbar-light.bg-light .dropdown-item {
+    color: var(--text-primary);
+}
+nav.navbar.navbar-light.bg-light .dropdown-item:hover,
+nav.navbar.navbar-light.bg-light .dropdown-item:focus {
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+}
+
+/* Ensure the portal page content clears the now-fixed navbar */
+body.o_portal #wrap,
+body.o_portal main {
+    padding-top: 76px;
+}
+
+/* Footer — themed to match cloudodoo_footer_content visually */
+footer.bg-light.o_footer {
+    background: var(--bg-dark) !important;
+    color: var(--text-muted) !important;
+    border-top: 1px solid var(--border-color);
+}
+footer.bg-light.o_footer .o_footer_copyright {
+    background: transparent !important;
+    color: var(--text-muted) !important;
+}
+footer.bg-light.o_footer .o_footer_copyright_name,
+footer.bg-light.o_footer .text-muted {
+    color: var(--text-muted) !important;
+}
+footer.bg-light.o_footer a {
+    color: var(--text-secondary) !important;
+}
+footer.bg-light.o_footer a:hover {
+    color: var(--primary-glow) !important;
+}
+
+/* Hide Odoo's default copyright bar on all QWeb pages — replaces
+   the XML inheritance approach (which doesn't validate in Odoo 18). */
+#wrapwrap .o_footer_copyright {
+    display: none !important;
+}
+
+/* ============================================================
+   Inline help marker ("?") — hover shows the native tooltip,
+   click opens the matching /help#anchor section in a new tab.
+   Mirrors the SPA <HelpHint> affordance on the QWeb funnel.
+   ============================================================ */
+.saas-help {
+    margin-left: 0.3rem;
+    color: #9aa3b2;
+    font-size: 0.8rem;
+    line-height: 1;
+    text-decoration: none;
+    cursor: inherit;
+    vertical-align: middle;
+    transition: color .15s;
+}
+.saas-help:hover,
+.saas-help:focus {
+    color: var(--primary);
+    text-decoration: none;
+}

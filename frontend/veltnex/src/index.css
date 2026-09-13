@@ -1,0 +1,149 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================================================================
+ * Theme tokens
+ * ---
+ * Values are space-separated RGB triplets so Tailwind's `rgb(var(--x) /
+ * <alpha-value>)` form can apply opacity modifiers (bg-card/50 etc.).
+ *
+ * `:root` carries the LIGHT palette (the default). The `.dark` class on
+ * <html> swaps in the dark palette. The class is set by an inline script
+ * in index.html before paint so there's no FOUC.
+ * ========================================================================= */
+
+@layer base {
+  /* Google Cloud Console-inspired palette.
+   * Light: light-gray page (#f8f9fa) + white cards (#fff), Google blue
+   * (#1a73e8), Google grays (#dadce0 borders, #5f6368 secondary text,
+   * #202124 text). Dark: GCP dark (#202124 page, #8ab4f8 blue). */
+  :root {
+    --background: 248 249 250;
+    --card: 255 255 255;
+    --border: 218 220 224;
+    --foreground: 32 33 36;
+    --muted: 95 99 104;
+    --primary: 26 115 232;
+    --primary-foreground: 255 255 255;
+    --primary-glow: 25 103 210;
+    --success: 30 142 62;
+    --warning: 249 171 0;
+    --danger: 217 48 37;
+    --info: 26 115 232;
+    --grid: 218 220 224;
+    --shadow: 60 64 67;
+    color-scheme: light;
+  }
+
+  .dark {
+    --background: 32 33 36;
+    --card: 41 42 45;
+    --border: 60 64 67;
+    --foreground: 232 234 237;
+    --muted: 154 160 166;
+    --primary: 138 180 248;
+    --primary-foreground: 32 33 36;
+    --primary-glow: 138 180 248;
+    --success: 129 201 149;
+    --warning: 253 214 99;
+    --danger: 242 139 130;
+    --info: 138 180 248;
+    --grid: 60 64 67;
+    --shadow: 0 0 0;
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: theme("colors.border");
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    /* Smooth out theme transitions on user toggle */
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+
+  ::selection {
+    background: rgb(var(--primary) / 0.35);
+    color: rgb(var(--foreground));
+  }
+
+  /* Scrollbar — track stays transparent, thumb uses the theme border */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--border));
+    border-radius: 9999px;
+    border: 2px solid rgb(var(--background));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--muted) / 0.7);
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-card/60 backdrop-blur-xl border border-border/80;
+  }
+
+  .glass-strong {
+    background: linear-gradient(
+      180deg,
+      rgb(var(--card) / 0.9) 0%,
+      rgb(var(--card) / 0.6) 100%
+    );
+    @apply backdrop-blur-xl border border-border;
+  }
+
+  .text-gradient {
+    @apply bg-gradient-to-br from-foreground via-foreground to-muted bg-clip-text text-transparent;
+  }
+
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-primary-glow/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+}
+
+/* Custom styled range input for SliderControl */
+input[type="range"].veltnex-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 9999px;
+  outline: none;
+}
+input[type="range"].veltnex-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  border-radius: 9999px;
+  background: rgb(var(--foreground));
+  border: 4px solid rgb(var(--primary));
+  cursor: pointer;
+  box-shadow: 0 0 0 4px rgb(var(--primary) / 0.25);
+  transition: transform 0.15s ease;
+}
+input[type="range"].veltnex-range::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+}
+input[type="range"].veltnex-range::-moz-range-thumb {
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  background: rgb(var(--foreground));
+  border: 4px solid rgb(var(--primary));
+  cursor: pointer;
+}

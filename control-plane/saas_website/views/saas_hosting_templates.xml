@@ -1,0 +1,568 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============================================================
+         Hosting Landing Page  —  /hosting
+         ============================================================ -->
+
+
+    <!-- ============================================================
+         Hosting Configure Form  —  /hosting/configure
+         ============================================================ -->
+
+    <!-- Review + pay page: all inputs are collected in the SPA's Step 3,
+         so this page is a read-only summary that posts to /hosting/order. -->
+    <template id="hosting_review_form" name="Review Hosting Order">
+        <t t-call="saas_website.cloudodoo_layout">
+            <section class="py-6">
+                <div class="container">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb">
+                            <li class="breadcrumb-item"><a href="/hosting">Hosting</a></li>
+                            <li class="breadcrumb-item active">Review &amp; pay</li>
+                        </ol>
+                    </nav>
+                    <h1 class="mb-2">Review your order</h1>
+                    <p class="text-muted mb-4">Confirm the details below, then continue to payment.</p>
+                    <t t-if="error">
+                        <div class="alert-banner alert-danger mb-4"><i class="fas fa-exclamation-circle"></i><div t-esc="error"/></div>
+                    </t>
+                    <form action="/hosting/order" method="post">
+                        <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+                        <input type="hidden" name="workers" t-att-value="workers"/>
+                        <input type="hidden" name="storage" t-att-value="storage"/>
+                        <input type="hidden" name="billing_period" t-att-value="billing_period"/>
+                        <input type="hidden" name="project_name" t-att-value="form_values.get('project_name', '')"/>
+                        <input type="hidden" name="subdomain" t-att-value="form_values.get('subdomain', '')"/>
+                        <input type="hidden" name="domain_id" t-att-value="sel_domain.id"/>
+                        <input type="hidden" name="odoo_version_id" t-att-value="sel_version.id"/>
+                        <input type="hidden" name="region_id" t-att-value="selected_region_id"/>
+                        <input type="hidden" name="support_code" t-att-value="selected_support_code"/>
+                        <input type="hidden" name="daily_backup" t-att-value="'1' if daily_backup else '0'"/>
+                        <input type="hidden" name="staging_count" t-att-value="staging_count"/>
+                        <input type="hidden" name="dev_count" t-att-value="dev_count"/>
+                        <input type="hidden" name="repo_url" t-att-value="form_values.get('repo_url', '')"/>
+                        <input type="hidden" name="repo_branch" t-att-value="form_values.get('repo_branch', 'main')"/>
+                        <input type="hidden" name="git_token" t-att-value="form_values.get('git_token', '')"/>
+                        <input type="hidden" name="pip_packages" t-att-value="form_values.get('pip_packages', '')"/>
+                        <t t-if="is_trial"><input type="hidden" name="is_trial" value="1"/></t>
+
+                        <div class="row g-4">
+                            <div class="col-lg-7">
+                                <div class="card p-4 mb-3">
+                                    <h5 class="mb-3">Project</h5>
+                                    <dl class="row mb-0">
+                                        <dt class="col-5 text-muted">Project name</dt><dd class="col-7" t-esc="form_values.get('project_name') or form_values.get('subdomain')"/>
+                                        <dt class="col-5 text-muted">Address</dt><dd class="col-7"><span t-esc="form_values.get('subdomain')"/>.<span t-esc="sel_domain.name"/></dd>
+                                        <t t-if="show_region_picker and selected_region">
+                                            <dt class="col-5 text-muted">Region</dt><dd class="col-7" t-esc="selected_region.name"/>
+                                        </t>
+                                        <dt class="col-5 text-muted">Odoo version</dt><dd class="col-7" t-esc="sel_version.name"/>
+                                    </dl>
+                                </div>
+                                <div class="card p-4 mb-3">
+                                    <h5 class="mb-3">Production specs</h5>
+                                    <dl class="row mb-0">
+                                        <dt class="col-5 text-muted">Workers</dt><dd class="col-7"><t t-esc="workers"/></dd>
+                                        <dt class="col-5 text-muted">Storage</dt><dd class="col-7"><t t-esc="storage"/> GB</dd>
+                                        <dt class="col-5 text-muted">Support</dt><dd class="col-7" t-esc="sel_support.name if sel_support else 'Standard'"/>
+                                        <dt class="col-5 text-muted">Daily backups</dt><dd class="col-7"><t t-esc="'Enabled' if daily_backup else 'Off'"/></dd>
+                                    </dl>
+                                </div>
+                                <t t-if="not is_trial and env_count">
+                                <div class="card p-4 mb-3">
+                                    <h5 class="mb-3">Environments (paid slots)</h5>
+                                    <dl class="row mb-0">
+                                        <dt class="col-5 text-muted">Staging servers</dt><dd class="col-7" t-esc="staging_count"/>
+                                        <dt class="col-5 text-muted">Development servers</dt><dd class="col-7" t-esc="dev_count"/>
+                                    </dl>
+                                    <p class="text-muted small mb-0 mt-2">Create up to this many for free, any time.</p>
+                                </div>
+                                </t>
+                                <t t-if="form_values.get('repo_url')">
+                                <div class="card p-4 mb-3">
+                                    <h5 class="mb-3">Git repository</h5>
+                                    <dl class="row mb-0">
+                                        <dt class="col-5 text-muted">Repository</dt><dd class="col-7 text-break" t-esc="form_values.get('repo_url')"/>
+                                        <dt class="col-5 text-muted">Branch</dt><dd class="col-7" t-esc="form_values.get('repo_branch', 'main')"/>
+                                    </dl>
+                                </div>
+                                </t>
+                            </div>
+                            <div class="col-lg-5">
+                                <div class="card p-4">
+                                    <h5 class="mb-3">Order summary</h5>
+                                    <t t-if="is_trial">
+                                        <p class="mb-0">Free trial — no charge today.</p>
+                                    </t>
+                                    <t t-else="">
+                                        <div class="d-flex justify-content-between mb-1"><span class="text-muted">Production plan</span><span><t t-esc="'${:,.2f}'.format(plan_cost)"/>/mo</span></div>
+                                        <t t-if="support_cost &gt; 0"><div class="d-flex justify-content-between mb-1"><span class="text-muted">Support</span><span><t t-esc="'${:,.2f}'.format(support_cost)"/>/mo</span></div></t>
+                                        <t t-if="daily_backup and backup_cost &gt; 0"><div class="d-flex justify-content-between mb-1"><span class="text-muted">Daily backups</span><span><t t-esc="'${:,.2f}'.format(backup_cost)"/>/mo</span></div></t>
+                                        <t t-if="env_count"><div class="d-flex justify-content-between mb-1"><span class="text-muted"><t t-esc="env_count"/> × env server</span><span><t t-esc="'${:,.2f}'.format(env_total)"/>/<t t-esc="'yr' if period == 'yearly' else 'mo'"/></span></div></t>
+                                        <hr/>
+                                        <div class="d-flex justify-content-between fw-bold fs-5"><span>Total</span><span><t t-esc="'${:,.2f}'.format(period_total)"/>/<t t-esc="'yr' if period == 'yearly' else 'mo'"/></span></div>
+                                    </t>
+                                    <button type="submit" class="btn btn-primary btn-lg w-100 mt-3">
+                                        <t t-if="is_trial">Start free trial</t>
+                                        <t t-else="">Confirm &amp; pay</t>
+                                    </button>
+                                    <a href="/hosting" class="btn btn-link w-100 mt-1">← Back to edit</a>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </section>
+        </t>
+    </template>
+
+    <template id="hosting_configure_form" name="Configure Hosting Instance">
+        <t t-call="saas_website.cloudodoo_layout">
+            <section class="py-6">
+                <div class="container">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb">
+                            <li class="breadcrumb-item"><a href="/hosting">Hosting</a></li>
+                            <li class="breadcrumb-item active">Configure</li>
+                        </ol>
+                    </nav>
+
+                    <h1 class="mb-4">Configure Your Hosting Instance</h1>
+
+                    <t t-if="error">
+                        <div class="alert-banner alert-danger mb-4">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <div t-esc="error"/>
+                        </div>
+                    </t>
+
+                    <form action="/hosting/order" method="post">
+                        <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+                        <input type="hidden" name="workers" t-att-value="workers"/>
+                        <input type="hidden" name="storage" t-att-value="storage"/>
+                        <input type="hidden" name="billing_period" t-att-value="billing_period"/>
+                        <input type="hidden" name="project_name" t-att-value="form_values.get('project_name', '')"/>
+                        <t t-if="form_values.get('is_trial') == '1'">
+                            <input type="hidden" name="is_trial" value="1"/>
+                        </t>
+
+                        <div class="row g-4">
+                            <!-- Left: Form -->
+                            <div class="col-lg-7">
+                                <div class="info-card">
+                                    <h5 class="mb-4">Instance Details</h5>
+
+                                    <!-- Subdomain -->
+                                    <div class="mb-3">
+                                        <label class="form-label">Subdomain<a href="/help#subdomain" target="_blank" rel="noopener" class="saas-help" title="The name in front of your instance's web address, e.g. &quot;acme&quot; in acme.example.com." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
+                                        <div class="input-group">
+                                            <span class="input-group-text">https://</span>
+                                            <input type="text" name="subdomain" id="subdomain-input"
+                                                   class="form-control" placeholder="my-company"
+                                                   t-att-value="form_values.get('subdomain', '')"
+                                                   autocomplete="off" required="required"/>
+                                            <select name="domain_id" class="form-select" style="max-width:40%;"
+                                                    id="domain-select">
+                                                <t t-foreach="domains" t-as="dom">
+                                                    <option t-att-value="dom.id"
+                                                            t-att-selected="dom.id == int(form_values.get('domain_id', 0))">
+                                                        .<t t-esc="dom.name"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                        </div>
+                                        <div id="subdomain-feedback" class="mt-1" style="font-size:0.85rem;"></div>
+                                    </div>
+
+                                    <!-- Odoo Version -->
+                                    <div class="mb-3">
+                                        <label class="form-label">Odoo Version<a href="/help#odoo-version" target="_blank" rel="noopener" class="saas-help" title="Which release of Odoo your instance runs (e.g. 17, 18, 19), Community or Enterprise." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
+                                        <select name="odoo_version_id" class="form-select" required="required">
+                                            <option value="">Select version...</option>
+                                            <t t-foreach="versions" t-as="ver">
+                                                <option t-att-value="ver.id"
+                                                        t-att-selected="ver.id == odoo_version_id">
+                                                    Odoo <t t-esc="ver.name"/>
+                                                </option>
+                                            </t>
+                                        </select>
+                                    </div>
+
+                                    <!-- Region (S8c). Shown only when there's a real choice;
+                                         changing it updates the price + the available domains
+                                         LIVE via /hosting/configure/quote (no full reload). -->
+                                    <t t-if="show_region_picker">
+                                        <div class="mb-3">
+                                            <label class="form-label">Region<a href="/help#region" target="_blank" rel="noopener" class="saas-help" title="The data-centre location your instance runs in. Pick the one closest to your users. Fixed after creation." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
+                                            <select name="region_id" class="form-select"
+                                                    id="region-select">
+                                                <t t-foreach="regions" t-as="reg">
+                                                    <option t-att-value="reg.id"
+                                                            t-att-selected="reg.id == selected_region_id">
+                                                        <t t-esc="reg.name"/>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                            <div class="form-text text-muted">
+                                                Server location for this instance. Fixed once created.
+                                            </div>
+                                        </div>
+                                    </t>
+                                    <t t-else="">
+                                        <input type="hidden" name="region_id" t-att-value="selected_region_id"/>
+                                    </t>
+
+                                    <!-- Support plan (P6). Paid add-on; hidden for trials.
+                                         Changing it updates the total LIVE via
+                                         /hosting/configure/quote (no full reload). -->
+                                    <t t-if="form_values.get('is_trial') != '1' and show_support_picker">
+                                        <div class="mb-3">
+                                            <label class="form-label">Support plan<a href="/help#support-plan" target="_blank" rel="noopener" class="saas-help" title="How fast we promise to respond when you need help. Higher tiers = faster guaranteed response." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
+                                            <select name="support_code" class="form-select"
+                                                    id="support-select">
+                                                <t t-foreach="support_plans" t-as="sp">
+                                                    <option t-att-value="sp.code"
+                                                            t-att-selected="sp.code == selected_support_code">
+                                                        <t t-esc="sp.name"/>
+                                                        <t t-if="sp.response_time"> — <t t-esc="sp.response_time"/></t>
+                                                        <t t-if="sp.monthly_price &gt; 0"> (+<t t-esc="'${:,.2f}'.format(sp.monthly_price)"/>/mo)</t>
+                                                    </option>
+                                                </t>
+                                            </select>
+                                            <div class="form-text text-muted">
+                                                Faster response times for mission-critical workloads. Billed monthly.
+                                            </div>
+                                        </div>
+                                    </t>
+                                    <t t-elif="form_values.get('is_trial') != '1'">
+                                        <input type="hidden" name="support_code" t-att-value="selected_support_code"/>
+                                    </t>
+
+                                    <!-- Daily backup add-on (paid only — hidden for trials) -->
+                                    <t t-if="form_values.get('is_trial') != '1' and config.get('daily_backup_price', 0) &gt; 0">
+                                        <div class="mb-3 p-3"
+                                             style="background:rgba(16,185,129,0.05);
+                                                    border:1px solid rgba(16,185,129,0.25);
+                                                    border-radius:10px;">
+                                            <div class="form-check d-flex align-items-start gap-2">
+                                                <input type="checkbox" name="daily_backup" value="1"
+                                                       class="form-check-input mt-1"
+                                                       id="daily-backup-toggle"
+                                                       t-att-data-price="backup_unit_price"
+                                                       t-att-checked="daily_backup or None"/>
+                                                <label class="form-check-label" for="daily-backup-toggle">
+                                                    <span class="fw-semibold">
+                                                        <i class="fas fa-shield-alt me-1"></i>Add daily backups<a href="/help#daily-backup" target="_blank" rel="noopener" class="saas-help" title="A paid add-on: an automatic encrypted snapshot every day, last 7 days kept, so you can restore." aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
+                                                    </span>
+                                                    <div class="small mt-1" style="color:var(--co-text-muted,#71717A);">
+                                                        Every database on this instance is dumped daily to encrypted
+                                                        cloud storage. Up to 7 most recent snapshots are kept; older
+                                                        ones roll off automatically. Restore any snapshot with one
+                                                        click from your portal. The price is included in your monthly total below.
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </t>
+
+                                    <!-- Odoo.sh-style environments (paid only — hidden for
+                                         trials). Each Staging/Development server is the
+                                         lowest spec and added to the subscription. -->
+                                    <t t-if="form_values.get('is_trial') != '1' and env_server_price &gt; 0">
+                                        <div class="mb-3 p-3"
+                                             style="background:rgba(99,102,241,0.05);
+                                                    border:1px solid rgba(99,102,241,0.25);
+                                                    border-radius:10px;">
+                                            <div class="fw-semibold mb-1">
+                                                <i class="fas fa-layer-group me-1"></i>Extra environments
+                                            </div>
+                                            <div class="small mb-2" style="color:var(--co-text-muted,#71717A);">
+                                                Production is always included. Add Staging and Development
+                                                servers (lowest spec) at
+                                                <span t-esc="env_server_price"/> each — provision more any
+                                                time from your dashboard.
+                                            </div>
+                                            <div class="row g-2">
+                                                <div class="col-6">
+                                                    <label class="form-label small mb-1" for="staging-count">Staging servers</label>
+                                                    <input type="number" name="staging_count" id="staging-count"
+                                                           class="form-control" min="0" step="1"
+                                                           t-att-data-price="env_server_price"
+                                                           t-att-value="form_values.get('staging_count', '0')"/>
+                                                </div>
+                                                <div class="col-6">
+                                                    <label class="form-label small mb-1" for="dev-count">Development servers</label>
+                                                    <input type="number" name="dev_count" id="dev-count"
+                                                           class="form-control" min="0" step="1"
+                                                           t-att-data-price="env_server_price"
+                                                           t-att-value="form_values.get('dev_count', '0')"/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </t>
+
+                                    <!-- Custom modules (Git repo) and Python packages are
+                                         configured AFTER purchase, from the instance's own
+                                         page — not part of buying. -->
+                                </div>
+                            </div>
+
+                            <!-- Right: Order Summary -->
+                            <div class="col-lg-5">
+                                <div class="custom-price-card">
+                                    <h5 class="mb-3">Order Summary</h5>
+
+                                    <div class="d-flex align-items-center gap-3 mb-3 pb-3"
+                                         style="border-bottom:1px solid var(--border-color,#27272A);">
+                                        <div class="service-icon" style="width:48px;height:48px;">
+                                            <i class="fas fa-server"></i>
+                                        </div>
+                                        <div>
+                                            <div class="fw-semibold">Cloud Hosting</div>
+                                            <t t-if="form_values.get('is_trial') == '1'">
+                                                <span class="badge bg-success">Free Trial</span>
+                                            </t>
+                                            <t t-else="">
+                                                <span class="badge bg-primary"><t t-esc="billing_period"/></span>
+                                            </t>
+                                        </div>
+                                    </div>
+
+                                    <t t-if="form_values.get('is_trial') == '1'">
+                                        <!-- Trial: show resources only, no prices -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between mb-2" style="color:var(--co-text-secondary,#A1A1AA);font-size:0.9rem;">
+                                                <span><i class="fas fa-cogs me-2"></i>Workers</span>
+                                                <span class="fw-semibold" style="color:var(--co-text-primary,#FAFAFA);"><t t-esc="workers"/></span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mb-2" style="color:var(--co-text-secondary,#A1A1AA);font-size:0.9rem;">
+                                                <span><i class="fas fa-hdd me-2"></i>Storage</span>
+                                                <span class="fw-semibold" style="color:var(--co-text-primary,#FAFAFA);"><t t-esc="storage"/>GB</span>
+                                            </div>
+                                        </div>
+                                        <div class="p-3 text-center" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.15);border-radius:10px;">
+                                            <div style="color:var(--success);font-weight:600;font-size:1.5rem;">FREE</div>
+                                            <div class="small" style="color:var(--co-text-muted,#71717A);">
+                                                for <t t-esc="config.get('trial_days', 14)"/> days
+                                            </div>
+                                        </div>
+                                    </t>
+                                    <t t-else="">
+                                        <!-- Paid: transparent breakdown — plan price + any
+                                             add-ons + support, then the total the customer pays. -->
+                                        <div class="price-breakdown">
+                                            <div class="breakdown-row">
+                                                <span class="breakdown-label"><i class="fas fa-cogs me-2"></i>Workers</span>
+                                                <span class="breakdown-value"><t t-esc="workers"/></span>
+                                            </div>
+                                            <div class="breakdown-row">
+                                                <span class="breakdown-label"><i class="fas fa-hdd me-2"></i>Storage</span>
+                                                <span class="breakdown-value"><t t-esc="storage"/> GB</span>
+                                            </div>
+                                            <div class="breakdown-divider"></div>
+                                            <div class="breakdown-row">
+                                                <span class="breakdown-label"><i class="fas fa-server me-2"></i>Plan</span>
+                                                <span class="breakdown-value" id="plan-cost-value"><t t-esc="'${:,.2f}'.format(plan_cost)"/>/mo</span>
+                                            </div>
+                                            <div class="breakdown-row"
+                                                 id="backup-cost-row"
+                                                 t-att-style="'' if daily_backup else 'display:none;'">
+                                                <span class="breakdown-label"><i class="fas fa-shield-alt me-2"></i>Daily Backups</span>
+                                                <span class="breakdown-value">+<span id="backup-cost-value"><t t-esc="'${:,.2f}'.format(backup_unit_price)"/></span>/mo</span>
+                                            </div>
+                                            <div class="breakdown-row" id="support-cost-row"
+                                                 t-att-style="'' if support_cost &gt; 0 else 'display:none;'">
+                                                <span class="breakdown-label"><i class="fas fa-headset me-2"></i>Support</span>
+                                                <span class="breakdown-value">+<span id="support-cost-value"><t t-esc="'${:,.2f}'.format(support_cost)"/></span>/mo</span>
+                                            </div>
+                                            <div class="breakdown-divider"></div>
+                                            <div class="breakdown-total">
+                                                <span>
+                                                    <t t-if="billing_period == 'yearly'">Yearly Total</t>
+                                                    <t t-else="">Monthly Total</t>
+                                                </span>
+                                                <span class="total-amount" id="hosting-total-amount"
+                                                      t-att-data-base-monthly="monthly_total - backup_cost"
+                                                      t-att-data-base-yearly="yearly_total - backup_cost * 12"
+                                                      t-att-data-billing="billing_period">
+                                                    <t t-if="billing_period == 'yearly'">
+                                                        <t t-esc="'${:,.2f}'.format(yearly_total)"/>
+                                                    </t>
+                                                    <t t-else="">
+                                                        <t t-esc="'${:,.2f}'.format(monthly_total)"/>
+                                                    </t>
+                                                </span>
+                                            </div>
+                                            <!-- Always show the yearly saving so the customer
+                                                 sees the benefit (independent of the backup
+                                                 toggle — it cancels out). Hidden when 0; updated
+                                                 live with region/support changes. -->
+                                            <div class="breakdown-row" id="savings-row"
+                                                 t-att-style="'margin-top:8px;' if yearly_savings &gt; 0 else 'display:none;'">
+                                                <span class="breakdown-label" style="color:#10b981;">
+                                                    <i class="fas fa-piggy-bank me-2"></i>
+                                                    <t t-if="billing_period == 'yearly'">You save (vs monthly)</t>
+                                                    <t t-else="">Switch to yearly &amp; save</t>
+                                                </span>
+                                                <span class="breakdown-value" style="color:#10b981;font-weight:600;">
+                                                    <span id="savings-value"><t t-esc="'${:,.2f}'.format(yearly_savings)"/>/yr · <t t-esc="yearly_savings_pct"/>%</span>
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <!-- Live pricing: the backup toggle updates the total
+                                             client-side; changing region or support fetches a
+                                             fresh quote (price + region-filtered domains) from
+                                             /hosting/configure/quote — NO full-page reload. -->
+                                        <script>
+                                            (function(){
+                                                var form = document.querySelector('form[action="/hosting/order"]');
+                                                var totalEl = document.getElementById('hosting-total-amount');
+                                                if (!form || !totalEl) return;
+                                                var cb = document.getElementById('daily-backup-toggle');
+                                                var backupRow = document.getElementById('backup-cost-row');
+                                                var backupValEl = document.getElementById('backup-cost-value');
+                                                var planValEl = document.getElementById('plan-cost-value');
+                                                var supportRow = document.getElementById('support-cost-row');
+                                                var supportValEl = document.getElementById('support-cost-value');
+                                                var savingsRow = document.getElementById('savings-row');
+                                                var savingsValEl = document.getElementById('savings-value');
+                                                var regionSel = document.getElementById('region-select');
+                                                var supportSel = document.getElementById('support-select');
+                                                var domainSel = document.getElementById('domain-select');
+                                                var billing = totalEl.dataset.billing;
+                                                var backupPrice = cb ? (parseFloat(cb.dataset.price) || 0) : 0;
+                                                // Odoo.sh-style environments: staging/dev counts × the
+                                                // per-server price (already in the page's billing period,
+                                                // so it is added to the total as-is, never x12).
+                                                var stagingEl = form.elements['staging_count'];
+                                                var devEl = form.elements['dev_count'];
+                                                var envPrice = stagingEl ? (parseFloat(stagingEl.dataset.price) || 0) : 0;
+                                                function envCount() {
+                                                    return (parseInt(stagingEl &amp;&amp; stagingEl.value, 10) || 0)
+                                                         + (parseInt(devEl &amp;&amp; devEl.value, 10) || 0);
+                                                }
+
+                                                function fmt(n) { return '$' + (n||0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+                                                // Re-render the TOTAL from the no-backup base plus
+                                                // the backup toggle (flat fee, x12 on yearly) plus the
+                                                // chosen Staging/Development servers.
+                                                function render() {
+                                                    var baseMonthly = parseFloat(totalEl.dataset.baseMonthly) || 0;
+                                                    var baseYearly = parseFloat(totalEl.dataset.baseYearly) || 0;
+                                                    var on = cb &amp;&amp; cb.checked;
+                                                    if (backupRow) backupRow.style.display = on ? '' : 'none';
+                                                    var addon = on ? backupPrice : 0;
+                                                    var envCost = envCount() * envPrice;
+                                                    totalEl.textContent = billing === 'yearly'
+                                                        ? fmt(baseYearly + addon * 12 + envCost)
+                                                        : fmt(baseMonthly + addon + envCost);
+                                                }
+
+                                                function applyQuote(q) {
+                                                    if (!q) return;
+                                                    if (planValEl) planValEl.textContent = fmt(q.plan_cost) + '/mo';
+                                                    backupPrice = q.backup_unit_price || 0;
+                                                    if (cb) cb.dataset.price = backupPrice;
+                                                    if (backupValEl) backupValEl.textContent = fmt(backupPrice);
+                                                    if (supportValEl) supportValEl.textContent = fmt(q.support_cost);
+                                                    if (supportRow) supportRow.style.display = (q.support_cost &gt; 0) ? '' : 'none';
+                                                    totalEl.dataset.baseMonthly = q.base_monthly;
+                                                    totalEl.dataset.baseYearly = q.base_yearly;
+                                                    if (savingsRow &amp;&amp; savingsValEl) {
+                                                        if (q.yearly_savings &gt; 0) {
+                                                            savingsRow.style.display = '';
+                                                            savingsValEl.textContent = fmt(q.yearly_savings) + '/yr · ' + q.yearly_savings_pct + '%';
+                                                        } else {
+                                                            savingsRow.style.display = 'none';
+                                                        }
+                                                    }
+                                                    // Region change re-filters domains (co-location):
+                                                    // rebuild the select, keep the pick if still valid.
+                                                    if (domainSel &amp;&amp; q.domains) {
+                                                        var cur = domainSel.value;
+                                                        domainSel.innerHTML = '';
+                                                        q.domains.forEach(function(d){
+                                                            var o = document.createElement('option');
+                                                            o.value = d.id; o.textContent = '.' + d.name;
+                                                            domainSel.appendChild(o);
+                                                        });
+                                                        var keep = q.domains.some(function(d){ return String(d.id) === String(cur); });
+                                                        domainSel.value = keep ? cur : (q.domains[0] ? String(q.domains[0].id) : '');
+                                                    }
+                                                    render();
+                                                }
+
+                                                function params() {
+                                                    function v(n){ var el = form.elements[n]; return el ? el.value : ''; }
+                                                    return {
+                                                        workers: v('workers'),
+                                                        storage: v('storage'),
+                                                        region_id: v('region_id') || 0,
+                                                        support_code: v('support_code') || '',
+                                                        daily_backup: (cb &amp;&amp; cb.checked) ? 1 : 0,
+                                                    };
+                                                }
+
+                                                var _seq = 0;
+                                                function fetchQuote() {
+                                                    var seq = ++_seq;
+                                                    fetch('/hosting/configure/quote', {
+                                                        method: 'POST',
+                                                        headers: {'Content-Type': 'application/json'},
+                                                        body: JSON.stringify({jsonrpc:'2.0', method:'call', params: params()}),
+                                                    }).then(function(r){ return r.json(); })
+                                                      .then(function(res){ if (seq === _seq) applyQuote(res &amp;&amp; res.result); })
+                                                      .catch(function(){});
+                                                }
+
+                                                if (cb) cb.addEventListener('change', render);
+                                                if (stagingEl) stagingEl.addEventListener('input', render);
+                                                if (devEl) devEl.addEventListener('input', render);
+                                                if (regionSel) regionSel.addEventListener('change', fetchQuote);
+                                                if (supportSel) supportSel.addEventListener('change', fetchQuote);
+                                                render();
+                                            })();
+                                        </script>
+                                    </t>
+
+                                    <t t-if="form_values.get('is_trial') == '1'">
+                                        <button type="submit" id="submit-btn" class="btn btn-success btn-lg w-100 mt-3"
+                                                data-loading-text="Starting trial...">
+                                            <i class="fas fa-rocket me-2"></i>Start Free Trial
+                                        </button>
+                                        <p class="text-muted small mt-2 mb-0 text-center">
+                                            <i class="fas fa-gift me-1"></i>No credit card required. <t t-esc="config.get('trial_days', 14)"/> days free.
+                                        </p>
+                                    </t>
+                                    <t t-else="">
+                                        <button type="submit" id="submit-btn" class="btn btn-primary btn-lg w-100 mt-3"
+                                                data-loading-text="Processing order...">
+                                            <i class="fas fa-credit-card me-2"></i>Continue to Payment
+                                        </button>
+                                        <p class="text-muted small mt-2 mb-0 text-center">
+                                            <i class="fas fa-lock me-1"></i>Secure checkout. Cancel anytime.
+                                        </p>
+                                    </t>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+
+                    <div class="text-center mt-4">
+                        <a href="/hosting" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Hosting
+                        </a>
+                    </div>
+                </div>
+            </section>
+        </t>
+    </template>
+
+    <!-- ============================================================
+         Live Logs Page  —  /my/instances/<id>/logs
+         ============================================================ -->
+
+
+</odoo>

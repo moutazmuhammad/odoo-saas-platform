@@ -1,0 +1,61 @@
+# Multi-replica example. Requires storage.filestore.accessMode: ReadWriteMany
+# on a StorageClass that genuinely provides a shared, POSIX-consistent
+# filesystem (NFS/CephFS/EFS-backed) — the webhook/validateSpec rejects
+# replicas > 1 with ReadWriteOnce (the default) rather than risking
+# filestore corruption. See docs/architecture.md ("Filestore Architecture")
+# for the full trade-off.
+#
+# With replicas > 1 the controller creates a SEPARATE single-replica
+# "odoo-cron" Deployment (workers=0, running only max_cron_threads) so
+# scheduled jobs never execute twice; the "odoo" Deployment below runs
+# max_cron_threads=0 on every one of its replicas. See
+# docs/architecture.md ("Odoo Worker Model").
+apiVersion: saas.odoo.example.com/v1alpha1
+kind: OdooInstance
+metadata:
+  name: customer-umbrella
+spec:
+  version: "18.0"
+
+  image:
+    repository: registry.example.com/odoo-saas/odoo
+    tag: "18.0-2026.09.01"
+    pullPolicy: IfNotPresent
+
+  domain:
+    hostname: umbrella.saas.example.com
+    tls:
+      enabled: true
+      issuerRef:
+        name: letsencrypt-production
+        kind: ClusterIssuer
+
+  database:
+    mode: CloudNativePG
+    version: "16"
+    storage:
+      size: 100Gi
+
+  storage:
+    filestore:
+      size: 200Gi
+      storageClassName: nfs-shared
+      accessMode: ReadWriteMany
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  workers:
+    count: 4
+    maxCronThreads: 2
+
+  replicas: 3
+
+  networking:
+    networkPolicy:
+      enabled: true

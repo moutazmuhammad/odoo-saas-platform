@@ -1,0 +1,16 @@
+apiVersion: v2
+name: odoo-instance
+description: |
+  A thin GitOps wrapper around a single OdooInstance custom resource. This
+  chart creates NO Kubernetes resources of its own beyond one OdooInstance
+  object — the odoo-operator's controller does all real provisioning. Use
+  this chart only if your platform manages tenants declaratively through
+  Git (e.g. one Argo CD Application or Flux HelmRelease per customer)
+  rather than through direct API calls against the OdooInstance CRD from a
+  SaaS control-plane backend. See docs/architecture.md ("SaaS API
+  Integration Contract") for the trade-off between the two approaches; the
+  platform's primary, recommended integration path is the CRD itself, not
+  this chart.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

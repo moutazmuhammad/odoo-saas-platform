@@ -475,3 +475,14 @@ a real, non-obvious behavior change: Vite 8 defaults to the Rolldown
 bundler, not Rollup (build time/output size both shifted) — no plugin
 incompatibility found. Verified: tsc clean, build succeeds, both JS
 bundles pass `node --check`, file sizes sane — commit: 823ba1e
+
+2026-09-14 — Step A.3.3 — Upgraded Tailwind CSS 3.4->4.3 using the
+official `@tailwindcss/upgrade` codemod (config moved from
+tailwind.config.js into a CSS @theme block; 27 template files rewritten
+to v4's renamed utility scales). Verified: diffed compiled CSS output
+value-for-value against the pre-migration build for every renamed
+utility actually used (rounded-sm/shadow-xs/etc. resolve to the exact
+same pixel values as their v3 predecessors), and manually reviewed every
+changed line across all 27 files to confirm each fits a known, documented,
+visually-equivalent rename — nothing unexplained. tsc + build clean —
+commit: 1a9073a

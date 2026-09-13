@@ -593,3 +593,14 @@ against actual Postgres+Odoo (not envtest/mocks) — 237 tests (234+3 new),
 executed — commit: 67fc7c5. Remaining B.1 sub-steps re-scoped with the
 corrected route list (see B.1.2-B.1.5 above) and a reusable script to
 re-derive it before each one, so this doesn't drift stale again.
+
+2026-09-14 — Step B.1.2 — Added HTTP-level tests for the checkout path:
+hosting/order's paid-vs-trial redirect split (previously only res['ok']
+truthiness was checked, never where either outcome actually redirects),
+plus hosting/calculate, hosting/calculate-project, and services/calculate
+(previously zero coverage). Reused TestOrderControllerFixes' existing
+fixtures. Caught a real bug in my own first draft via an actual failing
+test run (asserted synchronous state=='running' after an async
+action_deploy() call) — fixed to assert the real invariant instead.
+Verified: full suite via devctl.sh test — 242 tests (237+5 new), 0 failed,
+0 errors after the fix — commit: 51d5d67.

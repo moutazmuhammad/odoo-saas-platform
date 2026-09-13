@@ -267,28 +267,32 @@ register/start+resend, reset/start+verify were already covered.)
     real money.
   - B.1.3 `instances/*` nested families — **partial, see progress log**:
     done: `databases/{create,drop,duplicate}` auth-boundary (token refused)
-    + the one rejection path that doesn't enqueue a job,
+    at the HTTP layer, and **now also their success/rejection paths at the
+    model layer** (`TestDbOpViaQueue` in `test_job_queue.py`, per the
+    `TransactionCase`-not-`HttpCase` rule this plan captured), plus
     `environments/{reserve,release}` full success+rejection paths (pure
-    billing logic, no infra needed). The reusable compute-layer mock
-    (`_mock_db_ops_infra` in `test_security_billing_fixes.py`) exists and
-    is safe to reuse for anything that does **not** reach
-    `saas.job._enqueue(...)`. **Still open**, in priority order:
-    - `databases/*` **success paths** (create/drop/duplicate/upgrade
-      actually completing) — **do this at the model layer
-      (`TransactionCase`), not through `HttpCase`/HTTP.** Tried the HTTP
-      route first; found that `_spawn_worker`'s real background worker
-      thread (spawned by `_enqueue`) corrupts other tests' savepoint-
-      nested transactions when driven through a live HTTP request, even
-      with `_spawn_worker` patched to a no-op — that suppression only
-      reliably holds under `TransactionCase` (how `test_job_queue.py` and
-      `test_compute_driver.py` already use it), not `HttpCase`. So: call
-      `instance.hosting_db_create_async(...)` etc. directly via ORM in a
-      `TransactionCase` test (reusing the same SSH/`_compute_driver` mocks
-      already built), and separately confirm with a *thin* HTTP smoke test
-      only that the route reaches the model method (e.g. mock
-      `hosting_db_create_async` itself at the HTTP layer and assert it was
-      called with the right args) rather than letting the real async chain
-      run inside an HTTP test.
+    billing logic, no infra needed) and `databases/upgrade` **still
+    untested**. The reusable compute-layer mocks exist in two places now:
+    `_mock_db_ops_infra` (`test_security_billing_fixes.py`, HTTP-layer,
+    auth/rejection-only paths) and `_mock_hosting_db_list`
+    (`test_job_queue.py`'s `TestDbOpViaQueue`, model-layer, success paths).
+    **Non-obvious finding worth carrying into any future `databases/*`
+    work**: `create` is not like `drop`/`duplicate` — it deliberately does
+    **not** use `saas.job._enqueue` at all (its own code comment: SEC-002,
+    the queue would persist the new DB's plaintext admin password to a
+    durable row) and instead uses the older `run_in_background()` utility,
+    which needs its own, differently-shaped mock (patch
+    `run_in_background` itself, not `_spawn_worker`) and a positive
+    assertion that no `saas.job` row was created (a row existing would
+    itself be the regression). Check which mechanism a route actually uses
+    before assuming either pattern applies. **Still open**, in priority
+    order:
+    - `databases/upgrade` (module upgrade) and a thin HTTP-layer smoke
+      test for `create`/`drop`/`duplicate` (mock the model method itself
+      and assert the route calls it with the right args, rather than
+      letting the real async chain run inside `HttpCase` — confirms the
+      route/auth/param-wiring layer without re-triggering the hazard
+      above).
     - `backups/*` (`create`, `<id>/restore`) — check whether these also
       end in `_enqueue`; if so, apply the same TransactionCase-not-HttpCase
       rule immediately rather than rediscovering the hazard.
@@ -687,3 +691,20 @@ before attempting `backups/*` (likely the same shape) or any other
 test — 249 tests (248+1), 0 failed, 0 errors, and confirmed zero
 test-level errors anywhere in the run's own log (not just the summary
 line) — commit: d1c0307.
+
+2026-09-14 — Step B.1.3 follow-up — Databases create+duplicate success
+paths, done properly this time at the model layer
+(`TestDbOpViaQueue`/`test_job_queue.py`, `TransactionCase`). Found a
+second real, non-obvious thing along the way: `create` doesn't use
+`saas.job._enqueue` at all (deliberately, per SEC-002 — the queue would
+persist the new DB's plaintext password) — it uses `run_in_background()`
+instead, which needed a differently-shaped mock (patch the function
+itself, not `_spawn_worker`) and a positive assertion that no `saas.job`
+row exists. `drop`/`duplicate` do use `_enqueue` and were covered the way
+B.1.3's earlier finding prescribed. Verified: full suite via devctl.sh
+test — 253 tests (249+4 new), 0 failed, 0 errors, confirmed all 4 new
+tests ran and zero ERROR/FAIL entries in the run's log tail — commit:
+488c1a3. Remaining: `databases/upgrade` + a thin HTTP smoke test for
+create/drop/duplicate (route-reaches-model-method only, not the full
+async chain), `backups/*`, `environments/create`+`merge`, and the
+not-yet-investigated remainder (see the re-scoped list above).

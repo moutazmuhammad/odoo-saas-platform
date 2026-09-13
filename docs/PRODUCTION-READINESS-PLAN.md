@@ -173,8 +173,13 @@ Cheap, low-risk, do first — nothing here touches business logic.
     migration guide — this project has ~27 pages routed).
   - A.3.5 React 18→19 (last, highest blast radius — do only after A.3.1-4
     are stable, since React 19 changes interact with all of the above).
-  - A.3.6 `three`/`@react-three/fiber` (isolated to `Home.tsx`'s globe —
-    can happen anytime, independent of the above chain).
+  - ~~A.3.6 `three`/`@react-three/fiber` (isolated to `Home.tsx`'s globe —
+    can happen anytime, independent of the above chain).~~ **Wrong,
+    corrected in the progress log**: `@react-three/fiber` peer-depends on
+    a specific React major range and turned out to be tightly coupled to
+    A.3.5, not independent — the two were done together. Left here
+    struck through rather than silently deleted, so the original
+    (incorrect) assumption is visible alongside the correction.
   **Acceptance per step:** `npm run build` green, affected pages
   manually verified in a browser (per this project's own existing
   practice — see `docs/architecture/*` "Headless-Chrome verified" entries),
@@ -493,3 +498,20 @@ uses declarative-mode APIs (37 usages checked) — a true drop-in, zero
 source changes needed. Verified: tsc clean, build succeeds, bundles pass
 node --check, confirmed live via the running systemd service — commit:
 bb6e511
+
+2026-09-14 — Step A.3.5 — Upgraded React 18.3->19.2 + @react-three/fiber
+8->9 (discovered mid-step these are coupled, not independent as A.3.6
+below assumed — fiber@8 hard peer-caps at react<19, and fiber@9 itself
+peer-caps at react<19.3, so landed on 19.2.8, the latest release
+satisfying both real constraints, not a canary). One real type error
+found and fixed correctly (a ref callback's ambiguous return under
+React 19's new ref-cleanup typing) — not suppressed. Verified: tsc clean
+across all 1656 modules, build succeeds, bundles pass node --check, the
+Globe chunk confirmed to actually contain fiber's runtime code. NOT
+verified: actual WebGL rendering in a browser (none available this
+session, user declined the extension) — disclosed as an open item, not
+glossed over — commit: aad107b
+
+**A.3.6 status: done, folded into A.3.5 above** (the plan's assumption
+that `@react-three/fiber` could be upgraded independently/"anytime" was
+wrong — corrected here rather than left stale).

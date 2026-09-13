@@ -253,13 +253,30 @@ register/start+resend, reset/start+verify were already covered.)
     one trial-rejection edge case, not the general happy path) and
     `services/calculate*`/`hosting/calculate*` (uncovered) — checkout path,
     real money.
-  - B.1.3 `instances/*` nested families: `databases/*`, `backups/*`,
-    `environments/*` (`create`/`merge`/`release`/`reserve` specifically —
-    the base `instances/<id>` GET/`action`/`environments` read are already
-    covered), `metrics/*`, `packages`, `repo`, `sql`, `storage/*` — the
-    largest remaining family (~30 routes) and the one every dashboard page
-    depends on. Prioritize the destructive ones first (`databases/drop`,
-    `databases/create`) over read-only ones.
+  - B.1.3 `instances/*` nested families — **partial, see progress log**:
+    done: `databases/{create,drop,duplicate}` auth-boundary (token refused),
+    `environments/{reserve,release}` full success+rejection paths (pure
+    billing logic, no infra needed). **Still open**, in priority order:
+    - `databases/*` **success paths** (create/drop/duplicate/upgrade
+      actually completing) — needs a mocked compute layer first.
+      `hosting_db_list()` execs into the tenant container via
+      `self.docker_server_id._get_ssh_connection()` — the same seam
+      `test_compute_driver.py`'s `FakeSSH` already mocks for other model
+      tests. Build a small reusable test fixture/helper for "a running
+      hosting instance with a working fake SSH returning an empty DB
+      list" (worth its own well-tested helper, not a one-off inline mock,
+      since every one of `create`/`drop`/`duplicate`/`upgrade`/
+      `reset-password`/`backup` needs the same seam) rather than
+      duplicating ad-hoc mocking per test.
+    - `backups/*` (`create`, `<id>/restore`) — likely the same
+      SSH-dependent shape as `databases/*`; investigate before assuming.
+    - `environments/create` and `environments/merge` — not yet covered;
+      `create` may also touch billing/payment provider mocking similar to
+      `hosting/order`'s paid path.
+    - `metrics/*`, `packages`, `repo`, `sql`, `storage/*`, `auto-renew`,
+      `invoice/cancel`, `daily-backup/enable`, `builds`, `branches` — not
+      yet investigated at all; check each for real infra dependencies
+      before writing tests, same discipline as above.
   - B.1.4 `webhook.py` — already has real HTTP coverage
     (`test_webhook_security.py`); extend it to cover failure/replay/
     signature-mismatch cases if not already there, rather than treating it
@@ -604,3 +621,20 @@ test run (asserted synchronous state=='running' after an async
 action_deploy() call) — fixed to assert the real invariant instead.
 Verified: full suite via devctl.sh test — 242 tests (237+5 new), 0 failed,
 0 errors after the fix — commit: 51d5d67.
+
+2026-09-14 — Step B.1.3 (partial) — Investigated databases/create+drop+
+duplicate before writing anything: they all call hosting_db_list(),
+which execs into the tenant container over SSH — real infra, not
+mockable in 5 minutes without a proper reusable fixture. Deliberately
+scoped that (the success path) OUT rather than rush a fragile mock;
+covered instead: the access-token-must-not-authorize-writes boundary for
+those 3 routes (cheap, no infra, extends the existing
+test_access_token_is_read_only pattern), and the FULL success+rejection
+paths for environments/reserve+release (pure billing logic, no SSH
+dependency at all) — release's wallet-credit amount verified to the
+cent via real proration math, not just "no error." Verified: full suite
+via devctl.sh test — 248 tests (242+6 new), 0 failed, 0 errors, first
+run clean — commit: 244404f. Remaining B.1.3 scope (databases/backups
+success paths, environments/create+merge, metrics/packages/repo/sql/
+storage/etc.) re-listed above in priority order with the specific
+technical reason each needs its own investigation before testing.

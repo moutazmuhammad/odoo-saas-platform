@@ -77,8 +77,11 @@ jobs:
           python -m pip install --upgrade pip wheel
           pip install -r "$HOME/odoo/requirements.txt"
           # External deps declared in saas_core/__manifest__.py that are not
-          # part of Odoo core requirements.
-          pip install paramiko jinja2 boto3 google-cloud-storage
+          # part of Odoo core requirements — pinned in control-plane/requirements.txt
+          # (generated against Odoo 18's own requirements.txt as a constraints
+          # file, so nothing here can silently fight Odoo's own pins; see
+          # that file's header for how to regenerate it).
+          pip install -r control-plane/requirements.txt
 
       - name: Write odoo.conf
         run: |

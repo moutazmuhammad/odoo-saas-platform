@@ -66,7 +66,12 @@ history is ever needed; this repo is the going-forward source of truth.
   (Odoo source, venv, Postgres cluster; all overridable via env vars). Its
   local `odoo.conf`'s `addons_path` must point at this repo's
   `control-plane/` directory (containing `saas_core` and `saas_website` as
-  direct children), not the old repo root.
+  direct children), not the old repo root. Install Odoo core's own
+  `requirements.txt` first, then `pip install -r control-plane/requirements.txt`
+  for `saas_core`'s own external deps (paramiko/jinja2/boto3/
+  google-cloud-storage) — pinned there specifically to stay compatible
+  with Odoo core's own pins; see that file's header before changing
+  versions.
 - **Frontend** (SPA): `cd frontend/veltnex && npm ci && npm run dev` (proxies
   API calls to a locally running Odoo on `:8018` — see `vite.config.ts`).
   `npm run build` writes straight into

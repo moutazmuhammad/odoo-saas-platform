@@ -40,6 +40,32 @@ the Compute Service (the operator) — which is exactly the "communicate via
 APIs" requirement, achieved by finishing a seam that already exists rather
 than inventing a new one.
 
+> ⚠️ **Current integration status: NONE — read this before touching Phase
+> 1/2.** The operator and the Control Plane have never been connected, in
+> any form, by anyone, at any point. This is true even though both now live
+> in one repo — physical proximity is not integration. Specifically:
+> - `saas_core/drivers/kubernetes_driver.py` (the existing stub) does **not**
+>   know the `OdooInstance` CRD exists. It renders its own raw
+>   Deployment+Service YAML (`render_manifest()`) and has never been run
+>   against a live cluster at all (its own header comment already said so
+>   before this plan existed).
+> - The operator (`compute/operator/`) has never received a single request
+>   that originated from `saas_core`/`saas_website`/`veltnex`. Every
+>   `OdooInstance` this project has ever created was applied by hand
+>   (`kubectl apply -f -`) directly by a developer/Claude session, for
+>   testing the operator in isolation — never through any Control Plane
+>   code path.
+> - No `saas.instance` record has ever caused an `OdooInstance` to be
+>   created, and no `OdooInstance`'s status has ever fed back into a
+>   `saas.instance` record. Zero rows, zero requests, zero wiring.
+> - Phase 2 below is therefore not "swap a working backend for a better
+>   one" — it is **building the first-ever connection between these two
+>   systems**, from nothing. Treat every acceptance criterion in Phase 2 as
+>   unproven until it is demonstrated end-to-end (Control Plane action →
+>   real Kubernetes API call → real cluster state change → status flows
+>   back), not as a formality on top of something that already basically
+>   works.
+
 ### Why not a bigger rewrite
 - The audits (`docs/reviews/*`) are clear this platform is **not
   production-ready today** (10 critical / 29 high findings) for reasons mostly
@@ -113,6 +139,12 @@ flowchart LR
 | **Compute** | Kubernetes cluster(s) running the operator, one deployment per `saas.region` | Tenant provisioning, DB, filestore, backup/restore, routing, pod security | Kubernetes API (server); exposes Prometheus `/metrics` | **Reused as-is**: `compute/operator` (this repo) |
 | **Observability** | Prometheus + Grafana on each cluster | Metrics, dashboards, margin/cost data | Scrapes Compute's `/metrics` | New, near-zero code (the operator already exports the right metrics) |
 | **Shared storage** | Registry + object storage (MinIO/GCS) | Immutable images, backup/restore artifacts | S3-compatible API | Reused as-is (`saas_core/docker/provision-registry.sh`, `provision-object-storage.sh`) |
+
+"Talks to others via" above describes the **target** connection, not an
+existing one — see the integration-status warning in §0: as of this
+writing, Control Plane and Compute have never exchanged a single request.
+"Reused as-is" in the Source column means the component's own code needs no
+rewrite to serve its role, not that it is already wired to the other side.
 
 Two services, one clear API boundary (Kubernetes API), everything else stays
 where the existing project already put it. This is intentionally the
@@ -203,8 +235,10 @@ rollback is "delete the test cluster/namespace."
 
 ## 4. Phase 2 — Real `KubernetesDriver`, behind the existing `ComputeDriver` seam
 
-This is the actual "swap the compute backend" step, and it is deliberately
-scoped to **replace one file's implementation**, not the interface.
+This is the actual "build the first connection" step (see §0's integration-
+status warning — there is nothing working today to "swap"), and it is
+deliberately scoped to **replace one file's implementation**, not the
+interface, so the amount of new, unproven code is as small as possible.
 
 - **2.1** Rewrite `saas_core/drivers/kubernetes_driver.py` to talk to the
   Kubernetes API directly (the `kubernetes` PyPI client, or a minimal REST

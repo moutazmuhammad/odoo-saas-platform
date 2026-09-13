@@ -29,6 +29,18 @@ current repo state (not assumptions carried over from older docs):
 
 ## 1. Current state snapshot (as of this review)
 
+> ⚠️ **`control-plane` and `compute` are not integrated. At all. Today.**
+> They were developed independently, moved into this monorepo as two
+> untouched folders, and have never exchanged a request. The existing
+> `saas_core/drivers/kubernetes_driver.py` stub does not use the
+> `OdooInstance` CRD and has never run against a live cluster; every
+> `OdooInstance` ever created in `compute/operator`'s history was applied
+> by hand (`kubectl apply`) for testing the operator in isolation, never
+> triggered by `saas_core`. Building that first connection is Phase D
+> (= `MICROSERVICES-PLAN.md` Phase 2) — see that document's §0 for the full
+> warning. Nothing below in this snapshot should be read as implying any
+> cross-component wiring exists yet.
+
 ### 1.1 Dependencies, dead code, hygiene
 
 | Area | Finding |

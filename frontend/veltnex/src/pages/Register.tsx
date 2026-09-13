@@ -179,7 +179,7 @@ export default function Register() {
                     id="country"
                     value={form.country_id}
                     onChange={set("country_id")}
-                    className="flex h-10 w-full rounded-lg border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-glow/70"
+                    className="flex h-10 w-full rounded-lg border border-border bg-background px-3 text-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-glow/70"
                   >
                     <option value="">Select your country…</option>
                     {countries.map((c) => (
@@ -359,7 +359,7 @@ function OtpStep({
             }}
             disabled={submitting}
             className={cn(
-              "h-14 w-full rounded-lg border bg-background text-center text-xl font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-glow/70",
+              "h-14 w-full rounded-lg border bg-background text-center text-xl font-semibold transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-glow/70",
               error ? "border-danger" : "border-border focus-visible:border-primary-glow"
             )}
           />

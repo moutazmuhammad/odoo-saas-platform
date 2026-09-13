@@ -5,20 +5,20 @@ import { cn } from "@/lib/utils";
 // Material / Google-console style buttons: 4px radius, restrained shadows,
 // clear contained / outlined / text hierarchy.
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded text-sm font-medium transition-all focus-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-sm text-sm font-medium transition-all focus-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         // Contained primary
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-primary-glow hover:shadow",
+          "bg-primary text-primary-foreground shadow-xs hover:bg-primary-glow hover:shadow-sm",
         // Outlined (secondary action)
         secondary:
-          "border border-border bg-card text-primary hover:bg-primary/[0.06]",
+          "border border-border bg-card text-primary hover:bg-primary/6",
         outline:
-          "border border-border bg-transparent text-foreground hover:bg-foreground/[0.04]",
+          "border border-border bg-transparent text-foreground hover:bg-foreground/4",
         // Text button
-        ghost: "text-muted hover:bg-foreground/[0.06] hover:text-foreground",
+        ghost: "text-muted hover:bg-foreground/6 hover:text-foreground",
         danger: "bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20",
         success:
           "bg-success/15 text-success border border-success/30 hover:bg-success/25",

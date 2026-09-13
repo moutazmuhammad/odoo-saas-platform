@@ -607,7 +607,7 @@ function RepoCard({
     <div className="mb-5 rounded-xl border border-border bg-card/40 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-foreground/6 text-foreground">
             <Github className="size-5" />
           </span>
           <div className="min-w-0">
@@ -671,7 +671,7 @@ function SidebarSection({
             onClick={onAdd}
             disabled={!onAdd}
             title={addTitle}
-            className="flex size-5 items-center justify-center rounded text-muted transition-colors hover:bg-border/60 hover:text-foreground disabled:opacity-40"
+            className="flex size-5 items-center justify-center rounded-sm text-muted transition-colors hover:bg-border/60 hover:text-foreground disabled:opacity-40"
           >
             <Plus className="size-3.5" />
           </button>
@@ -1098,9 +1098,9 @@ function MergeEnvDialog({
 
           <p className="mt-3 text-sm text-muted">
             Merges{" "}
-            <code className="rounded bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{prompt.source.branch}</code>{" "}
+            <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{prompt.source.branch}</code>{" "}
             into{" "}
-            <code className="rounded bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{prompt.target.branch}</code>{" "}
+            <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{prompt.target.branch}</code>{" "}
             and redeploys <strong>{prompt.target.name}</strong>.
           </p>
           {toProd && (
@@ -1331,14 +1331,14 @@ function DeleteEnvDialog({
         <input type="checkbox" className="mt-0.5" checked={deleteBranch} onChange={(e) => setDeleteBranch(e.target.checked)} />
         <span>
           Also delete the Git branch{" "}
-          <code className="rounded bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{env?.branch}</code> on the
+          <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{env?.branch}</code> on the
           remote. Leave unchecked to keep your branch.
         </span>
       </label>
       <div className="mt-5 space-y-2">
         <Label htmlFor="confirm-env">
           Type{" "}
-          <code className="rounded bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{env?.name}</code>{" "}
+          <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{env?.name}</code>{" "}
           to confirm
         </Label>
         <Input

@@ -271,7 +271,7 @@ function RequirementsInfo({ instance }: { instance: ApiInstance }) {
       </div>
 
       <p className="mt-4 text-sm text-muted">
-        Add a <code className="rounded bg-foreground/[0.06] px-1 py-0.5 font-mono text-xs">requirements.txt</code> to the
+        Add a <code className="rounded-sm bg-foreground/6 px-1 py-0.5 font-mono text-xs">requirements.txt</code> to the
         root of your connected branch. On every deploy we install it in an
         isolated check <strong className="text-foreground">before</strong> touching your live instance.
       </p>

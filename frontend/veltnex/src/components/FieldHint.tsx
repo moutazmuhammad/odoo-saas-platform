@@ -12,7 +12,7 @@ export function FieldHint({ text, className }: { text: string; className?: strin
       <Info
         tabIndex={0}
         aria-label={text}
-        className="size-3.5 cursor-help text-muted outline-none transition-colors hover:text-primary focus-visible:text-primary"
+        className="size-3.5 cursor-help text-muted outline-hidden transition-colors hover:text-primary focus-visible:text-primary"
       />
       <span
         role="tooltip"

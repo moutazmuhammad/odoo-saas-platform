@@ -92,7 +92,7 @@ export function DeploymentHistory({
                     onClick={() => expandable && setOpen(open === b.id ? null : b.id)}
                     className={cn(
                       "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
-                      expandable && "cursor-pointer hover:bg-foreground/[0.03]",
+                      expandable && "cursor-pointer hover:bg-foreground/3",
                     )}
                   >
                     {/* status */}

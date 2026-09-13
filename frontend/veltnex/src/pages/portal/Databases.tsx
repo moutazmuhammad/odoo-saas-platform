@@ -762,8 +762,8 @@ function UpgradeModulesDialog({
         />
         <p className="text-xs text-muted">
           Separate several with commas. Use the module's technical name
-          (e.g. <code className="rounded bg-border/60 px-1 font-mono">sale</code>),
-          or <code className="rounded bg-border/60 px-1 font-mono">all</code> to
+          (e.g. <code className="rounded-sm bg-border/60 px-1 font-mono">sale</code>),
+          or <code className="rounded-sm bg-border/60 px-1 font-mono">all</code> to
           upgrade everything installed.
         </p>
       </div>
@@ -999,7 +999,7 @@ function DeleteDatabaseDialog({
       </div>
       <div className="mt-5 space-y-2">
         <Label htmlFor="confirm-name">
-          Type <code className="rounded bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{dbName}</code> to confirm
+          Type <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{dbName}</code> to confirm
         </Label>
         <Input
           id="confirm-name"

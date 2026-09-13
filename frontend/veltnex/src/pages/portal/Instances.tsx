@@ -102,7 +102,7 @@ export default function Instances() {
                   key={String(opt.key)}
                   onClick={() => setOnlyRunning(opt.key)}
                   className={cn(
-                    "rounded px-3 py-1 text-sm font-medium transition-colors",
+                    "rounded-sm px-3 py-1 text-sm font-medium transition-colors",
                     onlyRunning === opt.key ? "bg-primary/15 text-primary" : "text-muted hover:text-foreground",
                   )}
                 >

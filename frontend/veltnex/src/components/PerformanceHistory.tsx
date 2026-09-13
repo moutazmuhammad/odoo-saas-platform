@@ -128,7 +128,7 @@ export function PerformanceHistory({
               className={cn(
                 "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
                 range === r.key
-                  ? "bg-card text-foreground shadow-sm"
+                  ? "bg-card text-foreground shadow-xs"
                   : "text-muted hover:text-foreground",
               )}
             >

@@ -254,7 +254,7 @@ function RestoreSnapshotDialog({
       </div>
       <div className="mt-5 space-y-2">
         <Label htmlFor="restore-confirm">
-          Type <code className="rounded bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{instanceName}</code> to confirm
+          Type <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{instanceName}</code> to confirm
         </Label>
         <Input
           id="restore-confirm"

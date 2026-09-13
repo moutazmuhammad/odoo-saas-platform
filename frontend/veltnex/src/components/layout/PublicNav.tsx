@@ -244,7 +244,7 @@ function UserMenu({
                   setOpen(false);
                   onGo(item);
                 }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-foreground/90 transition-colors hover:bg-foreground/[0.06]"
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-foreground/90 transition-colors hover:bg-foreground/6"
               >
                 <item.icon className="size-4" />
                 {item.label}

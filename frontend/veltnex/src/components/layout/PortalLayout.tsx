@@ -171,7 +171,7 @@ export function PortalLayout() {
         collapsed ? "mx-2 justify-center rounded-lg px-0" : "pl-6 pr-4",
         active
           ? "bg-primary/10 font-medium text-primary"
-          : "text-foreground/80 hover:bg-foreground/[0.06]",
+          : "text-foreground/80 hover:bg-foreground/6",
       )}
     >
       <item.icon className="size-5 shrink-0" />
@@ -215,7 +215,7 @@ export function PortalLayout() {
         title="Help & support"
         onClick={() => { setMobileNav(false); navigate("/docs"); }}
         className={cn(
-          "flex items-center gap-4 rounded-r-full py-2.5 text-sm text-foreground/80 transition-colors hover:bg-foreground/[0.06]",
+          "flex items-center gap-4 rounded-r-full py-2.5 text-sm text-foreground/80 transition-colors hover:bg-foreground/6",
           collapsed ? "mx-2 justify-center rounded-lg px-0" : "pl-6 pr-4",
         )}
       >
@@ -227,7 +227,7 @@ export function PortalLayout() {
           href="/odoo"
           title="Backend"
           className={cn(
-            "flex items-center gap-4 rounded-r-full py-2.5 text-sm text-foreground/80 transition-colors hover:bg-foreground/[0.06]",
+            "flex items-center gap-4 rounded-r-full py-2.5 text-sm text-foreground/80 transition-colors hover:bg-foreground/6",
             collapsed ? "mx-2 justify-center rounded-lg px-0" : "pl-6 pr-4",
           )}
         >
@@ -246,7 +246,7 @@ export function PortalLayout() {
         <button
           onClick={() => { setNavCollapsed((c) => !c); setMobileNav((o) => !o); }}
           aria-label="Toggle navigation"
-          className="rounded-full p-2.5 text-muted transition-colors hover:bg-foreground/[0.06]"
+          className="rounded-full p-2.5 text-muted transition-colors hover:bg-foreground/6"
         >
           <Menu className="size-5" />
         </button>
@@ -260,21 +260,21 @@ export function PortalLayout() {
         >
           <Search className="size-5" />
           <span>Search resources, projects, and actions</span>
-          <kbd className="ml-auto rounded border border-border bg-card px-1.5 py-0.5 text-[10px]">⌘K</kbd>
+          <kbd className="ml-auto rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px]">⌘K</kbd>
         </button>
 
         <div className="ml-auto flex items-center gap-0.5">
           <button
             onClick={() => setPaletteOpen(true)}
             aria-label="Search"
-            className="rounded-full p-2.5 text-muted transition-colors hover:bg-foreground/[0.06] md:hidden"
+            className="rounded-full p-2.5 text-muted transition-colors hover:bg-foreground/6 md:hidden"
           >
             <Search className="size-5" />
           </button>
           <button
             onClick={() => navigate("/docs")}
             aria-label="Help"
-            className="rounded-full p-2.5 text-muted transition-colors hover:bg-foreground/[0.06]"
+            className="rounded-full p-2.5 text-muted transition-colors hover:bg-foreground/6"
           >
             <HelpCircle className="size-5" />
           </button>
@@ -303,7 +303,7 @@ export function PortalLayout() {
                 <div className="my-1 border-t border-border" />
                 <button
                   onClick={() => { close(); navigate("/my/settings"); }}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-foreground/90 transition-colors hover:bg-foreground/[0.06]"
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-foreground/90 transition-colors hover:bg-foreground/6"
                 >
                   <Settings className="size-4" />
                   Settings

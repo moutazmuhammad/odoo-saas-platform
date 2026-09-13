@@ -277,7 +277,7 @@ export default function Dashboard() {
               ))}
               <button
                 onClick={() => navigate(createTo)}
-                className="flex min-h-[7rem] items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted transition-colors hover:border-primary/40 hover:text-foreground"
+                className="flex min-h-28 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted transition-colors hover:border-primary/40 hover:text-foreground"
               >
                 <Plus className="mr-2 size-4" />
                 New project

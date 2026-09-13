@@ -133,7 +133,7 @@ export default function Home() {
       {/* HERO — text-first, globe in background, no competing visuals   */}
       {/* ============================================================== */}
       <section className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-grid-faint bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-grid-faint bg-size-[48px_48px] mask-[radial-gradient(ellipse_at_top,black,transparent_70%)]" />
         <div className="pointer-events-none absolute left-1/2 top-[-160px] h-[620px] w-[1040px] -translate-x-1/2 rounded-full bg-primary/20 blur-[180px]" />
 
         <div className="relative mx-auto max-w-5xl px-4 pb-28 pt-4 text-center sm:px-6 lg:px-8 lg:pt-6">
@@ -142,7 +142,7 @@ export default function Home() {
               Everything below the globe (subtitle, CTAs) follows in
               normal flow underneath. */}
           <div className="relative mx-auto w-[min(600px,92vw)]">
-            <div className="aspect-square [mask-image:radial-gradient(circle_at_center,black_65%,transparent_95%)]">
+            <div className="aspect-square mask-[radial-gradient(circle_at_center,black_65%,transparent_95%)]">
               <ErrorBoundary>
                 <React.Suspense fallback={null}>
                   <GlobeViz speed={0.12} />
@@ -150,7 +150,7 @@ export default function Home() {
               </ErrorBoundary>
             </div>
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-5">
-              <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1 text-xs font-medium text-muted backdrop-blur">
+              <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1 text-xs font-medium text-muted backdrop-blur-sm">
                 <span className="relative flex size-1.5">
                   <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
                   <span className="relative inline-flex size-1.5 rounded-full bg-success" />
@@ -160,7 +160,7 @@ export default function Home() {
               <h1 className="whitespace-nowrap text-5xl font-bold leading-[0.95] tracking-tight drop-shadow-[0_2px_28px_rgba(0,0,0,0.65)] sm:text-6xl lg:text-7xl xl:text-8xl">
                 The Logic of
                 <br />
-                <span className="bg-gradient-to-br from-primary-glow via-info to-foreground bg-clip-text text-transparent">
+                <span className="bg-linear-to-br from-primary-glow via-info to-foreground bg-clip-text text-transparent">
                   Stability
                 </span>
               </h1>
@@ -336,7 +336,7 @@ export default function Home() {
           {/* Operations console preview — proof of what "managed
               hosting for Odoo" looks like in practice. */}
           <div className="relative mx-auto mt-10 max-w-6xl">
-            <div className="pointer-events-none absolute -inset-x-8 -bottom-8 -top-4 rounded-[2rem] bg-gradient-to-b from-primary/25 to-transparent blur-3xl" />
+            <div className="pointer-events-none absolute -inset-x-8 -bottom-8 -top-4 rounded-4xl bg-linear-to-b from-primary/25 to-transparent blur-3xl" />
             <Card className="relative overflow-hidden border-border bg-card p-2 shadow-glow">
               <div className="rounded-xl border border-border bg-background/95 p-5 text-left sm:p-7">
                 <div className="flex items-center justify-between border-b border-border pb-4">
@@ -345,7 +345,7 @@ export default function Home() {
                     <span className="font-mono text-sm">
                       my-company.veltnex.com
                     </span>
-                    <span className="hidden rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted sm:inline">
+                    <span className="hidden rounded-sm border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted sm:inline">
                       v18.0
                     </span>
                   </div>
@@ -413,7 +413,7 @@ export default function Home() {
               key={s.label}
               className="bg-background py-14 text-center transition-colors hover:bg-card/40"
             >
-              <p className="bg-gradient-to-br from-foreground to-muted bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl">
+              <p className="bg-linear-to-br from-foreground to-muted bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl">
                 {s.value}
               </p>
               <p className="mt-2 text-sm text-muted">{s.label}</p>
@@ -517,7 +517,7 @@ export default function Home() {
             </div>
 
             <div className="relative">
-              <div className="pointer-events-none absolute -inset-6 rounded-3xl bg-gradient-to-br from-primary/30 to-info/10 opacity-50 blur-2xl" />
+              <div className="pointer-events-none absolute -inset-6 rounded-3xl bg-linear-to-br from-primary/30 to-info/10 opacity-50 blur-2xl" />
               <Card glass className="relative overflow-hidden p-1.5 shadow-glow">
                 <div className="rounded-lg border border-border bg-background/95 text-left">
                   <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -607,7 +607,7 @@ export default function Home() {
                       </div>
                       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
                         <div
-                          className={`h-full rounded-full bg-gradient-to-r from-primary to-primary-glow ${m.bar}`}
+                          className={`h-full rounded-full bg-linear-to-r from-primary to-primary-glow ${m.bar}`}
                         />
                       </div>
                     </div>
@@ -640,7 +640,7 @@ export default function Home() {
                   <span className="font-mono text-success">✓ 12s</span>
                 </div>
                 <div className="mt-2 h-1 overflow-hidden rounded-full bg-border">
-                  <div className="h-full w-full rounded-full bg-gradient-to-r from-primary via-primary-glow to-success" />
+                  <div className="h-full w-full rounded-full bg-linear-to-r from-primary via-primary-glow to-success" />
                 </div>
               </div>
             </Card>
@@ -703,8 +703,8 @@ export default function Home() {
                       <span
                         className={
                           b.tag === "auto"
-                            ? "rounded border border-success/30 bg-success/10 px-1.5 py-0.5 text-success"
-                            : "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-primary"
+                            ? "rounded-sm border border-success/30 bg-success/10 px-1.5 py-0.5 text-success"
+                            : "rounded-sm border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-primary"
                         }
                       >
                         {b.tag}
@@ -787,7 +787,7 @@ export default function Home() {
           />
 
           <div className="relative mt-16">
-            <div className="pointer-events-none absolute left-0 right-0 top-12 hidden h-px bg-gradient-to-r from-transparent via-border to-transparent lg:block" />
+            <div className="pointer-events-none absolute left-0 right-0 top-12 hidden h-px bg-linear-to-r from-transparent via-border to-transparent lg:block" />
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {HOW_IT_WORKS.map((s) => (
                 <Card
@@ -860,7 +860,7 @@ export default function Home() {
       {/* FINAL CTA                                                       */}
       {/* ============================================================== */}
       <section className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-grid-faint bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_70%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-grid-faint bg-size-[48px_48px] mask-[radial-gradient(ellipse_at_center,black,transparent_70%)]" />
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <Card
             glass
@@ -871,7 +871,7 @@ export default function Home() {
             <div className="relative">
               <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight sm:text-5xl">
                 Ship on infrastructure that{" "}
-                <span className="bg-gradient-to-br from-primary-glow to-info bg-clip-text text-transparent">
+                <span className="bg-linear-to-br from-primary-glow to-info bg-clip-text text-transparent">
                   just stays up
                 </span>
               </h2>

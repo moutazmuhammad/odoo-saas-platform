@@ -116,8 +116,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   let idx = -1;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[12vh]">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+    <div className="fixed inset-0 z-60 flex items-start justify-center p-4 pt-[12vh]">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-xs" onClick={onClose} />
       <div
         role="dialog"
         aria-label="Command palette"
@@ -131,9 +131,9 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search projects, pages, actions…"
-            className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted"
+            className="h-12 w-full bg-transparent text-sm outline-hidden placeholder:text-muted"
           />
-          <kbd className="hidden shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted sm:block">
+          <kbd className="hidden shrink-0 rounded-sm border border-border px-1.5 py-0.5 text-[10px] text-muted sm:block">
             ESC
           </kbd>
         </div>

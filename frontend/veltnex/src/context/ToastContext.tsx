@@ -67,7 +67,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
       {createPortal(
-        <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-full max-w-sm flex-col gap-3">
+        <div className="pointer-events-none fixed bottom-4 right-4 z-100 flex w-full max-w-sm flex-col gap-3">
           {toasts.map((t) => {
             const Icon = ICONS[t.variant];
             return (
@@ -84,7 +84,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 </div>
                 <button
                   onClick={() => remove(t.id)}
-                  className="rounded p-0.5 text-muted transition-colors hover:text-foreground"
+                  className="rounded-sm p-0.5 text-muted transition-colors hover:text-foreground"
                   aria-label="Dismiss notification"
                 >
                   <X className="size-4" />

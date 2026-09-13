@@ -75,7 +75,7 @@ export default function SqlConsole({ instanceId }: { instanceId: number }) {
             value={db}
             onChange={(e) => setDb(e.target.value)}
             disabled={loadingDbs || !dbs.length}
-            className="h-9 rounded-md border border-border bg-background pl-8 pr-3 text-sm outline-none focus:border-primary/50 disabled:opacity-60"
+            className="h-9 rounded-md border border-border bg-background pl-8 pr-3 text-sm outline-hidden focus:border-primary/50 disabled:opacity-60"
           >
             {dbs.length === 0 ? (
               <option value="">{loadingDbs ? "Loading…" : "No databases"}</option>
@@ -102,7 +102,7 @@ export default function SqlConsole({ instanceId }: { instanceId: number }) {
         onKeyDown={onKeyDown}
         spellCheck={false}
         placeholder="SELECT …"
-        className="mt-3 h-32 shrink-0 resize-none rounded-md border border-border bg-background/60 p-3 font-mono text-xs leading-relaxed outline-none focus:border-primary/50"
+        className="mt-3 h-32 shrink-0 resize-none rounded-md border border-border bg-background/60 p-3 font-mono text-xs leading-relaxed outline-hidden focus:border-primary/50"
       />
 
       {/* Results */}

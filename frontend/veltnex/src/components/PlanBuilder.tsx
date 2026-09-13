@@ -86,7 +86,7 @@ export function PlanBuilder({
               >
                 {c}
                 {c === "yearly" && (
-                  <span className="ml-1.5 rounded bg-success/20 px-1.5 py-0.5 text-[10px] font-semibold text-success">
+                  <span className="ml-1.5 rounded-sm bg-success/20 px-1.5 py-0.5 text-[10px] font-semibold text-success">
                     -{savingsPercent}%
                   </span>
                 )}

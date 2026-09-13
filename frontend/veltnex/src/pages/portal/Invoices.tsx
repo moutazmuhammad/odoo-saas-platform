@@ -84,7 +84,7 @@ export default function Invoices() {
                     key={f.value}
                     onClick={() => setFilter(f.value)}
                     className={cn(
-                      "rounded px-3 py-1.5 text-sm font-medium transition-colors",
+                      "rounded-sm px-3 py-1.5 text-sm font-medium transition-colors",
                       filter === f.value ? "bg-primary/15 text-primary" : "text-muted hover:text-foreground",
                     )}
                   >

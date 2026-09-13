@@ -54,7 +54,7 @@ export function AlertBanner({
       {onDismiss && (
         <button
           onClick={onDismiss}
-          className="rounded p-0.5 text-muted transition-colors hover:text-foreground"
+          className="rounded-sm p-0.5 text-muted transition-colors hover:text-foreground"
           aria-label="Dismiss"
         >
           <X className="size-4" />

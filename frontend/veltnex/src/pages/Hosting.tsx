@@ -508,7 +508,7 @@ export default function Hosting() {
                         >
                           {c}
                           {c === "yearly" && maxSave.amount > 0 && (
-                            <span className="rounded bg-success/20 px-1.5 py-0.5 text-[10px] font-semibold text-success">Save</span>
+                            <span className="rounded-sm bg-success/20 px-1.5 py-0.5 text-[10px] font-semibold text-success">Save</span>
                           )}
                         </button>
                       ))}
@@ -524,7 +524,7 @@ export default function Hosting() {
                       <select
                         value={regionId ?? ""}
                         onChange={(e) => setRegionId(Number(e.target.value))}
-                        className="h-[42px] w-full cursor-pointer rounded-xl border border-border bg-card px-3 text-sm outline-none ring-primary/40 focus:ring-1"
+                        className="h-[42px] w-full cursor-pointer rounded-xl border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                       >
                         {sortedRegions.map((r) => {
                           const tags: string[] = [];
@@ -675,7 +675,7 @@ export default function Hosting() {
                       value={projectName}
                       onChange={(e) => setProjectName(e.target.value)}
                       placeholder="My company ERP"
-                      className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none ring-primary/40 focus:ring-1"
+                      className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                     />
                   </div>
                   <div className="space-y-1">
@@ -686,7 +686,7 @@ export default function Hosting() {
                     <select
                       value={versionId ?? ""}
                       onChange={(e) => setVersionId(Number(e.target.value))}
-                      className="h-10 w-full cursor-pointer rounded-lg border border-border bg-card px-3 text-sm outline-none ring-primary/40 focus:ring-1"
+                      className="h-10 w-full cursor-pointer rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                     >
                       {(meta?.hosting_versions || []).map((v) => (
                         <option key={v.id} value={v.id}>{v.name}</option>
@@ -703,7 +703,7 @@ export default function Hosting() {
                       value={subdomain}
                       onChange={(e) => setSubdomain(toSubdomain(e.target.value))}
                       placeholder="my-company-erp"
-                      className="h-10 w-full rounded-lg border border-border bg-card px-3 font-mono text-sm outline-none ring-primary/40 focus:ring-1"
+                      className="h-10 w-full rounded-lg border border-border bg-card px-3 font-mono text-sm outline-hidden ring-primary/40 focus:ring-1"
                     />
                   </div>
                   {(meta?.domains?.length ?? 0) >= 1 && (
@@ -715,7 +715,7 @@ export default function Hosting() {
                       <select
                         value={domainId ?? ""}
                         onChange={(e) => setDomainId(Number(e.target.value))}
-                        className="h-10 w-full cursor-pointer rounded-lg border border-border bg-card px-3 text-sm outline-none ring-primary/40 focus:ring-1"
+                        className="h-10 w-full cursor-pointer rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                       >
                         {(meta?.domains || []).map((d) => (
                           <option key={d.id} value={d.id}>{d.name}</option>
@@ -751,20 +751,20 @@ export default function Hosting() {
                         value={repoUrl}
                         onChange={(e) => setRepoUrl(e.target.value)}
                         placeholder="https://github.com/you/your-addons.git"
-                        className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none ring-primary/40 focus:ring-1"
+                        className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                       />
                       <div className="grid gap-3 sm:grid-cols-2">
                         <input
                           value={repoBranch}
                           onChange={(e) => setRepoBranch(e.target.value)}
                           placeholder="main"
-                          className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none ring-primary/40 focus:ring-1"
+                          className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                         />
                         <input
                           value={gitToken}
                           onChange={(e) => setGitToken(e.target.value)}
                           placeholder="Access token (private repos)"
-                          className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none ring-primary/40 focus:ring-1"
+                          className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                         />
                       </div>
                       <p className="text-xs text-muted">
@@ -785,7 +785,7 @@ export default function Hosting() {
                     <select
                       value={regionId ?? ""}
                       onChange={(e) => setRegionId(Number(e.target.value))}
-                      className="h-10 w-full cursor-pointer rounded-lg border border-border bg-card px-3 text-sm outline-none ring-primary/40 focus:ring-1"
+                      className="h-10 w-full cursor-pointer rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                     >
                       {sortedRegions.map((r) => {
                         const tag = (r.default || r.recommended)
@@ -852,7 +852,7 @@ export default function Hosting() {
                         <select
                           value={regionId ?? ""}
                           onChange={(e) => setRegionId(Number(e.target.value))}
-                          className="h-10 w-full cursor-pointer rounded-lg border border-border bg-card px-3 text-sm outline-none ring-primary/40 focus:ring-1"
+                          className="h-10 w-full cursor-pointer rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                         >
                           {sortedRegions.map((r) => {
                             const tag = (r.default || r.recommended)
@@ -874,7 +874,7 @@ export default function Hosting() {
                         <select
                           value={supportCode}
                           onChange={(e) => setSupportCode(e.target.value)}
-                          className="h-10 w-full cursor-pointer rounded-lg border border-border bg-card px-3 text-sm outline-none ring-primary/40 focus:ring-1"
+                          className="h-10 w-full cursor-pointer rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                         >
                           {(meta?.support_plans || []).map((s) => (
                             <option key={s.code} value={s.code}>

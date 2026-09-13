@@ -1,6 +1,126 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-background: rgb(var(--background));
+  --color-card: rgb(var(--card));
+  --color-border: rgb(var(--border));
+  --color-foreground: rgb(var(--foreground));
+  --color-muted: rgb(var(--muted));
+
+  --color-primary: rgb(var(--primary));
+  --color-primary-foreground: rgb(var(--primary-foreground));
+  --color-primary-glow: rgb(var(--primary-glow));
+
+  --color-success: rgb(var(--success));
+  --color-warning: rgb(var(--warning));
+  --color-danger: rgb(var(--danger));
+  --color-info: rgb(var(--info));
+
+  --font-sans:
+    Roboto, Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+  --font-mono: JetBrains Mono, ui-monospace, SFMono-Regular, monospace;
+
+  --shadow-glow: 0 0 40px -10px rgb(var(--primary) / 0.6);
+  --shadow-card:
+    0 1px 2px rgb(var(--shadow) / 0.4),
+    0 8px 24px -12px rgb(var(--shadow) / 0.6);
+
+  --background-image-grid-faint:
+    linear-gradient(to right, rgb(var(--grid) / 0.4) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--grid) / 0.4) 1px, transparent 1px);
+
+  --animate-fade-in: fade-in 0.4s ease-out;
+  --animate-scale-in: scale-in 0.2s ease-out;
+  --animate-slide-in-right: slide-in-right 0.3s ease-out;
+  --animate-shimmer: shimmer 1.6s infinite;
+  --animate-pulse-soft: pulse-soft 1.8s ease-in-out infinite;
+
+  @keyframes fade-in {
+    0% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes scale-in {
+    0% {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes slide-in-right {
+    0% {
+      opacity: 0;
+      transform: translateX(24px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes pulse-soft {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@utility glass {
+  @apply bg-card/60 backdrop-blur-xl border border-border/80;
+}
+
+@utility glass-strong {
+  background: linear-gradient(
+    180deg,
+    rgb(var(--card) / 0.9) 0%,
+    rgb(var(--card) / 0.6) 100%
+  );
+  @apply backdrop-blur-xl border border-border;
+}
+
+@utility text-gradient {
+  @apply bg-linear-to-br from-foreground via-foreground to-muted bg-clip-text text-transparent;
+}
+
+@utility focus-ring {
+  @apply outline-hidden focus-visible:ring-2 focus-visible:ring-primary-glow/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+}
 
 /* =========================================================================
  * Theme tokens
@@ -55,7 +175,7 @@
   }
 
   * {
-    border-color: theme("colors.border");
+    border-color: var(--color-border);
   }
 
   html {
@@ -89,29 +209,6 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: rgb(var(--muted) / 0.7);
-  }
-}
-
-@layer components {
-  .glass {
-    @apply bg-card/60 backdrop-blur-xl border border-border/80;
-  }
-
-  .glass-strong {
-    background: linear-gradient(
-      180deg,
-      rgb(var(--card) / 0.9) 0%,
-      rgb(var(--card) / 0.6) 100%
-    );
-    @apply backdrop-blur-xl border border-border;
-  }
-
-  .text-gradient {
-    @apply bg-gradient-to-br from-foreground via-foreground to-muted bg-clip-text text-transparent;
-  }
-
-  .focus-ring {
-    @apply outline-none focus-visible:ring-2 focus-visible:ring-primary-glow/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
 }
 

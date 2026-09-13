@@ -27,8 +27,8 @@ export function HelpHint({
       aria-label={text || "Learn more"}
       onClick={(e) => e.stopPropagation()}
       className={cn(
-        // [cursor:inherit] = don't change the mouse pointer on hover.
-        "inline-flex size-4 shrink-0 items-center justify-center align-middle text-muted transition-colors hover:text-primary [cursor:inherit]",
+        // cursor-[inherit] = don't change the mouse pointer on hover.
+        "inline-flex size-4 shrink-0 items-center justify-center align-middle text-muted transition-colors hover:text-primary cursor-[inherit]",
         className
       )}
     >

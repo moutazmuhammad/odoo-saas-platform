@@ -134,7 +134,7 @@ current repo state (not assumptions carried over from older docs):
 
 | Area | Finding |
 |---|---|
-| **Controller/HTTP test coverage** | **The single biggest gap.** 153 total routes across `saas_website/controllers/*` (144) + `saas_core/controllers/*` (9: terminal, container logs, webhook). Only 3 test files use `HttpCase`, and only **one** actually issues a real HTTP request (`url_open` against the webhook route). Effectively **0 of 153 routes** are exercised end-to-end through the HTTP layer in CI today — everything else is tested at the ORM/model-method level, one layer below where request parsing, auth/session handling, and response serialization actually live. |
+| **Controller/HTTP test coverage** | **Corrected 2026-09-14** (the original research pass undercounted — its regex missed `self.url_open(`/`self._call(` calls whose route argument was split across lines, which is how most of them are actually written): **156** total routes across `saas_website/controllers/*` + `saas_core/controllers/*` (terminal, container logs, webhook). **10 already have real HTTP-level coverage** in 3 `HttpCase` classes (`TestWebhookSecurity`, `TestApiSecurityHttp`, `TestOrderControllerFixes`) — and they're exactly the highest-risk ones: login, register/start+resend, reset/start+verify, `instances/<id>` read/action/environments, `hosting/order` (partial), webhook. **146 remain genuinely uncovered** — still a real, large gap, just not "effectively zero." See B.1 below for the corrected, precise remaining list. |
 | Zero-test-coverage models | `saas_payment.py`, `res_config_settings.py`, `saas_instance_package.py`, **`saas_terminal_session.py`** (backs the in-browser SSH terminal feature — `ShellConsole.tsx` on the frontend has no backend model test at all). |
 | Untested cron jobs | Most of the billing-lifecycle and live-metrics crons in `saas_instance.py` have no test referencing them at all: `_cron_check_overdue_invoices`, `_cron_retry_failed_payments`, `_cron_send_renewal_reminders`, `_cron_apply_paid_pending_changes`, `_cron_check_trial_expiry`, `_cron_renew_daily_backup_addons`, `_cron_verify_webhooks`, `_cron_check_container_health`, `_cron_sample_live_metrics`, `_cron_record_metrics`; plus core provisioning methods `_pg_clone_db`, `_provision_nginx`, `_clone_product_repos`. |
 | `compute/operator` test coverage | **Solid, no gap.** Every file in `internal/resources/` and `internal/controller/` is covered by its package's test file(s); envtest exercises real controller-runtime reconciliation. |
@@ -202,23 +202,74 @@ family; revert the single offending commit if a build breaks.
 This is the highest-leverage phase before anything else touches
 `saas_core`/`saas_website` business logic — per this project's own stated
 discipline ("run the test suite before moving on"), that discipline is only
-as good as what the suite actually exercises, and today it doesn't exercise
-the HTTP layer at all.
+as good as what the suite actually exercises. §1.1's correction applies
+here: some real HTTP-level coverage already exists (10 of 156 routes,
+`saas_core/tests/test_security_billing_fixes.py`'s `TestApiSecurityHttp` +
+`test_order_eligibility_fixes.py` + `test_webhook_security.py`) — don't
+duplicate it. Check current coverage with the route-vs-`url_open` cross
+check below before adding a test for anything, since the naive grep that
+undercounted it once can undercount it again.
+
+```bash
+# Re-run this before starting any B.1.x sub-step to get the current
+# precise covered/uncovered list (route declarations vs url_open/_call
+# call sites, both normalized to strip dynamic path segments):
+python3 - <<'PY'
+import re, glob
+routes = []
+for f in glob.glob('saas_website/controllers/*.py') + glob.glob('saas_core/controllers/*.py'):
+    src = open(f).read()
+    for m in re.finditer(r"@http\.route\(\s*(\[[^\]]+\]|['\"][^'\"]+['\"])", src):
+        for p in re.findall(r"['\"]([^'\"]+)['\"]", m.group(1)):
+            routes.append((re.sub(r'<[^>]+>', '*', p), p, f))
+covered = set()
+for f in glob.glob('saas_core/tests/test_*.py'):
+    src = open(f).read()
+    for pat in (r"url_open\(\s*\n?\s*(?:route\s*,|['\"]([^'\"]+)['\"])",
+                r"_call\(\s*\n?\s*['\"]([^'\"]+)['\"]"):
+        for m in re.finditer(pat, src):
+            if m.groups() and m.group(1):
+                covered.add(re.sub(r'%s|%d|<[^>]+>', '*', m.group(1)))
+uncovered = sorted({raw for norm, raw, f in routes if norm not in covered})
+print(f"{len(routes)} declared, {len(uncovered)} uncovered:")
+for r in uncovered: print(" ", r)
+PY
+```
+
+(Run from `control-plane/`. As of 2026-09-14, right after B.1.1: 156
+declared, 143 uncovered — B.1.1's 3 new tests closed `register/verify` and
+`logout`, the two genuine auth-family gaps this script found; login,
+register/start+resend, reset/start+verify were already covered.)
 
 - **B.1** Add `HttpCase`-based tests for the highest-risk routes first, in
-  this order (risk = revenue/data impact if broken, not code size):
-  - B.1.1 `auth/*` (login/logout/register/reset) in `api.py` — this is
-    where `debug_otp` was; regression-test the fix at the HTTP layer too,
-    not just via the 3 existing assertions (which check the model/response
-    shape, not a real request/response cycle through Odoo's session/auth
-    middleware).
-  - B.1.2 `hosting/order` and `services/calculate*` (checkout path — real
-    money).
-  - B.1.3 `instances/*` and its nested families (`databases/*`,
-    `backups/*`, `environments/*`) — the largest single route family and
-    the one every dashboard page depends on.
-  - B.1.4 `webhook.py` (extend the one existing real HTTP test to cover
-    failure/replay/signature-mismatch cases, not just the happy path).
+  this order (risk = revenue/data impact if broken, not code size).
+  **Re-run the script above at the start of each sub-step** — the list
+  below was accurate for B.1.1 but may drift as work proceeds:
+  - B.1.1 `auth/*` (login/logout/register/reset) in `api.py` — **done**,
+    see the progress log. Only `register/verify` (the actual signup
+    completion — distinct from `register/start`/`resend`, which only send
+    the code) and `logout` had no HTTP-level test; both do now.
+  - B.1.2 `hosting/order` (only partially covered — the existing test hits
+    one trial-rejection edge case, not the general happy path) and
+    `services/calculate*`/`hosting/calculate*` (uncovered) — checkout path,
+    real money.
+  - B.1.3 `instances/*` nested families: `databases/*`, `backups/*`,
+    `environments/*` (`create`/`merge`/`release`/`reserve` specifically —
+    the base `instances/<id>` GET/`action`/`environments` read are already
+    covered), `metrics/*`, `packages`, `repo`, `sql`, `storage/*` — the
+    largest remaining family (~30 routes) and the one every dashboard page
+    depends on. Prioritize the destructive ones first (`databases/drop`,
+    `databases/create`) over read-only ones.
+  - B.1.4 `webhook.py` — already has real HTTP coverage
+    (`test_webhook_security.py`); extend it to cover failure/replay/
+    signature-mismatch cases if not already there, rather than treating it
+    as a from-scratch gap.
+  - B.1.5 (new, not in the original plan) `saas_website/controllers/spa.py`
+    and `portal.py` — the QWeb/form-post surface (`/my/instances/*`,
+    ~90 routes) is entirely uncovered and wasn't broken out separately
+    before; it's a distinct testing style (form posts + redirects, not
+    JSON-RPC) from `api.py`'s routes, so budget it as its own sub-step
+    rather than folding it into B.1.3.
 - **B.2** Add test files for the 4 zero-coverage models: `saas_payment.py`,
   `res_config_settings.py`, `saas_instance_package.py`, and
   **`saas_terminal_session.py`** — prioritize the terminal one, since it's

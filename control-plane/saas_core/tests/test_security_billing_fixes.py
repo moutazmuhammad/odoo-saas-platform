@@ -333,6 +333,66 @@ class TestApiSecurityHttp(HttpCase):
         self.assertFalse(bad.get('ok'),
                          "the old password must no longer work")
 
+    def test_register_verify_completes_signup_end_to_end(self):
+        # Distinct from test_register_start_never_echoes_otp: that test only
+        # covers start/resend (sending the code). This is the actual account
+        # creation completion, the one auth route with no prior HTTP-level
+        # coverage at all.
+        country = self.env.ref('base.us', raise_if_not_found=False) \
+            or self.env['res.country'].sudo().search([], limit=1)
+        phone = '+12025550199'
+        self.env['saas.registration.otp'].sudo().create({
+            'identifier': phone, 'channel': 'phone',
+            'code': '111222', 'verified': False,
+            'expires_at': fields.Datetime.now() + timedelta(minutes=10)})
+        res = self._call('/saas/api/v1/auth/register/verify', {
+            'name': 'Verify Complete', 'email': 'verifycomplete@example.com',
+            'phone': phone, 'country_id': country.id, 'city': 'Springfield',
+            'password': 'brandnew99', 'otp': '111222'})
+        self.assertTrue(res and res.get('ok'),
+                        "register/verify should complete signup: %s" % res)
+        # Proof the account was actually created and signed in: a fresh
+        # login with the new credentials succeeds.
+        good = self._call('/saas/api/v1/auth/login',
+                          {'login': 'verifycomplete@example.com',
+                           'password': 'brandnew99'})
+        self.assertTrue(good and good.get('ok'), good)
+
+    def test_register_verify_rejects_wrong_code(self):
+        phone = '+12025550188'
+        self.env['saas.registration.otp'].sudo().create({
+            'identifier': phone, 'channel': 'phone',
+            'code': '333444', 'verified': False,
+            'expires_at': fields.Datetime.now() + timedelta(minutes=10)})
+        res = self._call('/saas/api/v1/auth/register/verify', {
+            'name': 'Wrong Code', 'email': 'wrongcode@example.com',
+            'phone': phone, 'country_id': 1, 'city': 'Springfield',
+            'password': 'brandnew99', 'otp': '000000'})
+        self.assertEqual(res.get('code'), 'otp_invalid')
+        # And no account was created by the rejected attempt.
+        self.assertFalse(
+            self.env['res.users'].sudo().search(
+                [('login', '=', 'wrongcode@example.com')]),
+            "a rejected register/verify must not create an account")
+
+    def test_logout_ends_the_session_end_to_end(self):
+        # No prior HTTP-level coverage of logout at all: login tests exist,
+        # but nothing proved the session is actually invalidated afterwards.
+        user = self._make_portal_user('logmeout@example.com')
+        login = self._call('/saas/api/v1/auth/login',
+                           {'login': 'logmeout@example.com',
+                            'password': 'origpassword1'})
+        self.assertTrue(login and login.get('ok'), login)
+        me_before = self._call('/saas/api/v1/me', {})
+        self.assertTrue(me_before and me_before.get('ok'),
+                        "should be signed in right after login: %s" % me_before)
+        logout = self._call('/saas/api/v1/auth/logout', {})
+        self.assertTrue(logout and logout.get('ok'), logout)
+        me_after = self._call('/saas/api/v1/me', {})
+        self.assertFalse(me_after.get('ok'),
+                         "session must no longer be authenticated after logout")
+        self.assertEqual(me_after.get('code'), 'auth_required')
+
     def test_environments_payload_exposes_scaling(self):
         # The workspace needs the Production server's resources + slot usage to
         # offer "Scale resources" and "add test environment" CTAs.

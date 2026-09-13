@@ -6,6 +6,11 @@ funnel, billing, wallet, trials, checkout, portal and admin backend are all
 fully testable, but tenant instances are **not actually deployed** (no real
 Docker/SSH hosts) — see [Caveats](#caveats).
 
+> Want it running persistently (systemd, survives terminal/logout, restarts
+> on failure) instead of the `nohup`-based flow below? See
+> [`LOCAL-RUNTIME-SYSTEMD.md`](LOCAL-RUNTIME-SYSTEMD.md) — don't run both
+> against the same ports at once.
+
 ## 1. Start / stop
 
 ```bash

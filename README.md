@@ -61,6 +61,9 @@ history is ever needed; this repo is the going-forward source of truth.
 
 ## Local development
 
+- **Running as a persistent systemd service** (instead of `devctl.sh`'s
+  `nohup`-based dev mode): see
+  [`control-plane/docs/LOCAL-RUNTIME-SYSTEMD.md`](control-plane/docs/LOCAL-RUNTIME-SYSTEMD.md).
 - **Control plane** (Odoo): `control-plane/scripts/devctl.sh` — see that
   script's header comment for the sibling-directory layout it expects
   (Odoo source, venv, Postgres cluster; all overridable via env vars). Its

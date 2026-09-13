@@ -87,6 +87,18 @@ is the actual gate, more specific than "tests pass":
 6. No new temporary workaround was introduced without an explicit, written
    condition for when it must be revisited.
 
+> **A general testing rule this plan's own work surfaced (2026-09-14,
+> B.1.3): any route/method that ends in `saas.job._enqueue(...)` must have
+> its success path tested at the model layer (`TransactionCase`, with
+> `saas.job._spawn_worker` patched to a no-op — the established pattern in
+> `test_job_queue.py`/`test_compute_driver.py`), never driven through a
+> live `HttpCase` HTTP request.** The suppression that reliably prevents
+> the real background worker thread under `TransactionCase` does not
+> reliably hold under `HttpCase` — a real attempt corrupted unrelated
+> tests in the same class (see B.1.3's progress-log entries). This is not
+> a one-off gotcha to route around per-test; treat it as a standing
+> constraint on how every future `_enqueue`-backed route gets tested.
+
 Phase H's go-live gate (§9) is this same Definition of Done applied to the
 whole platform, plus the phase-specific criteria already listed there.
 
@@ -254,29 +266,40 @@ register/start+resend, reset/start+verify were already covered.)
     `services/calculate*`/`hosting/calculate*` (uncovered) — checkout path,
     real money.
   - B.1.3 `instances/*` nested families — **partial, see progress log**:
-    done: `databases/{create,drop,duplicate}` auth-boundary (token refused),
+    done: `databases/{create,drop,duplicate}` auth-boundary (token refused)
+    + the one rejection path that doesn't enqueue a job,
     `environments/{reserve,release}` full success+rejection paths (pure
-    billing logic, no infra needed). **Still open**, in priority order:
+    billing logic, no infra needed). The reusable compute-layer mock
+    (`_mock_db_ops_infra` in `test_security_billing_fixes.py`) exists and
+    is safe to reuse for anything that does **not** reach
+    `saas.job._enqueue(...)`. **Still open**, in priority order:
     - `databases/*` **success paths** (create/drop/duplicate/upgrade
-      actually completing) — needs a mocked compute layer first.
-      `hosting_db_list()` execs into the tenant container via
-      `self.docker_server_id._get_ssh_connection()` — the same seam
-      `test_compute_driver.py`'s `FakeSSH` already mocks for other model
-      tests. Build a small reusable test fixture/helper for "a running
-      hosting instance with a working fake SSH returning an empty DB
-      list" (worth its own well-tested helper, not a one-off inline mock,
-      since every one of `create`/`drop`/`duplicate`/`upgrade`/
-      `reset-password`/`backup` needs the same seam) rather than
-      duplicating ad-hoc mocking per test.
-    - `backups/*` (`create`, `<id>/restore`) — likely the same
-      SSH-dependent shape as `databases/*`; investigate before assuming.
+      actually completing) — **do this at the model layer
+      (`TransactionCase`), not through `HttpCase`/HTTP.** Tried the HTTP
+      route first; found that `_spawn_worker`'s real background worker
+      thread (spawned by `_enqueue`) corrupts other tests' savepoint-
+      nested transactions when driven through a live HTTP request, even
+      with `_spawn_worker` patched to a no-op — that suppression only
+      reliably holds under `TransactionCase` (how `test_job_queue.py` and
+      `test_compute_driver.py` already use it), not `HttpCase`. So: call
+      `instance.hosting_db_create_async(...)` etc. directly via ORM in a
+      `TransactionCase` test (reusing the same SSH/`_compute_driver` mocks
+      already built), and separately confirm with a *thin* HTTP smoke test
+      only that the route reaches the model method (e.g. mock
+      `hosting_db_create_async` itself at the HTTP layer and assert it was
+      called with the right args) rather than letting the real async chain
+      run inside an HTTP test.
+    - `backups/*` (`create`, `<id>/restore`) — check whether these also
+      end in `_enqueue`; if so, apply the same TransactionCase-not-HttpCase
+      rule immediately rather than rediscovering the hazard.
     - `environments/create` and `environments/merge` — not yet covered;
       `create` may also touch billing/payment provider mocking similar to
       `hosting/order`'s paid path.
     - `metrics/*`, `packages`, `repo`, `sql`, `storage/*`, `auto-renew`,
       `invoice/cancel`, `daily-backup/enable`, `builds`, `branches` — not
-      yet investigated at all; check each for real infra dependencies
-      before writing tests, same discipline as above.
+      yet investigated at all; check each for real infra dependencies AND
+      whether they enqueue a job before writing tests, same discipline as
+      above.
   - B.1.4 `webhook.py` — already has real HTTP coverage
     (`test_webhook_security.py`); extend it to cover failure/replay/
     signature-mismatch cases if not already there, rather than treating it
@@ -638,3 +661,29 @@ run clean — commit: 244404f. Remaining B.1.3 scope (databases/backups
 success paths, environments/create+merge, metrics/packages/repo/sql/
 storage/etc.) re-listed above in priority order with the specific
 technical reason each needs its own investigation before testing.
+
+2026-09-14 — Step B.1.3 follow-up — Built the reusable compute-layer mock
+fixture (`_mock_db_ops_infra`) and attempted the actual goal: full HTTP
+success-path tests for databases/create+drop+duplicate. Found a real,
+structural hazard rather than a mocking mistake: these routes end in
+`saas.job._enqueue(...)`, which spawns a real background worker thread;
+even with `_spawn_worker` patched to a no-op exactly like
+`test_job_queue.py`'s own setUp does for precisely this reason, the
+suppression did not hold through a live `HttpCase` HTTP round trip (that
+pattern has only ever been used in this codebase under `TransactionCase`)
+— a real run showed a job reach `state='running'`, then a
+`psycopg2.ProgrammingError` and a broken savepoint cascading into
+failures in every alphabetically-later test in the same class. Root
+cause: the worker thread's own fresh DB connection cannot see
+savepoint-nested, uncommitted test data, regardless of mocking fidelity.
+Rather than ship something that intermittently corrupts unrelated tests,
+backed out the 3 success-path tests and kept only the one safe rejection
+path (never reaches `_enqueue`). **Re-scoped conclusion: testing these
+success paths belongs at the model layer (`TransactionCase`, mirroring
+`test_compute_driver.py`'s own established pattern), not through a live
+HTTP request** — update the B.1.3 remaining-work list above accordingly
+before attempting `backups/*` (likely the same shape) or any other
+`_enqueue`-backed route via HTTP. Verified: full suite via devctl.sh
+test — 249 tests (248+1), 0 failed, 0 errors, and confirmed zero
+test-level errors anywhere in the run's own log (not just the summary
+line) — commit: d1c0307.

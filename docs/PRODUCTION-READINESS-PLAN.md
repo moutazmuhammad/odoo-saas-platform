@@ -580,3 +580,16 @@ Phase 1 genuinely calls for it — commit: 2b87208
 verified against a real Odoo 18 install. Next per the plan: Phase B
 (close the HTTP-level test-coverage gap before Phase D/compute migration
 work begins).
+
+2026-09-14 — Step B.1.1 — Corrected §1.1's overstated coverage-gap finding
+(real count: 10/156 routes already covered, not ~0 — a research grep had
+missed multi-line url_open()/_call() calls) and added the two genuine
+auth-family gaps it revealed: register/verify (full signup completion)
+and logout, both with real end-to-end assertions (new account can log
+in; session is actually invalidated after logout), not just response-shape
+checks. Verified: ran the full real Odoo test suite via devctl.sh test
+against actual Postgres+Odoo (not envtest/mocks) — 237 tests (234+3 new),
+0 failed, 0 errors; confirmed in the log that all 3 new tests actually
+executed — commit: 67fc7c5. Remaining B.1 sub-steps re-scoped with the
+corrected route list (see B.1.2-B.1.5 above) and a reusable script to
+re-derive it before each one, so this doesn't drift stale again.

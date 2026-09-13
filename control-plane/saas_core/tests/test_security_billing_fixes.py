@@ -413,3 +413,128 @@ class TestApiSecurityHttp(HttpCase):
         self.assertFalse(data['production_plan']['is_trial'])
         self.assertEqual(data['slots']['staging']['total'], 2)
         self.assertEqual(data['slots']['staging']['used'], 0)
+
+    # ---- B.1.3: instances/<id>/databases/* — destructive ops must refuse
+    # a bare access_token exactly like /action already does (SEC pattern
+    # from test_access_token_is_read_only, extended to this route family) --
+
+    def _running_hosting_instance(self, sub, **extra):
+        vals = {
+            'subdomain': sub, 'domain_id': self.domain.id,
+            'partner_id': self.partner.id, 'saas_product_id': self.product.id,
+            'plan_id': self.plan.id, 'billing_period': 'monthly',
+            'environment': 'production', 'region_id': False,
+            'state': 'running', 'is_hosting': True,
+        }
+        vals.update(extra)
+        return self.env['saas.instance'].sudo().create(vals)
+
+    def test_databases_create_refuses_token_only_access(self):
+        inst = self._running_hosting_instance('dbtoktest1')
+        token = inst._portal_ensure_token()
+        res = self._call(
+            '/saas/api/v1/instances/%s/databases/create' % inst.id,
+            {'access_token': token, 'name': 'shouldnotbecreated',
+             'login': 'admin', 'password': 'whatever12'})
+        self.assertFalse(res.get('ok'),
+                         "a bare token must not authorize db create: %s" % res)
+        self.assertEqual(res.get('code'), 'not_found')
+
+    def test_databases_drop_refuses_token_only_access(self):
+        inst = self._running_hosting_instance('dbtoktest2')
+        token = inst._portal_ensure_token()
+        res = self._call(
+            '/saas/api/v1/instances/%s/databases/drop' % inst.id,
+            {'access_token': token, 'name': 'production'})
+        self.assertFalse(res.get('ok'),
+                         "a bare token must not authorize db drop: %s" % res)
+        self.assertEqual(res.get('code'), 'not_found')
+
+    def test_databases_duplicate_refuses_token_only_access(self):
+        inst = self._running_hosting_instance('dbtoktest3')
+        token = inst._portal_ensure_token()
+        res = self._call(
+            '/saas/api/v1/instances/%s/databases/duplicate' % inst.id,
+            {'access_token': token, 'source': 'production', 'name': 'copy1'})
+        self.assertFalse(res.get('ok'),
+                         "a bare token must not authorize db duplicate: %s" % res)
+        self.assertEqual(res.get('code'), 'not_found')
+
+    # ---- B.1.3: instances/<id>/environments/{reserve,release} — pure
+    # billing/model logic, no SSH/infra dependency, so the full success
+    # path is cheap to verify end-to-end (unlike databases/*, which needs
+    # a mocked compute layer — left for a follow-up, see the plan) -------
+
+    def _authenticated_project_owner(self, login, sub, **instance_extra):
+        """A portal user + Production instance they actually own, with a
+        real authenticated session (environments/* has no access_token
+        param at all — session ownership only)."""
+        partner = self.env['res.partner'].sudo().create(
+            {'name': 'Env Owner', 'email': login})
+        user = self.env['res.users'].sudo().create({
+            'name': 'Env Owner', 'login': login, 'partner_id': partner.id,
+            'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])]})
+        user.password = 'envpass123'
+        vals = {
+            'subdomain': sub, 'domain_id': self.domain.id,
+            'partner_id': partner.id, 'saas_product_id': self.product.id,
+            'plan_id': self.plan.id, 'billing_period': 'monthly',
+            'environment': 'production', 'region_id': False,
+            'state': 'running', 'is_hosting': True,
+        }
+        vals.update(instance_extra)
+        instance = self.env['saas.instance'].sudo().create(vals)
+        self.authenticate(login, 'envpass123')
+        return instance
+
+    def test_environment_release_credits_wallet_and_lowers_slots(self):
+        today = fields.Date.today()
+        instance = self._authenticated_project_owner(
+            'envrelease@example.com', 'envrelease', staging_slots=3,
+            last_invoice_date=today - timedelta(days=10),
+            next_invoice_date=today + timedelta(days=20))
+        env_price = instance._env_server_price('monthly')
+        res = self._call(
+            '/saas/api/v1/instances/%s/environments/release' % instance.id,
+            {'type': 'staging', 'qty': 1})
+        self.assertTrue(res and res.get('ok'), res)
+        self.assertEqual(res['data']['released'], 1)
+        self.assertEqual(res['data']['slots'], 2)
+        self.assertEqual(instance.staging_slots, 2)
+        # Proof the unused portion was actually credited, not just logged:
+        # 20 of 30 days remain -> 2/3 of one slot's price, to the cent.
+        expected_credit = round(env_price * 20 / 30, 2)
+        wallet = self.env['saas.wallet'].sudo().search(
+            [('partner_id', '=', instance.partner_id.id)], limit=1)
+        self.assertTrue(wallet, "releasing a slot must create/credit a wallet")
+        self.assertAlmostEqual(wallet.balance, expected_credit, places=2)
+
+    def test_environment_release_rejects_releasing_in_use_slots(self):
+        instance = self._authenticated_project_owner(
+            'envoverrelease@example.com', 'envoverrelease', staging_slots=1)
+        # Occupy the one slot with a child staging server so 0 are free.
+        self.env['saas.instance'].sudo().create({
+            'subdomain': 'envoverrelease-s1', 'domain_id': self.domain.id,
+            'partner_id': instance.partner_id.id,
+            'saas_product_id': self.product.id, 'plan_id': self.plan.id,
+            'billing_period': 'monthly', 'environment': 'staging',
+            'region_id': False, 'state': 'running', 'is_hosting': True,
+            'parent_id': instance.id})
+        res = self._call(
+            '/saas/api/v1/instances/%s/environments/release' % instance.id,
+            {'type': 'staging', 'qty': 1})
+        self.assertFalse(res.get('ok'),
+                         "releasing an in-use slot must be refused: %s" % res)
+        self.assertEqual(instance.staging_slots, 1,
+                         "a rejected release must not change the slot count")
+
+    def test_environment_reserve_refuses_trial_instances(self):
+        instance = self._authenticated_project_owner(
+            'envtrialres@example.com', 'envtrialreserve', is_trial=True)
+        res = self._call(
+            '/saas/api/v1/instances/%s/environments/reserve' % instance.id,
+            {'type': 'staging', 'qty': 1})
+        self.assertFalse(res.get('ok'),
+                         "a trial must not be able to reserve paid slots: %s"
+                         % res)
+        self.assertEqual(instance.staging_slots, 0)

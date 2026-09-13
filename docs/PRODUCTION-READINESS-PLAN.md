@@ -515,3 +515,17 @@ glossed over — commit: aad107b
 **A.3.6 status: done, folded into A.3.5 above** (the plan's assumption
 that `@react-three/fiber` could be upgraded independently/"anytime" was
 wrong — corrected here rather than left stale).
+
+2026-09-14 — Step A.4 — Removed 3 empty scaffolding directories with no
+evidence of intended purpose anywhere (compute/deploy,
+compute/operator/internal/{database,network} — the latter two clearly
+superseded by internal/controller/{database,network}.go which already do
+this work). Kept + documented compute/operator/test/e2e instead of
+inventing reasons for the others, since MICROSERVICES-PLAN.md's own
+Phase 1 genuinely calls for it — commit: 2b87208
+
+**Phase A: complete** (A.1-A.4, including the A.3 dependency chain).
+`npm audit`: 11 -> 0. control-plane's Python deps: unpinned -> pinned and
+verified against a real Odoo 18 install. Next per the plan: Phase B
+(close the HTTP-level test-coverage gap before Phase D/compute migration
+work begins).

@@ -468,3 +468,10 @@ not by assumption — removing it was a behavioral no-op since it equaled
 tsconfig.json's own directory. Verified: tsc --noEmit clean (1680
 modules), npm run build output byte-identical to the prior commit's —
 commit: c77f63c
+
+2026-09-14 — Step A.3.2 — Upgraded Vite 5.4->8.3 + @vitejs/plugin-react
+4->6. Closes the last high-severity npm audit finding (esbuild). Flagged
+a real, non-obvious behavior change: Vite 8 defaults to the Rolldown
+bundler, not Rollup (build time/output size both shifted) — no plugin
+incompatibility found. Verified: tsc clean, build succeeds, both JS
+bundles pass `node --check`, file sizes sane — commit: 823ba1e

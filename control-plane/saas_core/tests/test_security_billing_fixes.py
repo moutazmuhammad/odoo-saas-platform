@@ -1,5 +1,7 @@
 import json
+from contextlib import nullcontext
 from datetime import date, timedelta
+from unittest.mock import MagicMock, patch
 
 from odoo import fields
 from odoo.exceptions import UserError
@@ -459,6 +461,79 @@ class TestApiSecurityHttp(HttpCase):
         self.assertFalse(res.get('ok'),
                          "a bare token must not authorize db duplicate: %s" % res)
         self.assertEqual(res.get('code'), 'not_found')
+
+    # ---- B.1.3 follow-up: databases/{create,drop,duplicate} REJECTION
+    # paths only (no job ever gets enqueued for these). hosting_db_list()
+    # (called by all three before doing anything) execs into the tenant
+    # container via self.docker_server_id._get_ssh_connection() +
+    # self._compute_driver() — the same seam test_compute_driver.py already
+    # mocks for model-level tests. Reused here as one small, reusable
+    # HTTP-test fixture instead of duplicating ad-hoc mocking per test.
+    #
+    # Deliberately NOT covering the SUCCESS paths here (create/drop/
+    # duplicate actually completing) — tried it, found a real hazard, and
+    # backed out rather than leave a fragile test in the tree:
+    # hosting_db_create_async/_drop_async/_duplicate_async all end in
+    # self.env['saas.job']._enqueue(...), which — even with
+    # saas.job._spawn_worker patched to a no-op exactly like
+    # test_job_queue.py's own setUp does — still corrupted later tests in
+    # this same class when actually exercised through HttpCase (a `FAIL`
+    # showing a job had genuinely reached state='running', then an
+    # unrelated `psycopg2.ProgrammingError`/broken-savepoint cascade in
+    # the NEXT test, matching "Trying to open a test cursor... while
+    # already in a test"). Root cause: _spawn_worker's real worker thread
+    # opens its OWN fresh DB connection, which structurally cannot see
+    # savepoint-nested, uncommitted test data — TransactionCase tests
+    # that call _enqueue rely on that suppression working reliably;
+    # something about HttpCase's own per-request handling means it did
+    # not hold here. Testing these SUCCESS paths properly belongs at the
+    # model layer (TransactionCase, mirroring test_compute_driver.py /
+    # test_job_queue.py's own established pattern for exactly this
+    # reason), not through a live HTTP round trip — tracked as its own
+    # follow-up in docs/PRODUCTION-READINESS-PLAN.md rather than forced
+    # in here.
+
+    def _mock_db_ops_infra(self, instance, existing_db_names=()):
+        """Make instance.hosting_db_list() return existing_db_names (already
+        full-name-qualified, e.g. via instance._hosting_db_full_name(...))
+        without touching real SSH/Docker. Safe to use for paths that never
+        reach self.env['saas.job']._enqueue(...) (e.g. a rejection before
+        any operation record is created) — see the caution above for why
+        a path that DOES enqueue is not safe to drive through a live
+        HttpCase HTTP request yet."""
+        server = self.env['saas.server'].sudo().create({
+            'name': 'dbops-fake-host-%s' % instance.id,
+            'is_docker_host': True,
+        })
+        instance.docker_server_id = server.id
+
+        stdout_lines = ['---SAAS_DB_LIST_BEGIN---']
+        stdout_lines += ['%s|' % n for n in existing_db_names]
+        stdout_lines.append('---SAAS_DB_LIST_END---')
+        fake_result = MagicMock(rc=0, stdout='\n'.join(stdout_lines) + '\n',
+                                stderr='')
+        fake_driver = MagicMock()
+        fake_driver.service_exec.return_value = fake_result
+
+        p1 = patch.object(type(server), '_get_ssh_connection',
+                          lambda self: nullcontext(MagicMock()))
+        p2 = patch.object(type(instance), '_compute_driver',
+                          return_value=fake_driver)
+        for p in (p1, p2):
+            p.start()
+            self.addCleanup(p.stop)
+        return fake_driver
+
+    def test_databases_duplicate_rejects_missing_source(self):
+        instance = self._authenticated_project_owner(
+            'dbdupmissing@example.com', 'dbdupmissing')
+        self._mock_db_ops_infra(instance)  # no existing DBs at all
+        res = self._call(
+            '/saas/api/v1/instances/%s/databases/duplicate' % instance.id,
+            {'source': 'doesnotexist', 'name': 'newcopy'})
+        self.assertFalse(res.get('ok'),
+                         "duplicating a nonexistent source must fail: %s" % res)
+        self.assertEqual(res.get('code'), 'duplicate_failed')
 
     # ---- B.1.3: instances/<id>/environments/{reserve,release} — pure
     # billing/model logic, no SSH/infra dependency, so the full success

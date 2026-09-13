@@ -461,3 +461,10 @@ postcss-selector-parser (7 of 11 findings) within existing semver ranges
 major bumps — left for A.3.2/A.3.4, not force-fixed — verified: `npm run
 build` (tsc --noEmit + vite build) green, rebuilt SPA output committed —
 commit: bc36fb1
+
+2026-09-14 — Step A.3.1 — Upgraded TypeScript 5.6->7.0. Found and fixed a
+real breaking change (TS5102: baseUrl removed) by running the compiler,
+not by assumption — removing it was a behavioral no-op since it equaled
+tsconfig.json's own directory. Verified: tsc --noEmit clean (1680
+modules), npm run build output byte-identical to the prior commit's —
+commit: c77f63c

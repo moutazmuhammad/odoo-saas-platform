@@ -156,6 +156,14 @@ class TestOrderControllerFixes(HttpCase):
         return self.env['saas.instance'].sudo().search_count(
             [('partner_id', '=', self.partner.id)])
 
+    def _calculate(self, route, **params):
+        resp = self.url_open(
+            route,
+            data=json.dumps({'jsonrpc': '2.0', 'method': 'call',
+                             'params': params}),
+            headers={'Content-Type': 'application/json'})
+        return resp.json().get('result')
+
     # ---- Bug #2 --------------------------------------------------------
     def test_rejected_trial_leaves_no_orphan(self):
         """A second trial (rejected by one-trial-per-client) must not leave an
@@ -197,3 +205,75 @@ class TestOrderControllerFixes(HttpCase):
         self.assertTrue(
             res.get('ok'),
             "cancelled instance must not block the quota; got: %s" % res)
+
+    # ---- B.1.2: checkout path (previously only trial-specific edge cases
+    # were covered through HTTP; nothing exercised the general paid-order
+    # path or asserted where either outcome actually redirects) ----------
+
+    def test_paid_order_redirects_to_checkout(self):
+        # main.py's hosting_order sends a PAID order to
+        # /my/instances/<id>/checkout (billing still owed) and a TRIAL
+        # straight to the instance view — this distinction was never
+        # actually asserted before, only res['ok'] truthiness.
+        self.authenticate('ordcust@example.com', 'ordpass123')
+        res = self._order(project_name='Paid1', subdomain='ordpaid',
+                          workers=2, storage=10)
+        self.assertTrue(res and res.get('ok'), res)
+        redirect = res['data']['redirect_url']
+        self.assertIn('/checkout', redirect,
+                     "a paid order must redirect to checkout: %s" % redirect)
+
+    def test_trial_order_redirects_to_instance_not_checkout(self):
+        self.authenticate('ordcust@example.com', 'ordpass123')
+        res = self._order(project_name='Trial1', subdomain='ordtrialview',
+                          is_trial='1')
+        self.assertTrue(res and res.get('ok'), res)
+        redirect = res['data']['redirect_url']
+        self.assertNotIn('/checkout', redirect,
+                         "a trial must not be sent to checkout: %s" % redirect)
+        self.assertIn('/my/instances/', redirect)
+        # Proof it's actually past the payment gate: action_deploy() was
+        # invoked (not action_confirm_and_bill()), so the state must already
+        # be beyond draft/pending_payment — provisioning itself is
+        # legitimately async (over SSH, in a background thread) and may
+        # not have finished within the request, so don't assert a specific
+        # post-deploy state, only that it isn't a payment-gated one.
+        instance = self.env['saas.instance'].sudo().search(
+            [('subdomain', '=', 'ordtrialview')], limit=1)
+        self.assertNotIn(instance.state, ('draft', 'pending_payment'),
+                         "a trial must skip the payment gate entirely: %s"
+                         % instance.state)
+
+    def test_hosting_calculate_returns_real_pricing(self):
+        # Public route, no auth needed — exercises the SPA's live slider
+        # quote end-to-end through saas.pricing.engine, not just unit-level.
+        res = self._calculate('/saas/api/v1/hosting/calculate',
+                              workers=2, storage=10, billing='monthly')
+        self.assertTrue(res and res.get('ok'), res)
+        data = res['data']
+        self.assertEqual(data['workers'], 2)
+        self.assertEqual(data['storage'], 10)
+        self.assertGreater(data['total'], 0)
+
+    def test_hosting_calculate_project_adds_environment_costs(self):
+        base = self._calculate('/saas/api/v1/hosting/calculate',
+                               workers=2, storage=10, billing='monthly')
+        project = self._calculate('/saas/api/v1/hosting/calculate-project',
+                                  workers=2, storage=10, billing='monthly',
+                                  staging_count=1, dev_count=1)
+        self.assertTrue(project and project.get('ok'), project)
+        data = project['data']
+        self.assertEqual(data['staging_count'], 1)
+        self.assertEqual(data['dev_count'], 1)
+        self.assertGreater(data['env_total'], 0,
+                           "two extra environments must add real cost")
+        self.assertAlmostEqual(
+            data['project_total'], base['data']['total'] + data['env_total'],
+            places=2,
+            msg="project_total must be the base hosting quote plus env_total")
+
+    def test_services_calculate_returns_real_pricing(self):
+        res = self._calculate('/saas/api/v1/services/calculate',
+                              workers=2, storage=10, billing='monthly')
+        self.assertTrue(res and res.get('ok'), res)
+        self.assertGreater(res['data']['total'], 0)

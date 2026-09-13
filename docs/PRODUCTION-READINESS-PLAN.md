@@ -443,5 +443,13 @@ shipped."
 YYYY-MM-DD — Step X.Y — <one-line result> — verified: <how> — commit: <sha>
 ```
 
-(No entries yet — this plan was drafted 2026-09-13, immediately after the
-monorepo consolidation and its two fresh review passes.)
+2026-09-14 — Step A.1 — Pinned control-plane's external Python deps
+(paramiko/jinja2/boto3/google-cloud-storage) into control-plane/requirements.txt,
+resolved against Odoo 18's own requirements.txt as a constraints file to
+avoid the conflicts a naive unconstrained resolve produced (cryptography,
+Jinja2, idna, requests, urllib3, python-dateutil all would have diverged
+from Odoo core's own pins) — verified: fresh install from the committed
+file reproduces byte-identical versions (diffed pip freeze); confirmed
+paramiko 5.0.0's removal of DSSKey is already safely handled by an
+existing hasattr() guard in saas_core/utils.py, no code change needed —
+commit: fdb2e9b

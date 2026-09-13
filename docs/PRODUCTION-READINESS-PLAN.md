@@ -10,7 +10,85 @@
 >
 > Written for a fresh Claude Code session to pick up cold: every phase has an
 > ID, concrete file references, acceptance criteria, and a rollback note.
-> Update **§10 Progress Log** after every completed step.
+> Update **§11 Progress Log** after every completed step.
+
+---
+
+## Production-First Principle
+
+**Every phase, task, and implementation decision in this plan — and in
+`MICROSERVICES-PLAN.md`'s Phase D — is production work, not a prototype or a
+proof of concept.** This is not a separate phase to schedule; it is the
+standard every other section's acceptance criteria are evaluated against.
+Nothing in this plan is "done" if it only satisfies its own phase's
+checklist but fails this one.
+
+Concretely, for every change made under this plan:
+
+- **No unused, dead, duplicated, or unnecessary code survives a change that
+  touches it.** If a step in Phase A–H touches a file, that file leaves the
+  change cleaner than it was found — this is how `saas_instance.py` (12,552
+  lines / 293 methods, per §1) actually gets smaller over time instead of
+  growing indefinitely: not a dedicated "decomposition phase" that never
+  gets scheduled, but a standing rule applied every time the file is
+  touched for any other reason.
+- **Clean code, maintainability, security, scalability, and reliability are
+  requirements, not preferences.** A change that "works" but leaves a
+  God-method longer, a query without an index (§ PERF-007 in the old
+  audit), or a route with no input validation is not complete.
+- **The algorithm/data structure must fit the actual requirement and scale
+  — chosen deliberately, not inherited by default.** Example already in
+  this codebase: `_allocate_docker_server`/`_allocate_db_server` do no real
+  bin-packing today; when Phase D.6 replaces placement logic for
+  Kubernetes-backed tenants, the replacement must be chosen for the actual
+  expected tenant/region scale (documented in the PR), not carried over
+  unexamined just because it compiles.
+- **No temporary workarounds or shortcuts that would need replacing later.**
+  If a step can only be done with a shortcut today, the shortcut and the
+  condition under which it must be revisited are written down explicitly
+  in that step's acceptance criteria (see, e.g., `MICROSERVICES-PLAN.md`
+  §11's open questions) — never left as silent, undocumented debt.
+- **Proper error handling, input validation, logging/observability, and
+  security are part of the change, not a follow-up.** A new route (Phase
+  B.1) ships with validated input and meaningful error responses in the
+  same PR as its test, not "add validation later."
+- **Every change is reviewed** for correctness, performance,
+  maintainability, and production-readiness — not just "does it pass CI."
+- **Every change is thoroughly tested** — unit, integration, and
+  end-to-end where applicable — per Phase B's own conventions (real
+  `HttpCase`/`url_open` calls, real envtest/live-cluster runs for the
+  operator, real component tests for the SPA). "Unit-tested manifest
+  strings" (the exact failure mode that described the old `KubernetesDriver`
+  stub before this session's work) is explicitly **not** sufficient
+  evidence of correctness anywhere in this plan.
+- **Integration is verified, not assumed.** Per the integration-status
+  warning in §1: two components sitting in the same repo, or even
+  compiling/passing their own tests independently, is not integration.
+  A cross-component claim ("the Control Plane can provision a tenant via
+  the Compute Service") is only true once demonstrated end-to-end against
+  real infrastructure, per `MICROSERVICES-PLAN.md`'s own acceptance
+  criteria.
+
+### Definition of Done (applies to every task in every phase)
+
+A task is not complete unless **all** of the following are true — this list
+is the actual gate, more specific than "tests pass":
+
+1. No dead/unused/duplicated code remains in any file the task touched.
+2. Error handling, input validation, and logging are present for every new
+   or changed code path (not just the happy path).
+3. The change was reviewed against correctness, performance, and
+   maintainability — not just functional behavior.
+4. It is covered by real tests at the appropriate level(s) — unit,
+   integration, and end-to-end where applicable — and those tests were
+   actually run, with the output checked, not assumed green.
+5. Any cross-component behavior it claims was verified end-to-end against
+   real infrastructure, not asserted from reading the code.
+6. No new temporary workaround was introduced without an explicit, written
+   condition for when it must be revisited.
+
+Phase H's go-live gate (§9) is this same Definition of Done applied to the
+whole platform, plus the phase-specific criteria already listed there.
 
 ---
 
@@ -314,6 +392,9 @@ with a measured RTO/RPO; a written control-plane failure/recovery runbook.
 Before calling this "production-ready" for real, previously-unmigrated
 customer traffic:
 
+- [ ] Every phase below satisfies the **Production-First Principle**'s
+      Definition of Done, not just its own phase-specific criteria — this
+      is a standing check, not a one-time item on this list.
 - [ ] Phase A complete (dependencies pinned/current, hygiene clean)
 - [ ] Phase B complete (HTTP-level test coverage on the highest-risk routes,
       zero-coverage models closed, frontend test runner exists)

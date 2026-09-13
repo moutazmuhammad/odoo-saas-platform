@@ -404,6 +404,12 @@ Service for at least one full billing + backup-retention cycle:
 
 ## 10. Cross-cutting rules for every phase
 
+> This whole plan is governed by the **Production-First Principle** in
+> [`docs/PRODUCTION-READINESS-PLAN.md`](../../../docs/PRODUCTION-READINESS-PLAN.md)
+> (repo root) — every step below (this is that master plan's Phase D) must
+> satisfy that document's Definition of Done, not just the rules listed
+> here. These rules are additional, phase-specific discipline on top of it.
+
 - **One tenant, one commit at a time** for any cutover step (2.4, 3.3) —
   never a fleet-wide flag day. This mirrors the existing project's own stated
   discipline ("one step ≈ one commit; run the test suite before moving on,"

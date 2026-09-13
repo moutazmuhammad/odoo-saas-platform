@@ -34,14 +34,22 @@ history is ever needed; this repo is the going-forward source of truth.
 │                    resources), never SSH. See compute/docs/architecture.md
 │                    (English) / architecture.ar.md (Arabic).
 │
+├── docs/PRODUCTION-READINESS-PLAN.md   The master roadmap (read this first).
+│
 └── .github/workflows/ci.yml   One pipeline, one job per component.
 ```
 
 ## Where to start
 
-- **The plan**: [`control-plane/docs/architecture/MICROSERVICES-PLAN.md`](control-plane/docs/architecture/MICROSERVICES-PLAN.md)
+- **The master plan**: [`docs/PRODUCTION-READINESS-PLAN.md`](docs/PRODUCTION-READINESS-PLAN.md)
+  — a fresh, evidence-based review of the current codebase (dependencies,
+  dead code, test coverage) plus the full phased roadmap to production
+  readiness (hygiene → test coverage → security → compute migration →
+  features → reliability → go-live gate). Read this first.
+- **The compute-layer migration in detail**: [`control-plane/docs/architecture/MICROSERVICES-PLAN.md`](control-plane/docs/architecture/MICROSERVICES-PLAN.md)
   — target architecture, phased migration steps, acceptance criteria, and a
-  progress log. Read this first.
+  progress log for turning the Kubernetes operator into the real Compute
+  microservice. This is Phase D of the master plan above.
 - **Control plane history/context**: `control-plane/docs/architecture/` (the
   pre-existing evolution docs this plan builds on) and
   `control-plane/SESSION_NOTES.md` (running work log; some entries there

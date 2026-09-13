@@ -486,3 +486,10 @@ same pixel values as their v3 predecessors), and manually reviewed every
 changed line across all 27 files to confirm each fits a known, documented,
 visually-equivalent rename — nothing unexplained. tsc + build clean —
 commit: 1a9073a
+
+2026-09-14 — Step A.3.4 — Upgraded react-router-dom 6.27->7.18. `npm audit`
+now reports 0 vulnerabilities (was 11 at the start of Phase A). App only
+uses declarative-mode APIs (37 usages checked) — a true drop-in, zero
+source changes needed. Verified: tsc clean, build succeeds, bundles pass
+node --check, confirmed live via the running systemd service — commit:
+bb6e511

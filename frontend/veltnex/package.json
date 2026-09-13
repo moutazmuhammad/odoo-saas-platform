@@ -10,22 +10,22 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@react-three/fiber": "^8.18.0",
+    "@react-three/fiber": "^9.7.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.456.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3",
     "tailwind-merge": "^2.5.4",
     "three": "^0.160.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
     "@types/three": "^0.160.0",
     "@vitejs/plugin-react": "^6.1.1",
     "postcss": "^8.4.49",

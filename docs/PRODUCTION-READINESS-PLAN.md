@@ -304,10 +304,13 @@ register/start+resend, reset/start+verify were already covered.)
       yet investigated at all; check each for real infra dependencies AND
       whether they enqueue a job before writing tests, same discipline as
       above.
-  - B.1.4 `webhook.py` — already has real HTTP coverage
-    (`test_webhook_security.py`); extend it to cover failure/replay/
-    signature-mismatch cases if not already there, rather than treating it
-    as a from-scratch gap.
+  - B.1.4 `webhook.py` — **done**, see progress log. Extended
+    `test_webhook_security.py` from 2 tests (unsigned/unknown-secret
+    indistinguishability, rate limiting) to 10: SHA-1 downgrade rejection,
+    invalid JSON body, non-push event, branch mismatch, instance-not-running,
+    repo-not-cloned, duplicate-delivery idempotency, and the successful-push
+    path (build record fields + `_enqueue` call args). The last two patch
+    `saas.job._enqueue` itself, per the standing rule above.
   - B.1.5 (new, not in the original plan) `saas_website/controllers/spa.py`
     and `portal.py` — the QWeb/form-post surface (`/my/instances/*`,
     ~90 routes) is entirely uncovered and wasn't broken out separately
@@ -708,3 +711,29 @@ tests ran and zero ERROR/FAIL entries in the run's log tail — commit:
 create/drop/duplicate (route-reaches-model-method only, not the full
 async chain), `backups/*`, `environments/create`+`merge`, and the
 not-yet-investigated remainder (see the re-scoped list above).
+
+2026-09-14 — Step B.1.4 — `webhook.py` full branch coverage. Added 8
+tests to `TestWebhookSecurity` (2 -> 10): SHA-1 downgrade rejection,
+invalid JSON, non-push event, branch mismatch, instance-not-running,
+repo-not-cloned, duplicate-delivery idempotency, and the successful-push
+path (asserts the created `saas.build` record's fields and `_enqueue`'s
+call kwargs). The last two patch `saas.job._enqueue` directly — never
+`_spawn_worker` — so no real job row or worker thread is created, per
+this plan's standing HttpCase rule. Caught a real bug in my own first
+draft along the way: `test_non_push_event_ignored` reused the
+push-shaped payload fixture (`ref` + `commits` list) and only swapped
+the `X-GitHub-Event` header to `pull_request` — but `_is_push_event()`
+has a deliberate header-less fallback (some providers omit the event
+header) that treats any `{ref, commits: [...]}`-shaped body as a push
+regardless of the header. So the app correctly ran the real push path,
+an unmocked `_enqueue` fired for real, and its background worker thread
+later crashed and cascaded `ERROR`s into unrelated later tests — the
+exact corruption pattern already documented above from B.1.3, just
+triggered by a wrong test fixture instead of a wrong mock choice. Fixed
+by giving that test a genuinely PR-shaped payload (no `ref`/`commits`
+keys) instead of relying on the header alone. Verified: full suite via
+devctl.sh test — 261 tests, 0 failed, 0 errors, run twice (once scoped
+to `TestWebhookSecurity` alone: 10/10 clean, then the full suite) —
+commit: 5cf19ca. Next: B.1.5 (`saas_website/controllers/spa.py` +
+`portal.py`, ~90 QWeb form-post routes, untested, distinct
+form-post/redirect testing style from `api.py`).

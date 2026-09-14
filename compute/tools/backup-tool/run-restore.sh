@@ -19,7 +19,15 @@ echo "[restore-tool] starting restore for instance ${INSTANCE_NAME}"
 
 case "${SOURCE_TYPE:-PVC}" in
   PVC)
-    BASE="/backups/${INSTANCE_NAME}"
+    # SOURCE_PREFIX, when set, names the directory the backup actually
+    # lives under — which is the ORIGINAL instance's name (run-backup.sh
+    # publishes to /backups/<that instance's INSTANCE_NAME>/<STAMP>), not
+    # necessarily this restore Job's own INSTANCE_NAME. This is the
+    # cross-instance onboarding case spec.restore exists for in the first
+    # place (a customer's backup migrating onto a newly-created instance
+    # with a different name) — falling back to INSTANCE_NAME only covers
+    # the narrower same-name restore-in-place case.
+    BASE="/backups/${SOURCE_PREFIX:-$INSTANCE_NAME}"
     if [ -n "${BACKUP_ID:-}" ]; then
       SRC="${BASE}/${BACKUP_ID}"
     else
@@ -57,8 +65,21 @@ echo "[restore-tool] restoring database ${DB_NAME}@${DB_HOST}:${DB_PORT}"
 # already owns the empty target database OdooInitJob-equivalent
 # provisioning created — reassigning ownership to a nonexistent role would
 # otherwise fail loudly (or worse, silently as a superuser).
+#
+# --single-transaction: this Job retries in place on failure (BackoffLimit,
+# restartPolicy: OnFailure — see OdooRestoreJob's doc comment), and a
+# *partial* restore is worse than no restore: it leaves the target
+# database non-empty, so a retry's CREATE TABLE statements collide with
+# whatever the failed attempt already created ("relation already exists"),
+# permanently wedging every subsequent retry against a half-populated
+# database that a plain retry can never get past on its own. Wrapping the
+# whole restore in one transaction makes a failure roll back completely,
+# so every retry starts from the same clean empty database the first
+# attempt did (caught live: a restore that failed partway through — for
+# an unrelated, transient reason — poisoned the database for every retry
+# after it until this was added).
 pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-  --no-owner --exit-on-error "${WORKDIR}/db.dump"
+  --no-owner --single-transaction --exit-on-error "${WORKDIR}/db.dump"
 
 echo "[restore-tool] extracting filestore into ${ODOO_DATA_DIR}"
 mkdir -p "$ODOO_DATA_DIR"

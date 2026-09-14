@@ -1330,7 +1330,7 @@ above it for SEC-001/002). Status:
 | SEC-002 plaintext secrets | Critical | **Fixed (code); operational step pending** | `admin_password`/`db_password`/`restic_password`/`github_token`(×2)/`private_key_enc` are all `EncryptedChar` now. Encryption is opt-in via `saas_secret_key` — unset in this checkout's dev conf, so **whether it's activated in production, and whether the already-exposed credentials have been rotated post-activation, can't be verified from code alone.** |
 | SEC-003 root containers | Critical | **Fixed** | `Dockerfile.tenant.jinja` ends `USER odoo`; `docker-compose.yml.jinja` has `cap_drop:[ALL]` + `no-new-privileges:true`. Read-only rootfs deliberately deferred (documented tradeoff, Odoo writes outside its volumes). |
 | SEC-004 tenant `CREATEDB` | High | **Still open** | See C.4 below. |
-| SEC-005 host shell scoping | High | **Still open** | `ssh_terminal.py:304,614` still gate solely on `group_saas_manager`, unchanged since the audit. |
+| SEC-005 host shell scoping | High | **Fixed (2026-09-15)** | `ssh_terminal.py`'s host terminal (raw SSH into platform machines, distinct from the customer instance shell) now requires a new, narrower `group_saas_host_shell`, not implied by `group_saas_manager` — enforced at the controller, the `saas.server.action_open_terminal()` method itself, and the view button's own `groups=`. An idempotent migration grandfathers existing Managers into the new group so the change doesn't silently revoke access on deploy. See the progress log (§11) for the full rationale. Commit `52b1394`. |
 | SEC-006 plaintext host creds | High | **Still open** | `odoo.conf.jinja:11` still renders `db_password` in cleartext. |
 | SEC-007 supply chain | High | **Partially fixed** | `_PIP_PACKAGE_RE` (`saas_instance.py:1393`) is now strictly `^...$`-anchored, closing the specific "unanchored regex smuggles `--flags`" concern. Package allow-listing / internal mirror / image scanning — the audit's other recommendations — are not implemented. |
 | SEC-008 presigned URL TTL | High | **Mostly fixed** | `PRESIGNED_URL_EXPIRY` cut from 7 days to **15 min** (`saas_instance_backup.py:17`), lists re-mint fresh links. Per-download audit logging (pairing with SEC-010) still not wired — no `_saas_audit` call anywhere in that file. |
@@ -1341,7 +1341,7 @@ above it for SEC-001/002). Status:
 | SEC-013 OTP brute force | Medium | **Fixed** | Window tightened to 6/600 (`registration.py:225`, `api.py:259,354`); `code` is `EncryptedChar`; `hmac.compare_digest` constant-time verify (`saas_registration.py:32,126`). |
 | SEC-014 SSH command injection | Medium | **Improved, not architecturally resolved** | `shlex.quote` call count grew to 142 (vs. ~140 `.execute(` call sites) — broad adoption — but there's still no central/audited command-builder; quoting discipline remains per-call-site. |
 | SEC-015 broad `except Exception` | Medium | **Still open** | Count actually **grew** to 125 (from the audit's 85) — B.3 added more per-instance cron try/except/rollback blocks following the existing (deliberate, for cron resilience) pattern. Not new backsliding, but worth flagging so the raw number isn't misread as improvement. |
-| SEC-016 RBAC granularity | Medium | **Still open** | Only 2 internal groups exist (`group_saas_user`, `group_saas_manager`) — unchanged. |
+| SEC-016 RBAC granularity | Medium | **Partially fixed (2026-09-15)** | A third group, `group_saas_host_shell`, now exists (split out of `group_saas_manager` as part of the SEC-005 fix below) — the first crack in the "2 groups total" ceiling, though still far short of the audit's broader recommendation (e.g. separate billing/support/infra tiers). |
 | SEC-017 restore-confirm UX | Low | **Still open (cosmetic)** | `backup_restore` (`api.py:1366`) still confirms against `backup.db_name or instance.subdomain`, unchanged. Ownership enforcement itself (the actual security control) remains correct. |
 | SEC-018 SPA session refresh | Low | **Still open** | No idle-timeout/refresh logic found in `AuthContext.tsx`. |
 | SEC-019 CSRF posture | Low | **Recommendation not implemented; premise partly wrong, conclusion still holds** | 4 `csrf=False` routes exist, same count as the audit. But the audit's stated reason ("these are all `type='json'`") is **factually wrong for 2 of the 4**: `webhook.py`'s route and `portal.py`'s new `portal_instance_log_stream` are both `type='http'`. Each is still safe for a *different* reason than the audit gave: the webhook route is `auth='none'` (authority comes from the URL secret + HMAC, not the session cookie, so CSRF is moot regardless of type), and the 3 stream routes (`ssh_terminal.py`×2, `portal.py`×1) are all `methods=['GET']`-only with no state mutation, and same-origin policy blocks a cross-site page from reading the response anyway. The recommended CI lint is not implemented, and a naive "no `type='http'` + `csrf=False`" rule would false-positive on all 4 — any future lint needs a GET/`auth='none'` carve-out. |
@@ -1352,3 +1352,42 @@ Next: Phase D (Compute-layer migration) is out of this plan's scope
 (fully specified in `MICROSERVICES-PLAN.md`); the remaining Phase C
 item, **C.2** (rotating the exposed root SSH password), needs the
 account owner and live-server access this session doesn't have.
+
+2026-09-15 — SEC-005 (host shell scoping) — revisited priorities after a
+stretch of Phase D/MICROSERVICES-PLAN.md work (Phase 1 complete, Phase
+2.1's real `KubernetesDriver` live-verified): with production traffic
+still 100% on the legacy SSH/Docker path, the highest-value next step
+for actual production safety is closing a real, still-open gap on that
+live path, not continuing a migration with no real tenants on it yet.
+
+Fixed: the host terminal (`ssh_terminal.py`'s `create_session`, a raw
+interactive shell on the platform's own Docker/DB machines — distinct
+from the customer instance shell, which is authorized by instance
+ownership and untouched by this change) was gated solely on
+`group_saas_manager`, the same broad role used for routine billing/
+tenant-lifecycle work. Added `group_saas_host_shell`, deliberately not
+implied by Manager, enforced at three independent layers: the
+controller check that actually opens the SSH channel,
+`saas.server.action_open_terminal()` itself (which had no group check
+of its own before — defense in depth), and the view button's `groups=`
+(so it disappears for managers who lack it, instead of a confusing
+403). Also closes a sliver of SEC-016 (RBAC granularity) as a side
+effect — this is the first group added beyond the original 2 in the
+system's history.
+
+Since this tightens an existing permission and this session has no way
+to inspect or seed the real production user list, added a small,
+idempotent migration (`res_groups.py`'s
+`_saas_grandfather_host_shell_group`, invoked via a `<function>` call
+in `saas_security.xml` outside the `noupdate` block, so it re-runs on
+every module upgrade including the one shipping this change) that
+grants every *existing* Manager the new group too — the fix narrows
+access going forward without silently locking out whoever already has
+it today. 6 new tests (3 for the permission gate — manager-only denied,
+host-shell-group allowed, plain-user denied — and 3 for the migration's
+grandfathering/idempotency/no-removal behavior) — full suite green, 497
+tests (491 + 6), 0 failed/errors. Commit: `52b1394`.
+
+**Deployment note for whoever ships this**: no action needed beyond the
+normal module upgrade (`-u saas_core`) — the grandfathering migration
+handles the permission transition automatically and safely.

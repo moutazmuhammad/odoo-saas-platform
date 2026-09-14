@@ -730,15 +730,55 @@ items looking unaddressed. 1.2 (region kubeconfig), 1.4 (image tagging),
 and 1.5 (live provisioning + backup/restore, both PVC and ObjectStorage)
 are all done and verified against real infrastructure.
 
-**Next is Phase 2 — a real `KubernetesDriver` behind the existing
-`ComputeDriver` seam.** This is a substantially larger body of work than
-anything in Phase 1: per this plan's own §0 integration-status warning,
-it is building the first-ever connection between `saas_core` and the
-operator from nothing, not swapping one working piece for another.
-Concretely it means: a Python Kubernetes API client in `saas_core`,
-constructing real `OdooInstance` objects from `saas.instance` fields,
-replacing (not extending) `kubernetes_driver.py`'s manifest-string
-approach, watching/reconciling `OdooInstance.status` back onto
-`saas.instance`, and deciding how `saas.region.kubeconfig` (Step 1.2)
-actually gets used to pick which cluster's API server a given tenant's
-driver calls. None of this exists yet in any form.
+2026-09-15 — Step 2.1 — rewrote `saas_core/drivers/kubernetes_driver.py`
+from the `kubectl`-over-SSH-against-raw-YAML stub into a real driver
+against the actual Kubernetes API, managing real `OdooInstance` CRs.
+Added the `kubernetes` PyPI client (pinned via the same Odoo-18-
+constrained regen procedure Phase A.1 established) to
+`requirements.txt`/`__manifest__.py`. Every `ComputeDriver` method now
+maps onto the real operator resource per this section's own table above:
+`create`/`destroy` manage the CR directly; `start`/`stop` patch
+`spec.suspended` (already built operator-side); `restart` falls back to
+the ABC's stop-then-start default (no native rolling-restart trigger
+exists on the CR yet — documented gap, not silently papered over);
+`exec`/`logs` use the real `pods/exec`/`pods/log` subresources against
+the tenant's actual web pod; `health` reads `status.phase` plus the
+pod's own container restart count/`CrashLoopBackOff` reason, preserving
+the exact status vocabulary (`running`/`restarting`/`exited`/`dead`/
+`not_found`) `saas_instance.py`'s crash-loop auto-stop logic already
+depends on. Naming (group/version/plural, the `odoo-tenant-` prefix, the
+Deployment always being literally `"odoo"`) mirrors the operator's own
+Go constants exactly — and catches a real error in the *old* stub, which
+assumed the workload's name equaled the tenant's own name; the real
+operator always names it `"odoo"` regardless.
+
+Design choice worth recording: rather than extending the shared, frozen
+`ComputeSpec` dataclass with Kubernetes-specific fields (domain, TLS,
+filestore size, resource limits, Odoo version) as this plan's own §2.2
+anticipated, those are read from `spec.env` instead — already documented
+as "extra environment / template context," achieving the same result
+without touching a type `SshDockerDriver` and ~25 other call sites also
+share. Existing tests (`FakeSSH`/kubectl-string-assertion pattern) were
+entirely invalidated by dropping SSH/kubectl and rewritten to mock at
+the kubernetes-client API boundary instead — no prior precedent for that
+in this codebase, established fresh (22 tests, was 7). Full suite green:
+491 tests (476 + 15 net new), 0 failed/errors.
+
+**Verified for real against the live microk8s cluster**, independent of
+Odoo/the test suite entirely (loaded the actual kubeconfig, drove the
+driver module directly): `create()` provisioned a real `OdooInstance`
+whose status was correctly read back through `health()` as it
+progressed (`Pending` -> `restarting`); `stop()`/`start()` correctly
+toggled `spec.suspended`, reflected immediately in `health()`
+(`Suspended`/`exited`, then `Provisioning`/`restarting`); `destroy()`
+fully tore down the CR and its entire tenant namespace with zero
+leftovers, confirmed via `kubectl` afterward. Commit: `4071dfc`.
+
+**Scope note, not yet done**: `create()` is implemented and live-verified
+but not yet called by real tenant provisioning — `saas.instance` still
+provisions everything via its legacy code path regardless of
+`compute_driver`. That is Step 2.3 (audit and route the ~140
+`DRIVER-BOUNDARY.md` call sites through `ComputeDriver`), still open,
+along with 2.2 (formalizing the spec.env-based field carrying decided
+above — arguably already satisfied by this step's approach, revisit if a
+future session disagrees) and 2.4 (the actual per-tenant cutover).

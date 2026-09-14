@@ -141,6 +141,28 @@ jobs:
       - name: Coverage report
         run: python -m coverage report --data-file="$GITHUB_WORKSPACE/.coverage"
 
+  secret-scan:
+    # C.3 — proactive guard against a repeat of the root-SSH-password-in-chat
+    # exposure (SESSION_NOTES.md) and the prior SECURITY-INCIDENT-2026-06-17
+    # compromise: catch a leaked credential at PR time, not after the fact.
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history: gitleaks scans every commit, not just HEAD
+      - name: Install gitleaks
+        run: |
+          curl -fsSL -o /tmp/gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          sudo tar xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+      - name: Scan for secrets
+        run: |
+          # Findings already reviewed as benign (test fixtures, a password
+          # charset constant — see .gitleaksignore for why each is safe) are
+          # baselined there; anything NOT in that file fails the job.
+          gitleaks detect --source=. --no-banner -v
+
   compute:
     name: Compute operator (build, vet, unit + envtest)
     runs-on: ubuntu-latest

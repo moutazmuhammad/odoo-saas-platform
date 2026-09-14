@@ -1,0 +1,26 @@
+# gitleaks baseline (C.3): fingerprints of findings already reviewed and
+# confirmed NOT real secrets — a benign string coincidentally matching a
+# generic rule. Any NEW finding introduced by a future commit is NOT in
+# this list and will fail the "Secret scan (gitleaks)" CI job.
+#
+# Regenerate/verify with: gitleaks detect --source=. --no-banner
+#
+# 1) control-plane/saas_website/tests/test_portal_security.py:45 — a test
+#    fixture dict literal ('region_id': False, 'state': 'running', ...),
+#    no credential of any kind.
+037575b351eb710070f669723dc4b12feb417b5e:control-plane/saas_website/tests/test_portal_security.py:generic-api-key:45
+# 2) compute/operator/internal/resources/secrets.go:14 — `passwordAlphabet`,
+#    the charset used by GeneratePassword() to build a random string; not
+#    a credential itself.
+076304773dee3fa462024f3ec914ebb4d2a1a72f:compute/operator/internal/resources/secrets.go:generic-api-key:14
+# 3) control-plane/saas_core/tests/test_webhook_security.py:28 — a test
+#    fixture dict literal, same shape as (1).
+076304773dee3fa462024f3ec914ebb4d2a1a72f:control-plane/saas_core/tests/test_webhook_security.py:generic-api-key:28
+# 4) control-plane/saas_core/tests/test_ssh_key_encryption.py:26 — an
+#    explicitly fake PEM body ("...-FAKE-KEY-BYTES...") used to test the
+#    encrypted-inbox round trip; not a real key.
+076304773dee3fa462024f3ec914ebb4d2a1a72f:control-plane/saas_core/tests/test_ssh_key_encryption.py:private-key:26
+# 5) control-plane/saas_core/utils.py:212 — `self.private_key_b64 =
+#    private_key_b64`, a plain attribute assignment (the parameter itself
+#    is supplied by the caller at runtime, never a literal here).
+076304773dee3fa462024f3ec914ebb4d2a1a72f:control-plane/saas_core/utils.py:generic-api-key:212

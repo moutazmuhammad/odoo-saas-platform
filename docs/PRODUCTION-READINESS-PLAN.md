@@ -317,8 +317,8 @@ register/start+resend, reset/start+verify were already covered.)
     before; it's a distinct testing style (form posts + redirects, not
     JSON-RPC) from `api.py`'s routes, so budget it as its own sub-step
     rather than folding it into B.1.3. **In progress, see progress log** —
-    two slices done: (1) created `saas_website/tests/` (didn't exist before
-    at all) and `TestPortalInstanceSecurity`, covering the
+    three slices done: (1) `saas_website/tests/` (didn't exist before at
+    all) + `TestPortalInstanceSecurity`, covering the
     `_document_check_access` ownership boundary (shared by every route in
     the file) and the restart/stop/start self-service actions (state
     guards, overdue-invoice block, success paths); (2) `TestPortalDatabaseOps`
@@ -327,8 +327,14 @@ register/start+resend, reset/start+verify were already covered.)
     methods mocked out — their real success paths are already covered at
     the model layer in `test_job_queue.py`), verifying only the portal
     layer's own job: auth boundary, form validation, param pass-through,
-    redirect wiring. Still open: `checkout`/`subscribe`/`change_plan`
-    (money paths), backup `create`/`restore`/`download`/`discard`, repo
+    redirect wiring; (3) `TestPortalChangePlan` covering `change-plan`/
+    `do-change-plan`/`cancel-upgrade`/`cancel-downgrade` — real portal-layer
+    logic this time (storage-reduction block, no-change detection, config
+    clamping, upgrade-vs-downgrade branch selection), with only the
+    heavier billing methods (`action_request_plan_change`/
+    `_request_downgrade`, already covered in `test_billing_overhaul.py`)
+    mocked out. Still open: `subscribe`/`checkout` (trial->paid + invoice
+    payment page), backup `create`/`restore`/`download`/`discard`, repo
     `update`/`remove`/`pull`, folder CRUD, and `spa.py` entirely.
 - **B.2** Add test files for the 4 zero-coverage models: `saas_payment.py`,
   `res_config_settings.py`, `saas_instance_package.py`, and
@@ -795,3 +801,29 @@ then the full suite via devctl.sh test — 284 tests (272+12), 0 failed,
 0 errors — commit: 6d93351. Remaining B.1.5 scope unchanged from above
 minus what's now done: `checkout`/`subscribe`/`change_plan` (money
 paths), backup routes, repo management routes, folder CRUD, `spa.py`.
+
+2026-09-14 — Step B.1.5 (third slice) — `TestPortalChangePlan` (16
+tests) for `change-plan`/`do-change-plan`/`cancel-upgrade`/
+`cancel-downgrade`. Unlike the `databases/*` slice, `do-change-plan`
+carries real portal-layer logic worth exercising directly (not just a
+thin wrapper): the storage-reduction hard block, both-fields-required
+and no-actual-change validations, and config-limit clamping — all
+tested against the real (unmocked) `_get_or_create_hosting_plan`/
+pricing-engine path, since that's pure ORM logic with no SSH/job
+involvement. Only `action_request_plan_change`/`_request_downgrade`
+themselves are mocked (already covered in `test_billing_overhaul.py`),
+to isolate the one thing genuinely new here: which of the two the
+portal route picks and how it turns the return value into a redirect.
+Found and fixed a real bug in my own first draft: a downgrade test
+held onto the mocked method's recordset argument and read a field off
+it after the HTTP request thread's own cursor had already closed
+("AssertionError: Cannot use a closed cursor") — fixed by capturing
+plain values inside the mock's `side_effect` while that cursor was
+still open, never holding the recordset itself past the request.
+Verified: scoped class alone (16/16), all of `saas_website` (39/39),
+then the full suite via devctl.sh test — 300 tests (284+16), 0 failed,
+0 errors — commit: efd355b. Remaining B.1.5 scope: `subscribe`/
+`checkout` (trial->paid + invoice payment page — the largest remaining
+single route, ~140 lines, touches `payment.provider`/`payment.method`
+compatibility), backup routes, repo management routes, folder CRUD,
+`spa.py` entirely.

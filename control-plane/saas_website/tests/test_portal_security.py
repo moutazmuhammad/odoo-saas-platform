@@ -1,7 +1,9 @@
 import json
+from contextlib import nullcontext
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
-from odoo import http
+from odoo import fields, http
 from odoo.exceptions import UserError
 from odoo.tests.common import HttpCase, tagged
 
@@ -699,3 +701,274 @@ class TestPortalInstanceFolders(_PortalTestBase):
             'instance_ids': [self.instance.id], 'folder_id': False})
         self.assertTrue((result or {}).get('success'))
         self.assertFalse(self.instance.sudo().folder_id)
+
+
+@tagged('post_install', '-at_install')
+class TestPortalBackups(_PortalTestBase):
+    """B.1.5 continued: /my/instances/<id>/{backups/ondemand,
+    backup(s)/<id>/{discard,download,restore}}.
+
+    hosting_db_list() is mocked the same way test_job_queue.py's
+    _mock_hosting_db_list does (SSH_get_connection/_compute_driver),
+    since portal_backup_ondemand calls it for real to validate the
+    requested db_name. run_in_background() (a fresh local import inside
+    the route, from odoo.addons.saas_core.utils) is patched at its
+    source-module attribute so the route's own re-import each call
+    still picks up the patched symbol — same standing rule as every
+    other run_in_background()-based route in this plan.
+    action_restore_backup()/action_restore_full_instance() are mocked
+    entirely: both are async, SSH-heavy model methods out of scope for
+    a portal-layer test.
+    """
+
+    def _mock_hosting_db_list(self, existing_db_names=()):
+        server = self.env['saas.server'].sudo().create(
+            {'name': 'backup-fake-host', 'is_docker_host': True})
+        self.instance.sudo().docker_server_id = server.id
+        stdout_lines = ['---SAAS_DB_LIST_BEGIN---']
+        stdout_lines += ['%s|' % n for n in existing_db_names]
+        stdout_lines.append('---SAAS_DB_LIST_END---')
+        fake_driver = MagicMock()
+        fake_driver.service_exec.return_value = MagicMock(
+            rc=0, stdout='\n'.join(stdout_lines) + '\n', stderr='')
+        p1 = patch.object(type(server), '_get_ssh_connection',
+                          lambda self: nullcontext(MagicMock()))
+        p2 = patch.object(type(self.instance), '_compute_driver',
+                          return_value=fake_driver)
+        for p in (p1, p2):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_ondemand_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backups/ondemand' % self.instance.id,
+            {'db_name': 'proddb'})
+        self.assertTrue(resp.headers['Location'].endswith('/my/instances'))
+
+    def test_ondemand_rejects_non_hosting_instance(self):
+        self.instance.sudo().write({'is_hosting': False})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backups/ondemand' % self.instance.id,
+            {'db_name': 'proddb'})
+        self.assertIn('/databases?error=', resp.headers['Location'])
+
+    def test_ondemand_rejects_instance_not_running(self):
+        self.instance.sudo().write({'state': 'stopped'})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backups/ondemand' % self.instance.id,
+            {'db_name': 'proddb'})
+        self.assertIn('/databases?error=', resp.headers['Location'])
+
+    def test_ondemand_requires_db_name(self):
+        self._mock_hosting_db_list()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backups/ondemand' % self.instance.id, {})
+        self.assertIn('/databases?error=', resp.headers['Location'])
+
+    def test_ondemand_rejects_unknown_db(self):
+        self._mock_hosting_db_list(existing_db_names=['otherdb'])
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backups/ondemand' % self.instance.id,
+            {'db_name': 'proddb'})
+        self.assertIn('/databases?error=', resp.headers['Location'])
+
+    def test_ondemand_blocked_while_one_is_running(self):
+        self._mock_hosting_db_list(existing_db_names=['proddb'])
+        self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_running', 'state': 'running', 'ephemeral': True})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backups/ondemand' % self.instance.id,
+            {'db_name': 'proddb'})
+        self.assertIn('/databases?error=', resp.headers['Location'])
+        self.assertIn(
+            'still in progress',
+            resp.headers['Location'].replace('%20', ' '))
+
+    def test_ondemand_success_replaces_done_backup_and_runs_in_background(self):
+        self._mock_hosting_db_list(existing_db_names=['proddb'])
+        old = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_old', 'state': 'done', 'ephemeral': True})
+        mock_run = MagicMock()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch(
+                'odoo.addons.saas_core.utils.run_in_background', mock_run):
+            resp = self._form_post(
+                '/my/instances/%d/backups/ondemand' % self.instance.id,
+                {'db_name': 'proddb'})
+        self.assertIn('/databases?notice=', resp.headers['Location'])
+        self.assertEqual(old.state, 'failed')
+        mock_run.assert_called_once()
+        self.assertEqual(mock_run.call_args.args[1], '_run_portal_backup')
+        new_backup = self.env['saas.instance.backup'].sudo().search([
+            ('instance_id', '=', self.instance.id), ('db_name', '=', 'proddb'),
+            ('id', '!=', old.id)])
+        self.assertEqual(len(new_backup), 1)
+        self.assertEqual(new_backup.state, 'running')
+
+    def test_discard_denies_non_owner(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_x', 'state': 'done', 'ephemeral': True})
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backups/%d/discard'
+            % (self.instance.id, backup.id))
+        self.assertTrue(resp.headers['Location'].endswith('/my/instances'))
+
+    def test_discard_not_found_for_non_ephemeral_backup(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'daily_snapshot', 'state': 'done', 'ephemeral': False})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backups/%d/discard'
+            % (self.instance.id, backup.id))
+        self.assertIn('error=', resp.headers['Location'])
+
+    def test_discard_running_backup_marks_failed(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_running', 'state': 'running', 'ephemeral': True})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backups/%d/discard'
+            % (self.instance.id, backup.id))
+        self.assertIn('notice=', resp.headers['Location'])
+        self.assertEqual(backup.state, 'failed')
+
+    def test_discard_done_backup_shrinks_expiry(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_done', 'state': 'done', 'ephemeral': True,
+            'expires_at': fields.Datetime.now() + timedelta(hours=8)})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        self._form_post(
+            '/my/instances/%d/backups/%d/discard'
+            % (self.instance.id, backup.id))
+        self.assertLessEqual(backup.expires_at, fields.Datetime.now())
+
+    def test_download_denies_non_owner(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_x', 'state': 'done', 'ephemeral': True})
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self.url_open(
+            '/my/instances/%d/backups/%d/download'
+            % (self.instance.id, backup.id), allow_redirects=False)
+        self.assertTrue(resp.headers['Location'].endswith('/my/instances'))
+
+    def test_download_not_found_for_pending_backup(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_pending', 'state': 'running', 'ephemeral': True})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self.url_open(
+            '/my/instances/%d/backups/%d/download'
+            % (self.instance.id, backup.id), allow_redirects=False)
+        self.assertIn('error=', resp.headers['Location'])
+
+    def test_download_surfaces_refresh_failure(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_x', 'state': 'done', 'ephemeral': True})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(
+                type(backup), '_refresh_download_url',
+                lambda self: None):
+            resp = self.url_open(
+                '/my/instances/%d/backups/%d/download'
+                % (self.instance.id, backup.id), allow_redirects=False)
+        location = resp.headers['Location'].replace('%27', "'").replace('%20', ' ')
+        self.assertIn("couldn't generate", location)
+
+    def test_download_success_redirects_to_download_url(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_x', 'state': 'done', 'ephemeral': True})
+
+        def _fake_refresh(self):
+            self.download_url = 'https://bucket.example.com/fake-signed-url'
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(type(backup), '_refresh_download_url', _fake_refresh):
+            resp = self.url_open(
+                '/my/instances/%d/backups/%d/download'
+                % (self.instance.id, backup.id), allow_redirects=False)
+        self.assertIn(resp.status_code, (301, 302, 303))
+        self.assertEqual(
+            resp.headers['Location'], 'https://bucket.example.com/fake-signed-url')
+
+    def test_restore_denies_non_owner(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_x', 'state': 'done', 'ephemeral': True})
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backup/%d/restore'
+            % (self.instance.id, backup.id))
+        self.assertTrue(resp.headers['Location'].endswith('/my/instances'))
+
+    def test_restore_rejects_wrong_instance_state(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_x', 'state': 'done', 'ephemeral': True})
+        self.instance.sudo().write({'state': 'suspended'})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backup/%d/restore'
+            % (self.instance.id, backup.id))
+        self.assertIn('error=', resp.headers['Location'])
+
+    def test_restore_rejects_backup_not_done(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_pending', 'state': 'running', 'ephemeral': True})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backup/%d/restore'
+            % (self.instance.id, backup.id))
+        self.assertIn('error=', resp.headers['Location'])
+
+    def test_restore_from_backups_page_requires_exact_confirmation(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_x', 'state': 'done', 'ephemeral': True})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._form_post(
+            '/my/instances/%d/backup/%d/restore'
+            % (self.instance.id, backup.id),
+            {'return_to': 'backups', 'confirm': 'wrong-name'})
+        self.assertIn('error=', resp.headers['Location'])
+
+    def test_restore_success_calls_model_method(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_x', 'state': 'done', 'ephemeral': True})
+        mock_restore = MagicMock()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(type(self.instance), 'action_restore_backup', mock_restore):
+            resp = self._form_post(
+                '/my/instances/%d/backup/%d/restore'
+                % (self.instance.id, backup.id))
+        self.assertIn('notice=', resp.headers['Location'])
+        mock_restore.assert_called_once_with(backup.id)
+
+    def test_restore_failure_is_caught_and_reported(self):
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'db_name': 'proddb',
+            'name': 'ondemand_x', 'state': 'done', 'ephemeral': True})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(
+                type(self.instance), 'action_restore_backup',
+                MagicMock(side_effect=Exception('boom'))):
+            resp = self._form_post(
+                '/my/instances/%d/backup/%d/restore'
+                % (self.instance.id, backup.id))
+        self.assertIn('error=', resp.headers['Location'])

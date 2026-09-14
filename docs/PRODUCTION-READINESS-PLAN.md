@@ -381,7 +381,8 @@ register/start+resend, reset/start+verify were already covered.)
   provisioning helpers (`_pg_clone_db`, `_provision_nginx`,
   `_clone_product_repos` — note these will be superseded by Phase D
   anyway, so a thin test proving current behavior is enough; don't
-  over-invest here).
+  over-invest here). **Done**, see the progress log — all 13 methods
+  covered across 3 slices (18 + 15 + 10 = 43 new tests).
 - **B.4** Stand up a frontend test runner (Vitest + React Testing Library —
   the natural fit for a Vite project already on CI). Start with the pages
   identified in the feature-coverage report as calling the highest-risk
@@ -1125,3 +1126,84 @@ Verified: scoped class alone (18/18), then the full suite via
 `_cron_check_container_health`, `_cron_sample_live_metrics`,
 `_cron_record_metrics`) and group 3 (the 3 thin provisioning-helper
 tests, `_pg_clone_db`/`_provision_nginx`/`_clone_product_repos`).
+
+2026-09-14 — Step B.3 (group 2) — the 5 operational crons:
+`_cron_renew_daily_backup_addons`/`_sync_daily_backup_suspension`,
+`_cron_verify_webhooks`, `_cron_check_container_health`,
+`_cron_sample_live_metrics`, `_cron_record_metrics`. New
+`test_operational_crons.py` (15 tests). Per the plan's own framing,
+the underlying per-instance mechanics for 3 of these are *already*
+covered elsewhere (container reconciliation in `test_reconcile.py`,
+webhook signing/delivery in `test_webhook_security.py`, metric
+series/retention in `test_metrics.py`) — only the batch/dispatch layer
+around them had never been exercised, so these tests mock the
+per-instance work item (`_sync_daily_backup_suspension`,
+`_ensure_webhooks_registered`, `_sample_live_metrics_for_host`) and
+assert the cron's own filtering/grouping/error-isolation logic:
+daily-backup maintenance only touches non-trial instances with the
+add-on enabled; webhook verification only re-registers repos that are
+`cloned`, `webhook_enabled`, have a token, and aren't already
+registered; `_cron_check_container_health` is confirmed to be exactly
+the one-line back-compat shim it claims to be (`return
+self._cron_reconcile()`) via a single delegation test, nothing more;
+both metrics crons group running instances by `docker_server_id` and
+call the per-host sampler once per host (not once per instance),
+skip instances with no docker server, and a `ValueError` from one
+host's batch doesn't stop the others from being recorded.
+`_sync_daily_backup_suspension` itself (not just its cron) got real
+depth since it wasn't covered anywhere either: pause-past-grace,
+not-yet-past-grace, resume-once-paid, and the disabled-add-on no-op
+(asserted by making the mocked `_daily_backup_unpaid_invoices` raise if
+even called, since the method must return before reaching it).
+
+Non-obvious finding: `_cron_sample_live_metrics` loops for up to
+`LIVE_METRICS_SAMPLER_MAX_RUN` (50) real seconds, re-querying watched
+instances and `time.sleep(LIVE_METRICS_SAMPLE_INTERVAL)` (5s) between
+passes, for as long as anything stays watched — a naive direct call in
+a test would either hang for tens of seconds or require faking
+`time.monotonic`. The test instead patches `time.sleep` to a no-op AND
+has the mocked `_sample_live_metrics_for_host` clear the watched
+instances' `metrics_watch_until` back into the past as its side
+effect, so the loop's own `if not watched: break` check ends it after
+exactly one real iteration — no monkeypatching of the loop bound or
+`time.monotonic` needed.
+
+Verified: scoped class alone (15/15), then the full suite via
+`devctl.sh test` — 471 tests (446+15+10 — this slice's run already
+included group 3 below), 0 failed, 0 errors — commit: ee40a55.
+
+2026-09-14 — Step B.3 (group 3, final) — the 3 provisioning helpers
+Phase D will eventually supersede: `_pg_clone_db`, `_provision_nginx`,
+`_clone_product_repos`. New `test_provisioning_crons.py` (10 tests),
+deliberately thin per the plan's own instruction not to over-invest
+here: one success-path test per method (asserting the actual SQL/shell
+command issued, e.g. `_pg_clone_db`'s `CREATE DATABASE ... WITH
+TEMPLATE ...` string, and `_clone_product_repos`'s `git clone --branch
+<branch> <url> <dir>`), one SSH/command-failure-raises-UserError test
+each, plus `_pg_clone_db`'s two guard clauses (no `db_server_id`
+configured, and its own identifier-safety regex rejecting a `; DROP
+TABLE` payload in the source/target name — worth a dedicated test
+since it's the one place in this group with a real security property,
+not just "does the happy path still work"). `_provision_nginx`'s tests
+mock `_nginx_apply_vhost` (already covered in `test_nginx_vhost.py`)
+and only exercise this method's own job: the certbot
+--nginx-then---standalone fallback and raising when both fail.
+`_clone_product_repos` needed the target instance's `docker_server_id`
+set to a real `saas.server` row — `_get_instance_path()` reads
+`docker_server_id.docker_base_path` unconditionally, and an empty
+recordset there returns `False` rather than the field's own default,
+crashing on `.rstrip()` deeper in the call chain (a good reminder that
+a model-level field `default=` never applies to a *related* read
+through an empty many2one — only to that field's own creation).
+
+Verified: scoped class alone (10/10), then the full suite via
+`devctl.sh test` — 471 tests (446+15+10), 0 failed, 0 errors — commit:
+c270622.
+
+**B.3 is now complete.** All 13 previously-untested cron/provisioning
+methods on `saas.instance` now have coverage — 43 new tests across 3
+slices (18 + 15 + 10), full suite grown from 428 to 471 tests, 0
+failed / 0 errors throughout. Next: B.4 (stand up a frontend Vitest +
+React Testing Library runner, starting with `Databases.tsx`,
+`Environments.tsx`, `ShellConsole.tsx`, `SqlConsole.tsx` — the
+highest-risk pages per the feature-coverage report).

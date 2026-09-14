@@ -539,12 +539,61 @@ unit-tested** — directly satisfying this plan's own Production-First
 requirement that cross-component/infra claims be demonstrated, not
 assumed. Commits: `2bba7f1`, `8afc01f`, `15092e1`.
 
+2026-09-15 — Step 1.5, restore path — completed the live
+restore-into-a-new-instance test flagged as not-yet-attempted above,
+which surfaced two more real bugs (five total for this step, all found by
+actually running things against the live cluster):
+
+- Backed up the real `phase-d1-test` tenant (`db.dump` + `filestore.tar.gz`
+  + `manifest.json`, produced by the fixed backup tool above), copied the
+  artifacts into a fresh `phase-d1-restore-test` OdooInstance's
+  hand-created `odoo-backups` PVC (`spec.restore`'s own documented
+  limitation: this PVC must pre-exist, populated, before the instance is
+  created — no operator code creates it), and set
+  `spec.restore.source={type: PVC, prefix: phase-d1-test, backupId:
+  ...}`.
+- **Bug 4**: `run-restore.sh` always looked under
+  `/backups/$INSTANCE_NAME`, but `INSTANCE_NAME` is the *new* instance's
+  own name — the backup actually lives under the *original* instance's
+  name. This is exactly the cross-instance onboarding scenario
+  `spec.restore` exists for (Phase 3.2), so it's not an edge case.
+  `SOURCE_PREFIX` was already wired through as an env var for exactly
+  this but never read. Fixed: falls back to `INSTANCE_NAME` (same-name
+  restore-in-place) only when `SOURCE_PREFIX` is unset.
+- **Bug 5**: `pg_restore` wasn't atomic. This Job retries in place
+  (`BackoffLimit`/`RestartPolicy: OnFailure`), and a restore that fails
+  partway leaves whatever tables it already created behind — every
+  subsequent retry then immediately fails with "relation already exists"
+  against a now-permanently-poisoned database (caught live: an early
+  attempt failed for an unrelated, transient reason mid-restore, and
+  every retry after it failed this new way instead). Fixed with
+  `--single-transaction`, so a failure rolls back completely and every
+  retry starts from the same clean empty database the first attempt did.
+- **Verified for real, end to end**: after both fixes, a clean restore
+  Job run succeeded on the first attempt. The restored database has the
+  **identical table count (121/121)** as the source (compared directly
+  via `information_schema.tables`), the restored filestore has the
+  **identical directory structure and file timestamps** as the source
+  (`addons/18.0`, `filestore/odoo`, `sessions/ez`, dated `Sep 14 18:41` —
+  i.e. genuinely carried over, not regenerated), the operator correctly
+  gated and then created the web Deployment once the restore Job
+  succeeded, and the Odoo pod itself returned a real `200` on
+  `/web/login` (confirmed with `curl` from inside the pod; a separate
+  cross-pod `curl` from an ad-hoc helper pod correctly got blocked by the
+  tenant's own egress `NetworkPolicy` — expected least-privilege
+  behavior, not a bug). Test instance and helper pods torn down after
+  verification. Commit: `a545617`.
+
+**Phase 1.5's backup/restore acceptance criterion is now fully met** — a
+real restore-from-backup reaches a serving `WorkloadReady` instance with
+the source's actual data intact, demonstrated against the live cluster,
+not asserted from reading the code.
+
 Next: remaining Phase 1 items (1.1-1.4, the actual cluster/registry/CRD
 wiring this tenant was provisioned against — note 1.1/1.3's cluster and
 registry already exist and are in active use per the above, so those are
 now more "formalize/document" than "stand up from zero"), the
-ObjectStorage backend for both scripts, a live restore-into-a-new-instance
-test (not yet attempted — needs a fresh `OdooInstance` with `spec.restore`
-pointing at the PVC-source backup just produced), and giving this dev box
-real public reachability (or switching to DNS-01) if the ACME staging
-issuance itself needs to be proven end-to-end.
+ObjectStorage backend for both scripts (still fails loud/unimplemented
+in both directions), and giving this dev box real public reachability
+(or switching to DNS-01) if the ACME staging issuance itself needs to be
+proven end-to-end.

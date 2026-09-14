@@ -42,10 +42,11 @@ class _PortalTestBase(HttpCase):
             'billing_period': 'monthly', 'environment': 'production',
             'region_id': False, 'state': 'running', 'is_hosting': True})
 
-    def _json_call(self, route):
+    def _json_call(self, route, params=None):
         resp = self.url_open(
             route,
-            data=json.dumps({'jsonrpc': '2.0', 'method': 'call', 'params': {}}),
+            data=json.dumps({'jsonrpc': '2.0', 'method': 'call',
+                             'params': params or {}}),
             headers={'Content-Type': 'application/json'})
         return resp.json().get('result')
 
@@ -494,3 +495,207 @@ class TestPortalChangePlan(_PortalTestBase):
         mock_cancel.assert_called_once()
         self.assertEqual(
             resp.headers['Location'], '/my/instances/%d' % self.instance.id)
+
+
+@tagged('post_install', '-at_install')
+class TestPortalDataRestoreRequests(_PortalTestBase):
+    """B.1.5 continued: /my/instances/<id>/{request-restore,
+    dismiss-restore-banner,decline-restore} — all synchronous JSON
+    routes, no SSH/job queue involved, so no infra mocking hazard here.
+    request-restore sends a real odoo mail.mail; that's exercised for
+    real (outgoing mail is captured by Odoo's test-mode mail queue, it
+    never actually leaves the process) since it's the one meaningfully
+    new behaviour at this layer (the "email delivery failed" branch)."""
+
+    def test_request_restore_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        result = self._json_call(
+            '/my/instances/%d/request-restore' % self.instance.id)
+        self.assertTrue((result or {}).get('error'))
+
+    def test_request_restore_rejects_no_retained_backup(self):
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        result = self._json_call(
+            '/my/instances/%d/request-restore' % self.instance.id)
+        self.assertIn('No backup available', (result or {}).get('error', ''))
+
+    def test_request_restore_rejects_missing_support_email(self):
+        self.instance.sudo().write({'retained_backup_path': '/backups/x.tar.gz'})
+        self.env['ir.config_parameter'].sudo().set_param(
+            'saas_master.support_email', '')
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        result = self._json_call(
+            '/my/instances/%d/request-restore' % self.instance.id)
+        self.assertIn('Support email is not configured', (result or {}).get('error', ''))
+
+    def test_request_restore_success_sends_mail_and_logs(self):
+        self.instance.sudo().write({'retained_backup_path': '/backups/x.tar.gz'})
+        self.env['ir.config_parameter'].sudo().set_param(
+            'saas_master.support_email', 'support@example.com')
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        result = self._json_call(
+            '/my/instances/%d/request-restore' % self.instance.id)
+        self.assertTrue((result or {}).get('success'))
+        mail = self.env['mail.mail'].sudo().search([
+            ('email_to', '=', 'support@example.com'),
+            ('subject', 'like', self.instance.subdomain)],
+            limit=1, order='id desc')
+        self.assertTrue(mail, "a real mail.mail record must be created")
+
+    def test_request_restore_surfaces_delivery_failure(self):
+        self.instance.sudo().write({'retained_backup_path': '/backups/x.tar.gz'})
+        self.env['ir.config_parameter'].sudo().set_param(
+            'saas_master.support_email', 'support@example.com')
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(
+                type(self.env['mail.mail']), 'send',
+                lambda self, *a, **kw: self.write({
+                    'state': 'exception', 'failure_reason': 'boom'})):
+            result = self._json_call(
+                '/my/instances/%d/request-restore' % self.instance.id)
+        self.assertTrue((result or {}).get('error'))
+        self.assertNotIn('success', result or {})
+
+    def test_dismiss_restore_banner_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        result = self._json_call(
+            '/my/instances/%d/dismiss-restore-banner' % self.instance.id)
+        self.assertTrue((result or {}).get('error'))
+
+    def test_dismiss_restore_banner_success(self):
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        result = self._json_call(
+            '/my/instances/%d/dismiss-restore-banner' % self.instance.id)
+        self.assertTrue((result or {}).get('success'))
+        self.assertTrue(self.instance.sudo().restore_banner_dismissed)
+
+    def test_decline_restore_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        result = self._json_call(
+            '/my/instances/%d/decline-restore' % self.instance.id)
+        self.assertTrue((result or {}).get('error'))
+
+    def test_decline_restore_clears_restore_state(self):
+        self.instance.sudo().write({
+            'retained_backup_path': '/backups/x.tar.gz',
+            'restore_banner_dismissed': False,
+        })
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        result = self._json_call(
+            '/my/instances/%d/decline-restore' % self.instance.id)
+        self.assertTrue((result or {}).get('success'))
+        self.instance.invalidate_recordset()
+        self.assertFalse(self.instance.sudo().retained_backup_path)
+        self.assertTrue(self.instance.sudo().restore_banner_dismissed)
+
+
+@tagged('post_install', '-at_install')
+class TestPortalInstanceFolders(_PortalTestBase):
+    """B.1.5 continued: /my/instances/folder/* and /my/instances/move —
+    pure ORM CRUD, partner-scoped by hand (no _document_check_access;
+    every query filters by request.env.user.partner_id itself), so the
+    ownership boundary is tested the same way the routes enforce it:
+    trying to touch a folder or instance that belongs to someone else
+    and confirming the route can't find it (not: confirming an
+    AccessError, since none of these routes raise one)."""
+
+    def _create_folder(self, name, parent_id=None, owner_login=None,
+                       owner_pass=None):
+        self.authenticate(
+            owner_login or 'portalowner@example.com',
+            owner_pass or 'ownerpass123')
+        params = {'name': name}
+        if parent_id:
+            params['parent_id'] = parent_id
+        return self._json_call('/my/instances/folder/create', params)
+
+    def test_folder_create_requires_name(self):
+        result = self._create_folder('')
+        self.assertTrue((result or {}).get('error'))
+
+    def test_folder_create_success(self):
+        result = self._create_folder('My Folder')
+        self.assertTrue((result or {}).get('success'))
+        folder = self.env['saas.instance.folder'].sudo().browse(result['folder_id'])
+        self.assertEqual(folder.partner_id, self.owner.partner_id)
+
+    def test_folder_create_ignores_parent_owned_by_someone_else(self):
+        foreign = self._create_folder(
+            'Intruder Folder', owner_login='portalintruder@example.com',
+            owner_pass='intruderpass123')
+        result = self._create_folder('Mine', parent_id=foreign['folder_id'])
+        folder = self.env['saas.instance.folder'].sudo().browse(result['folder_id'])
+        self.assertFalse(
+            folder.parent_id,
+            "a parent_id owned by another partner must be silently ignored")
+
+    def test_folder_rename_requires_name(self):
+        created = self._create_folder('Original')
+        result = self._json_call(
+            '/my/instances/folder/%d/rename' % created['folder_id'],
+            {'name': ''})
+        self.assertTrue((result or {}).get('error'))
+
+    def test_folder_rename_denies_foreign_folder(self):
+        foreign = self._create_folder(
+            'Intruder Folder', owner_login='portalintruder@example.com',
+            owner_pass='intruderpass123')
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        result = self._json_call(
+            '/my/instances/folder/%d/rename' % foreign['folder_id'],
+            {'name': 'Stolen'})
+        self.assertIn('not found', (result or {}).get('error', '').lower())
+
+    def test_folder_rename_success(self):
+        created = self._create_folder('Original')
+        result = self._json_call(
+            '/my/instances/folder/%d/rename' % created['folder_id'],
+            {'name': 'Renamed'})
+        self.assertTrue((result or {}).get('success'))
+        folder = self.env['saas.instance.folder'].sudo().browse(created['folder_id'])
+        self.assertEqual(folder.name, 'Renamed')
+
+    def test_folder_delete_blocked_when_it_has_subfolders(self):
+        parent = self._create_folder('Parent')
+        self._create_folder('Child', parent_id=parent['folder_id'])
+        result = self._json_call(
+            '/my/instances/folder/%d/delete' % parent['folder_id'])
+        self.assertTrue((result or {}).get('error'))
+        self.assertTrue(
+            self.env['saas.instance.folder'].sudo().browse(
+                parent['folder_id']).exists())
+
+    def test_folder_delete_moves_instances_to_unfiled(self):
+        folder = self._create_folder('Holds an instance')
+        self.instance.sudo().write({'folder_id': folder['folder_id']})
+        result = self._json_call(
+            '/my/instances/folder/%d/delete' % folder['folder_id'])
+        self.assertTrue((result or {}).get('success'))
+        self.assertFalse(self.instance.sudo().folder_id)
+
+    def test_move_instance_to_folder_denies_foreign_instance(self):
+        folder = self._create_folder(
+            'Intruder Folder', owner_login='portalintruder@example.com',
+            owner_pass='intruderpass123')
+        # still authenticated as the intruder from _create_folder above
+        result = self._json_call('/my/instances/move', {
+            'instance_ids': [self.instance.id],
+            'folder_id': folder['folder_id']})
+        self.assertTrue((result or {}).get('error'))
+        self.assertFalse(self.instance.sudo().folder_id)
+
+    def test_move_instance_to_folder_success(self):
+        folder = self._create_folder('Target')
+        result = self._json_call('/my/instances/move', {
+            'instance_ids': [self.instance.id],
+            'folder_id': folder['folder_id']})
+        self.assertTrue((result or {}).get('success'))
+        self.assertEqual(self.instance.sudo().folder_id.id, folder['folder_id'])
+
+    def test_move_instance_to_unfiled(self):
+        folder = self._create_folder('Target')
+        self.instance.sudo().write({'folder_id': folder['folder_id']})
+        result = self._json_call('/my/instances/move', {
+            'instance_ids': [self.instance.id], 'folder_id': False})
+        self.assertTrue((result or {}).get('success'))
+        self.assertFalse(self.instance.sudo().folder_id)

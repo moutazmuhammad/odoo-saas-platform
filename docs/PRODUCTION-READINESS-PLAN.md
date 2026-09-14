@@ -388,7 +388,9 @@ register/start+resend, reset/start+verify were already covered.)
   identified in the feature-coverage report as calling the highest-risk
   endpoints (`Databases.tsx`, `Environments.tsx`, `ShellConsole.tsx`,
   `SqlConsole.tsx`) — component-level tests that mock `api.ts`, not full
-  e2e. Wire into `.github/workflows/ci.yml`'s existing `spa` job.
+  e2e. Wire into `.github/workflows/ci.yml`'s existing `spa` job. **Done**,
+  see the progress log — Vitest + RTL + jsdom stood up, all 4 pages
+  covered (14 tests), wired into CI.
 - **B.5** Add a coverage report (Odoo's `coverage.py` integration, or the
   simplest thing that reports a number in CI) so future regressions in
   *coverage* (not just test failures) are visible, even if you don't gate
@@ -1207,3 +1209,54 @@ failed / 0 errors throughout. Next: B.4 (stand up a frontend Vitest +
 React Testing Library runner, starting with `Databases.tsx`,
 `Environments.tsx`, `ShellConsole.tsx`, `SqlConsole.tsx` — the
 highest-risk pages per the feature-coverage report).
+
+2026-09-14 — Step B.4 — stood up the frontend's first-ever test runner:
+Vitest + `@testing-library/react` + `jest-dom` + `user-event`, jsdom
+environment, a shared `renderWithProviders` helper (MemoryRouter +
+ToastProvider) under `frontend/veltnex/src/test/`. **Non-obvious
+version trap**: the latest majors of `vitest` (5.x), `jsdom` (30.x) and
+`@testing-library/jest-dom` (7.x) have all dropped Node 20 — this
+repo's CI (`.github/workflows/ci.yml`) and local dev both pin Node 20,
+and changing that is out of scope for a test-only step, so pinned to
+the latest majors that still declare Node 20 support instead:
+`vitest@4.1.11`, `jsdom@26.1.0`, `@testing-library/jest-dom@6.9.1`
+(`@testing-library/react@16.3.3` and `user-event@14.6.7` had no such
+constraint). Confirmed the pin was necessary, not just cautious: `npm
+install` with the latest majors reproducibly failed under Node 20
+(`EBADENGINE` + a crashing peer-resolution error in npm's arborist),
+and succeeded cleanly once downgraded. Test files are excluded from
+`tsconfig.json`'s `include` so the build-blocking `tsc --noEmit` step
+doesn't need them strictly typed (Vitest itself doesn't type-check).
+Covered the 4 highest-risk pages per the feature-coverage report — 14
+tests: `SqlConsole.tsx` (3: db-list load + run-query, inline
+`ApiError` message on a SQL error, Run disabled before a db loads),
+`ShellConsole.tsx` (3: session-open → Connected status, terminal
+input wired to `api.terminalInput`, error status on a failed
+`terminalCreate`), `Databases.tsx` (5: loading → list, error banner,
+create-database dialog calling `api.dbCreate` with the right args and
+reloading the list, client-side name-pattern validation blocking the
+API call, and the type-name-to-confirm delete flow calling
+`api.dbDrop`), `Environments.tsx` (3: loading → project render, error
+banner, create-staging-server dialog calling `api.environmentCreate`).
+**Two non-obvious mocking needs, both from real jsdom gaps**: (1)
+`@xterm/xterm`'s module import alone (not just `new Terminal()`)
+probes for canvas support, which jsdom doesn't implement — mocked
+`@xterm/xterm` + `@xterm/addon-fit` + the CSS import in
+`ShellConsole.test.tsx`, and had to do the same in
+`Environments.test.tsx` too, since `Environments.tsx` statically
+imports every tab's page component (including `ShellPage` ->
+`ShellConsole`) even though only one tab renders at a time; (2) jsdom
+has no `EventSource` (used for the terminal's SSE output stream) — a
+small fake class stood in via `vi.stubGlobal`. Wired into
+`.github/workflows/ci.yml`'s existing `spa` job as a new "Component
+tests (Vitest)" step ahead of the typecheck/build step (renamed the
+job "SPA typecheck + test + build"); confirmed `npm run build` still
+passes unmodified. Verified: `npm run test` — 4 test files, 14 tests,
+0 failed. Commit: 1d2c3fe.
+
+**B.4 is now complete.** The frontend went from zero test
+infrastructure to a working Vitest + RTL runner wired into CI, with
+component-level coverage of the 4 highest-risk portal pages (14
+tests). Next: B.5 (add a coverage report — Odoo's `coverage.py`
+integration or the simplest thing that reports a number in CI — so
+regressions in *coverage*, not just test failures, become visible).

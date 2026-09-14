@@ -1339,7 +1339,7 @@ above it for SEC-001/002). Status:
 | SEC-011 webhook oracle | Medium | **Mostly fixed** | Uniform 404 deny (`webhook.py:_webhook_deny`) + per-repo rate limit (30/60ish window) added. Residual: the initial secret lookup (`webhook.py:61-64`) is still a plain ORM equality `search`, not constant-time — the "minor" timing oracle the audit already downgraded is technically still there. |
 | SEC-012 log-stream authz | Medium | **Fixed — but untracked** | `stream_instance_logs` now calls `instance.check_access('read')` explicitly (`container_logs.py:41`) before streaming. This fix isn't mentioned anywhere in `REMEDIATION_PLAN.md`, i.e. it shipped without the tracking doc being updated — exactly the "audit document stops being the only source of truth" problem C.1 exists to catch. |
 | SEC-013 OTP brute force | Medium | **Fixed** | Window tightened to 6/600 (`registration.py:225`, `api.py:259,354`); `code` is `EncryptedChar`; `hmac.compare_digest` constant-time verify (`saas_registration.py:32,126`). |
-| SEC-014 SSH command injection | Medium | **Improved, not architecturally resolved** | `shlex.quote` call count grew to 142 (vs. ~140 `.execute(` call sites) — broad adoption — but there's still no central/audited command-builder; quoting discipline remains per-call-site. |
+| SEC-014 SSH command injection | Medium | **Confirmed not currently exploitable (2026-09-15); still no central builder** | A dedicated audit traced every `.execute()`/`write_file()` call site in `saas_core` (pip_packages, subdomain, DB names/users, git repo URLs/branches, webhook payloads, `extra_config`, the SQL console) back to its origin — every one is correctly quoted or regex-validated before reaching a shell string, including every customer-facing entry point. Two latent, not-currently-reachable footguns found and fixed (`service_exec`/`_restic_cmd` quoting only an env var's value, not its key — see progress log). The architectural point stands: quoting discipline is still per-call-site, not centrally enforced, so this needs re-auditing after any change that adds a new `.execute()` site with dynamic input. |
 | SEC-015 broad `except Exception` | Medium | **Still open** | Count actually **grew** to 125 (from the audit's 85) — B.3 added more per-instance cron try/except/rollback blocks following the existing (deliberate, for cron resilience) pattern. Not new backsliding, but worth flagging so the raw number isn't misread as improvement. |
 | SEC-016 RBAC granularity | Medium | **Partially fixed (2026-09-15)** | A third group, `group_saas_host_shell`, now exists (split out of `group_saas_manager` as part of the SEC-005 fix below) — the first crack in the "2 groups total" ceiling, though still far short of the audit's broader recommendation (e.g. separate billing/support/infra tiers). |
 | SEC-017 restore-confirm UX | Low | **Still open (cosmetic)** | `backup_restore` (`api.py:1366`) still confirms against `backup.db_name or instance.subdomain`, unchanged. Ownership enforcement itself (the actual security control) remains correct. |
@@ -1469,3 +1469,48 @@ here ever executes; 2 from a stale `libpcre2-8-0` with an available
 added `apt-get upgrade` so base-image packages get patched too, not
 just the ones explicitly installed), re-scanned clean, and re-verified
 `pg_dump`/`rclone`/the non-root uid all still work. Commit: `9284096`.
+
+2026-09-15 — SEC-014 (SSH command injection) — ran a dedicated audit
+(not just a `shlex.quote` grep count, per this item's own prior "not
+architecturally resolved" caveat) tracing every `.execute()`/
+`write_file()` call site in `saas_core` back to where its interpolated
+values originate: `pip_packages` (validated by `_PIP_PACKAGE_RE` before
+any shell command is built, both portal entry points correctly catch
+the validation error before reaching that code), `subdomain` (charset
+constrained by `SUBDOMAIN_RE` at both the model and every customer-
+facing controller, so it can never contain a shell metacharacter),
+database names/users (re-validated against strict identifier regexes
+immediately before use, every site), git repo URLs/branches (quoted,
+plus SSRF/argument-injection blocked by `assert_safe_git_url`), webhook
+payloads (only ever written to DB fields — the actual git pull uses the
+owner-configured branch, never payload data), `extra_config` (not
+exposed to any portal customer at all), and the SQL console (by design
+lets a customer run arbitrary SQL against their *own* database, but the
+query never touches a shell string — base64-encoded into an env var,
+executed via `cr.execute()` inside a Python heredoc, `SET TRANSACTION
+READ ONLY` enforced by Postgres itself). **Found no currently-
+exploitable injection.**
+
+Did find two real, if not-currently-reachable, footguns: `ssh_docker_
+driver.py`'s `service_exec()` and `saas_instance_backup.py`'s
+`_restic_cmd()` both build `-e K=V` env-var flags by quoting only V,
+leaving the key K unquoted — safe today only because every caller
+passes a hardcoded literal key. Fixed both to quote the whole `K=V`
+pair as one token. Deliberately did NOT centralize `_restic_cmd`'s
+`args`-list quoting the same audit also flagged: several callers
+already `shlex.quote()` individual args themselves before adding them
+to that list, so quoting again inside `_restic_cmd` would double-quote
+those and silently corrupt the actual value restic receives — not a
+risk worth taking on a live, largely-untested backup path to harden a
+pattern nothing can currently reach. 3 new tests, full suite green: 503
+tests (500 + 3), 0 failed/errors. Commit: `170a9f0`.
+
+**This closes out the current pass of easily-fixable, high-value
+production security items** identified opportunistically while working
+the live SSH/Docker path (SEC-005, SEC-006, SEC-007, SEC-014 all
+touched this session). Remaining open items (SEC-004, SEC-009, SEC-011,
+SEC-015, SEC-016 beyond its first crack, SEC-017/018/019) are each
+either already partially addressed, gated on Phase D, require live
+production access this session doesn't have, or are low-severity/
+cosmetic — none stood out as a quick, safe, high-value fix the way
+these four did.

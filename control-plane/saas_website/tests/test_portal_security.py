@@ -1113,3 +1113,119 @@ class TestPortalRepoManagement(_PortalTestBase):
         mock_run.assert_called_once()
         self.assertEqual(
             mock_run.call_args.args[1], '_do_webhook_pull_and_restart')
+
+
+@tagged('post_install', '-at_install')
+class TestPortalSubscribeAndCheckout(_PortalTestBase):
+    """B.1.5 (final slice): /my/instances/<id>/{subscribe,checkout} — the
+    trial->paid conversion form-post and the invoice payment page. The
+    last remaining piece of portal.py's route coverage.
+
+    action_subscribe_from_trial() is a synchronous, SSH-free,
+    billing-only ORM method already covered at the model layer in
+    test_billing_overhaul.py, so — same "thin HTTP smoke test"
+    principle as change-plan — it's mocked here to isolate what's new
+    at this layer: form validation, config clamping, and turning the
+    return value into a checkout-vs-instance-page redirect.
+    _get_or_create_hosting_plan()'s pricing-engine lookup is left
+    unmocked (pure ORM/pricing logic, same as the change-plan tests).
+
+    checkout is a render-only GET route; it's exercised for real
+    (a real posted account.move, real payment.provider compatibility
+    lookup) since there's no heavier async work to isolate away from.
+    """
+
+    def _subscribe(self, workers, storage, billing_period='monthly'):
+        return self._form_post(
+            '/my/instances/%d/subscribe' % self.instance.id,
+            {'workers': str(workers), 'storage': str(storage),
+             'billing_period': billing_period})
+
+    def test_subscribe_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self._subscribe(4, 10)
+        self.assertTrue(resp.headers['Location'].endswith('/my/instances'))
+
+    def test_subscribe_requires_both_fields(self):
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._subscribe(0, 10)
+        self.assertIn('/upgrade?error=', resp.headers['Location'])
+
+    def test_subscribe_charged_upgrade_redirects_to_checkout(self):
+        mock_subscribe = MagicMock(return_value=MagicMock(amount_total=20.0))
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(
+                type(self.instance), 'action_subscribe_from_trial',
+                mock_subscribe):
+            resp = self._subscribe(4, 10)
+        self.assertEqual(
+            resp.headers['Location'],
+            '/my/instances/%d/checkout' % self.instance.id)
+        mock_subscribe.assert_called_once()
+        self.assertEqual(
+            mock_subscribe.call_args.kwargs.get('billing_period'), 'monthly')
+
+    def test_subscribe_zero_charge_redirects_to_instance(self):
+        mock_subscribe = MagicMock(return_value=True)
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(
+                type(self.instance), 'action_subscribe_from_trial',
+                mock_subscribe):
+            resp = self._subscribe(4, 10)
+        self.assertEqual(
+            resp.headers['Location'], '/my/instances/%d' % self.instance.id)
+
+    def test_subscribe_propagates_model_rejection(self):
+        mock_subscribe = MagicMock(
+            side_effect=UserError("This instance is not on a trial plan."))
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(
+                type(self.instance), 'action_subscribe_from_trial',
+                mock_subscribe):
+            resp = self._subscribe(4, 10)
+        self.assertIn('/upgrade?error=', resp.headers['Location'])
+
+    def test_subscribe_clamps_workers_to_config_limits(self):
+        seen = {}
+
+        def _capture(instance, plan_id, billing_period='monthly'):
+            seen['workers'] = instance.env['saas.plan'].browse(plan_id).workers
+            return True
+
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(
+                type(self.instance), 'action_subscribe_from_trial', _capture):
+            # default hosting config max_workers is 8 — ask for way more.
+            self._subscribe(999, 10)
+        self.assertEqual(seen.get('workers'), 8)
+
+    def test_checkout_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self.url_open(
+            '/my/instances/%d/checkout' % self.instance.id,
+            allow_redirects=False)
+        self.assertTrue(resp.headers['Location'].endswith('/my/instances'))
+
+    def test_checkout_redirects_when_no_unpaid_invoice(self):
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self.url_open(
+            '/my/instances/%d/checkout' % self.instance.id,
+            allow_redirects=False)
+        self.assertEqual(
+            resp.headers['Location'], '/my/instances/%d' % self.instance.id)
+
+    def test_checkout_renders_with_unpaid_restoration_invoice(self):
+        product = self.instance._get_billing_product()
+        invoice = self.env['account.move'].sudo().create({
+            'move_type': 'out_invoice',
+            'partner_id': self.owner.partner_id.id,
+            'invoice_date': fields.Date.today(),
+            'invoice_line_ids': [(0, 0, {
+                'product_id': product.id, 'name': 'Restoration charge',
+                'quantity': 1, 'price_unit': 20.0})],
+        })
+        invoice.action_post()
+        self.instance.sudo().write({'restoration_invoice_id': invoice.id})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self.url_open('/my/instances/%d/checkout' % self.instance.id)
+        self.assertEqual(resp.status_code, 200)

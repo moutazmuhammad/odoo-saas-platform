@@ -316,7 +316,16 @@ register/start+resend, reset/start+verify were already covered.)
     ~90 routes) is entirely uncovered and wasn't broken out separately
     before; it's a distinct testing style (form posts + redirects, not
     JSON-RPC) from `api.py`'s routes, so budget it as its own sub-step
-    rather than folding it into B.1.3.
+    rather than folding it into B.1.3. **In progress, see progress log** —
+    first slice done: created `saas_website/tests/` (didn't exist before
+    at all) and `TestPortalInstanceSecurity`, covering the
+    `_document_check_access` ownership boundary (shared by every route in
+    the file) and the restart/stop/start self-service actions (state
+    guards, overdue-invoice block, success paths). Still open: `databases/*`
+    and `databases/upgrade_module` at the portal layer, `checkout`/
+    `subscribe`/`change_plan` (money paths), backup `create`/`restore`/
+    `download`/`discard`, repo `update`/`remove`/`pull`, folder CRUD, and
+    `spa.py` entirely.
 - **B.2** Add test files for the 4 zero-coverage models: `saas_payment.py`,
   `res_config_settings.py`, `saas_instance_package.py`, and
   **`saas_terminal_session.py`** — prioritize the terminal one, since it's
@@ -737,3 +746,24 @@ to `TestWebhookSecurity` alone: 10/10 clean, then the full suite) —
 commit: 5cf19ca. Next: B.1.5 (`saas_website/controllers/spa.py` +
 `portal.py`, ~90 QWeb form-post routes, untested, distinct
 form-post/redirect testing style from `api.py`).
+
+2026-09-14 — Step B.1.5 (first slice) — `saas_website` had no `tests/`
+directory at all; created one plus `TestPortalInstanceSecurity` (11
+tests) covering `portal.py`'s cross-cutting access-control boundary
+(`_document_check_access`, which every one of its ~55 routes delegates
+to) via the `status`/`upgrade`/`restart`/`start`/`stop` routes, plus the
+restart/stop/start self-service actions' state guards (must-be-running,
+must-be-stopped, overdue-invoice block) and success paths. Confirmed
+`action_restart()`/`action_portal_start()` end in `saas.job._enqueue`
+and `action_stop()` ends in `run_in_background()` — same two hazards
+already documented above — so success-path tests patch those directly
+(never `_spawn_worker`), and patch `_ensure_can_ssh()` to a no-op (same
+pattern as `test_job_queue.py`) since SSH provisioning itself isn't
+what's under test here. Verified: scoped run of the new class alone
+first (11/11 clean), then the full suite via devctl.sh test — 272 tests
+(261+11), 0 failed, 0 errors — commit: 037575b. Remaining B.1.5 scope:
+`databases/*` + `upgrade_module` at the portal layer, `checkout`/
+`subscribe`/`change_plan` (money paths), backup `create`/`restore`/
+`download`/`discard`, repo `update`/`remove`/`pull`, folder CRUD, and
+`spa.py` entirely — large surface, budget as further incremental slices
+rather than one pass.

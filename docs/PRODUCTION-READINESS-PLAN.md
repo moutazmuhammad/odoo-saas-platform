@@ -317,15 +317,19 @@ register/start+resend, reset/start+verify were already covered.)
     before; it's a distinct testing style (form posts + redirects, not
     JSON-RPC) from `api.py`'s routes, so budget it as its own sub-step
     rather than folding it into B.1.3. **In progress, see progress log** —
-    first slice done: created `saas_website/tests/` (didn't exist before
+    two slices done: (1) created `saas_website/tests/` (didn't exist before
     at all) and `TestPortalInstanceSecurity`, covering the
     `_document_check_access` ownership boundary (shared by every route in
     the file) and the restart/stop/start self-service actions (state
-    guards, overdue-invoice block, success paths). Still open: `databases/*`
-    and `databases/upgrade_module` at the portal layer, `checkout`/
-    `subscribe`/`change_plan` (money paths), backup `create`/`restore`/
-    `download`/`discard`, repo `update`/`remove`/`pull`, folder CRUD, and
-    `spa.py` entirely.
+    guards, overdue-invoice block, success paths); (2) `TestPortalDatabaseOps`
+    covering `databases/{create,duplicate,drop,upgrade-module,
+    reset-admin-password,op/<id>/dismiss}` as thin HTTP smoke tests (model
+    methods mocked out — their real success paths are already covered at
+    the model layer in `test_job_queue.py`), verifying only the portal
+    layer's own job: auth boundary, form validation, param pass-through,
+    redirect wiring. Still open: `checkout`/`subscribe`/`change_plan`
+    (money paths), backup `create`/`restore`/`download`/`discard`, repo
+    `update`/`remove`/`pull`, folder CRUD, and `spa.py` entirely.
 - **B.2** Add test files for the 4 zero-coverage models: `saas_payment.py`,
   `res_config_settings.py`, `saas_instance_package.py`, and
   **`saas_terminal_session.py`** — prioritize the terminal one, since it's
@@ -767,3 +771,27 @@ first (11/11 clean), then the full suite via devctl.sh test — 272 tests
 `download`/`discard`, repo `update`/`remove`/`pull`, folder CRUD, and
 `spa.py` entirely — large surface, budget as further incremental slices
 rather than one pass.
+
+2026-09-14 — Step B.1.5 (second slice) — `TestPortalDatabaseOps` (12
+tests) for `databases/{create,duplicate,drop,upgrade-module,
+reset-admin-password,op/<id>/dismiss}`. Deliberately mocked the
+instance model methods themselves
+(`hosting_db_create_async`/`hosting_db_duplicate_async`/
+`hosting_db_drop_async`/`hosting_db_upgrade_module_async`/
+`hosting_db_reset_admin_password`) rather than re-deriving the SSH/
+job-queue mocking already done for these at the model layer in
+`test_job_queue.py` — this layer's own job is the portal wrapper (auth,
+form validation, param pass-through, redirect querystring), which is
+what these tests actually verify. Refactored the shared
+instance/owner/intruder fixture into a `_PortalTestBase` mixin (used by
+both test classes now) and added a `_form_post()` helper for the
+file's `csrf=True` routes: computes the token via
+`http.Request.csrf_token(self)`, reusing the same trick Odoo's own
+`account/tests/test_portal_attachment.py` uses (the method only reads
+`self.env` + `self.session.sid`, both of which `HttpCase` already sets,
+so the unbound method can be called with the TestCase standing in for
+the request). Verified: scoped `saas_website` run first (23/23 clean),
+then the full suite via devctl.sh test — 284 tests (272+12), 0 failed,
+0 errors — commit: 6d93351. Remaining B.1.5 scope unchanged from above
+minus what's now done: `checkout`/`subscribe`/`change_plan` (money
+paths), backup routes, repo management routes, folder CRUD, `spa.py`.

@@ -2,7 +2,8 @@
 # DefaultBackupToolImage and restore.go DefaultRestoreToolImage — the same
 # image serves both Jobs, see the latter's doc comment). Bundles
 # pg_dump/pg_restore (matching the OdooInstance's supported PostgreSQL
-# majors), tar/gzip, and this repo's run-backup.sh/run-restore.sh.
+# majors), tar/gzip, rclone (S3-compatible ObjectStorage destinations/
+# sources), and this repo's run-backup.sh/run-restore.sh.
 #
 # Runs non-root with a read-only rootfs (see genericHardenedSecurityContext
 # in compute/operator/internal/resources/deployment.go) — every write goes
@@ -11,9 +12,10 @@
 FROM postgres:16-bookworm
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends postgresql-client-16 && \
+    apt-get install -y --no-install-recommends postgresql-client-16 rclone && \
     rm -rf /var/lib/apt/lists/*
 
+COPY lib-objectstorage.sh /usr/local/lib/lib-objectstorage.sh
 COPY run-backup.sh run-restore.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/run-backup.sh /usr/local/bin/run-restore.sh
 

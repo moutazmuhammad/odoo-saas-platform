@@ -14,6 +14,7 @@
 # restore consumes, so a database dump can never be paired with a mismatched
 # filestore snapshot (see docs/architecture.md, "Backups").
 set -euo pipefail
+source /usr/local/lib/lib-objectstorage.sh
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 WORKDIR="$(mktemp -d)"
@@ -69,14 +70,31 @@ case "${DESTINATION_TYPE:-PVC}" in
     fi
     ;;
   ObjectStorage)
-    # Not yet exercised against a real bucket — the platform doesn't have
-    # object-storage credentials wired into this environment yet. Left
-    # deliberately explicit (fail loud) rather than silently no-op, so a
-    # misconfigured instance is never mistaken for a successful backup.
-    echo "[backup-tool] ERROR: ObjectStorage destination needs an S3-compatible" >&2
-    echo "  CLI (aws/rclone) added to this image and endpoint/bucket wiring below" >&2
-    echo "  this line — not implemented yet in this build." >&2
-    exit 1
+    # KEY_BASE mirrors the PVC case's per-instance top-level directory:
+    # DESTINATION_PREFIX, when set, lets several instances share one
+    # bucket without colliding (see BackupDestinationSpec.Prefix's doc
+    # comment); falling back to INSTANCE_NAME keeps the common case (one
+    # instance, no explicit prefix) collision-free by default too. This
+    # must stay the exact same fallback run-restore.sh's SOURCE_PREFIX
+    # uses, since restore has to find what backup wrote.
+    KEY_BASE="${DESTINATION_PREFIX:-$INSTANCE_NAME}"
+    _rclone_configure_remote
+    DEST="objstore:${DESTINATION_BUCKET}/${KEY_BASE}/${STAMP}"
+    echo "[backup-tool] publishing to s3://${DESTINATION_BUCKET}/${KEY_BASE}/${STAMP}"
+    rclone copy "$WORKDIR" "$DEST" --checksum
+
+    if [ "${RETENTION:-0}" -gt 0 ]; then
+      BASE_REMOTE="objstore:${DESTINATION_BUCKET}/${KEY_BASE}"
+      RUNS=$(rclone lsf "$BASE_REMOTE" --dirs-only | sed 's#/$##' | sort)
+      COUNT=$(printf '%s\n' "$RUNS" | grep -c . || true)
+      if [ "$COUNT" -gt "$RETENTION" ]; then
+        PRUNE_N=$((COUNT - RETENTION))
+        printf '%s\n' "$RUNS" | head -n "$PRUNE_N" | while read -r old; do
+          echo "[backup-tool] pruning old run $old (retention=${RETENTION})"
+          rclone purge "${BASE_REMOTE}/${old}"
+        done
+      fi
+    fi
     ;;
   *)
     echo "[backup-tool] ERROR: unknown DESTINATION_TYPE '${DESTINATION_TYPE:-}'" >&2

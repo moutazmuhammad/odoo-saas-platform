@@ -11,6 +11,7 @@
 #   ODOO_DATA_DIR, DB_HOST, DB_PORT, DB_USER, DB_NAME, PGPASSWORD
 #   (ObjectStorage only) OBJECT_STORAGE_ENDPOINT/ACCESS_KEY/SECRET_KEY
 set -euo pipefail
+source /usr/local/lib/lib-objectstorage.sh
 
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
@@ -44,14 +45,29 @@ case "${SOURCE_TYPE:-PVC}" in
     cp "${SRC}/db.dump" "${SRC}/filestore.tar.gz" "$WORKDIR/"
     ;;
   ObjectStorage)
-    # Not yet exercised against a real bucket — mirrors run-backup.sh's own
-    # ObjectStorage gap (no S3-compatible CLI in this image yet). Left
-    # deliberately explicit (fail loud) rather than silently no-op, so a
-    # misconfigured instance is never mistaken for a successful restore.
-    echo "[restore-tool] ERROR: ObjectStorage source needs an S3-compatible" >&2
-    echo "  CLI (aws/rclone) added to this image and endpoint/bucket wiring below" >&2
-    echo "  this line — not implemented yet in this build." >&2
-    exit 1
+    # KEY_BASE must use the exact same fallback as run-backup.sh's
+    # DESTINATION_PREFIX-or-INSTANCE_NAME, for the same cross-instance
+    # onboarding reason documented on the PVC case above.
+    KEY_BASE="${SOURCE_PREFIX:-$INSTANCE_NAME}"
+    _rclone_configure_remote
+    BASE_REMOTE="objstore:${SOURCE_BUCKET}/${KEY_BASE}"
+    if [ -n "${BACKUP_ID:-}" ]; then
+      RUN="${BACKUP_ID}"
+    else
+      RUN="$(rclone lsf "$BASE_REMOTE" --dirs-only | sed 's#/$##' | sort | tail -n1)"
+    fi
+    if [ -z "$RUN" ]; then
+      echo "[restore-tool] ERROR: no backup found at s3://${SOURCE_BUCKET}/${KEY_BASE}${BACKUP_ID:+/$BACKUP_ID}" >&2
+      exit 1
+    fi
+    SRC_REMOTE="${BASE_REMOTE}/${RUN}"
+    echo "[restore-tool] restoring from s3://${SOURCE_BUCKET}/${KEY_BASE}/${RUN}"
+    rclone copy "${SRC_REMOTE}/db.dump" "$WORKDIR/" --checksum
+    rclone copy "${SRC_REMOTE}/filestore.tar.gz" "$WORKDIR/" --checksum
+    if [ ! -f "${WORKDIR}/db.dump" ] || [ ! -f "${WORKDIR}/filestore.tar.gz" ]; then
+      echo "[restore-tool] ERROR: backup artifacts not found at s3://${SOURCE_BUCKET}/${KEY_BASE}/${RUN}" >&2
+      exit 1
+    fi
     ;;
   *)
     echo "[restore-tool] ERROR: unknown SOURCE_TYPE '${SOURCE_TYPE:-}'" >&2

@@ -341,8 +341,12 @@ register/start+resend, reset/start+verify were already covered.)
     way); (5) `TestPortalBackups` covering `backups/ondemand`,
     `backups/<id>/discard`, `backups/<id>/download`, `backup/<id>/restore`
     (route paths are inconsistently plural/singular — that's the app, not
-    a typo). Still open: `subscribe`/`checkout` (trial->paid + invoice
-    payment page), repo `update`/`remove`/`pull`, and `spa.py` entirely.
+    a typo); (6) `TestPortalRepoManagement` covering `update-repo`/
+    `remove-repo`/`pull-repo` — these three always redirect to the same
+    `/my/instances/<id>` on success or internal no-op alike, so coverage
+    checks the resulting `saas.instance.repo` state and which model
+    method fired, not the redirect target. Still open: `subscribe`/
+    `checkout` (trial->paid + invoice payment page) and `spa.py` entirely.
 - **B.2** Add test files for the 4 zero-coverage models: `saas_payment.py`,
   `res_config_settings.py`, `saas_instance_package.py`, and
   **`saas_terminal_session.py`** — prioritize the terminal one, since it's
@@ -879,3 +883,23 @@ of `saas_website` (80/80), then the full suite via devctl.sh test — 341
 tests (320+21), 0 failed, 0 errors — commit: 24766d8. Remaining B.1.5
 scope: `subscribe`/`checkout` (still the largest remaining piece), repo
 management routes (`update`/`remove`/`pull`), and `spa.py` entirely.
+
+2026-09-14 — Step B.1.5 (sixth slice) — `TestPortalRepoManagement` (11
+tests) for `update-repo`/`remove-repo`/`pull-repo`. Unlike most routes
+in this file, these three always redirect to the same
+`/my/instances/<id>` whether they succeed or silently no-op internally
+— both `action_redeploy`/`action_restart` call sites wrap the call in
+a bare `except Exception`, so even a raised `UserError` never reaches
+the customer as a visible error — so these tests check the resulting
+`saas.instance.repo` row and which model method fired, not the
+redirect target (except for the auth-denied case, which redirects to
+the bare `/my/instances` listing and stays distinguishable).
+`action_redeploy`/`action_restart` mocked entirely (async + SSH, out
+of scope here); `run_in_background` (pull-repo's fresh local import)
+patched at its source module attribute, same standing rule as every
+other `run_in_background()` route in this plan. Verified: scoped class
+alone (11/11), all of `saas_website` (91/91), then the full suite via
+devctl.sh test — 352 tests (341+11), 0 failed, 0 errors — commit:
+f9bbc07. Remaining B.1.5 scope: `subscribe`/`checkout` (trial->paid +
+invoice payment page, the last and largest remaining piece) and
+`spa.py` entirely.

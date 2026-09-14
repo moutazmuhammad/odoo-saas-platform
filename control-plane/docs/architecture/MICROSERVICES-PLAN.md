@@ -597,3 +597,28 @@ ObjectStorage backend for both scripts (still fails loud/unimplemented
 in both directions), and giving this dev box real public reachability
 (or switching to DNS-01) if the ACME staging issuance itself needs to be
 proven end-to-end.
+
+2026-09-15 — Step 1.2 — added the `kubeconfig` credential field to
+`saas.region` (`control-plane/saas_core/models/saas_region.py`), the
+storage half of the operator-per-region topology decision — one operator
+Deployment per cluster, one cluster per region, each region now able to
+hold the credential its own cluster needs. Followed the codebase's
+existing SEC-002 `EncryptedChar` convention exactly (same shape as
+`saas.instance`'s `admin_password`/`db_password`/`restic_password`, and
+directly precedented by `saas.ssh.key.pair.private_key_enc` for a
+similarly multi-KB secret blob): manager-only via field-level `groups=`,
+encrypted at rest once `saas_secret_key` is configured, plaintext
+passthrough otherwise, no `size=`. Added a `widget="text"` field to the
+region form view and 3 new tests
+(`saas_core/tests/test_region_kubeconfig.py`) mirroring
+`test_ssh_key_encryption.py`'s coverage (encrypted round-trip, plaintext
+passthrough when unconfigured, optional-field default). Verified: full
+suite green, 474 tests (471 + 3 new), 0 failed/errors — commit `ddb53da`.
+
+**Deliberately not yet consumed by anything** — no driver code reads
+`saas.region.kubeconfig` yet; that wiring belongs to Phase 2's
+`KubernetesDriver` work, not this storage-only step. 1.2 is otherwise
+complete. Remaining in Phase 1: 1.1/1.3 (formalize the already-in-use
+cluster/registry), 1.4 (the image-strategy integration code — still not
+started, the one item in this phase the plan itself flags as needing
+real new code), and the ObjectStorage backend gap noted above.

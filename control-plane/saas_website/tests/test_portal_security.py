@@ -972,3 +972,144 @@ class TestPortalBackups(_PortalTestBase):
                 '/my/instances/%d/backup/%d/restore'
                 % (self.instance.id, backup.id))
         self.assertIn('error=', resp.headers['Location'])
+
+
+@tagged('post_install', '-at_install')
+class TestPortalRepoManagement(_PortalTestBase):
+    """B.1.5 continued: /my/instances/<id>/{update-repo,remove-repo,
+    pull-repo}. All three redirect to the same '/my/instances/<id>'
+    URL whether they succeed or silently no-op internally (unlike most
+    of this file's other routes, there's no notice=/error=
+    querystring), so what's actually testable — and what these tests
+    check — is the resulting saas.instance.repo state and which model
+    method got called, not the redirect target (except for the auth
+    boundary, which redirects to the bare '/my/instances' listing
+    instead and so IS distinguishable).
+
+    action_redeploy()/action_restart() are async + SSH (_ensure_can_ssh
+    is not even relevant here: both routes swallow any exception from
+    them with a bare 'except Exception', so a raised UserError wouldn't
+    surface as a test failure anyway) — mocked entirely, out of scope
+    for this layer. run_in_background() (pull-repo, a fresh local
+    import inside the route body) is patched at its source module
+    attribute, same standing rule as every other run_in_background()
+    route in this plan.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.instance.sudo().write({'is_hosting': True, 'state': 'running'})
+
+    def test_update_repo_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self._form_post(
+            '/my/instances/%d/update-repo' % self.instance.id,
+            {'repo_url': 'https://github.com/acme/widgets.git'})
+        self.assertEqual(resp.headers['Location'], '/my/instances')
+
+    def test_update_repo_ignored_when_instance_not_running(self):
+        self.instance.sudo().write({'state': 'stopped'})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        self._form_post(
+            '/my/instances/%d/update-repo' % self.instance.id,
+            {'repo_url': 'https://github.com/acme/widgets.git'})
+        self.assertFalse(self.instance.sudo().repo_ids)
+
+    def test_update_repo_creates_new_repo_and_redeploys(self):
+        mock_redeploy = MagicMock()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(type(self.instance), 'action_redeploy', mock_redeploy):
+            resp = self._form_post(
+                '/my/instances/%d/update-repo' % self.instance.id,
+                {'repo_url': 'https://github.com/acme/widgets.git',
+                 'repo_branch': 'main', 'git_token': 'ghp_secret'})
+        self.assertEqual(
+            resp.headers['Location'], '/my/instances/%d' % self.instance.id)
+        repo = self.instance.sudo().repo_ids
+        self.assertEqual(len(repo), 1)
+        self.assertEqual(repo.repo_url, 'https://github.com/acme/widgets.git')
+        self.assertEqual(repo.branch, 'main')
+        self.assertTrue(repo.webhook_enabled)
+        mock_redeploy.assert_called_once()
+
+    def test_update_repo_updates_existing_repo(self):
+        repo = self.env['saas.instance.repo'].sudo().create({
+            'instance_id': self.instance.id,
+            'repo_url': 'https://github.com/acme/old.git', 'branch': 'main'})
+        mock_redeploy = MagicMock()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(type(self.instance), 'action_redeploy', mock_redeploy):
+            self._form_post(
+                '/my/instances/%d/update-repo' % self.instance.id,
+                {'repo_url': 'https://github.com/acme/new.git',
+                 'repo_branch': 'develop'})
+        self.assertEqual(repo.repo_url, 'https://github.com/acme/new.git')
+        self.assertEqual(repo.branch, 'develop')
+        mock_redeploy.assert_called_once()
+
+    def test_update_repo_with_empty_url_removes_existing_repo(self):
+        repo = self.env['saas.instance.repo'].sudo().create({
+            'instance_id': self.instance.id,
+            'repo_url': 'https://github.com/acme/old.git', 'branch': 'main'})
+        mock_restart = MagicMock()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(type(self.instance), 'action_restart', mock_restart):
+            self._form_post(
+                '/my/instances/%d/update-repo' % self.instance.id,
+                {'repo_url': ''})
+        self.assertFalse(repo.exists())
+        mock_restart.assert_called_once()
+
+    def test_remove_repo_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self._form_post(
+            '/my/instances/%d/remove-repo' % self.instance.id)
+        self.assertEqual(resp.headers['Location'], '/my/instances')
+
+    def test_remove_repo_is_a_noop_with_no_repo(self):
+        mock_redeploy = MagicMock()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(type(self.instance), 'action_redeploy', mock_redeploy):
+            self._form_post('/my/instances/%d/remove-repo' % self.instance.id)
+        mock_redeploy.assert_not_called()
+
+    def test_remove_repo_deletes_and_redeploys(self):
+        repo = self.env['saas.instance.repo'].sudo().create({
+            'instance_id': self.instance.id,
+            'repo_url': 'https://github.com/acme/widgets.git', 'branch': 'main'})
+        mock_redeploy = MagicMock()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(type(self.instance), 'action_redeploy', mock_redeploy):
+            self._form_post('/my/instances/%d/remove-repo' % self.instance.id)
+        self.assertFalse(repo.exists())
+        mock_redeploy.assert_called_once()
+
+    def test_pull_repo_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self._form_post(
+            '/my/instances/%d/pull-repo' % self.instance.id)
+        self.assertEqual(resp.headers['Location'], '/my/instances')
+
+    def test_pull_repo_ignored_when_no_cloned_repo(self):
+        mock_run = MagicMock()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch(
+                'odoo.addons.saas_core.utils.run_in_background', mock_run):
+            self._form_post('/my/instances/%d/pull-repo' % self.instance.id)
+        mock_run.assert_not_called()
+
+    def test_pull_repo_success_runs_in_background(self):
+        self.env['saas.instance.repo'].sudo().create({
+            'instance_id': self.instance.id,
+            'repo_url': 'https://github.com/acme/widgets.git',
+            'branch': 'main', 'state': 'cloned'})
+        mock_run = MagicMock()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch(
+                'odoo.addons.saas_core.utils.run_in_background', mock_run):
+            resp = self._form_post('/my/instances/%d/pull-repo' % self.instance.id)
+        self.assertEqual(
+            resp.headers['Location'], '/my/instances/%d' % self.instance.id)
+        mock_run.assert_called_once()
+        self.assertEqual(
+            mock_run.call_args.args[1], '_do_webhook_pull_and_restart')

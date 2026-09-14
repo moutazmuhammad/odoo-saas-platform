@@ -1332,7 +1332,7 @@ above it for SEC-001/002). Status:
 | SEC-004 tenant `CREATEDB` | High | **Still open** | See C.4 below. |
 | SEC-005 host shell scoping | High | **Fixed (2026-09-15)** | `ssh_terminal.py`'s host terminal (raw SSH into platform machines, distinct from the customer instance shell) now requires a new, narrower `group_saas_host_shell`, not implied by `group_saas_manager` — enforced at the controller, the `saas.server.action_open_terminal()` method itself, and the view button's own `groups=`. An idempotent migration grandfathers existing Managers into the new group so the change doesn't silently revoke access on deploy. See the progress log (§11) for the full rationale. Commit `52b1394`. |
 | SEC-006 plaintext host creds | High | **Partially fixed (2026-09-15)** | `odoo.conf.jinja:11` still renders `db_password`/`admin_passwd` in cleartext — Odoo itself needs to read the plaintext from its own config file to connect to Postgres, so that part is an inherent constraint of running upstream Odoo, not something this codebase can fix alone. What WAS fixable and is now fixed: every deploy/redeploy/restore path was `chmod -R 777`ing (one site `755`) the directory containing that file — world-readable AND world-writable on a shared multi-tenant host, alongside the filestore and the addons Odoo actually executes as code. Tightened to `700` (owner-only) across all 9 call sites; see the progress log for the full writeup, including 2 sites that had no `chown` at all before (papered over by the wide mode) and needed one added. Commit `3ac9e15`. |
-| SEC-007 supply chain | High | **Partially fixed** | `_PIP_PACKAGE_RE` (`saas_instance.py:1393`) is now strictly `^...$`-anchored, closing the specific "unanchored regex smuggles `--flags`" concern. Package allow-listing / internal mirror / image scanning — the audit's other recommendations — are not implemented. |
+| SEC-007 supply chain | High | **Partially fixed, more so (2026-09-15)** | `_PIP_PACKAGE_RE` (`saas_instance.py:1393`) is strictly `^...$`-anchored. **New**: a `trivy` CI job now builds and scans the operator + backup-tool container images, failing on any HIGH/CRITICAL vulnerability with an available fix (`--ignore-unfixed`, so upstream OS CVEs with no patch yet don't produce permanent unactionable red builds). Also removed a real, if minor, finding it caught: an unused `gosu` binary in the backup-tool image carrying 22 stale Go-stdlib CVEs. Package allow-listing / an internal mirror — the audit's other recommendations — are still not implemented. |
 | SEC-008 presigned URL TTL | High | **Mostly fixed** | `PRESIGNED_URL_EXPIRY` cut from 7 days to **15 min** (`saas_instance_backup.py:17`), lists re-mint fresh links. Per-download audit logging (pairing with SEC-010) still not wired — no `_saas_audit` call anywhere in that file. |
 | SEC-009 security telemetry | High | **Partially fixed** | `saas.alert._notify()` exists and is wired to server-health degradation + operation failures (opt-in webhook). No Sentry/Prometheus/SIEM — `grep -ri 'sentry\|prometheus\|datadog\|statsd'` across both addons is empty. |
 | SEC-010 audit log | Medium | **Partially fixed** | Append-only `saas.audit.log` exists (write/unlink raise), but wired to only **2** events (`instance_delete`, `db_drop` — `saas_instance.py:6173,11650`). Restore/scale/deploy not yet wired. |
@@ -1444,3 +1444,28 @@ architecture — out of scope for this pass. What's closed is the
 *exposure surface*: that plaintext credential (and the filestore, and
 the executable addons) is no longer world-readable/writable on a shared
 host.
+
+2026-09-15 — SEC-007 (supply chain), the image-scanning half — added a
+`trivy` job to CI (`.github/workflows/ci.yml`) building and scanning
+both container images this repo produces (the operator, the
+backup/restore tool), directly closing one of the audit's explicitly-
+named-as-missing recommendations. Gate is `--severity HIGH,CRITICAL
+--ignore-unfixed`: fail on what's actually actionable (a package this
+Dockerfile can upgrade), not on upstream OS CVEs with no patch
+available yet, which would just make the job permanently red for
+reasons nobody here can fix — same "don't fail on unactionable noise"
+principle the gitleaks job's own `.gitleaksignore` baseline already
+established for secret-scan false positives.
+
+Ran it against both images locally before wiring it into CI, rather
+than assuming a fresh job would pass: the operator image (distroless
+static) was already clean. The backup-tool image had 24 real, fixable
+findings — 22 from `gosu`, the postgres base image's own privilege-drop
+tool for an entrypoint script this image never runs (`ENTRYPOINT` is
+overridden and `USER` already pins the non-root uid directly), carrying
+its own old, statically-linked Go stdlib's CVEs for a binary nothing
+here ever executes; 2 from a stale `libpcre2-8-0` with an available
+`apt` upgrade. Fixed both directly in the Dockerfile (removed `gosu`,
+added `apt-get upgrade` so base-image packages get patched too, not
+just the ones explicitly installed), re-scanned clean, and re-verified
+`pg_dump`/`rclone`/the non-root uid all still work. Commit: `9284096`.

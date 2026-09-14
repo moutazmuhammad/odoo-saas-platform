@@ -333,9 +333,14 @@ register/start+resend, reset/start+verify were already covered.)
     clamping, upgrade-vs-downgrade branch selection), with only the
     heavier billing methods (`action_request_plan_change`/
     `_request_downgrade`, already covered in `test_billing_overhaul.py`)
-    mocked out. Still open: `subscribe`/`checkout` (trial->paid + invoice
+    mocked out; (4) `TestPortalDataRestoreRequests` (request-restore/
+    dismiss-restore-banner/decline-restore — synchronous, no infra
+    mocking needed) and `TestPortalInstanceFolders` (folder CRUD +
+    move-to-folder — pure ORM, ownership enforced by hand-filtering on
+    `partner_id` rather than `_document_check_access`, tested the same
+    way). Still open: `subscribe`/`checkout` (trial->paid + invoice
     payment page), backup `create`/`restore`/`download`/`discard`, repo
-    `update`/`remove`/`pull`, folder CRUD, and `spa.py` entirely.
+    `update`/`remove`/`pull`, and `spa.py` entirely.
 - **B.2** Add test files for the 4 zero-coverage models: `saas_payment.py`,
   `res_config_settings.py`, `saas_instance_package.py`, and
   **`saas_terminal_session.py`** — prioritize the terminal one, since it's
@@ -827,3 +832,26 @@ then the full suite via devctl.sh test — 300 tests (284+16), 0 failed,
 single route, ~140 lines, touches `payment.provider`/`payment.method`
 compatibility), backup routes, repo management routes, folder CRUD,
 `spa.py` entirely.
+
+2026-09-14 — Step B.1.5 (fourth slice) — `TestPortalDataRestoreRequests`
+(9 tests: request-restore/dismiss-restore-banner/decline-restore, all
+synchronous JSON routes with no SSH/job queue, so no infra-mocking
+hazard) and `TestPortalInstanceFolders` (11 tests: folder create/
+rename/delete + move-to-folder). The folder routes have no
+`_document_check_access` call at all — ownership is enforced by
+hand-filtering every search on `request.env.user.partner_id` — so
+those tests confirm the boundary the way the code actually implements
+it: a folder or instance belonging to someone else is silently not
+found / not moved, never an `AccessError`. request-restore's real
+`mail.mail.send()` is exercised for real (Odoo's test-mode mail queue
+never actually delivers), since the one behaviour worth covering here
+is the "delivery failed" branch turning into a customer-facing error
+instead of a false "request sent". Cleaned up a first-draft
+`if False else ...` dead-code leftover in two test helpers (caught
+before running anything, not a functional bug). Verified: scoped run
+of both new classes (20/20), all of `saas_website` (59/59), then the
+full suite via devctl.sh test — 320 tests (300+20), 0 failed, 0 errors
+— commit: e82a95b. Remaining B.1.5 scope: `subscribe`/`checkout`
+(trial->paid + invoice payment page, still the largest remaining
+single piece), backup routes, repo management routes, `spa.py`
+entirely.

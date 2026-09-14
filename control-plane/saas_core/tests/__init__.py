@@ -30,3 +30,5 @@ from . import test_invoice_idempotency
 from . import test_pending_retry
 from . import test_job_queue
 from . import test_order_eligibility_fixes
+from . import test_terminal_session
+from . import test_instance_package

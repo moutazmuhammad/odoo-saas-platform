@@ -47,6 +47,10 @@
                             <field name="currency_id"/>
                         </group>
                     </group>
+                    <group string="Kubernetes">
+                        <field name="kubeconfig" widget="text"
+                               placeholder="apiVersion: v1&#10;kind: Config&#10;..."/>
+                    </group>
                     <field name="server_ids" readonly="1">
                         <list>
                             <field name="name"/>

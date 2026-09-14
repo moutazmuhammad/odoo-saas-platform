@@ -394,7 +394,11 @@ register/start+resend, reset/start+verify were already covered.)
 - **B.5** Add a coverage report (Odoo's `coverage.py` integration, or the
   simplest thing that reports a number in CI) so future regressions in
   *coverage* (not just test failures) are visible, even if you don't gate
-  on a hard threshold yet.
+  on a hard threshold yet. **Done**, see the progress log — `coverage.py`
+  wired into both `devctl.sh test` and CI's `odoo-tests` job (44% on
+  `saas_core`+`saas_website`, Odoo core excluded); `@vitest/coverage-v8`
+  wired into the frontend's `test:coverage` script and CI's `spa` job
+  (~17% statements). No threshold gate yet, per scope — just visibility.
 
 **Acceptance for the whole phase:** `.github/workflows/ci.yml`'s
 `odoo-tests` job exercises at least the B.1 routes via real
@@ -1257,6 +1261,46 @@ passes unmodified. Verified: `npm run test` — 4 test files, 14 tests,
 **B.4 is now complete.** The frontend went from zero test
 infrastructure to a working Vitest + RTL runner wired into CI, with
 component-level coverage of the 4 highest-risk portal pages (14
-tests). Next: B.5 (add a coverage report — Odoo's `coverage.py`
-integration or the simplest thing that reports a number in CI — so
-regressions in *coverage*, not just test failures, become visible).
+tests).
+
+2026-09-14 — Step B.5 — coverage reporting, both components.
+**Backend**: `scripts/devctl.sh test` and CI's `odoo-tests` job now run
+the Odoo test suite under `coverage run`, scoped via `--source` to
+`control-plane/saas_core` + `control-plane/saas_website` only (Odoo
+core itself excluded, so the % reflects our code, not the framework),
+`--omit`ting `*/tests/*` and `*/migrations/*` so test files and one-off
+migration scripts don't dilute the number. A `coverage report` step
+prints the per-file table + a `TOTAL` line after the existing
+pass/fail assertion, so a coverage regression is visible without
+failing the build. Current: **44%** (12,940 statements, saas_core +
+saas_website combined). **Non-obvious bug caught while wiring this
+up**: `devctl.sh`'s `$REPO` variable already resolves to the
+`control-plane` directory itself (`dirname(BASH_SOURCE)/..` from
+`scripts/devctl.sh`) — an initial `--source="$REPO/control-plane/saas_core,...\"`
+therefore pointed at a doubled, nonexistent path and silently measured
+**zero files** (`coverage report` printed "No data to report." with no
+error), rather than failing loudly. Verified by first reproducing
+green coverage against a hand-built `coverage run odoo-bin ...`
+invocation outside the script, then diffing it against the script's
+actual arguments to find the double path. Ran `devctl.sh test` after
+the fix to confirm: 0 failed, 0 error(s) of 471 tests, real per-file
+coverage numbers. **Frontend**: added `@vitest/coverage-v8` (pinned to
+the same `4.1.11` as `vitest` itself — same Node-20 constraint B.4
+already hit applies here too) and a `coverage` block in
+`vitest.config.ts` (provider `v8`, `text` + `text-summary` reporters,
+scoped to `src/**/*.{ts,tsx}` excluding test files and the test-setup
+directory), plus a `test:coverage` npm script. CI's `spa` job now runs
+`npm run test:coverage` instead of `npm run test` (same 14 tests, now
+printing a summary). Current: **~17% statements** (504/3007) — expected,
+given B.4 only covered 4 of the app's pages. Neither number is gated on
+a threshold yet, matching the plan's explicit scope for this step.
+Verified `npm run build` still passes unmodified.
+
+**B.5 is now complete — Phase B (close the test-coverage gaps) is now
+fully complete.** Summary: B.1 (146 previously-uncovered HTTP routes
+across `api.py`/`webhook.py`), B.1.5 (the entire `saas_website`
+form-post surface, 115 tests from zero), B.2 (4 zero-coverage models,
+52 tests), B.3 (13 previously-untested cron/provisioning methods, 43
+tests), B.4 (a frontend test runner from zero, 14 tests on the
+highest-risk pages), B.5 (coverage visibility for both components).
+Next: Phase C — close remaining security/compliance items (§4).

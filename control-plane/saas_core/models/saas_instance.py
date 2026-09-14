@@ -2956,9 +2956,15 @@ class SaasInstance(models.Model):
         with the resulting ``image_ref``/``image_digest`` and returns it.
 
         The build runs in a sandboxed, credential-less worker on the build host
-        (see _image_build_cmd / 2.2.5). The image tag is a content hash of the
-        build context, so an identical tenant config produces an identical tag
-        (cache-friendly + idempotent)."""
+        (see _image_build_cmd / 2.2.5). The image tag is
+        ``<odoo_version>-<content_hash>``: the hash half makes an identical
+        tenant config produce an identical tag (cache-friendly + idempotent);
+        the version prefix makes the *Odoo version* legible from the tag alone
+        (matching this platform's "one immutable image per (version, addon
+        set) combination" principle — see the Compute Service's own
+        docs/architecture.md §9) and keeps this pipeline's tags shaped the
+        same way the Compute Service's own image-strategy convention expects,
+        ahead of this build pipeline ever targeting that registry."""
         self.ensure_one()
         if not self._tenant_base_image():
             raise UserError(_(
@@ -2988,8 +2994,10 @@ class SaasInstance(models.Model):
                 rc, tag, err = ssh.execute(
                     'cd %s && tar --sort=name --owner=0 --group=0 --mtime=@0 -cf - . 2>/dev/null '
                     '| sha256sum | cut -c1-12' % shlex.quote(ctx))
-                tag = (tag or '').strip() or 'latest'
-                image = '%s/tenant-%s:%s' % (registry, self.subdomain, tag)
+                content_hash = (tag or '').strip() or 'latest'
+                version_tag = self.odoo_version_id.docker_image_tag or 'unknown'
+                image = '%s/tenant-%s:%s-%s' % (
+                    registry, self.subdomain, version_tag, content_hash)
                 # Build (sandboxed) + push.
                 rc, out, err = ssh.execute(
                     self._image_build_cmd(ctx, image), timeout=1800)

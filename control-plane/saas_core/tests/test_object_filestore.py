@@ -1,4 +1,5 @@
-from unittest.mock import patch
+from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import TransactionCase, tagged
 
@@ -143,6 +144,62 @@ class TestObjectFilestore(TransactionCase):
         df = inst._render_tenant_dockerfile()
         self.assertIn('FROM 127.0.0.1:5000/odoo-base:', df)
         self.assertIn('USER odoo', df)
+
+    def test_build_and_push_tenant_image_tag_includes_odoo_version(self):
+        """The pushed tag is <odoo_version>-<content_hash>, not just the bare
+        hash — legible-version-in-tag is this platform's stated image-strategy
+        convention (docs/architecture.md §9 in the Compute Service), and this
+        pipeline is the one that will eventually need to produce tags shaped
+        the way that registry expects."""
+        version = self.env['saas.odoo.version'].sudo().create({
+            'name': '18.0', 'docker_image': 'odoo', 'docker_image_tag': '18.0'})
+        srv = self.env['saas.server'].sudo().create(
+            {'name': 'reg-srv3', 'registry_host': '127.0.0.1:5000'})
+        inst = self._instance('imgtag', srv)
+        inst.odoo_version_id = version.id
+
+        ssh = MagicMock()
+
+        def execute(cmd, timeout=None):
+            if 'sha256sum' in cmd:
+                return (0, 'abc123def456\n', '')
+            if 'docker inspect' in cmd:
+                return (0, '127.0.0.1:5000/tenant-imgtag@sha256:deadbeef\n', '')
+            return (0, '', '')
+        ssh.execute.side_effect = execute
+
+        @contextmanager
+        def conn():
+            yield ssh
+
+        with patch.object(type(srv), '_get_ssh_connection', lambda self: conn()):
+            build = inst._build_and_push_tenant_image()
+
+        self.assertEqual(
+            build.image_ref, '127.0.0.1:5000/tenant-imgtag:18.0-abc123def456')
+
+    def test_build_and_push_tenant_image_tag_unknown_version_fallback(self):
+        """No odoo_version_id configured must not crash the build — it falls
+        back to the literal 'unknown' segment rather than producing a
+        malformed tag (e.g. a bare '-abc123' with an empty version prefix)."""
+        srv = self.env['saas.server'].sudo().create(
+            {'name': 'reg-srv4', 'registry_host': '127.0.0.1:5000'})
+        inst = self._instance('imgtagnov', srv)
+        self.assertFalse(inst.odoo_version_id)
+
+        ssh = MagicMock()
+        ssh.execute.side_effect = lambda cmd, timeout=None: (
+            (0, 'abc123def456\n', '') if 'sha256sum' in cmd else (0, '', ''))
+
+        @contextmanager
+        def conn():
+            yield ssh
+
+        with patch.object(type(srv), '_get_ssh_connection', lambda self: conn()):
+            build = inst._build_and_push_tenant_image()
+
+        self.assertEqual(
+            build.image_ref, '127.0.0.1:5000/tenant-imgtagnov:unknown-abc123def456')
 
     def test_compose_immutable_mode_skips_mounts(self):
         inst = self._instance('immut', self.env['saas.server'].sudo().create(

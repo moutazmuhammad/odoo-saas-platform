@@ -430,19 +430,38 @@ Service for at least one full billing + backup-retention cycle:
 
 - Exact translation format for restic → `pg_restore`-compatible dumps (item
   3.2a) — needs a decision on where that conversion runs (a one-off script,
-  or a mode the restore tool image supports natively).
-- Whether the Kubernetes API credentials the Control Plane needs
+  or a mode the restore tool image supports natively). **Still open** —
+  this is genuinely a Phase 3 concern (it's about restoring pre-migration
+  backups, not the driver), so it does not block Phase 2's own start;
+  resolve it when Phase 3 is actually picked up.
+- ~~Whether the Kubernetes API credentials the Control Plane needs
   (per-region kubeconfig/ServiceAccount token) are stored via the same
   `EncryptedChar` mechanism as other secrets (Phase 0.2) — almost certainly
   yes, just needs to be listed explicitly in that phase's scope once
-  reached.
-- Whether `saas.server` is repurposed to represent "a cluster" for
+  reached.~~ **Resolved by Step 1.2** (2026-09-15): yes — `saas.region.
+  kubeconfig` is an `EncryptedChar`, same convention as every other
+  platform secret.
+- ~~Whether `saas.server` is repurposed to represent "a cluster" for
   Kubernetes-backed regions, or a new `saas.cluster` model is added
   alongside it. Recommendation: reuse `saas.server` (add
   `compute_driver='kubernetes'` + kubeconfig fields), since `saas.region`
   already has a one-to-many relationship to `saas.server` that maps cleanly
   onto "one cluster per region" — avoid a parallel model for the same
-  concept.
+  concept.~~ **Resolved differently than this bullet's own recommendation,
+  by Step 1.2** (2026-09-15): the credential lives on `saas.region`
+  itself, not `saas.server`, per Phase 1's own §3 text ("Add a kubeconfig
+  ... field to `saas.region`") — written *after* this open question and
+  never reconciled with it until now. Region-level is the more consistent
+  choice given the topology decision is explicitly "one cluster per
+  region": a region can have many `saas.server` rows (legacy Docker hosts)
+  that have nothing to do with the cluster credential, so putting
+  `kubeconfig` on `saas.server` would require picking one arbitrary server
+  row per region to hold it, or duplicating it across every server row in
+  that region — both worse than one field on the region itself. Left both
+  the original bullet and this correction visible (struck through, not
+  deleted) exactly as this document's own convention elsewhere does, so a
+  future reader can see the plan briefly disagreed with itself rather than
+  silently rewriting history.
 
 ---
 

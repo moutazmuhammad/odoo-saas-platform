@@ -17,9 +17,13 @@ RUN apt-get update && \
 COPY run-backup.sh run-restore.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/run-backup.sh /usr/local/bin/run-restore.sh
 
-# Arbitrary non-root uid:gid — unlike the Odoo image, nothing in the
-# operator depends on this specific value (see deployment.go's comment on
-# odooImageUID/GID, which is Odoo-image-specific, not general).
-USER 10001:10001
+# Must be Odoo's OWN uid:gid (100:101 — see deployment.go's odooImageUID/
+# odooImageGID), not an arbitrary non-root account: the filestore PVC's
+# `addons/` and `sessions/` subdirectories are created by the Odoo
+# container as mode 0700 (owner-only, confirmed live: `drwx------ odoo
+# odoo`), so ANY other uid — including one sharing the FSGroup — gets zero
+# access; FSGroup only ever grants group bits, and 0700 has none to grant.
+# Only running as uid 100 itself (matching, not root) can read them.
+USER 100:101
 
 ENTRYPOINT ["/usr/local/bin/run-backup.sh"]

@@ -3,7 +3,7 @@ import re
 import socket
 
 from odoo import api, fields, models, _
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 from ..utils import SSHConnection
 
@@ -710,8 +710,20 @@ class SaasServer(models.Model):
             )
 
     def action_open_terminal(self):
-        """Open a web-based SSH terminal to this server."""
+        """Open a web-based SSH terminal to this server.
+
+        SEC-005: this method itself has no ir.model.access.csv-level
+        distinction from any other saas.server method, so it enforces
+        the narrower Host Shell group explicitly here too — defense in
+        depth alongside the view button's own `groups=` attribute and
+        ssh_terminal.py's controller-side check (the one that actually
+        matters: this method only returns a client-action tag, it never
+        opens the SSH channel itself)."""
         self.ensure_one()
+        if not self.env.user.has_group('saas_core.group_saas_host_shell'):
+            raise AccessError(_(
+                "Host Shell privileges are required to open a terminal on "
+                "a server (SaaS Manager alone is not enough)."))
         self._get_ssh_ip()
         if not self.ssh_key_pair_id or not self.ssh_key_pair_id._private_key_b64():
             raise ValidationError(

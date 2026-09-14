@@ -52,7 +52,12 @@ NOTIFY_CHUNK_BYTES = 4096
 # SSE hasn't subscribed yet — acceptable for a tiny initial slice).
 INITIAL_BANNER_WAIT = 0.5
 
-TERMINAL_GROUP = 'saas_core.group_saas_manager'
+# SEC-005: a dedicated, narrower group than group_saas_manager — this
+# gates the HOST shell (raw SSH into the platform's own Docker/DB
+# machines), not the customer instance shell below (_get_owned_session/
+# _authorize_instance_shell), which is authorized by instance ownership
+# and unaffected by this group entirely.
+TERMINAL_GROUP = 'saas_core.group_saas_host_shell'
 _SID_RE = re.compile(
     r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
 )
@@ -297,17 +302,19 @@ class SshTerminalController(http.Controller):
     def create_session(self, server_model, server_id, **kwargs):
         """Open an interactive SSH shell on the requested server.
 
-        Authorization: requires ``saas_core.group_saas_manager``.
-        Hiding the UI button is not enough — every endpoint enforces
-        this server-side via ``has_group()``.
+        Authorization: requires ``saas_core.group_saas_host_shell`` (SEC-005
+        — a narrower grant than plain SaaS Manager, since this is a host
+        shell, not a customer container). Hiding the UI button is not
+        enough — every endpoint enforces this server-side via
+        ``has_group()``.
         """
         if not request.env.user.has_group(TERMINAL_GROUP):
             _logger.warning(
-                "Terminal access denied for uid=%s",
+                "Host terminal access denied for uid=%s",
                 request.env.uid,
             )
             raise Forbidden(
-                "SaaS Manager privileges required to open a terminal."
+                "Host Shell privileges required to open a host terminal."
             )
 
         if server_model not in ('saas.server',):
@@ -613,7 +620,7 @@ class SshTerminalController(http.Controller):
         """
         if not request.env.user.has_group(TERMINAL_GROUP):
             raise Forbidden(
-                "SaaS Manager privileges required for terminal access."
+                "Host Shell privileges required for host terminal access."
             )
         sess = request.env['saas.terminal.session'].sudo().search(
             [('sid', '=', session_id)], limit=1,

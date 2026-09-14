@@ -19,6 +19,29 @@
         <field name="comment">Full management access to SaaS instances, servers, and configuration.</field>
     </record>
 
+    <!-- SEC-005: deliberately NOT implied by/from group_saas_manager. Most
+         manager-level work (billing, tenant lifecycle, viewing backups) has
+         nothing to do with the platform's own physical/virtual host
+         machines; bundling host-shell access into the same broad role means
+         any compromised or over-provisioned manager account can pivot into
+         every tenant's host, not just their own tooling. Grant this
+         narrowly, on top of Manager, only to operators who genuinely need
+         raw SSH access to the fleet. -->
+    <record id="group_saas_host_shell" model="res.groups">
+        <field name="name">Host Shell</field>
+        <field name="category_id" ref="module_category_saas"/>
+        <field name="comment">Grants SSH shell access to the platform's own Docker/DB host machines (NOT customer containers — the customer instance shell is authorized by instance ownership, unaffected by this group). Extremely sensitive: a member can reach every tenant's data via the host filesystem/network. Grant narrowly, separately from Manager.</field>
+    </record>
+
+    <!-- One-time-per-upgrade, idempotent: grandfather every EXISTING SaaS
+         Manager into the new Host Shell group, so introducing it doesn't
+         silently revoke host-terminal access for whoever already had it
+         via Manager before this change (SEC-005 fix). Placed outside the
+         noupdate block below so it re-runs on every module upgrade,
+         including the one that ships this change — new Manager grants
+         from this point on do NOT automatically include Host Shell. -->
+    <function model="res.groups" name="_saas_grandfather_host_shell_group" eval="[]"/>
+
     <!-- Record Rules -->
     <data noupdate="1">
 

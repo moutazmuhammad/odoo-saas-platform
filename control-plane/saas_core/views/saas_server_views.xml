@@ -15,7 +15,8 @@
                     <button name="action_open_terminal"
                             string="Terminal"
                             type="object"
-                            icon="fa-terminal"/>
+                            icon="fa-terminal"
+                            groups="saas_core.group_saas_host_shell"/>
                     <button name="action_refresh_containers"
                             string="Refresh Containers"
                             type="object"

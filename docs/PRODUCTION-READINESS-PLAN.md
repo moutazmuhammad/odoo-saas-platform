@@ -423,22 +423,32 @@ cross-checked against the fresh review in §1.1:
   independently reconfirmed fixed by this session's review). Produce a
   one-line-per-item status table as this step's deliverable, so the audit
   document stops being the only source of truth on what's actually closed.
+  **Done**, see the progress log for the full 19-item table — 7 fixed, 7
+  partially fixed, 5 still open, plus corrections to two of the audit's
+  own claims (SEC-012 turns out already fixed but was never tracked in
+  `REMEDIATION_PLAN.md`; SEC-019's "all `csrf=False` routes are `type='json'`"
+  premise is factually wrong for 2 of the 4, though all 4 remain safe for
+  other reasons).
 - **C.2** Rotate the root SSH password that was pasted into chat
   (`control-plane/SESSION_NOTES.md`, "Live server" section) — this is a
   real, still-open credential exposure regardless of anything else in this
-  plan.
+  plan. **Not done — needs the account owner** (this requires live-server
+  access this session doesn't have); flagged separately, not delegated.
 - **C.3** Add automated secret-scanning to CI (e.g. `gitleaks` as a new CI
   job) — proactive guard, direct response to the SSH-password-in-chat and
   the prior `SECURITY-INCIDENT-2026-06-17.md` compromise, so a future
   leaked credential is caught at PR time instead of discovered after an
-  incident.
+  incident. **Done**, see the progress log — `gitleaks` job + `.gitleaksignore`
+  baseline, commit `202e1df`.
 - **C.4** Verify tenant DB `CREATEDB` grant (SEC-004) status for any
   remaining SSH/Docker-driven tenants — note this becomes structurally moot
   per-tenant as each one migrates to the Compute Service in Phase D (each
   tenant gets its own isolated Postgres instance there, so a broad grant on
   a shared server is no longer the relevant risk model), but do not treat
   Phase D as an excuse to defer it for tenants that stay on the legacy path
-  longer than expected.
+  longer than expected. **Done (verification only, no code change)**, see
+  the progress log — still granted fleet-wide (Phase D hasn't started, so
+  "remaining" tenants means *all* of them today).
 
 **Acceptance:** a re-run of `SECURITY_AUDIT.md`'s checklist shows every
 Critical item either closed-with-evidence or explicitly tracked with an
@@ -1303,4 +1313,42 @@ form-post surface, 115 tests from zero), B.2 (4 zero-coverage models,
 52 tests), B.3 (13 previously-untested cron/provisioning methods, 43
 tests), B.4 (a frontend test runner from zero, 14 tests on the
 highest-risk pages), B.5 (coverage visibility for both components).
-Next: Phase C — close remaining security/compliance items (§4).
+
+2026-09-14 — Phase C — C.3 (gitleaks CI job + `.gitleaksignore`
+baseline, commit `202e1df`) done first since it's pure tooling, no
+investigation needed. Then C.1 + C.4 together (both are "verify
+against current code" tasks): re-read all 19 `SECURITY_AUDIT.md`
+SEC-00x items and grepped/read the current code for each — not
+trusting `REMEDIATION_PLAN.md`'s checkboxes, which turned out to be
+genuinely stale/self-contradictory in places (e.g. its own summary
+block at the bottom of the file disagrees with the detailed entries
+above it for SEC-001/002). Status:
+
+| Item | Sev | Status | Evidence |
+|---|---|---|---|
+| SEC-001 debug_otp | Critical | **Fixed** | `grep -r debug_otp` across `saas_website` + the SPA returns nothing. |
+| SEC-002 plaintext secrets | Critical | **Fixed (code); operational step pending** | `admin_password`/`db_password`/`restic_password`/`github_token`(×2)/`private_key_enc` are all `EncryptedChar` now. Encryption is opt-in via `saas_secret_key` — unset in this checkout's dev conf, so **whether it's activated in production, and whether the already-exposed credentials have been rotated post-activation, can't be verified from code alone.** |
+| SEC-003 root containers | Critical | **Fixed** | `Dockerfile.tenant.jinja` ends `USER odoo`; `docker-compose.yml.jinja` has `cap_drop:[ALL]` + `no-new-privileges:true`. Read-only rootfs deliberately deferred (documented tradeoff, Odoo writes outside its volumes). |
+| SEC-004 tenant `CREATEDB` | High | **Still open** | See C.4 below. |
+| SEC-005 host shell scoping | High | **Still open** | `ssh_terminal.py:304,614` still gate solely on `group_saas_manager`, unchanged since the audit. |
+| SEC-006 plaintext host creds | High | **Still open** | `odoo.conf.jinja:11` still renders `db_password` in cleartext. |
+| SEC-007 supply chain | High | **Partially fixed** | `_PIP_PACKAGE_RE` (`saas_instance.py:1393`) is now strictly `^...$`-anchored, closing the specific "unanchored regex smuggles `--flags`" concern. Package allow-listing / internal mirror / image scanning — the audit's other recommendations — are not implemented. |
+| SEC-008 presigned URL TTL | High | **Mostly fixed** | `PRESIGNED_URL_EXPIRY` cut from 7 days to **15 min** (`saas_instance_backup.py:17`), lists re-mint fresh links. Per-download audit logging (pairing with SEC-010) still not wired — no `_saas_audit` call anywhere in that file. |
+| SEC-009 security telemetry | High | **Partially fixed** | `saas.alert._notify()` exists and is wired to server-health degradation + operation failures (opt-in webhook). No Sentry/Prometheus/SIEM — `grep -ri 'sentry\|prometheus\|datadog\|statsd'` across both addons is empty. |
+| SEC-010 audit log | Medium | **Partially fixed** | Append-only `saas.audit.log` exists (write/unlink raise), but wired to only **2** events (`instance_delete`, `db_drop` — `saas_instance.py:6173,11650`). Restore/scale/deploy not yet wired. |
+| SEC-011 webhook oracle | Medium | **Mostly fixed** | Uniform 404 deny (`webhook.py:_webhook_deny`) + per-repo rate limit (30/60ish window) added. Residual: the initial secret lookup (`webhook.py:61-64`) is still a plain ORM equality `search`, not constant-time — the "minor" timing oracle the audit already downgraded is technically still there. |
+| SEC-012 log-stream authz | Medium | **Fixed — but untracked** | `stream_instance_logs` now calls `instance.check_access('read')` explicitly (`container_logs.py:41`) before streaming. This fix isn't mentioned anywhere in `REMEDIATION_PLAN.md`, i.e. it shipped without the tracking doc being updated — exactly the "audit document stops being the only source of truth" problem C.1 exists to catch. |
+| SEC-013 OTP brute force | Medium | **Fixed** | Window tightened to 6/600 (`registration.py:225`, `api.py:259,354`); `code` is `EncryptedChar`; `hmac.compare_digest` constant-time verify (`saas_registration.py:32,126`). |
+| SEC-014 SSH command injection | Medium | **Improved, not architecturally resolved** | `shlex.quote` call count grew to 142 (vs. ~140 `.execute(` call sites) — broad adoption — but there's still no central/audited command-builder; quoting discipline remains per-call-site. |
+| SEC-015 broad `except Exception` | Medium | **Still open** | Count actually **grew** to 125 (from the audit's 85) — B.3 added more per-instance cron try/except/rollback blocks following the existing (deliberate, for cron resilience) pattern. Not new backsliding, but worth flagging so the raw number isn't misread as improvement. |
+| SEC-016 RBAC granularity | Medium | **Still open** | Only 2 internal groups exist (`group_saas_user`, `group_saas_manager`) — unchanged. |
+| SEC-017 restore-confirm UX | Low | **Still open (cosmetic)** | `backup_restore` (`api.py:1366`) still confirms against `backup.db_name or instance.subdomain`, unchanged. Ownership enforcement itself (the actual security control) remains correct. |
+| SEC-018 SPA session refresh | Low | **Still open** | No idle-timeout/refresh logic found in `AuthContext.tsx`. |
+| SEC-019 CSRF posture | Low | **Recommendation not implemented; premise partly wrong, conclusion still holds** | 4 `csrf=False` routes exist, same count as the audit. But the audit's stated reason ("these are all `type='json'`") is **factually wrong for 2 of the 4**: `webhook.py`'s route and `portal.py`'s new `portal_instance_log_stream` are both `type='http'`. Each is still safe for a *different* reason than the audit gave: the webhook route is `auth='none'` (authority comes from the URL secret + HMAC, not the session cookie, so CSRF is moot regardless of type), and the 3 stream routes (`ssh_terminal.py`×2, `portal.py`×1) are all `methods=['GET']`-only with no state mutation, and same-origin policy blocks a cross-site page from reading the response anyway. The recommended CI lint is not implemented, and a naive "no `type='http'` + `csrf=False`" rule would false-positive on all 4 — any future lint needs a GET/`auth='none'` carve-out. |
+
+**C.4 (CREATEDB), in depth**: `_provision_postgresql` (`saas_instance.py:3319-3354`) unconditionally grants `CREATEDB` to every tenant Postgres role — hosting and non-hosting instances alike, regardless of whether the platform creates the DB itself (`create_db=True`) or leaves it to the tenant (`create_db=False`). Since Phase D (Compute-layer migration) has not started, **every current tenant** is on this legacy path — "remaining SSH/Docker-driven tenants" is not a shrinking edge case yet, it's the whole fleet. One relevant observation for whoever picks up the actual fix: the portal's own customer-facing DB-create flow (`api.dbCreate` → `saas.instance` methods) already provisions databases via **control-plane-mediated** `sudo -u postgres createdb` over SSH (verified: every `createdb`/`CREATE DATABASE` call site in `saas_instance.py` runs as the `postgres` OS user, not as the tenant's own low-privilege role) — so the portal flow does not actually depend on the tenant role's own `CREATEDB` grant. The grant's origin comment (`saas_instance.py:3320-3325`) says it exists so tenants "create databases themselves … via the master password" through Odoo's own built-in database-manager UI (`admin_passwd` in `odoo.conf.jinja` is set from `self.admin_password`, the same field — not obviously exposed to customers anywhere in the portal controllers checked). Whether that built-in manager is actually network-reachable for a tenant container (proxy/firewall scope) was **not conclusively determined this pass** — that's the one open question a future SEC-004 fix should resolve before assuming the grant is safe to drop.
+
+Next: Phase D (Compute-layer migration) is out of this plan's scope
+(fully specified in `MICROSERVICES-PLAN.md`); the remaining Phase C
+item, **C.2** (rotating the exposed root SSH password), needs the
+account owner and live-server access this session doesn't have.

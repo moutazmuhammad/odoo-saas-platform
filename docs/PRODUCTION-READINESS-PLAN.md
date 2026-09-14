@@ -367,7 +367,9 @@ register/start+resend, reset/start+verify were already covered.)
   the backend for a feature (`ShellConsole.tsx`) that will also be the
   Phase D.4.3 migration target (SSH-exec → Kubernetes `pods/exec`) — you
   want a real regression baseline *before* changing its transport, not
-  after.
+  after. **Done**, see the progress log — all 4 models covered (52 new
+  tests: `saas_terminal_session.py` + `saas_instance_package.py`,
+  `res_config_settings.py`, `saas_payment.py`).
 - **B.3** Add tests for the untested cron methods listed in §1.2, grouped by
   what they actually risk if silently broken: billing-lifecycle crons
   (`_cron_check_overdue_invoices`, `_cron_retry_failed_payments`,
@@ -1016,3 +1018,54 @@ auto-priced plan's price moves and a manually-priced one (`manual_price
 = True`) does not. 12 new tests. Verified: full suite via `devctl.sh
 test` — 399 tests (387+12), 0 failed, 0 errors — commit: 019e254. Next:
 `saas_payment.py` (highest-value and largest of the 4 remaining).
+
+2026-09-14 — Step B.2 (third slice, final) — `saas_payment.py`, the
+largest and highest-value of the 4 models. Covered
+`SaasPaymentProviderConfig._check_single_default` (a second *active*
+default routing row is rejected, a second *inactive* one is fine);
+`SaasPaymentMethod`'s `_for_partner`/`_default_for_partner`/
+`_make_default`/`action_remove`; and `SaasPaymentGateway`'s three real
+methods. `_provider_for_partner`'s country-routing precedence (explicit
+country config row > default config row > the provider's own
+`available_country_ids` > any enabled provider) got one test per level,
+each proving that level overrides the one below it, plus a "disabled
+provider is skipped even when otherwise matched" case at the
+config-row level. `_save_method_from_transaction` — idempotent per
+token (repeat calls return the same method, no duplicate row), and
+only the *first* saved method for a partner is forced default (a
+second one is left alone, per the model's own `len(...) == 1` check —
+worth a dedicated test since it's easy to assume every save should
+force-default). `_charge` — all 4 early-return branches (no/inactive
+token, already-paid invoice done-short-circuit, disabled provider,
+currency mismatch) plus the real success/pending/other-state paths and
+the exception-during-send path. Non-obvious finding: none of this
+needed the `payment_demo` addon (correctly out of scope — it's not a
+saas_core dependency) — `payment.transaction.create()` already
+auto-generates `reference` when omitted (see its `create()` override),
+so a real transaction can be constructed directly in the test and only
+`_send_payment_request` itself needs patching (`patch.object(type(env
+['payment.transaction']), '_send_payment_request', fn)`, `fn` setting
+`tx_self.state` directly) — the same "mock only the external transport
+boundary" discipline used for the job-queue/webhook tests elsewhere in
+this suite. The currency-mismatch branch needed a real
+`account.payment.method.line` wired to the test provider (a bare
+`payment.provider` has a non-stored, search-computed `journal_id` with
+no default journal) — created by hand with `account.
+account_payment_method_manual_in` rather than fighting the accounting
+module's automatic provider/journal-linking flow. One test-writing
+mistake caught by the run itself: `test_save_method_noop_with_
+inactive_token` originally deactivated the token *before* creating the
+transaction, tripping `payment.transaction`'s own `_check_token_is_
+active` constraint at creation time instead of testing the gateway's
+handling of an already-inactive token — fixed by creating the tx first,
+then deactivating. 29 new tests. Verified: full suite via `devctl.sh
+test` — 428 tests (399+29), 0 failed, 0 errors — commit: 07ecc77.
+
+**B.2 is now complete.** All 4 previously zero-coverage models
+(`saas_terminal_session.py`, `saas_instance_package.py`,
+`res_config_settings.py`, `saas_payment.py`) now have test coverage —
+52 new tests across 3 slices (11 + 12 + 29), full suite grown from 376
+to 428 tests, 0 failed / 0 errors throughout. Next: B.3 (the untested
+cron methods in §1.2 — billing-lifecycle crons first for direct
+revenue impact, then operational crons, then the provisioning helpers
+that Phase D will supersede anyway).

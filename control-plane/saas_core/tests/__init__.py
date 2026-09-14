@@ -33,3 +33,4 @@ from . import test_order_eligibility_fixes
 from . import test_terminal_session
 from . import test_instance_package
 from . import test_config_settings
+from . import test_payment

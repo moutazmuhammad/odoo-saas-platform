@@ -351,8 +351,16 @@ register/start+resend, reset/start+verify were already covered.)
     `account.move` since there's no async work to isolate away from).
     **`portal.py`'s route coverage is now complete** — 7 test classes, 100
     tests, from zero test infrastructure at the start of this session.
-    Still open: `spa.py` entirely (separate, form-post/QWeb testing
-    style, size/scope not yet surveyed).
+    `spa.py` surveyed and covered too (`TestSpaShellRoutes`, 15 tests) —
+    turned out much smaller than the ~90-route estimate: almost every
+    route is a one-line `return spa_shell()` (the SPA owns client-side
+    routing/auth), so coverage focuses on the handful of routes with
+    real server-side branching (`_section_enabled` gates,
+    logged-in-vs-public redirects, `SaasWebLogin`'s override) plus
+    `spa_shell()` itself (theme-cookie injection, the "frontend not
+    built" fallback). **B.1.5 is now complete**: `saas_website/tests/`
+    has 115 tests across 8 test classes, up from zero test
+    infrastructure at the start of this session.
 - **B.2** Add test files for the 4 zero-coverage models: `saas_payment.py`,
   `res_config_settings.py`, `saas_instance_package.py`, and
   **`saas_terminal_session.py`** — prioritize the terminal one, since it's
@@ -932,3 +940,35 @@ start of this session. Verified: scoped class alone (9/9), all of
 tests (352+9), 0 failed, 0 errors — commit: b4e86ae. Remaining B.1.5
 scope: `spa.py` entirely — not yet surveyed, separate form-post/QWeb
 testing style from `portal.py`.
+
+2026-09-14 — Step B.1.5 (eighth slice, final) — surveyed `spa.py`
+(`grep -c @http.route` = ~25, far below the plan's original ~90
+estimate for the combined `portal.py`+`spa.py` surface — that estimate
+turned out to belong almost entirely to `portal.py`). Nearly every
+route is a one-line `return spa_shell()`: the SPA owns client-side
+routing and auth for these paths, so there's no per-route business
+logic worth individually testing the way `portal.py` needed. Added
+`test_spa_shell.py` / `TestSpaShellRoutes` (15 tests) covering what
+actually has server-side branching: `_section_enabled` gates on
+`/services` (+`/services/<id>`) and `/hosting`, the logged-in-vs-public
+branch on `/services/register` and `/register`, `SaasWebLogin`'s
+redirect-anonymous-GET-to-`/login` override, and `spa_shell()` itself
+— theme-cookie injection, invalid-cookie fallback to dark, and the
+"frontend not built" message (genuinely reachable right now: this
+checkout's `saas_website/static/spa/` has no built `index.html`). The
+theme tests patch the module-global `_INDEX_PATH` to a real temp file
+rather than depending on this checkout's build state, and explicitly
+reset the equally module-global `_INDEX_CACHE` dict before and after
+each — it's an in-process cache shared by every request, so an
+unpatched leftover would silently corrupt whichever test runs next.
+Verified: scoped class alone (15/15), all of `saas_website` (115/115),
+then the full suite via devctl.sh test — 376 tests (361+15), 0 failed,
+0 errors — commit: dbd41e8.
+
+**B.1.5 is now complete.** `saas_website/tests/` went from no test
+infrastructure at all to 8 test classes / 115 tests covering
+`portal.py` (100 tests, 7 classes) and `spa.py` (15 tests, 1 class).
+Next: B.2 (the 4 zero-coverage models — `saas_payment.py`,
+`res_config_settings.py`, `saas_instance_package.py`,
+`saas_terminal_session.py`, prioritizing the terminal one per the
+Phase D.4.3 note above).

@@ -659,3 +659,67 @@ local Docker containers standing in for the cluster's Pods, matching
 Step 1.5's own established verification bar for scripts, but not a
 live-cluster CronJob run against ObjectStorage specifically) — worth
 doing before this destination type is offered to a real tenant.
+
+2026-09-15 — Step 1.4 — researched `build-all.sh`/
+`provision-build-sandbox.sh` first, since the plan's own text turned out
+not to match current code: `build-all.sh` only builds generic base
+images with no push logic (a manual todo comment), and
+`provision-build-sandbox.sh` is host/network setup, not a build script.
+The actual per-tenant build+push pipeline the plan means is
+`saas_instance.py`'s `_build_and_push_tenant_image()`, which already
+builds and pushes real images over SSH to `saas.server.registry_host` —
+it just produces `<registry>/tenant-<sub>:<sha12>` (pure content hash,
+no version segment), not the `<version>-<sha>` shape the plan describes.
+Also found: the operator's `--allow-mutable-tags` check (`validate.go`'s
+`isMutableTag`) is a **denylist of 6 literal strings**
+(`latest`/`main`/`master`/`edge`/`dev`/`nightly`), not a format regex —
+so "the tagging convention the operator's validation expects" doesn't
+mechanically exist to be matched; it's descriptive intent in
+`docs/architecture.md` §9, not an enforced contract. Deliberately did
+**not** add a stricter regex to the operator to manufacture that
+contract — this session's own live-tested examples (including the
+still-running `phase-d1-test` tenant) legitimately use bare version
+tags like `18.0` from the upstream Odoo image, which a `<version>-<sha>`
+requirement would break.
+
+Scoped down to what's real and safe: changed
+`_build_and_push_tenant_image()`'s tag to `<registry>/tenant-<sub>:
+<odoo_version>-<content_hash>` (falling back to `unknown` when no
+`odoo_version_id` is set, never a malformed tag), matching the
+version-legible convention `docs/architecture.md` §9 actually
+illustrates. 2 new tests (SSH mocked, matching
+`test_provisioning_crons.py`'s established pattern) — full suite green,
+476 tests (474 + 2 new). Verified against real infrastructure per this
+plan's own Definition of Done: pushed a real image tagged exactly this
+shape (`18.0-abc123def456`) to the live cluster's actual registry
+(`localhost:32000`) and confirmed it via the registry's own tags-list
+API, not just a Python string assertion. Commit: `e42771a`.
+
+Confirmed also not in scope here (Phase 2/1.5 territory, not started
+anywhere in the codebase): actually constructing an `OdooInstance` CR
+from a `saas.instance` record. `grep -rn "OdooInstance" saas_core` is
+still zero matches — `saas_core/drivers/kubernetes_driver.py` remains
+exactly the raw-`kubectl`-YAML stub described in this plan's §0, never
+run against a live cluster, with no path from a built tenant image into
+`spec.image` on a real `OdooInstance` yet.
+
+**Phase 1 is now complete.** 1.1 (cluster) and 1.3 (registry) were
+already satisfied in practice by the live microk8s cluster + registry
+this session has been using throughout Step 1.5 — nothing further to
+build there, just noting it explicitly rather than leaving those two
+items looking unaddressed. 1.2 (region kubeconfig), 1.4 (image tagging),
+and 1.5 (live provisioning + backup/restore, both PVC and ObjectStorage)
+are all done and verified against real infrastructure.
+
+**Next is Phase 2 — a real `KubernetesDriver` behind the existing
+`ComputeDriver` seam.** This is a substantially larger body of work than
+anything in Phase 1: per this plan's own §0 integration-status warning,
+it is building the first-ever connection between `saas_core` and the
+operator from nothing, not swapping one working piece for another.
+Concretely it means: a Python Kubernetes API client in `saas_core`,
+constructing real `OdooInstance` objects from `saas.instance` fields,
+replacing (not extending) `kubernetes_driver.py`'s manifest-string
+approach, watching/reconciling `OdooInstance.status` back onto
+`saas.instance`, and deciding how `saas.region.kubeconfig` (Step 1.2)
+actually gets used to pick which cluster's API server a given tenant's
+driver calls. None of this exists yet in any form.

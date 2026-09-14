@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -60,6 +61,71 @@ func TestFilestorePVC_RejectsUnparsableSize(t *testing.T) {
 	instance.Spec.Storage.Filestore.Size = "not-a-quantity"
 	if _, err := FilestorePVC(instance); err == nil {
 		t.Error("expected an error for an unparsable filestore size, got nil")
+	}
+}
+
+func gatewayIngressPorts(t *testing.T, np *networkingv1.NetworkPolicy) []int32 {
+	t.Helper()
+	for _, rule := range np.Spec.Ingress {
+		for _, peer := range rule.From {
+			if peer.NamespaceSelector != nil {
+				var ports []int32
+				for _, p := range rule.Ports {
+					ports = append(ports, p.Port.IntVal)
+				}
+				return ports
+			}
+		}
+	}
+	t.Fatal("no ingress rule found with a NamespaceSelector (the shared-gateway rule)")
+	return nil
+}
+
+func TestTenantNetworkPolicy_TLSDisabled_OmitsAcmeSolverPort(t *testing.T) {
+	instance := testInstance()
+	instance.Spec.Domain.TLS.Enabled = false
+	np := TenantNetworkPolicy(instance, "ingress", map[string]string{"app.kubernetes.io/name": "traefik"})
+	ports := gatewayIngressPorts(t, np)
+	for _, p := range ports {
+		if p == AcmeHTTP01SolverPort {
+			t.Errorf("gateway ingress rule allows port %d with TLS disabled; the ACME solver port should only be opened when TLS is enabled", AcmeHTTP01SolverPort)
+		}
+	}
+}
+
+// Regression test: without this port, cert-manager's HTTP-01 solver Pod is
+// unreachable through the shared gateway and every certificate request
+// silently times out — see TenantNetworkPolicy's AcmeHTTP01SolverPort
+// comment. Caught live provisioning a real OdooInstance with
+// domain.tls.enabled=true against a real cert-manager ClusterIssuer.
+func TestTenantNetworkPolicy_TLSEnabled_AllowsAcmeSolverPort(t *testing.T) {
+	instance := testInstance()
+	instance.Spec.Domain.TLS.Enabled = true
+	np := TenantNetworkPolicy(instance, "ingress", map[string]string{"app.kubernetes.io/name": "traefik"})
+	ports := gatewayIngressPorts(t, np)
+	for _, p := range ports {
+		if p == AcmeHTTP01SolverPort {
+			return
+		}
+	}
+	t.Errorf("gateway ingress rule does not allow port %d with TLS enabled; got ports %v", AcmeHTTP01SolverPort, ports)
+}
+
+func TestTenantNetworkPolicy_TLSEnabled_StillAllowsOdooPorts(t *testing.T) {
+	instance := testInstance()
+	instance.Spec.Domain.TLS.Enabled = true
+	np := TenantNetworkPolicy(instance, "ingress", map[string]string{"app.kubernetes.io/name": "traefik"})
+	ports := gatewayIngressPorts(t, np)
+	want := map[int32]bool{OdooHTTPPort: false, OdooLongpollingPort: false}
+	for _, p := range ports {
+		if _, ok := want[p]; ok {
+			want[p] = true
+		}
+	}
+	for port, found := range want {
+		if !found {
+			t.Errorf("expected gateway ingress rule to still allow Odoo port %d, got ports %v", port, ports)
+		}
 	}
 }
 

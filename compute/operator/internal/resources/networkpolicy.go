@@ -29,6 +29,22 @@ func TenantNetworkPolicy(instance *saasv1alpha1.OdooInstance, gatewayNamespace s
 	httpsPort := intstr.FromInt32(443)
 	pgPort := intstr.FromInt32(PostgreSQLPort)
 
+	gatewayIngressPorts := []networkingv1.NetworkPolicyPort{
+		{Protocol: &tcp, Port: &httpPort},
+		{Protocol: &tcp, Port: &longpollPort},
+	}
+	if instance.Spec.Domain.TLS.Enabled {
+		// cert-manager's HTTP-01 solver Pod (created and destroyed per
+		// certificate issuance/renewal) is reached through the same
+		// shared gateway as the Odoo Service, on this fixed port — see
+		// AcmeHTTP01SolverPort. Without this, the default-deny policy
+		// silently times out every challenge and no certificate is ever
+		// issued for a NetworkPolicy-isolated tenant.
+		acmePort := intstr.FromInt32(AcmeHTTP01SolverPort)
+		gatewayIngressPorts = append(gatewayIngressPorts,
+			networkingv1.NetworkPolicyPort{Protocol: &tcp, Port: &acmePort})
+	}
+
 	return &networkingv1.NetworkPolicy{
 		TypeMeta: metav1.TypeMeta{APIVersion: "networking.k8s.io/v1", Kind: "NetworkPolicy"},
 		ObjectMeta: metav1.ObjectMeta{
@@ -50,10 +66,7 @@ func TenantNetworkPolicy(instance *saasv1alpha1.OdooInstance, gatewayNamespace s
 							PodSelector: &metav1.LabelSelector{MatchLabels: gatewaySelector},
 						},
 					},
-					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: &tcp, Port: &httpPort},
-						{Protocol: &tcp, Port: &longpollPort},
-					},
+					Ports: gatewayIngressPorts,
 				},
 				{
 					// Intra-namespace only (Odoo <-> its own database).

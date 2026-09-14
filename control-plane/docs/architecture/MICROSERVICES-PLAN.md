@@ -455,5 +455,48 @@ Service for at least one full billing + backup-retention cycle:
 YYYY-MM-DD — Step X.Y — <one-line result> — verified: <how> — commit: <sha>
 ```
 
-(No entries yet — this plan was drafted 2026-09-13, prior to any
-Phase 1 work starting.)
+2026-09-15 — Step 1.5 — Two fixes found by provisioning real tenants against
+a live cluster, both now committed with regression tests:
+
+1. **TenantNetworkPolicy ACME gap.** Provisioning a real `OdooInstance` with
+   `domain.tls.enabled=true` against a real cert-manager `ClusterIssuer`
+   showed every certificate request timing out. Cause: the tenant's
+   default-deny `NetworkPolicy` only let the shared gateway reach the Odoo
+   HTTP/longpolling ports — cert-manager's HTTP-01 solver Pod (which the
+   gateway must also reach, on its own fixed port) was silently blocked.
+   Fixed in `internal/resources/networkpolicy.go`/`service.go`: the gateway
+   ingress rule now also allows `AcmeHTTP01SolverPort` (8089), gated behind
+   `Spec.Domain.TLS.Enabled` so TLS-disabled tenants don't gain an unneeded
+   open port. Verified: 3 new tests in `resources_test.go` (port present
+   only when TLS enabled; existing Odoo ports still allowed either way) —
+   `go test ./internal/resources/...` 15/15 pass.
+
+2. **Backup/restore tool image built and round-trip tested.**
+   `compute/tools/backup-tool` now has both `run-backup.sh` (already
+   existed) and a new `run-restore.sh` — the counterpart `OdooRestoreJob`
+   (`internal/resources/restore.go`) has expected since it was written, but
+   no image ever shipped it, so a real restore Job would have failed with
+   "no such file or directory" on `/usr/local/bin/run-restore.sh`. Built the
+   image and verified it for real: two throwaway Postgres containers
+   (`pg-src`/`pg-dst`) plus host directories standing in for the backup and
+   filestore PVCs, ran `run-backup.sh` against `pg-src`, then `run-restore.sh`
+   against the empty `pg-dst` using that backup's output — confirmed the
+   restored table rows and a nested-directory filestore tree both matched
+   the source exactly. **Real bug caught by this test, not by
+   inspection**: `run-restore.sh` aborted under `set -e` after successfully
+   extracting every file, because `run-backup.sh`'s
+   `tar -C /filestore -czf ... .` archives `/filestore`'s own `.` directory
+   entry, and restoring *that* entry's mtime/mode onto `$ODOO_DATA_DIR` (a
+   mount point the non-root restore container doesn't own) is a hard error
+   for GNU tar — even though every real file underneath extracts fine. Fixed
+   by archiving each top-level entry individually
+   (`find . -mindepth 1 -print0 | tar --null --no-recursion -czf ...`)
+   instead of the whole `.` directory, so restore never touches the mount
+   root's own attributes. Re-ran the same round-trip after the fix to
+   confirm it's clean. ObjectStorage source/destination remains
+   unimplemented in both scripts (fails loud, matches the existing
+   documented gap) — not in scope for this step.
+
+Next: remaining Phase 1 items (1.1-1.4, the actual cluster/registry/CRD
+wiring this tenant was provisioned against) and the ObjectStorage backend
+for both scripts, still open per the notes above.

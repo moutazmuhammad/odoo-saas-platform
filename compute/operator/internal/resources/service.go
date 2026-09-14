@@ -17,6 +17,13 @@ const (
 	OdooLongpollingPort = 8072
 	// PostgreSQLPort is the standard PostgreSQL port.
 	PostgreSQLPort = 5432
+	// AcmeHTTP01SolverPort is the fixed port cert-manager's acmesolver
+	// image listens on for every HTTP-01 challenge Pod it creates
+	// (regardless of Odoo version or tenant). The tenant NetworkPolicy
+	// must allow the shared gateway to reach it on this port, or the
+	// challenge times out and no certificate is ever issued — see
+	// TenantNetworkPolicy.
+	AcmeHTTP01SolverPort = 8089
 )
 
 // OdooService builds the ClusterIP Service in front of the Odoo Deployment.

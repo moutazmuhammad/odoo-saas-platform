@@ -345,8 +345,14 @@ register/start+resend, reset/start+verify were already covered.)
     `remove-repo`/`pull-repo` — these three always redirect to the same
     `/my/instances/<id>` on success or internal no-op alike, so coverage
     checks the resulting `saas.instance.repo` state and which model
-    method fired, not the redirect target. Still open: `subscribe`/
-    `checkout` (trial->paid + invoice payment page) and `spa.py` entirely.
+    method fired, not the redirect target; (7) `TestPortalSubscribeAndCheckout`
+    covering `subscribe` (trial->paid conversion) and `checkout` (the
+    invoice payment page, exercised for real with a genuinely posted
+    `account.move` since there's no async work to isolate away from).
+    **`portal.py`'s route coverage is now complete** — 7 test classes, 100
+    tests, from zero test infrastructure at the start of this session.
+    Still open: `spa.py` entirely (separate, form-post/QWeb testing
+    style, size/scope not yet surveyed).
 - **B.2** Add test files for the 4 zero-coverage models: `saas_payment.py`,
   `res_config_settings.py`, `saas_instance_package.py`, and
   **`saas_terminal_session.py`** — prioritize the terminal one, since it's
@@ -903,3 +909,26 @@ devctl.sh test — 352 tests (341+11), 0 failed, 0 errors — commit:
 f9bbc07. Remaining B.1.5 scope: `subscribe`/`checkout` (trial->paid +
 invoice payment page, the last and largest remaining piece) and
 `spa.py` entirely.
+
+2026-09-14 — Step B.1.5 (seventh and final portal.py slice) —
+`TestPortalSubscribeAndCheckout` (9 tests) for `subscribe`/`checkout`.
+`action_subscribe_from_trial()` mocked (synchronous billing-only ORM,
+already covered in `test_billing_overhaul.py`), same thin-smoke-test
+principle as change-plan; config-limit clamping verified by reading
+the real plan's `workers` field off the route's own recordset argument
+*inside* the mock's `side_effect` (cursor still open) rather than
+after the request completes, applying the lesson from the earlier
+closed-cursor bug proactively this time instead of hitting it again.
+`checkout` is a render-only GET with nothing async to isolate, so it's
+exercised for real end-to-end: created and posted a genuine
+`account.move` via `saas.instance._get_billing_product()` (the same
+product real subscription invoices use) and confirmed the page renders
+200 with a real unpaid invoice, alongside the auth-denied and
+no-unpaid-invoice-redirect cases. This closes out `portal.py`'s route
+coverage for B.1.5: 7 test classes, 100 tests in
+`saas_website/tests/`, up from no test infrastructure at all at the
+start of this session. Verified: scoped class alone (9/9), all of
+`saas_website` (100/100), then the full suite via devctl.sh test — 361
+tests (352+9), 0 failed, 0 errors — commit: b4e86ae. Remaining B.1.5
+scope: `spa.py` entirely — not yet surveyed, separate form-post/QWeb
+testing style from `portal.py`.

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@react-three/fiber": "^9.7.0",
@@ -33,6 +34,7 @@
     "@types/react-dom": "^19.2.7",
     "@types/three": "^0.160.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "@vitest/coverage-v8": "^4.1.11",
     "jsdom": "^26.1.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^4.3.3",

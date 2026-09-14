@@ -34,9 +34,9 @@ jobs:
       - name: Install deps
         working-directory: frontend/veltnex
         run: npm ci
-      - name: Component tests (Vitest)
+      - name: Component tests (Vitest, with coverage)
         working-directory: frontend/veltnex
-        run: npm run test
+        run: npm run test:coverage
       - name: Typecheck + build (tsc --noEmit && vite build)
         working-directory: frontend/veltnex
         run: npm run build
@@ -85,6 +85,9 @@ jobs:
           # file, so nothing here can silently fight Odoo's own pins; see
           # that file's header for how to regenerate it).
           pip install -r control-plane/requirements.txt
+          # B.5: coverage reporting only, not a runtime dep of either addon —
+          # installed standalone rather than pinned in requirements.txt.
+          pip install coverage
 
       - name: Write odoo.conf
         run: |
@@ -98,10 +101,17 @@ jobs:
           addons_path = $HOME/odoo/addons,$GITHUB_WORKSPACE/control-plane
           CONF
 
-      - name: Install modules + run tests
+      - name: Install modules + run tests (with coverage)
         run: |
           set -o pipefail
-          python "$HOME/odoo/odoo-bin" \
+          # B.5: coverage.py wraps the run, scoped to our two addons only
+          # (Odoo core itself is excluded) so the % reflects our code. Not
+          # gated on a threshold yet — just made visible on every run.
+          python -m coverage run \
+            --data-file="$GITHUB_WORKSPACE/.coverage" \
+            --source="$GITHUB_WORKSPACE/control-plane/saas_core,$GITHUB_WORKSPACE/control-plane/saas_website" \
+            --omit="*/tests/*,*/migrations/*" \
+            "$HOME/odoo/odoo-bin" \
             -c "$HOME/odoo.conf" \
             -d ci \
             -i saas_core,saas_website \
@@ -127,6 +137,9 @@ jobs:
             exit 1
           fi
           echo "All Odoo tests passed."
+
+      - name: Coverage report
+        run: python -m coverage report --data-file="$GITHUB_WORKSPACE/.coverage"
 
   compute:
     name: Compute operator (build, vet, unit + envtest)

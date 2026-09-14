@@ -68,13 +68,22 @@ case "${1:-}" in
   test)   # run the saas test suite in a DEDICATED test DB. Must override the
           # conf's dbfilter (=^saas_dev$) and http port, or HttpCase requests
           # route to saas_dev and every HTTP-layer test fails with not-found.
+          # Runs under `coverage` (B.5) so a coverage % is visible on every
+          # run, not just pass/fail — source-scoped to our two addons so the
+          # number reflects our code, not Odoo core.
     pg_up; cd "$ODOO"
     "$PGBIN/psql" -h 127.0.0.1 -p $PGPORT -U odoo -d postgres -c "DROP DATABASE IF EXISTS saas_test;" >/dev/null 2>&1
-    "$VENV/bin/python" odoo-bin -c "$CONF" -d saas_test -i saas_core,saas_website \
+    "$VENV/bin/python" -m coverage run \
+      --data-file="$REPO/.coverage" \
+      --source="$REPO/saas_core,$REPO/saas_website" \
+      --omit="*/tests/*,*/migrations/*" \
+      odoo-bin -c "$CONF" -d saas_test -i saas_core,saas_website \
       --test-enable --test-tags=/saas_core,/saas_website --without-demo=False \
       --db-filter='^saas_test$' --http-port=8093 --http-interface=127.0.0.1 \
       --log-level=test --logfile="$LOGDIR/test.log" --stop-after-init
-    echo "--- result ---"; grep -oE "[0-9]+ failed, [0-9]+ error\(s\) of [0-9]+ tests" "$LOGDIR/test.log" | tail -1 ;;
+    echo "--- result ---"; grep -oE "[0-9]+ failed, [0-9]+ error\(s\) of [0-9]+ tests" "$LOGDIR/test.log" | tail -1
+    echo "--- coverage ---"
+    "$VENV/bin/python" -m coverage report --data-file="$REPO/.coverage" | tail -20 ;;
   shell)  cd "$ODOO"; "$VENV/bin/python" odoo-bin shell -c "$CONF" -d "$DB" --no-http ;;
   crons-off)  # seed-only stability: disable all SaaS: crons (server must be down
               # so we don't fight a running cron worker's row lock).

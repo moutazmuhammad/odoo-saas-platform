@@ -1,89 +1,275 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+from kubernetes.client.rest import ApiException
 
 from odoo.tests.common import TransactionCase, tagged
 
 
+def _make_driver(kubeconfig='apiVersion: v1\nkind: Config\n'):
+    """A KubernetesDriver over a MagicMock saas.server, with the lazy
+    Kubernetes API client already short-circuited (see _client()'s
+    `self._api_client is not None` early-return) so tests never need a
+    real kubeconfig/cluster — they instead control _custom_api()/_core_api()
+    directly, the actual API-call boundary."""
+    from odoo.addons.saas_core.drivers.kubernetes_driver import KubernetesDriver
+    server = MagicMock()
+    server.id = 7
+    server.name = 'k8s-test-server'
+    server.region_id.kubeconfig = kubeconfig
+    server.region_id.name = 'test-region'
+    driver = KubernetesDriver(server)
+    driver._api_client = MagicMock()
+    return driver, server
+
+
+def _handle(namespace='odoo-tenant-odoo-acme'):
+    from odoo.addons.saas_core.drivers.base import ComputeHandle
+    return ComputeHandle(server_id=7, container_name='odoo_acme',
+                         instance_path=namespace, http_port=8069)
+
+
+def _fake_pod(phase='Running', restart_count=0, waiting_reason=None, name='odoo-acme-xyz'):
+    pod = MagicMock()
+    pod.metadata.name = name
+    pod.status.phase = phase
+    cs = MagicMock()
+    cs.name = 'odoo'
+    cs.restart_count = restart_count
+    if waiting_reason:
+        cs.state.waiting.reason = waiting_reason
+    else:
+        cs.state.waiting = None
+    pod.status.container_statuses = [cs]
+    return pod
+
+
 @tagged('post_install', '-at_install')
 class TestKubernetesDriver(TransactionCase):
-    """Phase 6: a SECOND ComputeDriver proves the Phase-1 seam — adding a backend
-    is a new file + a one-line switch, with ZERO business-logic change."""
-
-    def _handle(self):
-        from odoo.addons.saas_core.drivers.base import ComputeHandle
-        return ComputeHandle(server_id=1, container_name='odoo_acme',
-                             instance_path='ns', host='1.2.3.4', http_port=8069)
-
-    def _driver_over(self, fake_ssh):
-        from odoo.addons.saas_core.drivers.kubernetes_driver import KubernetesDriver
-        server = MagicMock()
-        server._get_ssh_connection.return_value = fake_ssh
-        server.id = 1
-        return KubernetesDriver(server)
+    """Phase 2.1: a REAL Kubernetes-API-backed ComputeDriver, managing the
+    Compute Service operator's OdooInstance CRD — not raw kubectl/YAML
+    strings over SSH (the prior stub, never run against a live cluster).
+    Mocked at the kubernetes-client API boundary (_custom_api()/_core_api()),
+    not at a shell/SSH layer, since there is no shell layer anymore."""
 
     # -------- the interface is fully satisfied (ABC enforces this) --------
     def test_implements_full_compute_driver_interface(self):
         from odoo.addons.saas_core.drivers.kubernetes_driver import KubernetesDriver
         from odoo.addons.saas_core.drivers.base import ComputeDriver
-        d = KubernetesDriver(MagicMock())   # instantiates => all abstract methods implemented
-        self.assertIsInstance(d, ComputeDriver)
+        driver, _server = _make_driver()
+        self.assertIsInstance(driver, ComputeDriver)
 
-    # -------- builds the right kubectl commands over a fake transport --------
-    def test_builds_kubectl_commands(self):
-        calls = []
+    # -------- kubeconfig loading ---------------------------------------
+    def test_missing_kubeconfig_raises_clear_error(self):
+        driver, _server = _make_driver(kubeconfig='')
+        driver._api_client = None  # force the lazy-load path to actually run
+        with self.assertRaises(RuntimeError) as cm:
+            driver.stop(_handle())
+        self.assertIn('kubeconfig', str(cm.exception))
 
-        class FakeSSH:
-            def __enter__(self): return self
-            def __exit__(self, *a): return False
-            def execute(self, cmd, timeout=None):
-                calls.append(cmd)
-                return (0, 'Running|0', '')
+    def test_loads_kubeconfig_via_real_client_config(self):
+        """Exercises the actual (non-bypassed) client-construction path,
+        proving the YAML->kubernetes.client.Configuration wiring itself
+        works, not just the tests that bypass it."""
+        driver, _server = _make_driver(
+            kubeconfig='apiVersion: v1\nclusters: []\ncontexts: []\n'
+                      'current-context: ""\nkind: Config\nusers: []\n')
+        driver._api_client = None
+        with patch('odoo.addons.saas_core.drivers.kubernetes_driver.k8s_config'
+                  '.load_kube_config_from_dict') as load_mock:
+            client = driver._client()
+        self.assertTrue(load_mock.called)
+        self.assertIsNotNone(client)
 
-        d = self._driver_over(FakeSSH())
-        h = self._handle()
-        d.start(h);   self.assertIn('scale deployment/odoo-acme --replicas=1', calls[-1])
-        d.stop(h);    self.assertIn('scale deployment/odoo-acme --replicas=0', calls[-1])
-        d.restart(h); self.assertIn('rollout restart deployment/odoo-acme', calls[-1])
-        d.destroy(h); self.assertIn('delete deployment,service odoo-acme', calls[-1])
-        d.destroy(h, purge=True); self.assertIn('delete namespace saas-odoo-acme', calls[-1])
-        d.exec(h, 'echo hi'); self.assertIn('exec deployment/odoo-acme -- sh -c', calls[-1])
-        d.logs(h, tail=50);   self.assertIn('logs deployment/odoo-acme --tail=50', calls[-1])
-        # every command is namespaced
-        self.assertTrue(all('-n saas-odoo-acme' in c for c in calls if c.startswith('kubectl -n')))
-
-    def test_health_parses_pod_phase(self):
-        class FakeSSH:
-            def __enter__(self): return self
-            def __exit__(self, *a): return False
-            def execute(self, cmd, timeout=None):
-                return (0, 'Running|3', '')
-        hs = self._driver_over(FakeSSH()).health(self._handle())
-        self.assertEqual(hs.status, 'running')
-        self.assertTrue(hs.running)
-        self.assertEqual(hs.restart_count, 3)
-
-    def test_health_not_found(self):
-        class FakeSSH:
-            def __enter__(self): return self
-            def __exit__(self, *a): return False
-            def execute(self, cmd, timeout=None):
-                return (1, '', 'No resources found')
-        hs = self._driver_over(FakeSSH()).health(self._handle())
-        self.assertEqual(hs.status, 'not_found')
-        self.assertFalse(hs.running)
-
-    def test_render_manifest(self):
-        from odoo.addons.saas_core.drivers.kubernetes_driver import KubernetesDriver
+    # -------- create() --------------------------------------------------
+    def test_create_builds_and_posts_odoo_instance_cr(self):
         from odoo.addons.saas_core.drivers.base import ComputeSpec
-        spec = ComputeSpec(container_name='odoo_acme', image='reg/odoo:18',
-                           instance_path='/x', http_port=8069, longpolling_port=8072,
-                           db_name='acme', db_host='db')
-        y = KubernetesDriver(MagicMock()).render_manifest(spec)
-        self.assertIn('kind: Deployment', y)
-        self.assertIn('kind: Service', y)
-        self.assertIn('image: reg/odoo:18', y)
-        self.assertIn('tenant_id: odoo-acme', y)   # Phase-4 telemetry label
+        driver, server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
 
-    # -------- the SEAM: business logic is identical for both backends --------
+        spec = ComputeSpec(
+            container_name='odoo_acme', image='registry.example.com/odoo:18.0-abc123',
+            instance_path='/unused', http_port=8069, longpolling_port=8072,
+            db_name='acme', db_host='db',
+            env={'domain': 'acme.example.com', 'odoo_version': '18.0',
+                'tls_enabled': True, 'filestore_size': '10Gi'})
+        handle = driver.create(spec)
+
+        custom_api.create_cluster_custom_object.assert_called_once()
+        args = custom_api.create_cluster_custom_object.call_args.args
+        self.assertEqual(args[0], 'saas.odoo.example.com')
+        self.assertEqual(args[1], 'v1alpha1')
+        self.assertEqual(args[2], 'odooinstances')
+        body = args[3]
+        self.assertEqual(body['metadata']['name'], 'odoo-acme')
+        self.assertEqual(body['spec']['version'], '18.0')
+        self.assertEqual(body['spec']['image'],
+                         {'repository': 'registry.example.com/odoo', 'tag': '18.0-abc123'})
+        self.assertEqual(body['spec']['domain']['hostname'], 'acme.example.com')
+        self.assertTrue(body['spec']['domain']['tls']['enabled'])
+        self.assertEqual(body['spec']['storage']['filestore']['size'], '10Gi')
+
+        self.assertEqual(handle.server_id, server.id)
+        self.assertEqual(handle.container_name, 'odoo_acme')
+        self.assertEqual(handle.instance_path, 'odoo-tenant-odoo-acme')
+
+    def test_create_requires_domain(self):
+        from odoo.addons.saas_core.drivers.base import ComputeSpec
+        driver, _server = _make_driver()
+        driver._custom_api = MagicMock()
+        spec = ComputeSpec(
+            container_name='odoo_nodom', image='odoo:18.0', instance_path='/x',
+            http_port=8069, longpolling_port=8072, db_name='x', db_host='db')
+        with self.assertRaises(RuntimeError):
+            driver.create(spec)
+
+    def test_create_raises_on_api_error(self):
+        from odoo.addons.saas_core.drivers.base import ComputeSpec
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        custom_api.create_cluster_custom_object.side_effect = ApiException(status=409, reason='AlreadyExists')
+        driver._custom_api = MagicMock(return_value=custom_api)
+        spec = ComputeSpec(
+            container_name='odoo_dup', image='odoo:18.0', instance_path='/x',
+            http_port=8069, longpolling_port=8072, db_name='x', db_host='db',
+            env={'domain': 'dup.example.com'})
+        with self.assertRaises(RuntimeError):
+            driver.create(spec)
+
+    # -------- destroy() ---------------------------------------------------
+    def test_destroy_deletes_cr(self):
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
+        driver.destroy(_handle())
+        custom_api.delete_cluster_custom_object.assert_called_once_with(
+            'saas.odoo.example.com', 'v1alpha1', 'odooinstances', 'odoo-acme')
+
+    def test_destroy_tolerates_already_gone(self):
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        custom_api.delete_cluster_custom_object.side_effect = ApiException(status=404)
+        driver._custom_api = MagicMock(return_value=custom_api)
+        driver.destroy(_handle())  # must not raise
+
+    def test_destroy_raises_on_real_error(self):
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        custom_api.delete_cluster_custom_object.side_effect = ApiException(status=500)
+        driver._custom_api = MagicMock(return_value=custom_api)
+        with self.assertRaises(RuntimeError):
+            driver.destroy(_handle())
+
+    # -------- start()/stop()/restart() ------------------------------------
+    def test_start_and_stop_patch_suspended(self):
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
+        h = _handle()
+
+        driver.stop(h)
+        custom_api.patch_cluster_custom_object.assert_called_with(
+            'saas.odoo.example.com', 'v1alpha1', 'odooinstances', 'odoo-acme',
+            {'spec': {'suspended': True}})
+
+        driver.start(h)
+        custom_api.patch_cluster_custom_object.assert_called_with(
+            'saas.odoo.example.com', 'v1alpha1', 'odooinstances', 'odoo-acme',
+            {'spec': {'suspended': False}})
+
+    def test_restart_stops_then_starts(self):
+        driver, _server = _make_driver()
+        calls = []
+        driver.stop = lambda h: calls.append('stop')
+        driver.start = lambda h: calls.append('start')
+        driver.restart(_handle())
+        self.assertEqual(calls, ['stop', 'start'])
+
+    # -------- health() ------------------------------------------------------
+    def test_health_maps_ready_phase_to_running(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={'status': {'phase': 'Ready'}})
+        driver._first_pod = MagicMock(return_value=_fake_pod(restart_count=2))
+        hs = driver.health(_handle())
+        self.assertTrue(hs.running)
+        self.assertEqual(hs.status, 'running')
+        self.assertEqual(hs.restart_count, 2)
+
+    def test_health_not_found_when_cr_missing(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value=None)
+        hs = driver.health(_handle())
+        self.assertFalse(hs.running)
+        self.assertEqual(hs.status, 'not_found')
+
+    def test_health_crash_loop_backoff_overrides_ready_phase(self):
+        """A pod can be in CrashLoopBackOff while the CR's own coarser
+        phase still says Ready (e.g. right after a bad redeploy, before
+        the operator's own status catches up) — the pod-level signal must
+        win, since this drives real crash-loop auto-stop logic
+        (saas_instance.py's _CRASH_LOOP_THRESHOLD check)."""
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={'status': {'phase': 'Ready'}})
+        driver._first_pod = MagicMock(
+            return_value=_fake_pod(restart_count=5, waiting_reason='CrashLoopBackOff'))
+        hs = driver.health(_handle())
+        self.assertEqual(hs.status, 'restarting')
+        self.assertFalse(hs.running)
+        self.assertEqual(hs.restart_count, 5)
+
+    # -------- endpoint() ----------------------------------------------------
+    def test_endpoint_parses_https_url(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(
+            return_value={'status': {'url': 'https://acme.example.com'}})
+        host, port = driver.endpoint(_handle())
+        self.assertEqual(host, 'acme.example.com')
+        self.assertEqual(port, 443)
+
+    def test_endpoint_empty_when_no_status_url(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={'status': {}})
+        self.assertEqual(driver.endpoint(_handle()), ('', 0))
+
+    # -------- logs() ----------------------------------------------------
+    def test_logs_reads_pod_log(self):
+        driver, _server = _make_driver()
+        driver._first_pod = MagicMock(return_value=_fake_pod())
+        core_api = MagicMock()
+        core_api.read_namespaced_pod_log.return_value = 'hello from odoo\n'
+        driver._core_api = MagicMock(return_value=core_api)
+        self.assertEqual(driver.logs(_handle(), tail=50), 'hello from odoo\n')
+        core_api.read_namespaced_pod_log.assert_called_once_with(
+            'odoo-acme-xyz', 'odoo-tenant-odoo-acme', container='odoo', tail_lines=50)
+
+    def test_logs_empty_when_no_pod(self):
+        driver, _server = _make_driver()
+        driver._first_pod = MagicMock(return_value=None)
+        self.assertEqual(driver.logs(_handle()), '')
+
+    # -------- exec() ------------------------------------------------------
+    def test_exec_no_pod_returns_nonzero(self):
+        driver, _server = _make_driver()
+        driver._first_pod = MagicMock(return_value=None)
+        result = driver.exec(_handle(), 'echo hi')
+        self.assertFalse(result.ok)
+        self.assertEqual(result.rc, 127)
+
+    def test_exec_success(self):
+        driver, _server = _make_driver()
+        driver._first_pod = MagicMock(return_value=_fake_pod())
+        driver._core_api = MagicMock(return_value=MagicMock())
+        fake_resp = MagicMock()
+        fake_resp.read_stdout.return_value = 'ok\n'
+        fake_resp.read_stderr.return_value = ''
+        fake_resp.returncode = 0
+        with patch('odoo.addons.saas_core.drivers.kubernetes_driver.k8s_stream',
+                  return_value=fake_resp):
+            result = driver.exec(_handle(), 'echo ok')
+        self.assertTrue(result.ok)
+        self.assertEqual(result.stdout, 'ok\n')
+
+    # -------- the SEAM: business logic is identical for both backends -----
     def test_compute_driver_selected_by_server_type(self):
         from odoo.addons.saas_core.drivers.kubernetes_driver import KubernetesDriver
         from odoo.addons.saas_core.drivers.ssh_docker_driver import SshDockerDriver
@@ -114,8 +300,10 @@ class TestKubernetesDriver(TransactionCase):
 
     def test_do_stop_routes_through_kubernetes_unchanged(self):
         """The god-model's _do_stop is NOT changed for K8s — it just calls
-        self._compute_driver().stop(); on a k8s server that builds a kubectl
-        scale-to-0. This is the no-rewrite proof."""
+        self._compute_driver().stop(); on a k8s server that patches
+        spec.suspended=true on the real OdooInstance CR. This is the
+        no-rewrite proof, now against the real-API driver."""
+        from odoo.addons.saas_core.drivers.kubernetes_driver import KubernetesDriver
         product = self.env['saas.product'].sudo().search([('is_hosting', '=', True)], limit=1) \
             or self.env['saas.product'].sudo().create({'name': 'K Host2', 'is_hosting': True})
         plan = self.env['saas.plan'].sudo().create({
@@ -134,16 +322,10 @@ class TestKubernetesDriver(TransactionCase):
             'docker_server_id': k8s_srv.id, 'billing_period': 'monthly',
             'environment': 'production', 'region_id': False, 'state': 'running'})
 
-        calls = []
-
-        class FakeSSH:
-            def __enter__(self): return self
-            def __exit__(self, *a): return False
-            def execute(self, cmd, timeout=None):
-                calls.append(cmd); return (0, '', '')
-
-        with patch.object(type(k8s_srv), '_get_ssh_connection', return_value=FakeSSH()):
+        custom_api = MagicMock()
+        with patch.object(KubernetesDriver, '_custom_api', return_value=custom_api):
             inst._do_stop()
         self.assertEqual(inst.state, 'stopped')
-        self.assertTrue(any('scale deployment/odoo-konstop --replicas=0' in c for c in calls),
-                        'expected _do_stop to issue a kubectl scale-to-0, got: %s' % calls)
+        custom_api.patch_cluster_custom_object.assert_called_with(
+            'saas.odoo.example.com', 'v1alpha1', 'odooinstances', 'odoo-konstop',
+            {'spec': {'suspended': True}})

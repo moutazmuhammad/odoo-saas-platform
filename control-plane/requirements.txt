@@ -8,6 +8,9 @@
 #   Jinja2                - config/manifest templating (odoo.conf, docker-compose.yml)
 #   boto3                 - S3-compatible object storage (backups, registry)
 #   google-cloud-storage  - GCS object storage backend
+#   kubernetes            - Kubernetes API client (KubernetesDriver, Phase 2.1 of
+#                           MICROSERVICES-PLAN.md — talks to the Compute Service
+#                           operator's OdooInstance CRD directly, no kubectl/SSH)
 #
 # Everything else below is their transitive closure, pinned for full
 # reproducibility (a second `pip install -r` of this file always produces
@@ -27,16 +30,22 @@
 #     -o /tmp/odoo18-requirements.txt
 #   python3.12 -m venv /tmp/reqpin-venv && . /tmp/reqpin-venv/bin/activate
 #   pip install -c /tmp/odoo18-requirements.txt \
-#     paramiko jinja2 boto3 google-cloud-storage
+#     paramiko jinja2 boto3 google-cloud-storage kubernetes
 #   pip freeze > control-plane/requirements.txt   # then restore this header
 
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.3
+aiosignal==1.4.0
+attrs==26.1.0
 bcrypt==5.0.0
-boto3==1.43.93
-botocore==1.43.93
+boto3==1.43.94
+botocore==1.43.94
 certifi==2026.7.22
 cffi==2.1.1
 charset-normalizer==3.5.1
 cryptography==42.0.8
+durationpy==0.11
+frozenlist==1.8.0
 google-api-core==2.30.3
 google-auth==2.58.0
 google-cloud-core==2.7.0
@@ -48,8 +57,12 @@ idna==3.6
 invoke==3.0.3
 Jinja2==3.1.2
 jmespath==1.1.0
+kubernetes==36.0.3
 MarkupSafe==2.1.5
+multidict==6.8.0
+oauthlib==3.3.1
 paramiko==5.0.0
+propcache==0.5.2
 proto-plus==1.28.4
 protobuf==7.36.1
 pyasn1==0.6.4
@@ -57,7 +70,12 @@ pyasn1_modules==0.4.2
 pycparser==3.0
 PyNaCl==1.6.2
 python-dateutil==2.8.2
+PyYAML==6.0.3
 requests==2.31.0
+requests-oauthlib==2.0.0
 s3transfer==0.19.2
 six==1.17.0
+typing_extensions==4.16.0
 urllib3==2.0.7
+websocket-client==1.9.2
+yarl==1.24.5

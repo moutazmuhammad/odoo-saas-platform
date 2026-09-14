@@ -31,7 +31,7 @@ Key capabilities:
         'payment', 'account_payment',
     ],
     'external_dependencies': {
-        'python': ['paramiko', 'jinja2', 'boto3', 'google-cloud-storage'],
+        'python': ['paramiko', 'jinja2', 'boto3', 'google-cloud-storage', 'kubernetes'],
     },
     'data': [
         'security/saas_security.xml',

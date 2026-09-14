@@ -619,6 +619,43 @@ suite green, 474 tests (471 + 3 new), 0 failed/errors — commit `ddb53da`.
 `saas.region.kubeconfig` yet; that wiring belongs to Phase 2's
 `KubernetesDriver` work, not this storage-only step. 1.2 is otherwise
 complete. Remaining in Phase 1: 1.1/1.3 (formalize the already-in-use
-cluster/registry), 1.4 (the image-strategy integration code — still not
-started, the one item in this phase the plan itself flags as needing
-real new code), and the ObjectStorage backend gap noted above.
+cluster/registry) and 1.4 (the image-strategy integration code — still
+not started, the one item in this phase the plan itself flags as
+needing real new code).
+
+2026-09-15 — ObjectStorage backend for backup/restore — closed the last
+explicitly-flagged gap in `compute/tools/backup-tool` (both scripts
+previously failed loud/unimplemented for `ObjectStorage`). Added
+`rclone` (available via `apt` on the `postgres:16-bookworm` base — no
+extra image layer/binary download needed) configured purely through env
+vars against any S3-compatible endpoint (`PROVIDER=Other`, not
+AWS-specific), factored into a new `lib-objectstorage.sh` sourced by
+both scripts rather than duplicated. Key layout mirrors the PVC case
+exactly — `<bucket>/<prefix-or-instance-name>/<timestamp>/{db.dump,
+filestore.tar.gz,manifest.json}` — reusing the same
+`DESTINATION_PREFIX`/`SOURCE_PREFIX`-falls-back-to-`INSTANCE_NAME`
+convention Step 1.5's PVC-restore fix established, so a bucket can be
+shared across instances and a cross-instance restore still resolves
+correctly. Retention pruning reimplemented against `rclone lsf`/`purge`.
+
+Verified against a real MinIO container (`quay.io/minio/minio` —
+`docker.io/minio/minio` now denies anonymous pulls, a good thing to know
+for anyone else hitting this): a full backup→restore round trip with
+matching DB rows and a nested filestore tree; a **cross-instance**
+restore (`SOURCE_PREFIX=demo`, restoring `INSTANCE_NAME=demo2-restored`
+— deliberately different names) resolving correctly; and retention
+pruning keeping exactly N runs across 3 successive backups. Rebuilt and
+redeployed the live cluster's operator/backup image to this version
+(`localhost:32000/odoo-saas/backup-tool:v6`) and re-ran a manual backup
+against the still-PVC-based `phase-d1-test` tenant as a regression
+check — unaffected, completed successfully including its own retention
+prune. Commit: `ac28704`.
+
+**Both scripts are now fully implemented for both destination/source
+types** — no remaining "fails loud, not implemented" branches in either
+script. Not yet exercised: an actual live-cluster `OdooInstance` using
+`Destination.Type=ObjectStorage` end-to-end (verification above used
+local Docker containers standing in for the cluster's Pods, matching
+Step 1.5's own established verification bar for scripts, but not a
+live-cluster CronJob run against ObjectStorage specifically) — worth
+doing before this destination type is offered to a real tenant.

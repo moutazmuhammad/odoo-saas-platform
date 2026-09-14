@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   spa:
-    name: SPA typecheck + build
+    name: SPA typecheck + test + build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +34,9 @@ jobs:
       - name: Install deps
         working-directory: frontend/veltnex
         run: npm ci
+      - name: Component tests (Vitest)
+        working-directory: frontend/veltnex
+        run: npm run test
       - name: Typecheck + build (tsc --noEmit && vite build)
         working-directory: frontend/veltnex
         run: npm run build

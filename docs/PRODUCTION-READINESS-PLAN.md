@@ -1069,3 +1069,59 @@ to 428 tests, 0 failed / 0 errors throughout. Next: B.3 (the untested
 cron methods in §1.2 — billing-lifecycle crons first for direct
 revenue impact, then operational crons, then the provisioning helpers
 that Phase D will supersede anyway).
+
+2026-09-14 — Step B.3 (group 1) — the 5 billing-lifecycle crons on
+`saas.instance` (`_cron_check_overdue_invoices`/`_check_dunning`,
+`_cron_retry_failed_payments`/`_retry_failed_payments`,
+`_cron_send_renewal_reminders`, `_cron_apply_paid_pending_changes`,
+`_cron_check_trial_expiry`), none referenced by name anywhere in the
+suite before. New `test_billing_crons.py` (18 tests): dunning suspends
+a `stopped` instance directly (no SSH — only a `running` instance's
+suspension goes through `action_suspend`/SSH) once past the grace
+period, skips invoices `_is_optional_invoice` flags as optional, sends
+one within-grace warning without suspending, and — the one dispatch
+test — proves a `ValueError` raised inside one instance's
+`_check_dunning` is caught, rolled back (via the test-cursor's
+save-point-backed `commit`/`rollback`, not a real commit), and logged
+without aborting the batch, while a second instance in the same cron
+pass still gets suspended; retry fires the mocked
+`_try_auto_charge_invoice` only on the exact 1/3/5-day-after-due-date
+schedule and only once per invoice per day (a
+`saas.payment.attempt` row for today short-circuits a re-attempt);
+renewal reminders fire once per offset (7d/1d) and don't re-fire the
+same day once the per-offset flag is set; the paid-pending-change
+safety net picks `_apply_pending_upgrade` vs `_apply_pending_plan_change`
+based on `is_trial` and leaves an instance alone when its pending
+invoice isn't paid (or there is none); trial expiry suspends and
+clears any unpaid `pending_plan_id` only when the partner's
+`saas_trial_end_date` is past AND a trial-used flag is set.
+
+Two non-obvious findings worth carrying into any future cron test in
+this model: (1) every one of these crons calls `self.env.cr.commit()`/
+`rollback()` per instance in its loop, and Odoo's `TransactionCase`
+makes both **raise `AssertionError`** ("Cannot commit or rollback a
+cursor from inside a test") rather than silently no-op — the fix,
+already established in `test_job_queue.py`'s `_no_commit` helper and
+now hoisted into this file's `setUp`, is `patch.object(self.env.cr,
+'commit')` / `'rollback'` (bare `MagicMock`, no real effect) before
+calling any `_cron_*` entry point directly, not just the queue-drain
+ones. (2) `account.move.create()` flatly refuses `state='posted'` in
+the create vals ("must create a draft move and post it after") — and a
+line-less (`amount_total == 0`) move's `payment_state` recomputes to
+`'paid'` regardless of what's written afterward, silently defeating
+the dunning/retry filters that require `payment_state not in ('paid',
+'in_payment')`. Test invoices therefore need one non-zero
+`invoice_line_ids` line, created draft, with `state`/`payment_state`
+forced via a `write()` call after `create()` (fine for these tests —
+only the crons' own field reads are exercised, not real posting/
+numbering). Also: `_cron_check_overdue_invoices`'s own `search()`
+requires `sale_order_id != False`, easy to miss when building a bare
+test instance for the dispatch-only test.
+
+Verified: scoped class alone (18/18), then the full suite via
+`devctl.sh test` — 446 tests (428+18), 0 failed, 0 errors — commit:
+3261ec9. Remaining B.3 scope: group 2 (operational crons —
+`_cron_renew_daily_backup_addons`, `_cron_verify_webhooks`,
+`_cron_check_container_health`, `_cron_sample_live_metrics`,
+`_cron_record_metrics`) and group 3 (the 3 thin provisioning-helper
+tests, `_pg_clone_db`/`_provision_nginx`/`_clone_product_repos`).

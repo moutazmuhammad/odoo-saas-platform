@@ -338,9 +338,11 @@ register/start+resend, reset/start+verify were already covered.)
     mocking needed) and `TestPortalInstanceFolders` (folder CRUD +
     move-to-folder — pure ORM, ownership enforced by hand-filtering on
     `partner_id` rather than `_document_check_access`, tested the same
-    way). Still open: `subscribe`/`checkout` (trial->paid + invoice
-    payment page), backup `create`/`restore`/`download`/`discard`, repo
-    `update`/`remove`/`pull`, and `spa.py` entirely.
+    way); (5) `TestPortalBackups` covering `backups/ondemand`,
+    `backups/<id>/discard`, `backups/<id>/download`, `backup/<id>/restore`
+    (route paths are inconsistently plural/singular — that's the app, not
+    a typo). Still open: `subscribe`/`checkout` (trial->paid + invoice
+    payment page), repo `update`/`remove`/`pull`, and `spa.py` entirely.
 - **B.2** Add test files for the 4 zero-coverage models: `saas_payment.py`,
   `res_config_settings.py`, `saas_instance_package.py`, and
   **`saas_terminal_session.py`** — prioritize the terminal one, since it's
@@ -855,3 +857,25 @@ full suite via devctl.sh test — 320 tests (300+20), 0 failed, 0 errors
 (trial->paid + invoice payment page, still the largest remaining
 single piece), backup routes, repo management routes, `spa.py`
 entirely.
+
+2026-09-14 — Step B.1.5 (fifth slice) — `TestPortalBackups` (21 tests)
+for `backups/ondemand`, `backups/<id>/discard`, `backups/<id>/download`,
+`backup/<id>/restore`. Reused `test_job_queue.py`'s SSH/`_compute_driver`
+stub pattern for `hosting_db_list()` (called for real by ondemand to
+validate the db name), and patched `run_in_background` at its source
+module attribute — the route does a fresh local import from
+`odoo.addons.saas_core.utils` inside the function body, so patching the
+module attribute is what the re-import picks up each call, same
+standing rule as every other `run_in_background()` route already in
+this plan. `action_restore_backup`/`action_restore_full_instance`
+mocked entirely (async, SSH-heavy, model-layer concern not portal).
+Caught a real bug in my own first draft, not the app: copied restore's
+singular `/backup/<id>/...` path onto the download route too, which is
+actually registered plural (`/backups/<id>/download`) — 4 tests 404'd
+against a nonexistent route instead of testing anything, caught
+immediately by the scoped run (1 failed + 3 errors) rather than by a
+false green. Verified: scoped class alone (21/21 after the fix), all
+of `saas_website` (80/80), then the full suite via devctl.sh test — 341
+tests (320+21), 0 failed, 0 errors — commit: 24766d8. Remaining B.1.5
+scope: `subscribe`/`checkout` (still the largest remaining piece), repo
+management routes (`update`/`remove`/`pull`), and `spa.py` entirely.

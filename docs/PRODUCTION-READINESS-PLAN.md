@@ -1331,7 +1331,7 @@ above it for SEC-001/002). Status:
 | SEC-003 root containers | Critical | **Fixed** | `Dockerfile.tenant.jinja` ends `USER odoo`; `docker-compose.yml.jinja` has `cap_drop:[ALL]` + `no-new-privileges:true`. Read-only rootfs deliberately deferred (documented tradeoff, Odoo writes outside its volumes). |
 | SEC-004 tenant `CREATEDB` | High | **Still open** | See C.4 below. |
 | SEC-005 host shell scoping | High | **Fixed (2026-09-15)** | `ssh_terminal.py`'s host terminal (raw SSH into platform machines, distinct from the customer instance shell) now requires a new, narrower `group_saas_host_shell`, not implied by `group_saas_manager` — enforced at the controller, the `saas.server.action_open_terminal()` method itself, and the view button's own `groups=`. An idempotent migration grandfathers existing Managers into the new group so the change doesn't silently revoke access on deploy. See the progress log (§11) for the full rationale. Commit `52b1394`. |
-| SEC-006 plaintext host creds | High | **Still open** | `odoo.conf.jinja:11` still renders `db_password` in cleartext. |
+| SEC-006 plaintext host creds | High | **Partially fixed (2026-09-15)** | `odoo.conf.jinja:11` still renders `db_password`/`admin_passwd` in cleartext — Odoo itself needs to read the plaintext from its own config file to connect to Postgres, so that part is an inherent constraint of running upstream Odoo, not something this codebase can fix alone. What WAS fixable and is now fixed: every deploy/redeploy/restore path was `chmod -R 777`ing (one site `755`) the directory containing that file — world-readable AND world-writable on a shared multi-tenant host, alongside the filestore and the addons Odoo actually executes as code. Tightened to `700` (owner-only) across all 9 call sites; see the progress log for the full writeup, including 2 sites that had no `chown` at all before (papered over by the wide mode) and needed one added. Commit `3ac9e15`. |
 | SEC-007 supply chain | High | **Partially fixed** | `_PIP_PACKAGE_RE` (`saas_instance.py:1393`) is now strictly `^...$`-anchored, closing the specific "unanchored regex smuggles `--flags`" concern. Package allow-listing / internal mirror / image scanning — the audit's other recommendations — are not implemented. |
 | SEC-008 presigned URL TTL | High | **Mostly fixed** | `PRESIGNED_URL_EXPIRY` cut from 7 days to **15 min** (`saas_instance_backup.py:17`), lists re-mint fresh links. Per-download audit logging (pairing with SEC-010) still not wired — no `_saas_audit` call anywhere in that file. |
 | SEC-009 security telemetry | High | **Partially fixed** | `saas.alert._notify()` exists and is wired to server-health degradation + operation failures (opt-in webhook). No Sentry/Prometheus/SIEM — `grep -ri 'sentry\|prometheus\|datadog\|statsd'` across both addons is empty. |
@@ -1391,3 +1391,56 @@ tests (491 + 6), 0 failed/errors. Commit: `52b1394`.
 **Deployment note for whoever ships this**: no action needed beyond the
 normal module upgrade (`-u saas_core`) — the grandfathering migration
 handles the permission transition automatically and safely.
+
+2026-09-15 — SEC-006 (plaintext host creds), the permissions half —
+while fixing SEC-005 above, noticed every deploy/redeploy/restore/clone
+path in `saas_instance.py` follows a `chown -R container_uid:
+container_uid` with `chmod -R 777` (one site: `755`) on the tenant's
+`config`/`data`/`addons` directories. The chown already gives the
+container's own UID full ownership, so the wide mode was doing nothing
+for the container itself — its only effect was making these world-
+readable *and* world-writable for every other process on the same
+shared host: `config/odoo.conf`'s plaintext `db_password`/`admin_passwd`
+(the original SEC-006 finding), the customer filestore under `data/`,
+and — the sharpest edge — `addons/`, which Odoo actually loads and
+executes as Python. World-writable addons on a shared host is a
+cross-tenant **code-injection** path (a compromised or escaped process
+from a different tenant plants a file, this tenant's Odoo imports and
+runs it), not merely a data-exposure concern.
+
+Ran a dedicated audit pass (not just fixing the first occurrence found)
+across all 9 `chmod -R 777`/`755` call sites before touching anything,
+specifically checking: does a chown to the tenant's own `container_uid`
+always precede it (yes, everywhere), could any path ever be shared
+across two containers/tenants needing group rather than owner access
+(no — `_get_instance_path`'s own containment checks guarantee per-
+tenant-unique paths), and does anything else legitimately need group/
+other access to these paths (found nothing). Two sites
+(`_restore_snapshot`, `_do_restore_backup`) turned out to have **no
+chown at all** before their chmod — they only worked because the wide
+mode papered over the resulting ownership mismatch (files copied as the
+plain SSH user, then made world-writable so the container could still
+touch them despite not owning them). Tightening those two without
+adding the missing chown first would have broken filestore access after
+every snapshot-based deploy and every single-database restore — added
+the chown rather than just narrowing the mode.
+
+Tightened all 9 sites to `700`. 3 new tests extend the 3 sites that
+already had SSH-mock fixtures to build on
+(`_clone_product_repos`/`_pull_product_repos`/`_hosting_clone_filestore`);
+the remaining sites (`_do_deploy_locked`, the restore flows) have no
+existing direct unit coverage, and building full deploy/restore
+integration fixtures from scratch was judged disproportionate to what
+is, underneath the audit, a mechanical permission-string change —
+correctness rests on the audit itself plus this being a small, uniform,
+easy-to-review diff. Full suite green: 500 tests (497 + 3), 0
+failed/errors. Commit: `3ac9e15`.
+
+**SEC-006 is now partially closed**: the plaintext-in-a-config-file fact
+itself is an inherent constraint of running upstream Odoo (it must read
+its own DB password from somewhere at startup) and isn't something this
+codebase can eliminate without a materially different secrets-injection
+architecture — out of scope for this pass. What's closed is the
+*exposure surface*: that plaintext credential (and the filestore, and
+the executable addons) is no longer world-readable/writable on a shared
+host.

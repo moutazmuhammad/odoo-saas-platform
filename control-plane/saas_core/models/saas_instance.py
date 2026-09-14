@@ -4948,17 +4948,25 @@ class SaasInstance(models.Model):
         filestore_dst = '%s/data/odoo/filestore/%s' % (instance_path, db_name)
         data_dir = '%s/data' % instance_path
         self._append_log("Placing filestore...")
-        odoo_image = self.odoo_version_id._get_docker_image()
+        # SEC-006: chown to the container's own UID + mode 700, not a bare
+        # 777 — the copy above runs as the plain SSH user, so without this
+        # chown the container couldn't read its own filestore at all
+        # (the caller's own later re-chown+chmod pass happened to cover
+        # this before, but that made this method correct only by
+        # accident of call order — make it correct on its own).
+        container_uid = self._get_container_uid(ssh)
         fs_cmd = (
             'mkdir -p %(dst)s && '
             'if [ -d %(src)s ]; then '
             '  cp -a %(src)s/. %(dst)s/; '
             'fi && '
-            'sudo chmod -R 777 %(data)s'
+            'sudo chown -R %(uid)s:%(uid)s %(data)s && '
+            'sudo chmod -R 700 %(data)s'
         ) % {
             'dst': shlex.quote(filestore_dst),
             'src': shlex.quote(filestore_src),
             'data': shlex.quote(data_dir),
+            'uid': container_uid,
         }
         exit_code, stdout, stderr = ssh.execute(fs_cmd, timeout=300)
         if exit_code != 0:
@@ -5094,8 +5102,12 @@ class SaasInstance(models.Model):
             # Pull in any git submodules before fixing ownership so the
             # submodule files are chowned to the container user too.
             self._update_repo_submodules(ssh, repo_dir)
+            # SEC-006: 700, not 777 — see the comment in _do_deploy_locked's
+            # own chown+chmod pass; addons/ is loaded and executed by
+            # Odoo, so world-writable here is a cross-tenant code-
+            # injection path, not just a permissions nit.
             ssh.execute(
-                'sudo chown -R %s:%s %s && sudo chmod -R 777 %s'
+                'sudo chown -R %s:%s %s && sudo chmod -R 700 %s'
                 % (container_uid, container_uid,
                    shlex.quote(repo_dir), shlex.quote(repo_dir))
             )
@@ -5143,9 +5155,10 @@ class SaasInstance(models.Model):
             # ownership so the container can read any newly fetched files.
             self._update_repo_submodules(ssh, repo_dir)
             try:
+                # SEC-006: 700, not 777 — see _clone_product_repos.
                 container_uid = self._get_container_uid(ssh)
                 ssh.execute(
-                    'sudo chown -R %s:%s %s && sudo chmod -R 777 %s'
+                    'sudo chown -R %s:%s %s && sudo chmod -R 700 %s'
                     % (container_uid, container_uid,
                        shlex.quote(repo_dir), shlex.quote(repo_dir))
                 )
@@ -5311,12 +5324,20 @@ class SaasInstance(models.Model):
                         % fs_err)
 
             # Set ownership so the container user can read/write volumes.
+            # SEC-006: mode 700, not 777 — chown already gives the
+            # container's own UID full rwx, so 777 only ever served to
+            # ALSO grant every other user/process on this shared
+            # multi-tenant host read+write on odoo.conf's plaintext
+            # db_password/admin_passwd (config/), the filestore (data/),
+            # and the addons Odoo actually loads and executes as Python
+            # (addons/ — world-writable there was a cross-tenant code-
+            # injection path, not just a credential leak).
             self._append_log("Setting permissions...")
             container_uid = self._get_container_uid(ssh)
             extra_fs = (' %s' % shlex.quote(filestore_mount)) if filestore_mount else ''
             perms_cmd = (
                 'sudo chown -R %(uid)s:%(uid)s %(path)s/data %(path)s/config %(path)s/addons%(fs)s && '
-                'sudo chmod -R 777 %(path)s/data %(path)s/config %(path)s/addons%(fs)s'
+                'sudo chmod -R 700 %(path)s/data %(path)s/config %(path)s/addons%(fs)s'
             ) % {'path': instance_path, 'uid': container_uid, 'fs': extra_fs}
             exit_code, stdout, stderr = ssh.execute(perms_cmd)
             if exit_code != 0:
@@ -5380,9 +5401,11 @@ class SaasInstance(models.Model):
 
             # Re-set permissions after init — docker compose run may
             # have created files as root inside the data directory.
+            # SEC-006: 700, not 777 — see the comment on the first
+            # chown+chmod pass above.
             perms_cmd = (
                 'sudo chown -R %(uid)s:%(uid)s %(path)s/data && '
-                'sudo chmod -R 777 %(path)s/data'
+                'sudo chmod -R 700 %(path)s/data'
             ) % {'path': instance_path, 'uid': container_uid}
             ssh.execute(perms_cmd)
 
@@ -7062,9 +7085,11 @@ class SaasInstance(models.Model):
                 '    sudo cp -a %(ed)s/$f %(ip)s/$f; '
                 '  fi; '
                 'done && '
-                # Re-apply container-friendly ownership/perms
+                # Re-apply container-friendly ownership/perms.
+                # SEC-006: 700, not 777 — see _do_deploy_locked's own
+                # chown+chmod pass for the full rationale.
                 'sudo chown -R %(uid)s:%(uid)s %(ip)s/data %(ip)s/config %(ip)s/addons 2>/dev/null || true && '
-                'sudo chmod -R 777 %(ip)s/data %(ip)s/config %(ip)s/addons 2>/dev/null || true'
+                'sudo chmod -R 700 %(ip)s/data %(ip)s/config %(ip)s/addons 2>/dev/null || true'
             ) % {
                 'ip': shlex.quote(instance_path),
                 'ed': shlex.quote(extract_dir),
@@ -7390,11 +7415,13 @@ class SaasInstance(models.Model):
                 )
 
                 # Re-apply container ownership/perms.
+                # SEC-006: 700, not 777 — see _do_deploy_locked's own
+                # chown+chmod pass for the full rationale.
                 self._restore_log("Re-applying container ownership/perms...")
                 ssh.execute(
                     'sudo chown -R %(uid)s:%(uid)s %(ip)s/data %(ip)s/config '
                     '%(ip)s/addons 2>/dev/null || true && '
-                    'sudo chmod -R 777 %(ip)s/data %(ip)s/config %(ip)s/addons '
+                    'sudo chmod -R 700 %(ip)s/data %(ip)s/config %(ip)s/addons '
                     '2>/dev/null || true' % {
                         'ip': shlex.quote(instance_path),
                         'uid': container_uid,
@@ -7978,17 +8005,25 @@ class SaasInstance(models.Model):
             filestore_src = '%s/filestore' % extract_dir
             filestore_dst = '%s/data/odoo/filestore/%s' % (instance_path, db_name)
             data_dir = '%s/data' % instance_path
-            odoo_image = self.odoo_version_id._get_docker_image()
+            # SEC-006: the copy above runs as the plain SSH user, so
+            # without an explicit chown to the container's own UID the
+            # restored files would be owned by that SSH user — this used
+            # to be papered over with `chmod -R 777` (world-writable,
+            # not just world-readable); chown + 700 is both correct and
+            # narrower.
+            container_uid = self._get_container_uid(ssh)
             fs_cmd = (
                 'rm -rf %(dst)s && mkdir -p %(dst)s && '
                 'if [ -d %(src)s ]; then '
                 '  cp -a %(src)s/. %(dst)s/; '
                 'fi && '
-                'sudo chmod -R 777 %(data)s'
+                'sudo chown -R %(uid)s:%(uid)s %(data)s && '
+                'sudo chmod -R 700 %(data)s'
             ) % {
                 'dst': shlex.quote(filestore_dst),
                 'src': shlex.quote(filestore_src),
                 'data': shlex.quote(data_dir),
+                'uid': container_uid,
             }
             ssh.execute(fs_cmd, timeout=300)
 
@@ -12008,8 +12043,10 @@ class SaasInstance(models.Model):
                 'else '
                 '  sudo mkdir -p %(dst)s; '
                 'fi && '
+                # SEC-006: 700, not 755 — no other process needs even
+                # read access to another tenant DB's filestore attachments.
                 'sudo chown -R %(uid)s:%(uid)s %(dst)s && '
-                'sudo chmod -R 755 %(dst)s'
+                'sudo chmod -R 700 %(dst)s'
             ) % {
                 'src': shlex.quote(src),
                 'dst': shlex.quote(dst),

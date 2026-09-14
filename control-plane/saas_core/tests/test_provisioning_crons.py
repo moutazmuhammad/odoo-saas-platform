@@ -180,3 +180,49 @@ class TestProvisioningHelpers(TransactionCase):
         ssh = self._ssh_mock({'git clone': (128, '', 'fatal: repository not found')})
         with self.assertRaises(UserError):
             inst._clone_product_repos(ssh)
+
+    def test_clone_product_repos_permissions_are_owner_only(self):
+        """SEC-006: chmod must be 700 (owner-only), never 777 — a chown to
+        the container's own UID already covers the container's access;
+        addons/ is loaded and executed by Odoo, so world-writable there
+        was a cross-tenant code-injection path, not just a leak."""
+        product = self.env['saas.product'].sudo().create(
+            {'name': 'CR Product 3', 'is_hosting': True})
+        self.env['saas.product.repo'].sudo().create({
+            'product_id': product.id,
+            'repo_url': 'https://github.com/x/perms.git',
+            'branch': '18.0',
+        })
+        inst = self._inst('cr4', odoo_version_id=self._odoo_version().id,
+                           saas_product_id=product.id,
+                           docker_server_id=self.server.id)
+        ssh = self._ssh_mock({})
+        inst._clone_product_repos(ssh)
+        chmod_calls = [c.args[0] for c in ssh.execute.call_args_list
+                       if 'chmod' in c.args[0]]
+        self.assertEqual(len(chmod_calls), 1)
+        self.assertIn('chmod -R 700', chmod_calls[0])
+        self.assertNotIn('777', chmod_calls[0])
+
+    def test_pull_product_repos_permissions_are_owner_only(self):
+        """SEC-006, same as _clone_product_repos above but for the
+        already-cloned/git-pull path."""
+        product = self.env['saas.product'].sudo().create(
+            {'name': 'CR Product 4', 'is_hosting': True})
+        self.env['saas.product.repo'].sudo().create({
+            'product_id': product.id,
+            'repo_url': 'https://github.com/x/pullperms.git',
+            'branch': '18.0',
+        })
+        inst = self._inst('cr5', odoo_version_id=self._odoo_version().id,
+                           saas_product_id=product.id,
+                           docker_server_id=self.server.id)
+        # 'test -d' succeeding (default 0,'','') means "already cloned",
+        # routing into the git-pull branch rather than a fresh clone.
+        ssh = self._ssh_mock({})
+        inst._pull_product_repos(ssh)
+        chmod_calls = [c.args[0] for c in ssh.execute.call_args_list
+                       if 'chmod' in c.args[0]]
+        self.assertEqual(len(chmod_calls), 1)
+        self.assertIn('chmod -R 700', chmod_calls[0])
+        self.assertNotIn('777', chmod_calls[0])

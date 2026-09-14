@@ -125,6 +125,16 @@ class TestObjectFilestore(TransactionCase):
         self.assertNotIn('juicefs clone', joined)
         self.assertIn('/data/odoo/filestore/newdb', inst._hosting_filestore_path('newdb'))
 
+    def test_clone_filestore_permissions_are_owner_only(self):
+        """SEC-006: 700, not 755 — no other process needs even read
+        access to another tenant DB's filestore attachments."""
+        srv = self.env['saas.server'].sudo().create(
+            {'name': 'of-clone-perms', 'docker_base_path': '/home/odoo'})
+        _inst, joined = self._clone_cmds(srv)
+        self.assertIn('chmod -R 700', joined)
+        self.assertNotIn('755', joined)
+        self.assertNotIn('777', joined)
+
     # -------- 2.2: immutable tenant image — base ref + Dockerfile render -----
     def test_tenant_base_image_ref(self):
         srv = self.env['saas.server'].sudo().create(

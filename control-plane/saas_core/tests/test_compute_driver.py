@@ -266,6 +266,37 @@ class TestComputeDriver(TransactionCase):
         server._get_ssh_connection.assert_not_called()
         self.assertIn('docker compose exec -T  odoo echo hi', conn.cmds[-1])
 
+    def test_service_exec_quotes_env_key_and_value_as_one_token(self):
+        """Defense in depth: every current caller passes a hardcoded,
+        shell-safe env var name, but the whole "K=V" must be quoted as a
+        single token, not just V — otherwise a future caller building a
+        key dynamically has an injection point. Uses a key with a
+        deliberately unsafe character to prove it, not just a realistic
+        one (there is no realistic unsafe key today)."""
+        from odoo.addons.saas_core.drivers.ssh_docker_driver import SshDockerDriver
+        from odoo.addons.saas_core.drivers.base import ComputeHandle
+
+        class FakeSSH:
+            def __init__(self): self.cmds = []
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def execute(self, cmd, timeout=None):
+                self.cmds.append(cmd); return (0, 'ok', '')
+
+        fake = FakeSSH()
+        server = MagicMock()
+        server._get_ssh_connection.return_value = fake
+        d = SshDockerDriver(server)
+        h = ComputeHandle(server_id=1, container_name='odoo_x', instance_path='/srv/x')
+        d.service_exec(h, 'echo hi', env={'UNSAFE KEY': 'v'})
+        cmd = fake.cmds[-1]
+        # shlex-split the built command and confirm it round-trips to
+        # exactly one env-flag argument, not two separate shell tokens.
+        import shlex as _shlex
+        tokens = _shlex.split(cmd)
+        self.assertIn('-e', tokens)
+        self.assertEqual(tokens[tokens.index('-e') + 1], 'UNSAFE KEY=v')
+
     # -------- saas.docker.container admin actions route to the driver --------
     def test_docker_container_actions_route_to_driver(self):
         server = self.env['saas.server'].sudo().create({'name': 'cd-srv'})

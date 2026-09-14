@@ -52,8 +52,12 @@ class SshDockerDriver(ComputeDriver):
         verbatim (caller does any quoting / heredoc)."""
         env_flags = ''
         if env:
+            # Quote the whole "K=V" as one token, not just V — every
+            # current caller passes a hardcoded literal key, but quoting
+            # only the value leaves the key itself as a latent injection
+            # point for any future caller that builds one dynamically.
             env_flags = ' '.join(
-                '-e %s=%s' % (k, shlex.quote(str(v))) for k, v in env.items())
+                '-e %s' % shlex.quote('%s=%s' % (k, v)) for k, v in env.items())
         cmd = 'cd %s && docker compose exec -T %s %s %s' % (
             shlex.quote(handle.instance_path), env_flags, service, command)
         with self._ssh() as ssh:

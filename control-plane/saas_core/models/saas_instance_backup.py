@@ -1195,10 +1195,27 @@ fi
         # `env -` clears the environment then sets ours; we then run
         # restic. Using env vars from a heredoc-style assignment is
         # safer than embedding the password in the command line.
+        # Quote the whole "K=V" as one token, not just V — every current
+        # caller passes a hardcoded literal key, but quoting only the
+        # value leaves the key itself as a latent injection point for any
+        # future caller that builds one dynamically (same fix as
+        # ssh_docker_driver.py's service_exec()).
         exports = ' '.join(
-            '%s=%s' % (k, shlex.quote(v or ''))
+            shlex.quote('%s=%s' % (k, v or ''))
             for k, v in env_vars.items()
         )
+        # `args` is NOT quoted here even though it's user/server-influenced
+        # in places (e.g. 'run=' + run_tag) — every current caller already
+        # shlex.quote()s the dynamic pieces it builds into this list
+        # itself (server-generated values only: timestamps, restic-issued
+        # hashes, already-regex-validated DB names — never raw customer
+        # input), and quoting again here would DOUBLE-quote whatever a
+        # caller already quoted, corrupting the actual value passed to
+        # restic. Centralizing that here would need auditing and updating
+        # every call site in lockstep — deliberately not attempted in this
+        # pass given how critical (and untouched-by-tests) this backup
+        # path is; see the security audit note this method's callers were
+        # checked against.
         cmd = '%s restic %s' % (exports, ' '.join(args))
         if stdin_pipeline:
             cmd = '%s | %s' % (stdin_pipeline, cmd)

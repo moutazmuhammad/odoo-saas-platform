@@ -130,3 +130,29 @@ class TestSshResilience(TransactionCase):
                          "auth failures are permanent — no retry")
         self.assertNotIn('10.9.0.3', utils._ssh_circuit,
                          "a credentials error must not quarantine the host")
+
+
+@tagged('post_install', '-at_install')
+class TestResticCmdEnvQuoting(TransactionCase):
+    """SEC-014 follow-up: _restic_cmd must quote the whole "K=V" env
+    export as one token, not just V — every current caller passes a
+    hardcoded, shell-safe key, but only quoting the value leaves the key
+    itself as a latent injection point for any future caller building one
+    dynamically."""
+
+    def test_env_key_and_value_quoted_as_one_token(self):
+        import shlex
+        Backup = self.env['saas.instance.backup']
+        cmd = Backup._restic_cmd({'UNSAFE KEY': 'v'}, ['snapshots'])
+        # everything up to " restic" is the export tokens
+        exports_part = cmd.split(' restic')[0]
+        tokens = shlex.split(exports_part)
+        self.assertEqual(tokens, ['UNSAFE KEY=v'])
+
+    def test_realistic_password_value_still_quoted(self):
+        Backup = self.env['saas.instance.backup']
+        cmd = Backup._restic_cmd(
+            {'RESTIC_PASSWORD': "p'w"}, ['snapshots'])
+        self.assertIn('RESTIC_PASSWORD', cmd)
+        self.assertNotIn("RESTIC_PASSWORD=p'w restic", cmd,
+                         "an unescaped single quote must not appear unquoted")

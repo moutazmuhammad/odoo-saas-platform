@@ -999,3 +999,20 @@ explicit "doesn't over-fire" test). 11 new tests. Verified: full suite
 via `devctl.sh test` — 387 tests (376+11), 0 failed, 0 errors — commit:
 f4d44cc. Next: `res_config_settings.py`, then `saas_payment.py`
 (highest-value and largest of the 4 remaining).
+
+2026-09-14 — Step B.2 (second slice) — `res_config_settings.py`. The
+model's inline comments call out three "falsy-value trap" workarounds
+(config_parameter= plus Odoo's `set_param(key, False)` deleting the row,
+and per-integer/float Boolean coercion quirks, spring values back to
+their defaults on the next read unless handled by hand in
+get_values/set_values) — each got an explicit "does it survive a
+reload" test, not just an in-memory assertion, since the whole point of
+the workaround is what happens on the *next* read after a save. Also
+covered `set_values()`'s call into `saas.plan.sudo().search([...])
+._sync_auto_price()`, which re-derives every public-tier, non-trial,
+non-manually-priced plan's stored price from the (possibly
+just-changed) worker/storage rates — verified both that an
+auto-priced plan's price moves and a manually-priced one (`manual_price
+= True`) does not. 12 new tests. Verified: full suite via `devctl.sh
+test` — 399 tests (387+12), 0 failed, 0 errors — commit: 019e254. Next:
+`saas_payment.py` (highest-value and largest of the 4 remaining).

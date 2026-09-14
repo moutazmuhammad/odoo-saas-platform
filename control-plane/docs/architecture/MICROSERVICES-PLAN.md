@@ -497,6 +497,54 @@ a live cluster, both now committed with regression tests:
    unimplemented in both scripts (fails loud, matches the existing
    documented gap) — not in scope for this step.
 
+2026-09-15 — Step 1.5, continued — deployed both fixes above to the actual
+live microk8s cluster (the same one already hosting `odoo-operator` via
+Helm, `cert-manager`, a `container-registry` at `localhost:32000`, and the
+real `phase-d1-test` tenant referenced above) and re-verified against real
+cluster state, not just unit tests:
+
+- Built and pushed the fixed operator image
+  (`localhost:32000/odoo-saas/operator:dev`), `helm upgrade`d the
+  `odoo-operator` release, confirmed the new pod rolled out, and forced a
+  reconcile. **Confirmed**: `phase-d1-test`'s `NetworkPolicy` now carries
+  port 8089 in its gateway-ingress rule, and an in-cluster `curl` through
+  Traefik to the ACME solver's challenge path now returns `200 OK` (it
+  previously would have hung/timed out) — the actual bug is fixed. The
+  `Certificate` itself stayed `pending` ("wrong status code 400") because
+  Let's Encrypt staging tries to reach this domain over the **real public
+  internet**, which this dev box's home network doesn't route — an
+  environmental/NAT limitation, not a code defect, and out of scope to fix
+  from here.
+- Rebuilt/pushed the backup/restore image and pointed
+  `--backup-tool-image`/`--restore-tool-image` at it via `helm upgrade`.
+  Manually triggered `phase-d1-test`'s real `odoo-backup` CronJob
+  (`kubectl create job --from=cronjob/...`) to verify for real rather than
+  trust the local Docker round-trip alone — **it failed**, with a bug the
+  local test couldn't have caught: `Permission denied` on the filestore
+  PVC's `addons/` and `sessions/` subdirectories, which the live Odoo
+  container had created as mode `0700` owned by its own `uid 100`.
+  `genericHardenedSecurityContext` (`deployment.go`) deliberately avoids
+  pinning a UID for platform tool images on the assumption their account
+  is unrelated to Odoo's — false here, since 0700 grants zero access to
+  any other uid, and `FSGroup` (already set for the restore Job) only
+  ever grants *group* bits, of which 0700 has none. Fixed by changing the
+  Dockerfile's `USER` from an arbitrary `10001:10001` to Odoo's own
+  `100:101` (the existing `odooImageUID`/`odooImageGID` constants).
+  Rebuilt, redeployed, re-ran the same manual Job: **completed
+  successfully**, producing a real `db.dump` + `filestore.tar.gz` +
+  `manifest.json` for the live tenant (inspected directly off the PVC).
+
+**Both fixes are now proven against real cluster state, not merely
+unit-tested** — directly satisfying this plan's own Production-First
+requirement that cross-component/infra claims be demonstrated, not
+assumed. Commits: `2bba7f1`, `8afc01f`, `15092e1`.
+
 Next: remaining Phase 1 items (1.1-1.4, the actual cluster/registry/CRD
-wiring this tenant was provisioned against) and the ObjectStorage backend
-for both scripts, still open per the notes above.
+wiring this tenant was provisioned against — note 1.1/1.3's cluster and
+registry already exist and are in active use per the above, so those are
+now more "formalize/document" than "stand up from zero"), the
+ObjectStorage backend for both scripts, a live restore-into-a-new-instance
+test (not yet attempted — needs a fresh `OdooInstance` with `spec.restore`
+pointing at the PVC-source backup just produced), and giving this dev box
+real public reachability (or switching to DNS-01) if the ACME staging
+issuance itself needs to be proven end-to-end.

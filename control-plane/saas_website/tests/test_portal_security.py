@@ -315,3 +315,182 @@ class TestPortalDatabaseOps(_PortalTestBase):
             '/my/instances/%d/databases/op/%d/dismiss'
             % (self.instance.id, op.id))
         self.assertFalse(op.exists())
+
+
+@tagged('post_install', '-at_install')
+class TestPortalChangePlan(_PortalTestBase):
+    """B.1.5 continued: /my/instances/<id>/{change-plan,do-change-plan,
+    cancel-upgrade,cancel-downgrade} — real portal-layer business logic
+    (storage-reduction block, no-change detection, config clamping,
+    upgrade-vs-downgrade branch selection), unlike the databases/* routes
+    which are thin wrappers.
+
+    action_request_plan_change()/_request_downgrade() are themselves
+    synchronous, SSH-free, ORM/billing-only methods (no saas.job/
+    run_in_background involved) and already have dedicated model-layer
+    coverage (test_billing_overhaul.py), so — same "thin HTTP smoke
+    test" principle as TestPortalDatabaseOps — they're mocked here too,
+    to isolate what's actually new at this layer: which of the two the
+    portal route picks (based on new_workers vs. current_workers) and
+    how it turns the return value into a redirect (checkout for a
+    charged upgrade, back to the instance otherwise).
+    """
+
+    def setUp(self):
+        super().setUp()
+        # A bigger current plan than the base fixture's (workers=1) so a
+        # downgrade (fewer workers, still >0) is reachable.
+        self.plan = self.env['saas.plan'].sudo().create({
+            'name': 'Portal Plan (current)', 'is_custom': True, 'workers': 4,
+            'storage_limit': 10, 'cpu_limit': 2.0, 'ram_limit': '2g',
+            'price': 40.0, 'yearly_price': 384.0,
+            'currency_id': self.env.company.currency_id.id,
+            'saas_product_ids': [(6, 0, [self.instance.saas_product_id.id])]})
+        self.instance.sudo().write({'plan_id': self.plan.id, 'billing_period': 'monthly'})
+
+    def _do_change_plan(self, workers, storage, billing_period='monthly'):
+        return self._form_post(
+            '/my/instances/%d/do-change-plan' % self.instance.id,
+            {'workers': str(workers), 'storage': str(storage),
+             'billing_period': billing_period})
+
+    def test_change_plan_page_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self.url_open(
+            '/my/instances/%d/change-plan' % self.instance.id,
+            allow_redirects=False)
+        self.assertIn(resp.status_code, (301, 302, 303))
+        self.assertTrue(resp.headers['Location'].endswith('/my/instances'))
+
+    def test_change_plan_page_redirects_for_trial_instance(self):
+        self.instance.sudo().write({'is_trial': True})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self.url_open(
+            '/my/instances/%d/change-plan' % self.instance.id,
+            allow_redirects=False)
+        self.assertEqual(
+            resp.headers['Location'], '/my/instances/%d' % self.instance.id)
+
+    def test_change_plan_page_renders_for_eligible_instance(self):
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self.url_open('/my/instances/%d/change-plan' % self.instance.id)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_do_change_plan_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self._do_change_plan(8, 20)
+        self.assertTrue(resp.headers['Location'].endswith('/my/instances'))
+
+    def test_do_change_plan_blocks_storage_reduction(self):
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._do_change_plan(4, 5)  # storage 5 < current 10
+        self.assertIn('/change-plan?error=', resp.headers['Location'])
+        self.assertIn(
+            'Storage cannot be reduced',
+            resp.headers['Location'].replace('%20', ' '))
+
+    def test_do_change_plan_requires_both_fields(self):
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._do_change_plan(0, 10)
+        self.assertIn('/change-plan?error=', resp.headers['Location'])
+
+    def test_do_change_plan_rejects_no_actual_change(self):
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self._do_change_plan(4, 10, 'monthly')
+        self.assertIn('/change-plan?error=', resp.headers['Location'])
+        self.assertIn(
+            'No changes selected',
+            resp.headers['Location'].replace('%20', ' '))
+
+    def test_do_change_plan_downgrade_calls_request_downgrade_and_redirects_home(self):
+        # The recordset args a mock captures live on the HTTP request's own
+        # cursor, which is closed by the time this test method regains
+        # control — reading a field off it afterwards raises "Cannot use a
+        # closed cursor". Pull out the plain values inside the side_effect,
+        # while the cursor is still open, instead of keeping the recordset.
+        seen = {}
+
+        def _capture(plan, period):
+            seen['workers'] = plan.workers
+            seen['period'] = period
+            return 'scheduled'
+
+        mock_downgrade = MagicMock(side_effect=_capture)
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(type(self.instance), '_request_downgrade', mock_downgrade):
+            resp = self._do_change_plan(2, 10)  # fewer workers = downgrade
+        self.assertEqual(
+            resp.headers['Location'], '/my/instances/%d' % self.instance.id)
+        mock_downgrade.assert_called_once()
+        self.assertEqual(seen.get('workers'), 2)
+        self.assertEqual(seen.get('period'), 'monthly')
+
+    def test_do_change_plan_upgrade_with_charge_redirects_to_checkout(self):
+        mock_upgrade = MagicMock(return_value=MagicMock(amount_total=25.0))
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(
+                type(self.instance), 'action_request_plan_change', mock_upgrade):
+            resp = self._do_change_plan(8, 20)  # more workers = upgrade
+        self.assertEqual(
+            resp.headers['Location'],
+            '/my/instances/%d/checkout' % self.instance.id)
+        mock_upgrade.assert_called_once()
+        self.assertEqual(mock_upgrade.call_args.kwargs.get('billing_period'), 'monthly')
+
+    def test_do_change_plan_zero_charge_upgrade_redirects_home(self):
+        mock_upgrade = MagicMock(return_value=True)
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(
+                type(self.instance), 'action_request_plan_change', mock_upgrade):
+            resp = self._do_change_plan(8, 20)
+        self.assertEqual(
+            resp.headers['Location'], '/my/instances/%d' % self.instance.id)
+
+    def test_do_change_plan_propagates_model_rejection(self):
+        mock_upgrade = MagicMock(side_effect=UserError("A downgrade is already scheduled."))
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(
+                type(self.instance), 'action_request_plan_change', mock_upgrade):
+            resp = self._do_change_plan(8, 20)
+        self.assertIn('/change-plan?error=', resp.headers['Location'])
+
+    def test_cancel_upgrade_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self._form_post(
+            '/my/instances/%d/cancel-upgrade' % self.instance.id)
+        self.assertTrue(resp.headers['Location'].endswith('/my/instances'))
+
+    def test_cancel_upgrade_cancels_pending_plan_change(self):
+        mock_cancel = MagicMock()
+        self.instance.sudo().write({'pending_plan_id': self.plan.id})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(type(self.instance), '_cancel_pending_upgrade', mock_cancel):
+            resp = self._form_post(
+                '/my/instances/%d/cancel-upgrade' % self.instance.id)
+        mock_cancel.assert_called_once()
+        self.assertEqual(
+            resp.headers['Location'], '/my/instances/%d' % self.instance.id)
+
+    def test_cancel_upgrade_is_a_noop_with_no_pending_change(self):
+        mock_cancel = MagicMock()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(type(self.instance), '_cancel_pending_upgrade', mock_cancel):
+            self._form_post('/my/instances/%d/cancel-upgrade' % self.instance.id)
+        mock_cancel.assert_not_called()
+
+    def test_cancel_downgrade_denies_non_owner(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        resp = self._form_post(
+            '/my/instances/%d/cancel-downgrade' % self.instance.id)
+        self.assertTrue(resp.headers['Location'].endswith('/my/instances'))
+
+    def test_cancel_downgrade_calls_model_method(self):
+        mock_cancel = MagicMock()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(
+                type(self.instance), 'action_cancel_scheduled_downgrade', mock_cancel):
+            resp = self._form_post(
+                '/my/instances/%d/cancel-downgrade' % self.instance.id)
+        mock_cancel.assert_called_once()
+        self.assertEqual(
+            resp.headers['Location'], '/my/instances/%d' % self.instance.id)

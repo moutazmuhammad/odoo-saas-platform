@@ -972,3 +972,30 @@ Next: B.2 (the 4 zero-coverage models — `saas_payment.py`,
 `res_config_settings.py`, `saas_instance_package.py`,
 `saas_terminal_session.py`, prioritizing the terminal one per the
 Phase D.4.3 note above).
+
+2026-09-14 — Step B.2 (first slice) — `saas_terminal_session.py` and
+`saas_instance_package.py`, the two smallest of the 4 zero-coverage
+models. `saas_terminal_session.py` turned out to have no methods at
+all beyond field declarations and the `sid_unique` SQL constraint (it's
+pure runtime metadata read/written by `controllers/ssh_terminal.py`),
+so `test_terminal_session.py` is intentionally thin: required-field
+creation, the `closed=False` default, and the `sid` uniqueness
+constraint (asserted via `psycopg2.IntegrityError` inside
+`self.env.cr.savepoint()`, muting `odoo.sql_db` — the idiom Odoo core
+itself uses for SQL-constraint tests, e.g.
+`addons/loyalty/tests/test_loyalty.py`). `saas_instance_package.py` had
+real logic worth covering: `create`/`write` strip whitespace from
+`name`, and `create`/`write`/`unlink` all call
+`instance_id._sync_text_from_packages()` to keep the instance's
+`pip_packages` text field (what admins/customers actually edit) in
+sync with the `package_ids` One2many — `test_instance_package.py`
+verifies that sync in both directions (add syncs text in, unlink syncs
+text back out, multiple packages join with `\n`), the `_check_name`
+constraint (empty/whitespace-only name), and the
+`unique_package_per_instance` SQL constraint (same name twice on one
+instance fails; same name on two different instances is fine — a
+constraint on `(instance_id, name)`, not `name` alone, so worth an
+explicit "doesn't over-fire" test). 11 new tests. Verified: full suite
+via `devctl.sh test` — 387 tests (376+11), 0 failed, 0 errors — commit:
+f4d44cc. Next: `res_config_settings.py`, then `saas_payment.py`
+(highest-value and largest of the 4 remaining).

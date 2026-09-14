@@ -179,3 +179,29 @@ jobs:
         run: go vet ./...
       - name: Unit + envtest suites
         run: make test
+
+  image-scan:
+    # SEC-007 (supply chain) — proactive guard against shipping a
+    # container image with a known, PATCHABLE HIGH/CRITICAL vulnerability.
+    # --ignore-unfixed: gate on what can actually be fixed here (an
+    # apt/go upgrade in the Dockerfile), not on upstream OS CVEs with no
+    # available patch yet — failing CI on those would be permanent,
+    # unactionable noise, the same false-positive problem the gitleaks
+    # job's own baseline file (.gitleaksignore) exists to avoid.
+    name: Container image vulnerability scan (trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install trivy
+        run: |
+          curl -fsSL -o /tmp/trivy.tar.gz \
+            https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz
+          sudo tar xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
+      - name: Build operator image
+        run: docker build -t odoo-operator:ci compute/operator
+      - name: Build backup-tool image
+        run: docker build -t backup-tool:ci compute/tools/backup-tool
+      - name: Scan operator image
+        run: trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --skip-version-check odoo-operator:ci
+      - name: Scan backup-tool image
+        run: trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --skip-version-check backup-tool:ci

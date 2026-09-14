@@ -11,8 +11,18 @@
 # itself.
 FROM postgres:16-bookworm
 
+# `apt-get upgrade` picks up patched versions of packages already present
+# in the base image (e.g. libpcre2-8-0), not just the ones this Dockerfile
+# adds — a stale base-image package is still this image's own CVE surface.
+# `gosu` is the base postgres image's own privilege-drop tool for ITS
+# entrypoint script; this image never runs that entrypoint (ENTRYPOINT is
+# overridden below, and USER already pins the non-root uid directly), so
+# it's dead weight carrying its own (old, statically-linked Go stdlib)
+# CVEs for a binary nothing here ever executes.
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends postgresql-client-16 rclone && \
+    rm -f /usr/local/bin/gosu && \
     rm -rf /var/lib/apt/lists/*
 
 COPY lib-objectstorage.sh /usr/local/lib/lib-objectstorage.sh

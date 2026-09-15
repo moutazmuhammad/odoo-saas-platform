@@ -1,5 +1,5 @@
-"""KubernetesDriver — a real, API-backed ComputeDriver (Phase 2.1 of
-MICROSERVICES-PLAN.md). Implements the SAME ``ComputeDriver`` interface as
+"""KubernetesDriver — a real, API-backed ComputeDriver (see /ROADMAP.md
+§3.3/§5 Phase 1, "done"). Implements the SAME ``ComputeDriver`` interface as
 ``SshDockerDriver``; the business logic in ``saas.instance`` is untouched —
 ``_compute_driver()`` just returns this when a server's
 ``compute_driver == 'kubernetes'``.
@@ -39,9 +39,8 @@ Scope note: ``create()`` is implemented and live-verified (see
 test_kubernetes_driver.py and this session's cluster verification) but is
 NOT YET called by real tenant provisioning — ``saas.instance`` still
 provisions everything via its own legacy code path regardless of
-``compute_driver``. Routing actual provisioning through
-``ComputeDriver.create()`` for every one of the ~140 call sites
-`DRIVER-BOUNDARY.md` catalogs is Phase 2.3's job, not this one.
+``compute_driver``. Actually cutting real tenants over to
+``ComputeDriver.create()`` is /ROADMAP.md §5 Phase 2's job, not this one.
 """
 
 from __future__ import annotations
@@ -190,8 +189,8 @@ class KubernetesDriver(ComputeDriver):
         has no dedicated slot for (domain, TLS, filestore size, resource
         limits, the Odoo version itself) are read from ``spec.env`` rather
         than adding new dataclass fields to the shared, frozen
-        ``ComputeSpec`` — MICROSERVICES-PLAN.md's Phase 2.2 anticipated
-        needing to extend that dataclass, but ``env`` (already documented
+        ``ComputeSpec`` — an earlier plan anticipated needing to extend
+        that dataclass, but ``env`` (already documented
         as "extra environment / template context") covers this without
         touching a type ``SshDockerDriver`` and its ~25 call sites also
         share, which is less invasive for identical effect.

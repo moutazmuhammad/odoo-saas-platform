@@ -2,7 +2,7 @@
 and fallback (in-place recreate) paths.
 
 Originally written BEFORE routing the green-sidecar stand-up/teardown
-through ComputeDriver (MICROSERVICES-PLAN.md's Phase 2.3), as a safety
+through ComputeDriver (see /ROADMAP.md §3.1), as a safety
 net for that refactor — this is the actual mechanism protecting a live
 customer redeploy from an outage, and it had zero test coverage of its
 own before this file existed. All 7 tests passed unmodified against the

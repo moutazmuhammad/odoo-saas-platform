@@ -1,12 +1,15 @@
-"""SshDockerDriver — the single v1 implementation of ComputeDriver.
+"""SshDockerDriver — the legacy Docker-over-SSH implementation of ComputeDriver.
 
-Wraps the existing Docker-over-SSH operations (the ~140 inline `ssh.execute('docker …')`
-call sites cataloged in docs/architecture/DRIVER-BOUNDARY.md) behind the stable interface.
-The transport is the existing `SSHConnection` (utils.py), obtained from the target
-`saas.server` record's `_get_ssh_connection()`.
+Wraps the Docker-over-SSH operations behind the stable ComputeDriver interface
+(see /ROADMAP.md §3.1/§5 Phase 1, "done"). The transport is the existing
+`SSHConnection` (utils.py), obtained from the target `saas.server` record's
+`_get_ssh_connection()`. Carries 100% of production traffic until the
+Kubernetes cutover (ROADMAP.md §5 Phase 2) completes.
 
-Phase 1 wires call sites onto this incrementally; behavior must stay identical (same commands,
-same paths) so the green test baseline and real-infra behavior are unchanged.
+Call sites were routed onto this incrementally, each behind characterization
+tests against real pre-change behavior first — behavior must stay identical
+(same commands, same paths) so the green test baseline and real-infra
+behavior are unchanged.
 """
 
 from __future__ import annotations

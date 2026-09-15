@@ -74,8 +74,8 @@ class TestWebhookSecurity(HttpCase):
     # ---- B.1.4: previously untested branches — every one of these
     # returns BEFORE the controller ever reaches saas.job._enqueue(...),
     # so they're all safe to drive through a real HttpCase request (no
-    # risk of the background-worker-thread hazard documented in
-    # PRODUCTION-READINESS-PLAN.md's Definition of Done). ---------------
+    # risk of the background-worker-thread hazard this project's testing
+    # convention exists to avoid). ---------------
 
     def test_sha1_signature_explicitly_rejected(self):
         # Deprecated-but-still-sent by some old integrations; must not be
@@ -131,7 +131,7 @@ class TestWebhookSecurity(HttpCase):
         the return value anyway), and — critically — never creates a real
         job row or spawns saas.job._spawn_worker's background thread. Same
         rule as the databases/* tests: never let a live HttpCase request
-        actually trigger that (see PRODUCTION-READINESS-PLAN.md).
+        actually trigger that.
 
         Assigning a bare MagicMock as a class attribute does NOT get
         auto-bound like a real method would (MagicMock isn't a descriptor),

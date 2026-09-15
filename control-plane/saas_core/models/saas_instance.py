@@ -5380,10 +5380,10 @@ class SaasInstance(models.Model):
 
                 if not snapshot_restored:
                     # No snapshot — initialize database with base modules.
-                    # Routed through ComputeDriver.run_once (Phase 2.3,
-                    # MICROSERVICES-PLAN.md) instead of a raw ssh.execute —
-                    # same command, same behavior, now going through the
-                    # same seam every other lifecycle call site uses.
+                    # Routed through ComputeDriver.run_once (see /ROADMAP.md
+                    # §3.1) instead of a raw ssh.execute — same command, same
+                    # behavior, now going through the same seam every other
+                    # lifecycle call site uses.
                     self._append_log("Initializing database...")
                     init_args = (
                         'odoo -d %s '
@@ -11198,7 +11198,7 @@ class SaasInstance(models.Model):
                 "digits and underscores, or 'all' to repair everything."
             ) % module)
 
-        # Routed through ComputeDriver (Phase 2.3, MICROSERVICES-PLAN.md):
+        # Routed through ComputeDriver (see /ROADMAP.md §3.1):
         # stop()/run_once()/start() already existed and are already used
         # elsewhere in this file — no new driver code needed here, just
         # translating each raw ssh.execute() into the equivalent driver

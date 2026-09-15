@@ -16,8 +16,8 @@ transaction, opens a fresh cursor, and runs the method — so the web request re
   `read_file_bytes(path)`. Host-key pinning supported (`_PinnedHostKeyPolicy`).
 - `saas_server._get_ssh_connection()` (saas_server.py:471) builds the `SSHConnection` from the server
   record (host/port/user/key). This is the ONE place a connection is created.
-- **Implication:** the transport layer is clean. What is NOT abstracted is the **semantic operations**
-  (docker/pg/nginx/config) issued through it — see `DRIVER-BOUNDARY.md`.
+- **Implication:** the transport layer is clean. The **semantic operations** (docker/pg/nginx/config)
+  issued through it are now routed through the `ComputeDriver` abstraction — see `/ROADMAP.md` §3.1.
 
 ## 3. Base image (per Odoo version)
 - `saas.odoo.version` has `docker_image` + `docker_image_tag`; `_get_docker_image()` returns

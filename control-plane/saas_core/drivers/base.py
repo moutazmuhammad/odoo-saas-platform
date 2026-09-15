@@ -1,15 +1,16 @@
 """ComputeDriver — the stable seam between the Control Plane and a compute backend.
 
 Business logic must depend only on this interface, never on Docker/SSH directly.
-The single v1 implementation is ``SshDockerDriver`` (Docker over SSH); a future
-``KubernetesDriver`` implements the same interface and is a new file only.
+Two implementations exist: ``SshDockerDriver`` (Docker over SSH, legacy, carries
+production traffic today) and ``KubernetesDriver`` (real K8s API, live-verified,
+not yet cut over — see /ROADMAP.md §3.1/§5 Phase 2).
 
 Design rules:
 - The interface is Odoo-free: ``ComputeSpec`` / ``ComputeHandle`` are plain
   dataclasses, so drivers can be unit-tested without a database.
 - Stateful operations (PostgreSQL provisioning, backup/restore) do NOT live here
   — they belong to DataService. Ingress (nginx) is a separate seam too.
-  See docs/architecture/DRIVER-BOUNDARY.md §3.
+  See /ROADMAP.md §8 (ADR-2).
 """
 
 from __future__ import annotations

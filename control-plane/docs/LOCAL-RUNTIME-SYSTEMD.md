@@ -90,12 +90,12 @@ stopping anything; use `systemctl --user stop` instead.
 ## ⚠️ Integration status: still none
 
 Microk8s (the Compute microservice's cluster — see
-[`../architecture/MICROSERVICES-PLAN.md`](../architecture/MICROSERVICES-PLAN.md))
-is running independently on this same machine, with the operator from
-`compute/operator` deployed in its `odoo-system` namespace. **Both being
-alive at the same time does not mean they are connected** — nothing in this
-control-plane instance has any code path that talks to microk8s. The
-kubeconfig above is saved for convenience, ready for when
-`MICROSERVICES-PLAN.md` Phase 2 actually builds that connection; it is not
-consumed by anything today. See that document's §0 for the full warning —
-it applies exactly as much with both services running as it did before.
+[`/ROADMAP.md`](../../ROADMAP.md) §3.3) is running independently on this
+same machine, with the operator from `compute/operator` deployed in its
+`odoo-system` namespace. **Both being alive at the same time does not mean
+they are connected** — nothing in this control-plane instance has any code
+path that talks to microk8s for real tenant provisioning. The kubeconfig
+above is saved for convenience, ready for when `ROADMAP.md`'s Phase 2
+(Kubernetes cutover) actually builds that connection; it is not consumed by
+real provisioning today. See `ROADMAP.md` §1 for the full warning — it
+applies exactly as much with both services running as it did before.

@@ -1,14 +1,14 @@
 # Odoo SaaS Platform (Odoo.sh-style hosting)
 
-A monorepo consolidating this project's components, each in its own folder,
-following the microservices split documented in
-[`control-plane/docs/architecture/MICROSERVICES-PLAN.md`](control-plane/docs/architecture/MICROSERVICES-PLAN.md).
+A monorepo consolidating this project's components, each in its own folder.
+**Start with [`ROADMAP.md`](ROADMAP.md) — the single source of truth** for
+current state, target architecture, and the phased plan going forward.
 
 This repo was assembled from two prior working repos (fresh copy, no shared
-git history — see that plan doc's own history note): the existing Odoo.sh
-control plane, and the Kubernetes operator built to become its new compute
-layer. Both prior repos still exist at their original locations if their
-history is ever needed; this repo is the going-forward source of truth.
+git history): the existing Odoo.sh control plane, and the Kubernetes operator
+built to become its new compute layer. Both prior repos still exist at their
+original locations if their history is ever needed; this repo is the
+going-forward source of truth.
 
 ## Layout
 
@@ -23,8 +23,8 @@ history is ever needed; this repo is the going-forward source of truth.
 ├── frontend/        veltnex: the React/Vite/TypeScript SPA served by
 │                    control-plane/saas_website. Talks only to
 │                    /saas/api/v1/* — no direct infrastructure awareness,
-│                    which is exactly what kept it unaffected by the
-│                    compute-layer migration (see the plan, Phase 4).
+│                    which is exactly what keeps it unaffected by the
+│                    ongoing compute-layer migration (see ROADMAP.md §5).
 │
 ├── compute/         The Kubernetes operator (OdooInstance CRD + controller):
 │                    provisions/deletes/backs up/restores tenant instances.
@@ -34,30 +34,24 @@ history is ever needed; this repo is the going-forward source of truth.
 │                    resources), never SSH. See compute/docs/architecture.md
 │                    (English) / architecture.ar.md (Arabic).
 │
-├── docs/PRODUCTION-READINESS-PLAN.md   The master roadmap (read this first).
+├── ROADMAP.md   The single source of truth (read this first).
 │
 └── .github/workflows/ci.yml   One pipeline, one job per component.
 ```
 
 ## Where to start
 
-- **The master plan**: [`docs/PRODUCTION-READINESS-PLAN.md`](docs/PRODUCTION-READINESS-PLAN.md)
-  — a fresh, evidence-based review of the current codebase (dependencies,
-  dead code, test coverage) plus the full phased roadmap to production
-  readiness (hygiene → test coverage → security → compute migration →
-  features → reliability → go-live gate). Read this first.
-- **The compute-layer migration in detail**: [`control-plane/docs/architecture/MICROSERVICES-PLAN.md`](control-plane/docs/architecture/MICROSERVICES-PLAN.md)
-  — target architecture, phased migration steps, acceptance criteria, and a
-  progress log for turning the Kubernetes operator into the real Compute
-  microservice. This is Phase D of the master plan above.
-- **Control plane history/context**: `control-plane/docs/architecture/` (the
-  pre-existing evolution docs this plan builds on) and
-  `control-plane/SESSION_NOTES.md` (running work log; some entries there
-  predate the reorg and reference paths from the old repo layout — treat
-  those as historical).
-- **Security/architecture audit findings**: `control-plane/docs/reviews/`.
-- **Compute service**: `compute/README.md` (quick start, provisioning
-  lifecycle) and `compute/docs/architecture.md` (full design rationale).
+- **The plan**: [`ROADMAP.md`](ROADMAP.md) — current state by subsystem
+  (with confidence-level tags on every claim), target architecture
+  (including the Prometheus/Grafana/Loki observability stack), a phased
+  roadmap with dependencies/priorities/acceptance criteria, a risk register,
+  and a summary of the architecture decisions worth preserving. Read this
+  first.
+- **Architecture references**: `control-plane/docs/architecture/` (control
+  plane's original spec + as-built deltas) and `compute/docs/architecture.md`
+  (English) / `architecture.ar.md` (Arabic) for the compute microservice's
+  full design.
+- **Compute service quick start**: `compute/README.md`.
 
 ## Local development
 
@@ -85,24 +79,15 @@ history is ever needed; this repo is the going-forward source of truth.
 
 ## CI
 
-`.github/workflows/ci.yml` runs three independent jobs on every PR: SPA
-typecheck+build (`frontend/veltnex`), the Odoo test suite
-(`control-plane/{saas_core,saas_website}`), and the operator's build+vet+test
-(`compute/operator`).
+`.github/workflows/ci.yml` runs six independent jobs on every PR: `spa`
+(typecheck+build), `odoo-tests` (the full `saas_core`/`saas_website` test
+suite), `csrf-lint` (static safety check on `csrf=False` routes),
+`secret-scan` (gitleaks), `compute` (operator build+vet+test), and
+`image-scan` (trivy against the operator + backup-tool images).
 
-## Known gaps carried forward (not silently fixed by this reorg)
+## Known gaps
 
-- The security/architecture audit findings in `control-plane/docs/reviews/`
-  (auth bypass, plaintext secrets for legacy SSH-based tenants, root
-  containers on the legacy Docker path, no DR) are **unresolved** by this
-  reorganization — it only changes where the code lives, not what it does.
-  `MICROSERVICES-PLAN.md` §2 (Phase 0) tracks closing the ones that block
-  everything else.
-- A full dead-code/unused-code audit of `control-plane` (a ~22,000-line Odoo
-  module set) was **not** performed as part of this reorg — that's a
-  separate, substantial task. This pass only removed things the move itself
-  made stale (build caches, `__pycache__`, `node_modules`, `dist`, the
-  operator's compiled `bin/`), and fixed the two path references the folder
-  move actually broke (`frontend/veltnex/vite.config.ts`'s build output
-  path, and `.github/workflows/ci.yml`'s checkout/addons paths) — both
-  verified working (see below).
+See [`ROADMAP.md`](ROADMAP.md) §3 for the full, current, tagged-by-confidence
+list of open findings across security, scalability, provisioning
+reliability, tenant isolation, and UX — and §5 for what's planned to close
+each of them.

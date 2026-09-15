@@ -165,9 +165,9 @@ jobs:
         run: python3 scripts/lint_csrf_routes.py
 
   secret-scan:
-    # C.3 — proactive guard against a repeat of the root-SSH-password-in-chat
-    # exposure (SESSION_NOTES.md) and the prior SECURITY-INCIDENT-2026-06-17
-    # compromise: catch a leaked credential at PR time, not after the fact.
+    # Proactive guard against a repeat of a prior root-SSH-password-in-chat
+    # exposure and a resulting host compromise (see git history): catch a
+    # leaked credential at PR time, not after the fact.
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:

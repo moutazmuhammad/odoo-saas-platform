@@ -1,14 +1,14 @@
-"""Durable job queue (ARCH-004, Phase 0).
+"""Durable job queue.
 
 A DB-backed queue: ``_enqueue`` persists a job row; ``_cron_run_jobs`` claims due
 jobs with ``FOR UPDATE SKIP LOCKED`` and runs them; ``_cron_reap_jobs`` requeues
 (idempotent) or fails (non-idempotent) jobs whose worker died (stale heartbeat).
 Retries use exponential back-off; a per-resource advisory ``lock_key``
-serialises same-resource jobs; ``idempotency_key`` dedupes enqueues. Reuses the
-heartbeat/reaper (PROV-001), alert (SEC-009) and audit (SEC-010) patterns.
+serialises same-resource jobs; ``idempotency_key`` dedupes enqueues.
 
-Phase 0 ships the engine with NO callers — pure addition, zero behaviour change.
-See docs/reviews/ARCH-004-JOB-QUEUE-DESIGN.md.
+Deliberately Postgres-backed rather than Redis/Celery or OCA ``queue_job`` —
+see /ROADMAP.md §8 (ADR-1) for the rationale and the door left open to swap
+the executor if scale ever demands an external broker.
 """
 import datetime
 import hashlib

@@ -490,8 +490,7 @@ class TestApiSecurityHttp(HttpCase):
     # model layer (TransactionCase, mirroring test_compute_driver.py /
     # test_job_queue.py's own established pattern for exactly this
     # reason), not through a live HTTP round trip — tracked as its own
-    # follow-up in docs/PRODUCTION-READINESS-PLAN.md rather than forced
-    # in here.
+    # follow-up rather than forced in here.
 
     def _mock_db_ops_infra(self, instance, existing_db_names=()):
         """Make instance.hosting_db_list() return existing_db_names (already

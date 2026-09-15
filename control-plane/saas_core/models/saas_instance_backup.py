@@ -1183,7 +1183,7 @@ fi
                 "Install it with `sudo apt-get install -y restic` "
                 "(Debian 12+/Ubuntu 22.04+) or grab the static binary "
                 "from https://github.com/restic/restic/releases and "
-                "place it on $PATH. See saas_core/docker/SERVER-SETUP.md."
+                "place it on $PATH."
             ) % (docker_server_name or 'this server'))
 
     @api.model

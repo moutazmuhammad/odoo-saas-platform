@@ -847,3 +847,34 @@ branch's error-handling/rollback behavior FIRST (mirroring
 `test_do_stop_routes_to_driver`'s pattern), get those reviewed/landed on
 their own, and only then design and swap the actual routing — as its
 own separate, carefully-reviewed change, not bundled with this one.
+
+2026-09-15 — the characterization tests landed. 7 tests in
+`test_redeploy_blue_green.py`, mocking SSH/the driver/health-checks/
+nginx-flip to isolate the green-sidecar orchestration from the
+unrelated git-pull/requirements machinery (empty `repo_ids` in every
+fixture makes those loops no-ops): the zero-downtime happy path (green
+stands up on the alternate compose file/project with the substituted
+container name + ephemeral ports, boots, flips nginx, promotes the
+canonical container via the already-routed driver calls, flips back,
+tears green down exactly once) and its 3 failure branches (green
+never boots — blue untouched; promotion itself fails — flips traffic
+back immediately; canonical reboot fails after a successful promotion —
+deliberately does NOT flip back, since green already proved the code
+boots and traffic should stay on the healthy standby, not a container
+that just failed its own check, and green is correctly NOT torn down
+in this one branch since it's still live); plus the fallback
+(non-zero-downtime) path's 3 branches (happy path, recreate failure,
+boot failure with git-SHA rollback). All 7 passed against the
+unmodified implementation on the first run — the fixture's
+understanding of the real behavior was correct, not guessed. Full suite
+green: 517 tests (510 + 7), 0 failed/errors. No production code touched.
+Commit: `213fe2e`.
+
+**Next, not done in this pass**: design the actual routing (extend
+`ComputeHandle`/`ComputeSpec` with an optional compose-file/project
+override, or add dedicated `create_shadow`/`destroy_shadow` driver
+methods) and swap the four raw `docker compose -f ... -p ...` call
+sites (`_green_down`'s down, the green `up -d`) against this new test
+safety net, one change at a time, running the full suite after each.
+That design-and-swap step still needs its own explicit review/
+confirmation before starting, per the risk this cluster carries.

@@ -1008,3 +1008,15 @@ start / wait-until-running / logs calls inside `_do_deploy_locked`.
 The catalog's own line numbers and "~23 already routed" count were
 stale from the outset — a fresh audit of the actual file, not the
 document, is what should be trusted going forward.
+
+**2026-09-15 — Phase 2.3 closed, by explicit decision.** Presented the
+four remaining call sites above and asked whether to keep going. Answer:
+stop here — they're out of `ComputeDriver`'s scope (image lifecycle /
+scratch validation / a cross-cutting health-check helper), not
+per-instance container management, and routing them would mean
+expanding what the driver models rather than finishing an already-
+scoped cluster. **Phase 2.3 is DONE.** Next open item in this plan is
+**2.4** (actual per-tenant cutover to `KubernetesDriver` — `create()`/
+`destroy()` aren't called by real provisioning yet, all live tenants
+still run the legacy SSH/Docker path regardless of `compute_driver`
+setting).

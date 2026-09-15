@@ -107,6 +107,93 @@ class TestComputeDriver(TransactionCase):
         self.assertEqual(r.rc, 1)
         self.assertIn('boom output', r.stdout)
 
+    def test_create_shadow_writes_compose_file_and_brings_it_up(self):
+        from odoo.addons.saas_core.drivers.ssh_docker_driver import SshDockerDriver
+        from odoo.addons.saas_core.drivers.base import ComputeHandle
+        calls = []
+        writes = {}
+
+        class FakeSSH:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def execute(self, cmd, timeout=None):
+                calls.append(cmd)
+                return (0, '', '')
+            def write_file(self, path, content):
+                writes[path] = content
+
+        server = MagicMock()
+        server._get_ssh_connection.return_value = FakeSSH()
+        d = SshDockerDriver(server)
+        h = ComputeHandle(server_id=1, container_name='odoo_x', instance_path='/srv/x')
+        d.create_shadow(
+            h, compose_path='/srv/x/docker-compose.green.yml',
+            project='x_green', compose_content='services:\n  odoo:\n    ...\n')
+        self.assertEqual(writes['/srv/x/docker-compose.green.yml'],
+                         'services:\n  odoo:\n    ...\n')
+        self.assertIn('docker compose -f /srv/x/docker-compose.green.yml -p x_green up -d',
+                      calls[-1])
+        self.assertIn('cd /srv/x', calls[-1])
+
+    def test_create_shadow_does_not_raise_on_failed_up(self):
+        # The god-model's own subsequent health check on the shadow
+        # container is what detects a failed stand-up — matching that
+        # exactly means this method must NOT raise here.
+        from odoo.addons.saas_core.drivers.ssh_docker_driver import SshDockerDriver
+        from odoo.addons.saas_core.drivers.base import ComputeHandle
+
+        class FakeSSH:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def execute(self, cmd, timeout=None):
+                return (1, '', 'daemon error')
+            def write_file(self, path, content):
+                pass
+
+        server = MagicMock()
+        server._get_ssh_connection.return_value = FakeSSH()
+        d = SshDockerDriver(server)
+        h = ComputeHandle(server_id=1, container_name='odoo_x', instance_path='/srv/x')
+        d.create_shadow(h, compose_path='/srv/x/g.yml', project='x_green',
+                        compose_content='...')  # must not raise
+
+    def test_destroy_shadow_tears_down_and_removes_compose_file(self):
+        from odoo.addons.saas_core.drivers.ssh_docker_driver import SshDockerDriver
+        from odoo.addons.saas_core.drivers.base import ComputeHandle
+        calls = []
+
+        class FakeSSH:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def execute(self, cmd, timeout=None):
+                calls.append(cmd)
+                return (0, '', '')
+
+        server = MagicMock()
+        server._get_ssh_connection.return_value = FakeSSH()
+        d = SshDockerDriver(server)
+        h = ComputeHandle(server_id=1, container_name='odoo_x', instance_path='/srv/x')
+        d.destroy_shadow(h, compose_path='/srv/x/g.yml', project='x_green')
+        self.assertEqual(len(calls), 2)
+        self.assertIn('docker compose -f /srv/x/g.yml -p x_green down', calls[0])
+        self.assertIn('rm -f /srv/x/g.yml', calls[1])
+
+    def test_destroy_shadow_never_raises_even_on_failure(self):
+        from odoo.addons.saas_core.drivers.ssh_docker_driver import SshDockerDriver
+        from odoo.addons.saas_core.drivers.base import ComputeHandle
+
+        class FakeSSH:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def execute(self, cmd, timeout=None):
+                return (1, '', 'no such project')
+
+        server = MagicMock()
+        server._get_ssh_connection.return_value = FakeSSH()
+        d = SshDockerDriver(server)
+        h = ComputeHandle(server_id=1, container_name='odoo_x', instance_path='/srv/x')
+        d.destroy_shadow(h, compose_path='/srv/x/g.yml', project='x_green')  # must not raise
+
     def test_start_retries_transient_compose_failure_then_succeeds(self):
         # A transient `docker compose up` blip (daemon hiccup / recreate port
         # release race) must self-heal instead of failing the deploy.

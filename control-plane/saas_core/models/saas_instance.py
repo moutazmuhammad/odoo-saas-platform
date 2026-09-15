@@ -5867,13 +5867,16 @@ class SaasInstance(models.Model):
                 green_proj = '%s_green' % self.subdomain
 
                 def _green_down():
-                    ssh.execute('cd %s && docker compose -f %s -p %s down 2>&1' % (
-                        shlex.quote(instance_path), shlex.quote(green_file),
-                        shlex.quote(green_proj)))
-                    ssh.execute('rm -f %s' % shlex.quote(green_file))
+                    driver.destroy_shadow(handle, compose_path=green_file,
+                                          project=green_proj)
 
                 # 1. Stand up GREEN beside the live (blue) container on temp
                 #    ports, running the NEW code, sharing the same DB+filestore.
+                # Routed through ComputeDriver.create_shadow/destroy_shadow
+                # (Phase 2.3) — same compose file/project/content this
+                # always wrote, now via the same seam every other lifecycle
+                # call site uses. Protected by test_redeploy_blue_green.py's
+                # characterization tests, written before this change.
                 gp_http, gp_chat = self._allocate_ephemeral_ports(ssh)
                 _c, canon, _e = ssh.execute(
                     'cat %s/docker-compose.yml' % shlex.quote(instance_path))
@@ -5884,12 +5887,9 @@ class SaasInstance(models.Model):
                     .replace(':%d:8069' % self.xmlrpc_port, ':%d:8069' % gp_http)
                     .replace(':%d:8072' % self.longpolling_port,
                              ':%d:8072' % gp_chat))
-                ssh.write_file(green_file, green_compose)
                 self._append_log("Starting new version alongside the live one (zero-downtime)...")
-                ssh.execute(
-                    'cd %s && docker compose -f %s -p %s up -d 2>&1' % (
-                        shlex.quote(instance_path), shlex.quote(green_file),
-                        shlex.quote(green_proj)), timeout=420)
+                driver.create_shadow(handle, compose_path=green_file,
+                                     project=green_proj, compose_content=green_compose)
 
                 # 2. Boot-check green. If it never answers, tear it down — the
                 #    live container never moved, so the customer sees nothing.

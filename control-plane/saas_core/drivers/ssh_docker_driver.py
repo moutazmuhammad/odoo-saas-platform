@@ -93,6 +93,47 @@ class SshDockerDriver(ComputeDriver):
                 timeout=timeout or 600)
         return ExecResult(rc=rc, stdout=out, stderr=err)
 
+    def create_shadow(self, handle, *, compose_path, project, compose_content,
+                      timeout=None) -> None:
+        """Stand up a temporary 'shadow' (green) container beside the live
+        (blue) one — the zero-downtime blue/green mechanism's stand-up
+        half. Writes `compose_content` to `compose_path` on the host and
+        brings it up as its own compose project (`-p project`, distinct
+        from the canonical one), sharing the live container's DB/
+        filestore via the same instance_path bind mounts (the caller is
+        responsible for baking a different container_name and published
+        ports into `compose_content` — this method has no opinion on
+        that, matching run_once()'s own scope discipline: mechanical
+        SSH/compose actions live here, the decision of WHAT the shadow
+        contains stays with the caller).
+
+        Deliberately does NOT raise on a failed `up -d` here, matching
+        the god-model's original behavior exactly: the caller's
+        subsequent health check on the shadow container is what actually
+        detects a failed stand-up, not this method — shadow creation has
+        no retry of its own (unlike start()), since a real failure here
+        should surface via that boot check."""
+        with self._ssh() as ssh:
+            ssh.write_file(compose_path, compose_content)
+            ssh.execute(
+                'cd %s && docker compose -f %s -p %s up -d 2>&1' % (
+                    shlex.quote(handle.instance_path), shlex.quote(compose_path),
+                    shlex.quote(project)),
+                timeout=timeout or 420)
+
+    def destroy_shadow(self, handle, *, compose_path, project) -> None:
+        """Tear down a shadow started by create_shadow() and remove its
+        compose file. Best-effort/idempotent, matching the god-model's
+        original `_green_down()`: never raises, safe to call even if the
+        shadow was never successfully created (`docker compose down` on a
+        missing project, and `rm -f` on a missing file, are both
+        no-ops)."""
+        with self._ssh() as ssh:
+            ssh.execute('cd %s && docker compose -f %s -p %s down 2>&1' % (
+                shlex.quote(handle.instance_path), shlex.quote(compose_path),
+                shlex.quote(project)))
+            ssh.execute('rm -f %s' % shlex.quote(compose_path))
+
     # -- lifecycle ----------------------------------------------------------
     def create(self, spec: ComputeSpec) -> ComputeHandle:
         # Full provisioning (render configs + first `up`) still lives in the

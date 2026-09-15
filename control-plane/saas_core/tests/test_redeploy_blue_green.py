@@ -1,20 +1,25 @@
 """Characterization tests for _do_redeploy's blue/green (zero-downtime)
-and fallback (in-place recreate) paths — written BEFORE any refactor of
-this code, per MICROSERVICES-PLAN.md's Phase 2.3 progress log: this is
-the actual mechanism protecting a live customer redeploy from an outage,
-it had zero test coverage of its own, and the plan is to lock down
-TODAY's exact behavior here first, then design/route the remaining raw
-`docker compose -f ... -p ...` calls through ComputeDriver as a
-SEPARATE, reviewed change against this safety net — not bundled together.
+and fallback (in-place recreate) paths.
+
+Originally written BEFORE routing the green-sidecar stand-up/teardown
+through ComputeDriver (MICROSERVICES-PLAN.md's Phase 2.3), as a safety
+net for that refactor — this is the actual mechanism protecting a live
+customer redeploy from an outage, and it had zero test coverage of its
+own before this file existed. All 7 tests passed unmodified against the
+pre-refactor implementation; after routing create_shadow()/
+destroy_shadow() through the driver (same commit), the assertions on
+green stand-up/teardown were updated from raw-SSH-string checks to
+driver-call checks (matching how the canonical container's destroy()/
+start() calls were already asserted), since that's now genuinely where
+those actions happen — the underlying behavior verified is unchanged.
 
 Scope deliberately excludes git pull/requirements-validation (repo_ids
 is empty in every fixture here, making those loops no-ops) to isolate
 the green-sidecar orchestration itself: stand up green, boot-check it,
-flip nginx, promote (destroy+start the canonical container via the
-ALREADY-routed driver calls), flip back, tear green down — and every
-failure branch in that sequence.
+flip nginx, promote (destroy+start the canonical container), flip back,
+tear green down — and every failure branch in that sequence.
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase, tagged
@@ -119,17 +124,19 @@ class TestRedeployBlueGreen(TransactionCase):
         self._run(fake_ssh, driver, wait_healthy, flip_calls)
 
         # Green stood up on the alternate compose file/project, sharing
-        # the ephemeral ports, then torn down again after promotion.
+        # the ephemeral ports, then torn down again after promotion —
+        # both now via the driver seam (create_shadow/destroy_shadow),
+        # not raw SSH commands.
         green_file = '%s/docker-compose.green.yml' % self.instance._get_instance_path()
-        self.assertIn(green_file, writes)
-        self.assertIn('container_name: odoo_bgtest_green', writes[green_file])
-        self.assertIn(':34001:8069', writes[green_file])
-        self.assertIn(':34002:8072', writes[green_file])
-        up_calls = [c for c in calls if 'docker compose -f' in c and ' up -d' in c]
-        down_calls = [c for c in calls if 'docker compose -f' in c and ' down' in c]
-        self.assertEqual(len(up_calls), 1, "green stands up exactly once")
-        self.assertEqual(len(down_calls), 1, "green is torn down exactly once, at the end")
-        self.assertIn('bgtest_green', up_calls[0])
+        driver.create_shadow.assert_called_once()
+        create_kwargs = driver.create_shadow.call_args.kwargs
+        self.assertEqual(create_kwargs['compose_path'], green_file)
+        self.assertEqual(create_kwargs['project'], 'bgtest_green')
+        self.assertIn('container_name: odoo_bgtest_green', create_kwargs['compose_content'])
+        self.assertIn(':34001:8069', create_kwargs['compose_content'])
+        self.assertIn(':34002:8072', create_kwargs['compose_content'])
+        driver.destroy_shadow.assert_called_once_with(
+            ANY, compose_path=green_file, project='bgtest_green')
         # Canonical container recreated via the ALREADY-routed driver calls.
         driver.destroy.assert_called_once()
         driver.start.assert_called_once()
@@ -155,8 +162,7 @@ class TestRedeployBlueGreen(TransactionCase):
         driver.destroy.assert_not_called()
         driver.start.assert_not_called()
         # Green was torn down after the failed boot check.
-        down_calls = [c for c in calls if 'docker compose -f' in c and ' down' in c]
-        self.assertEqual(len(down_calls), 1)
+        driver.destroy_shadow.assert_called_once()
 
     def test_zero_downtime_promotion_failure_flips_traffic_back(self):
         driver = MagicMock()
@@ -173,8 +179,7 @@ class TestRedeployBlueGreen(TransactionCase):
         # Flipped TO green, then immediately back to blue on the failure —
         # customers never lose service, they just don't get the new code.
         self.assertEqual(flip_calls, [(34001, 34002), (8169, 8172)])
-        down_calls = [c for c in calls if 'docker compose -f' in c and ' down' in c]
-        self.assertEqual(len(down_calls), 1, "green must still be cleaned up")
+        driver.destroy_shadow.assert_called_once()
 
     def test_zero_downtime_canonical_reboot_failure_keeps_traffic_on_green(self):
         """The one branch that deliberately does NOT flip nginx back:
@@ -199,8 +204,7 @@ class TestRedeployBlueGreen(TransactionCase):
         # Only the initial flip to green — deliberately never flipped back.
         self.assertEqual(flip_calls, [(34001, 34002)])
         # Green is NOT torn down in this branch (it's still serving traffic).
-        down_calls = [c for c in calls if 'docker compose -f' in c and ' down' in c]
-        self.assertEqual(len(down_calls), 0)
+        driver.destroy_shadow.assert_not_called()
 
     # ---------------------------------------------------------------
     # Fallback (non-zero-downtime) path: remote proxy or immutable image
@@ -218,7 +222,8 @@ class TestRedeployBlueGreen(TransactionCase):
 
         # No green sidecar at all — straight in-place recreate.
         self.assertEqual(writes, {})
-        self.assertFalse(any('docker compose -f' in c for c in calls))
+        driver.create_shadow.assert_not_called()
+        driver.destroy_shadow.assert_not_called()
         driver.destroy.assert_called_once()
         driver.start.assert_called_once()
         self.assertEqual(flip_calls, [], "fallback path never touches nginx routing")

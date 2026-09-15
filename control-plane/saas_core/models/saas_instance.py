@@ -11198,8 +11198,20 @@ class SaasInstance(models.Model):
                 "digits and underscores, or 'all' to repair everything."
             ) % module)
 
-        instance_path = self._get_instance_path()
+        # Routed through ComputeDriver (Phase 2.3, MICROSERVICES-PLAN.md):
+        # stop()/run_once()/start() already existed and are already used
+        # elsewhere in this file — no new driver code needed here, just
+        # translating each raw ssh.execute() into the equivalent driver
+        # call. driver.stop() issues `docker stop <container>` rather than
+        # the original `docker compose stop odoo` — a deliberate,
+        # understood command-string change: the two are behaviorally
+        # identical for this single-service-per-project setup (compose
+        # `stop <service>` resolves to stopping that same container
+        # anyway), and reusing the existing, already-tested method is
+        # preferable to adding a second way to stop a container.
         with self.docker_server_id._get_ssh_connection() as ssh:
+            driver = self._compute_driver(connection=ssh)
+            handle = self._compute_handle()
             captured = []
 
             def _err(msg):
@@ -11214,17 +11226,11 @@ class SaasInstance(models.Model):
                 "(target db=%s, module=%s)..."
                 % (self.subdomain, name, module)
             )
-            ec, sout, serr = ssh.execute(
-                'cd %s && docker compose stop odoo 2>&1'
-                % shlex.quote(instance_path),
-                timeout=120,
-            )
-            captured.append(
-                '$ docker compose stop odoo (exit %s)\n%s' % (ec, sout + serr)
-            )
-            # ``stop`` exits 0 when nothing was running too, so we only
-            # bail on hard SSH errors.
-            if ec not in (0,):
+            try:
+                driver.stop(handle)
+                captured.append('$ stop odoo container\nOK')
+            except Exception as e:
+                captured.append('$ stop odoo container\nFAILED: %s' % e)
                 _err(_(
                     "Couldn't pause your instance before starting the "
                     "repair. Please try again in a moment."
@@ -11234,41 +11240,33 @@ class SaasInstance(models.Model):
                 "Running 'odoo -d %s -u %s' on a one-shot container..."
                 % (name, module)
             )
-            run_cmd = (
-                'cd %s && docker compose run --rm -T odoo '
+            run_args = (
                 'odoo -d %s -u %s --stop-after-init --no-http '
-                '--workers=0 --log-level=info 2>&1'
-            ) % (
-                shlex.quote(instance_path),
-                shlex.quote(name),
-                shlex.quote(module),
-            )
-            ec, sout, serr = ssh.execute(run_cmd, timeout=1800)
-            captured.append(
-                '$ %s\n%s' % (run_cmd, sout + serr)
-            )
-            upgrade_failed = ec != 0
+                '--workers=0 --log-level=info'
+            ) % (shlex.quote(name), shlex.quote(module))
+            result = driver.run_once(handle, run_args, timeout=1800)
+            captured.append('$ docker compose run --rm -T odoo %s\n%s' % (
+                run_args, result.stdout))
+            upgrade_failed = not result.ok
 
             # Always try to bring the container back up, even if the
             # upgrade failed — otherwise the customer's site stays
             # offline indefinitely.
             self._append_log("Bringing container back up...")
-            up_ec, up_out, up_err = ssh.execute(
-                'cd %s && docker compose up -d 2>&1'
-                % shlex.quote(instance_path),
-                timeout=300,
-            )
-            captured.append(
-                '$ docker compose up -d (exit %s)\n%s'
-                % (up_ec, up_out + up_err)
-            )
+            try:
+                driver.start(handle)
+                captured.append('$ start odoo container\nOK')
+                up_failed = False
+            except Exception as e:
+                captured.append('$ start odoo container\nFAILED: %s' % e)
+                up_failed = True
 
             if upgrade_failed:
                 _err(_(
                     "The repair didn't complete successfully. See the "
                     "report for details."
                 ))
-            if up_ec != 0:
+            if up_failed:
                 _err(_(
                     "The repair finished, but your instance didn't come "
                     "back up automatically. See the report for details, "

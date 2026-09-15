@@ -5225,6 +5225,10 @@ class SaasInstance(models.Model):
                 "Deployment queued (attempt %d). Running in background..."
                 % (rec.deploy_retry_count + 1)
             )
+            self.env['saas.audit.log']._saas_audit(
+                'instance_deploy', model='saas.instance', res_id=rec.id,
+                res_name=rec.subdomain,
+                detail='Deployment queued (attempt %d)' % (rec.deploy_retry_count + 1))
             # Durable queue OWNS deploy retries + crash recovery (ARCH-004 retry
             # cutover): the queue retries _do_deploy up to max_deploy_retries
             # with back-off (instance stays 'provisioning' across attempts), and
@@ -5672,6 +5676,9 @@ class SaasInstance(models.Model):
             rec.pending_operation = 'redeploy'
             rec.state = 'provisioning'
             rec._append_log("Redeployment queued. Running in background...")
+            self.env['saas.audit.log']._saas_audit(
+                'instance_redeploy', model='saas.instance', res_id=rec.id,
+                res_name=rec.subdomain, detail='Redeployment queued (was %s)' % prev_state)
             # Durable queue (ARCH-004): redeploy is recoverable + idempotent.
             self.env['saas.job']._enqueue(
                 rec, '_do_redeploy', channel='deploy',
@@ -6853,6 +6860,10 @@ class SaasInstance(models.Model):
         self.pending_operation = 'restore'
         self.state = 'provisioning'
         self._append_log("Restore from backup '%s' queued..." % backup.name)
+        self.env['saas.audit.log']._saas_audit(
+            'instance_restore_backup', model='saas.instance', res_id=self.id,
+            res_name=self.subdomain,
+            detail='Restore from backup %r (id=%s) queued' % (backup.name, backup.id))
         run_in_background(
             self, '_do_restore_backup',
             method_args=(backup.id,),
@@ -6921,6 +6932,10 @@ class SaasInstance(models.Model):
         self.pending_operation = 'restore'
         self.state = 'provisioning'
         self._append_log("Full-instance restore from '%s' queued..." % backup.name)
+        self.env['saas.audit.log']._saas_audit(
+            'instance_restore_full', model='saas.instance', res_id=self.id,
+            res_name=self.subdomain,
+            detail='Full-instance restore from %r (id=%s) queued' % (backup.name, backup.id))
         run_in_background(
             self, '_do_restore_full_instance',
             method_args=(backup.id,),
@@ -9562,6 +9577,11 @@ class SaasInstance(models.Model):
             self.message_post(body=_(
                 "Downgrade applied: switched from %s to %s."
             ) % (old_plan.name if old_plan else '—', new_plan.name))
+            self.env['saas.audit.log']._saas_audit(
+                'instance_scale', model='saas.instance', res_id=self.id,
+                res_name=self.subdomain,
+                detail='Scheduled downgrade applied: %s -> %s' % (
+                    old_plan.name if old_plan else 'None', new_plan.name))
 
             # Update container resources for the lower plan
             if self.state == 'running':
@@ -10405,6 +10425,11 @@ class SaasInstance(models.Model):
         self.message_post(body=_(
             "Payment confirmed. Upgraded from %s to %s."
         ) % (old_plan.name if old_plan else '—', new_plan.name))
+        self.env['saas.audit.log']._saas_audit(
+            'instance_scale', model='saas.instance', res_id=self.id,
+            res_name=self.subdomain,
+            detail='Plan %s -> %s (%s)' % (
+                old_plan.name if old_plan else 'None', new_plan.name, cycle_msg))
 
         if self.state == 'running':
             try:

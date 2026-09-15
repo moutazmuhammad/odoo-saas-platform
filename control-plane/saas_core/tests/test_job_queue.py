@@ -598,6 +598,33 @@ class TestDeployViaQueue(TransactionCase):
         self.assertTrue(job.idempotent)
         self.assertEqual(job.max_attempts, 2)
 
+    def test_action_deploy_writes_audit_log(self):
+        # SEC-010: deploy is one of the "who scaled, deployed, restored, or
+        # deleted an instance" actions the audit found had no append-only
+        # trail at all.
+        inst = self._instance('dpqdeployaudit', state='draft', is_trial=True)
+        Inst = type(inst)
+        with patch.object(Inst, '_allocate_servers', lambda self: True), \
+                patch.object(Inst, '_validate_deploy_fields', lambda self: None), \
+                patch.object(Inst, '_auto_assign_ports', lambda self: None):
+            inst.action_deploy()
+        entry = self.env['saas.audit.log'].sudo().search([
+            ('action', '=', 'instance_deploy'),
+            ('model', '=', 'saas.instance'), ('res_id', '=', inst.id)], limit=1)
+        self.assertTrue(entry, "action_deploy must write an audit log entry")
+        self.assertEqual(entry.res_name, inst.subdomain)
+        self.assertEqual(entry.result, 'ok')
+
+    def test_action_redeploy_writes_audit_log(self):
+        inst = self._instance('dpqredeployaudit', state='running')
+        with patch.object(type(inst), '_ensure_can_ssh', lambda self: None):
+            inst.action_redeploy()
+        entry = self.env['saas.audit.log'].sudo().search([
+            ('action', '=', 'instance_redeploy'),
+            ('model', '=', 'saas.instance'), ('res_id', '=', inst.id)], limit=1)
+        self.assertTrue(entry, "action_redeploy must write an audit log entry")
+        self.assertEqual(entry.res_name, inst.subdomain)
+
     def test_action_delete_enqueues_job(self):
         inst = self._instance('dpqdel', state='running')
         with patch.object(type(inst), '_ensure_can_ssh', lambda self: None):

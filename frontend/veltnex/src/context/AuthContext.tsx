@@ -1,5 +1,7 @@
 import * as React from "react";
 import { api, ApiError, setUnauthorizedHandler, type ApiUser } from "@/lib/api";
+import { useIdleLogout } from "@/hooks/useIdleLogout";
+import { useToast } from "@/context/ToastContext";
 
 interface RegisterForm {
   name: string;
@@ -74,6 +76,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
     }
   }, []);
+
+  // SEC-018: no client-side idle timeout existed at all — an
+  // authenticated tab left open on a shared/public machine stayed valid
+  // indefinitely. Warns once, then logs out if activity never resumes.
+  const { warning } = useToast();
+  const handleIdleWarn = React.useCallback(() => {
+    warning(
+      "You'll be signed out soon",
+      "Move your mouse or press a key to stay signed in."
+    );
+  }, [warning]);
+  const handleIdle = React.useCallback(() => {
+    logout();
+  }, [logout]);
+  useIdleLogout(!!user, handleIdleWarn, handleIdle);
 
   const registerStart = React.useCallback((form: RegisterForm) => {
     return api.registerStart(form as unknown as Record<string, unknown>);

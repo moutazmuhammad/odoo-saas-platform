@@ -782,3 +782,68 @@ provisions everything via its legacy code path regardless of
 along with 2.2 (formalizing the spec.env-based field carrying decided
 above — arguably already satisfied by this step's approach, revisit if a
 future session disagrees) and 2.4 (the actual per-tenant cutover).
+
+2026-09-15 — Step 2.3, started — audited the real current scope before
+touching anything, since this is live production provisioning code with
+real paying customers still on it. `DRIVER-BOUNDARY.md` itself is stale
+(dated 2026-06-17, line numbers no longer match a file that's grown to
+12,600+ lines, and it's a rough category catalog, not the exhaustive
+per-line table its own "~140" framing implies). More importantly,
+**DOC-A2's own named example is already fixed**: `_do_redeploy`'s
+canonical-container recreate (the thing the production review actually
+cited) already routes through `driver.destroy()`/`driver.start()` in
+all 3 places it happens — that must have landed in a prior session
+without this doc being updated to say so (exactly the "audit document
+stops being the only source of truth" problem this plan's own Phase C
+work kept running into elsewhere).
+
+What's actually left, after re-auditing against current code, is two
+raw-command clusters — and they differ sharply in risk:
+
+1. **`_do_deploy_locked`'s DB-init `docker compose run --rm -T odoo ...
+   -i base --stop-after-init`** (runs once, only on a fresh non-hosting
+   deploy with no pre-built snapshot). Single call site, no existing
+   driver method modeled this (`docker compose run`'s one-shot-ephemeral-
+   container semantics differ from `start`/`exec`/anything else), zero
+   regression-test coverage existed for it. **Done this pass**: added
+   `run_once()` to `SshDockerDriver` as a driver-specific helper — NOT a
+   new `ComputeDriver` ABC method, matching the existing precedent
+   (`service_exec`/`stats`/`wait_until_running` are also driver-specific
+   rather than forced into the shared interface) — since `docker compose
+   run` has no clean Kubernetes equivalent yet (closest analog is a Job)
+   and forcing it into the ABC now would be premature the same way
+   `create()` already is. Swapped the raw `ssh.execute()` call for
+   `self._compute_driver(connection=ssh).run_once(...)`, byte-identical
+   command and behavior (including preserving the `2>&1` merge, which
+   makes `ExecResult.stderr` always empty for this method — deliberate,
+   not a bug, so log/error text doesn't change). 2 new driver-level
+   tests. Full suite green: 510 tests (509 + 1 new test method). Commit:
+   `c18cbfd`.
+
+2. **`_do_redeploy`'s blue/green shadow-container down/up** — NOT done
+   this pass, deliberately. This targets an alternate compose file and
+   project name (the temporary "green" sidecar used for the zero-
+   downtime flip), a concept `ComputeHandle`/`ComputeSpec` has no field
+   for today. Routing it needs either extending those dataclasses with
+   an optional compose-file/project override, or a dedicated
+   `create_shadow`/`destroy_shadow` pair — a real design decision, not a
+   pure call-swap. This is also, unlike item 1, **the actual mechanism
+   standing between a live customer redeploy and a real outage** — the
+   whole point of the blue/green dance is that a botched refactor here
+   fails differently (and worse) than the code it replaces: not "the
+   deploy fails," but "the deploy silently drops zero-downtime and
+   customers see a gap," or worse, "the flip logic breaks and two
+   containers fight over the same port." Zero regression-test coverage
+   exists for this path's exact command sequence either, same as item 1
+   did before today.
+
+**Deliberately stopping here rather than continuing into item 2 in the
+same pass.** Given the stakes (live customer-facing zero-downtime
+redeploy, no existing test safety net, no live-infra way to verify a
+real blue/green flip from this session the way Phase 1's live-cluster
+work could), the responsible next step is: write characterization tests
+capturing today's exact green-sidecar command sequence and every
+branch's error-handling/rollback behavior FIRST (mirroring
+`test_do_stop_routes_to_driver`'s pattern), get those reviewed/landed on
+their own, and only then design and swap the actual routing — as its
+own separate, carefully-reviewed change, not bundled with this one.

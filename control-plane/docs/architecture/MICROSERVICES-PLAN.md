@@ -878,3 +878,48 @@ sites (`_green_down`'s down, the green `up -d`) against this new test
 safety net, one change at a time, running the full suite after each.
 That design-and-swap step still needs its own explicit review/
 confirmation before starting, per the risk this cluster carries.
+
+2026-09-15 — done, with explicit go-ahead on the design (`create_shadow`/
+`destroy_shadow`, the cleaner-separation option). Added both as
+`SshDockerDriver`-specific methods — same precedent as `run_once()`:
+the driver handles the mechanical SSH/compose actions (write the
+compose file, `up -d` / `down`, `rm -f`), the god-model keeps deciding
+WHAT content the shadow gets (reading/patching the canonical compose
+file for the green container name/ports stays exactly where it was).
+`create_shadow()` deliberately does not raise on a failed `up -d` —
+preserved exactly, since the god-model's own subsequent health check on
+the shadow container is what detects a failed stand-up today, and
+"fixing" that into a raised exception would be a real behavior change,
+not a pure routing swap. `destroy_shadow()` matches the original
+`_green_down()` byte-for-byte: best-effort, never raises.
+
+Swapped both remaining raw call sites in `_do_redeploy`.
+`grep -n "docker compose" saas_instance.py` now shows zero raw
+invocations left in either of this pass's two target clusters
+(`_do_deploy_locked`'s DB-init, `_do_redeploy`'s blue/green) — the
+remaining hits in the file are comments, or genuinely separate,
+not-yet-cataloged call sites (a module-install helper, a python-exec
+helper) correctly out of scope here.
+
+Updated the 4 zero-downtime characterization tests: their assertions on
+green stand-up/teardown moved from raw-SSH-string checks to
+`driver.create_shadow`/`destroy_shadow` call checks, matching how the
+canonical container's `destroy()`/`start()` were already asserted the
+same way — same behavior verified, just at the now-correct
+interception point. All 4 continued to pass, confirming the refactor
+preserved behavior rather than the tests just being rewritten to match
+whatever the new code does. 4 new driver-level tests. Full suite green:
+521 tests (517 + 4), 0 failed/errors. Commit: `619096d`.
+
+**Both clusters this pass identified in `DRIVER-BOUNDARY.md`'s stale
+catalog are now closed.** What remains of the original "~140 call
+sites" is everything neither this pass nor the original ~23 already
+covered — a module-install helper (`docker compose stop`/`run --rm -T
+odoo`/`up -d` around lines 11218-11262), another init-style `docker
+compose run` at line 11968, and a `docker compose exec python3 -`
+helper around line 12107, plus whatever else a fresh, non-stale audit
+of the current file would turn up. Each would need the same treatment
+this pass established: understand it, write characterization tests
+against today's real behavior, only then design and swap — not a
+batch operation given the total absence of a regression safety net
+across this file before this session.

@@ -11941,16 +11941,17 @@ class SaasInstance(models.Model):
         self._pg_ensure_db_with_grants(template)
         self._pg_mark_template(template, flag=True)
 
-        instance_path = self._get_instance_path()
         init_exit = 1
         init_output = ''
         with self.docker_server_id._get_ssh_connection() as ssh:
+            driver = self._compute_driver(connection=ssh)
+            handle = self._compute_handle()
             self._append_log(
                 "Pausing instance for one-time template build "
                 "(~60-90s, first DB only)..."
             )
             try:
-                self._compute_driver(connection=ssh).destroy(self._compute_handle())
+                driver.destroy(handle)
             except Exception:
                 pass  # best-effort pause before the one-time template build
             # The template only needs ``base``, so build it with a
@@ -11962,8 +11963,7 @@ class SaasInstance(models.Model):
             # "creating". Customer modules still install into the real DB
             # later via the normal flow — the template clone is base-only.
             core_addons = self._hosting_core_addons_path(ssh)
-            init_cmd = (
-                'cd %s && docker compose run --rm -T odoo '
+            run_args = (
                 'odoo -d %s '
                 '-i base '
                 '--addons-path=%s '
@@ -11971,24 +11971,22 @@ class SaasInstance(models.Model):
                 '--stop-after-init '
                 '--no-http '
                 '--workers=0 '
-                '--log-level=info 2>&1'
+                '--log-level=info'
             ) % (
-                shlex.quote(instance_path),
                 shlex.quote(template),
                 shlex.quote(core_addons),
             )
             try:
-                init_exit, stdout, stderr = ssh.execute(
-                    init_cmd, timeout=1800,
-                )
-                init_output = (stdout or '') + (stderr or '')
+                result = driver.run_once(handle, run_args, timeout=1800)
+                init_exit = result.rc
+                init_output = (result.stdout or '') + (result.stderr or '')
             finally:
                 # Always bring the instance back up, even if the init
                 # raised — leaving the customer's container down is far
                 # worse than a failed template build.
                 self._append_log("Resuming instance...")
                 try:
-                    self._compute_driver(connection=ssh).start(self._compute_handle())
+                    driver.start(handle)
                 except Exception as e:
                     self._append_log("Warning: failed to resume container: %s" % e)
 

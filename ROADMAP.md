@@ -189,6 +189,13 @@ trip against both PVC and ObjectStorage backends).
 bounded by backup-cron frequency (daily), not continuous, regardless of what
 any older doc claimed.
 
+**[Code-confirmed]** Today only **two Odoo addons exist in this entire
+platform**: `saas_core` (everything — provisioning, billing, security,
+observability infra, all 31 models) and `saas_website` (portal/API, depends
+on `saas_core`). §4.6 evaluates whether that single-addon shape is still
+the right one and proposes a concrete redesign; it is a **proposal, not yet
+started** — nothing in this section changes until Phase 10 (§5) picks it up.
+
 ### 3.2 Frontend (`frontend/veltnex`)
 
 React/Vite/TypeScript SPA, talks only to `/saas/api/v1/*`. Deliberately has
@@ -385,14 +392,19 @@ drills (a real, not tabletop, restore drill).
 
 ### 3.14 The god model
 
-`saas_instance.py` is 12,619 lines today — larger than when first flagged,
-not smaller, despite this cycle's routing work. Every prior planning
-document agreed it should be decomposed behind tests, peeled one concern at
-a time, never big-bang. That has still not happened. It is not urgent in
-the sense of blocking a specific feature, but it is the single largest
-ongoing tax on every other change to this codebase and should get
-opportunistic, continuous attention (§5, Phase 8) rather than a dedicated
-big-bang phase.
+`saas_instance.py` is 12,619 lines today (57% of `saas_core`'s 22,043 total
+model-layer lines) — larger than when first flagged, not smaller, despite
+this cycle's routing work. Every prior planning document agreed it should
+be decomposed behind tests, peeled one concern at a time, never big-bang.
+That has still not happened. It is not urgent in the sense of blocking a
+specific feature, but it is the single largest ongoing tax on every other
+change to this codebase and should get opportunistic, continuous attention
+(§5, Phase 10) rather than a dedicated big-bang phase. **§4.6 turns this
+from a vague "decompose it eventually" note into an actual target
+architecture** — a concrete proposal for which Odoo addons should exist,
+who owns what, and a migration order — written in response to an explicit
+request to evaluate `saas_core`'s modular structure from first principles,
+not assume today's single-addon shape is correct.
 
 ---
 
@@ -527,6 +539,356 @@ measured in minutes, not "since last daily backup." Add backup
 encryption-at-rest verification and a recurring (quarterly, at minimum)
 real restore drill — not a tabletop exercise — feeding into the DR/RPO/RTO
 targets called out in §3.13.
+
+### 4.6 `saas_core` module boundaries — a domain-driven redesign
+
+This section answers a direct question: **should `saas_core` be split into
+multiple Odoo addons along domain lines (e.g. a dedicated Billing module,
+a Subscriptions module), or is today's single-addon shape actually
+correct?** The answer below is not "reorganize the files" — it's a
+specific target architecture, a specific migration mechanism, and an
+explicit accounting of what should and shouldn't be split, including one
+case (Billing vs. Subscriptions) where the conclusion is "not yet, and
+here's exactly why."
+
+#### 4.6.1 The one insight that shapes everything else
+
+Odoo's `_inherit` mechanism lets a **different addon** contribute fields
+and methods to an **existing model** without creating a new table — Odoo
+merges every addon's `_inherit` classes for a given `_name` into one
+Python class and one Postgres table at registry build time. This means
+decomposing the god model does **not** require splitting `saas.instance`
+into multiple tables/models (a genuinely risky, high-effort schema
+migration on live customer data, and the kind of over-engineering this
+evaluation was explicitly asked to avoid). It means moving **code** —
+whole chunks of methods and their supporting fields — into a different
+addon's Python files, while `saas.instance` itself stays one table, one
+`_name`, one aggregate root. The redesign below is a "thin core, fat
+inherited behavior" pattern: `saas_core` keeps a deliberately thin
+`saas.instance` (identity, ownership, state, physical placement) and every
+other addon *extends* it with only the fields/methods its own domain owns.
+
+**This is a modular monolith, not microservices** — worth stating
+explicitly since the rest of this roadmap (§4.1) is simultaneously moving
+the *compute* layer to a genuinely separate service reached over the
+Kubernetes API. The `saas_core` split proposed here is a different kind of
+boundary: every addon below still shares one Python process, one Postgres
+database, and one ORM registry. Modules "communicate" by calling public
+methods directly on the same in-memory recordset — there is no queue, no
+network hop, no serialization between them, and there shouldn't be one.
+Introducing service boundaries *inside* the control plane, on top of the
+real service boundary already being built for compute (§4.1), would be
+the over-engineering this evaluation was asked to avoid. The payoff of
+splitting into addons is entirely about **code organization, ownership,
+and blast radius** (smaller, independently reviewable diffs; a
+Python-import-level guarantee that billing code can't reach into
+provisioning internals it doesn't depend on; addon-scoped tests/security
+groups/data files) — not runtime isolation, which this design doesn't
+attempt and doesn't need.
+
+#### 4.6.2 Current shape (input to this design, gathered this revision)
+
+**[Code-confirmed]** `saas_core` today: 31 models, 22,043 model-layer
+lines. `saas_instance.py` alone is 12,619 lines / ~284 methods, breaking
+down roughly as: deploy/redeploy/scale lifecycle (~3,500 lines, the
+largest single cluster), billing/invoicing/plan-change/proration/renewal
+(~2,800 lines, split across **two non-contiguous clusters** in the file),
+backup/restore (~1,600 lines here plus all 2,122 lines of the already-
+separate `saas_instance_backup.py`), health/reconciliation/metrics
+(~1,400 lines), hosting self-service DB operations (~1,950 **contiguous**
+lines — already the best-bounded section in the file), git-based deploy
+hooks (~10 methods, bulk of the logic already in the separate 1,661-line
+`saas_instance_repo.py`), compute-driver/SSH plumbing (~600 lines), and a
+genuinely cross-cutting remainder (ORM overrides, a portal status
+aggregator, secret re-encryption) that touches nearly every domain at once
+and is exactly why this file resists a clean split today.
+
+Only two addons exist: `saas_core` (depends on `base, mail, sale, account,
+portal, phone_validation, payment, account_payment`) and `saas_website`
+(depends on `saas_core, website, portal, payment, account_payment`).
+Several of `saas_core`'s current Odoo-core dependencies — `sale, account,
+payment, account_payment` — exist **only** because of billing code
+(invoice/payment handling); core identity and provisioning need none of
+them. That's a concrete, measurable sign the current boundary is wrong:
+`saas_core`'s dependency footprint is wider than its actual core
+responsibility.
+
+**The existing addon boundary is already leaky** — important negative
+finding, not assumed away: `saas_website` doesn't only call
+`saas.instance`'s public `action_*`/`hosting_*` methods, it also reaches
+directly into at least nine underscore-prefixed "private" methods
+(`_get_status_dict`, `_get_cancellable_unpaid_invoice`, `_env_branch`,
+`_get_all_invoices`, `_capacity_summary`, and others). With only one addon
+boundary in the whole platform, that boundary is already being bypassed by
+convention alone. **Any new split must ship an enforced contract, not just
+a naming convention** — see §4.6.6.
+
+Two grab-bag Odoo-core extensions confirm the same pattern at smaller
+scale: `res_config_settings.py` (492 lines, ~45 fields) is roughly 30
+billing/pricing fields plus infra settings (backup credentials, port
+range) plus generic settings, all in one file; `res_partner.py` (205
+lines) mixes wallet/trial-eligibility fields (billing) with phone/country
+validation (generic identity) in one file. Odoo's own idiom already solves
+this — each addon should extend `res.config.settings`/`res.partner` with
+*only* its own fields, in its own file, and Odoo merges them into one
+settings screen / one partner record at runtime. §4.6.4 applies this
+explicitly.
+
+#### 4.6.3 Proposed addon layout
+
+| Addon | Depends on | Owns |
+|---|---|---|
+| **`saas_core`** (thinned, redefined) | `base`, `mail`, `portal` | Kernel infra + the tenant aggregate root's *identity* shape only. |
+| **`saas_provisioning`** (new) | `saas_core` | Everything about *how* a tenant instance runs and is operated on. |
+| **`saas_billing`** (new) | `saas_provisioning` | Everything about the *commercial* relationship — plans' pricing, wallet, payments, invoicing, subscription state. |
+| **`saas_website`** (existing, unchanged role) | `saas_billing` (was `saas_core`) | Portal/API — unchanged responsibility, dependency updated since it needs both provisioning actions and billing data. |
+
+Dependency direction is a straight line — `saas_core → saas_provisioning →
+saas_billing → saas_website` — deliberately, so there is no cycle to
+reason about. `compute/` (the Kubernetes operator) sits outside this
+chain entirely, reached only via the Kubernetes API from inside
+`saas_provisioning`, exactly as today.
+
+**What stays in `saas_core` and why.** Two categories:
+
+1. *The aggregate root's thin identity shape*: `saas.instance` keeps only
+   what every other addon needs and none of them should own —
+   subdomain/name, `partner_id`, `state` (draft/running/suspended/
+   cancelled — read and written by both provisioning transitions *and*
+   billing's non-payment suspension, so it can't live in either), and
+   physical-placement FKs (`docker_server_id`, `region_id`,
+   `odoo_version_id`, `domain_id`, `environment`). `saas.server`,
+   `saas.region`, `saas.odoo.version`, `saas.based.domain`, and
+   `saas.docker.container` (per-host container/capacity inventory,
+   tightly coupled to `saas.server`) stay with it — they're the things
+   `saas.instance`'s placement fields point at, and moving them to a
+   higher-dependency addon while `saas.instance` stays in `saas_core`
+   would be circular.
+2. *Domain-agnostic kernel infrastructure*: `saas.job` (the durable queue),
+   `saas.audit.log`, `saas.alert`, `saas.rate.limit`, the
+   `EncryptedChar`/`EncryptedBinary` field types, base security groups
+   (`group_saas_manager`, `group_saas_host_shell`), `saas.ssh.key.pair`,
+   `saas.terminal.session`. **[Code-confirmed]** none of these five
+   reference `saas.instance`, `saas.plan`, or any other business model in
+   their own code — they genuinely don't know what a "tenant" or a "plan"
+   is. **This is deliberately not its own addon.** Splitting purely generic
+   infrastructure out would not reduce coupling — every other addon would
+   still depend on it either way — and it doesn't correspond to a
+   business domain a team would want to own separately from the rest of
+   the platform kernel. A fourth addon here would be pure module-count
+   inflation with no payoff: exactly the over-engineering this evaluation
+   was asked to avoid.
+
+#### 4.6.4 What moves to `saas_provisioning`
+
+Everything about *operating* a tenant instance, added to `saas.instance`
+via `_inherit` (same table, relocated code) plus wholesale-relocated
+satellite models:
+
+- **Via `_inherit = 'saas.instance'`**: deploy/redeploy/scale (~3,500
+  lines), backup/restore orchestration (~1,600 lines), hosting
+  self-service DB operations (~1,950 already-contiguous lines — the
+  cheapest single win in this whole plan, see §4.6.7), git-deploy hooks,
+  reconciliation/health/metrics-sampling crons, addon/pip-package
+  management, and the compute-driver/SSH plumbing helpers.
+- **Relocated outright** (new tables stay new, addon ownership changes):
+  `saas.instance.backup`, `saas.instance.db.operation`,
+  `saas.instance.container` (the currently-empty scale-out seam — moves
+  as-is, still inert, still a seam not an active feature),
+  `saas.docker.container` stays in `saas_core` (see above) but
+  `saas.instance.repo`, `saas.build`, and `saas.instance.package` (the
+  per-instance pip-package list — **[Code-confirmed]** a hosting/deploy
+  concern, not billing, despite the name suggesting a purchasable add-on)
+  move here.
+- **The `ComputeDriver` abstraction, both driver implementations, and
+  `DataService`** (`saas_core/drivers/`, `saas_core/dataservice/`) move
+  from `saas_core` to `saas_provisioning`. They're *behavior* — how to
+  talk to a compute backend — not part of the aggregate root's identity;
+  `saas_core`'s thin `saas.instance` doesn't need to know how deployment
+  happens, only `saas_provisioning`'s inherited methods do.
+- **Owns the *resource-limit* shape of `saas.plan`** (`cpu_limit`,
+  `ram_limit`, `storage_limit`, `workers`) — the fields provisioning
+  actually reads at deploy/resize time. This is the key move that keeps
+  the dependency chain acyclic; see §4.6.5.
+- **Its own `res.config.settings` extension**, adding only the fields it
+  owns (backup-provider credentials, port-allocation range) rather than
+  sharing the current 45-field grab-bag file.
+
+#### 4.6.5 What moves to `saas_billing`
+
+Everything about the *commercial* relationship, depending on
+`saas_provisioning` (never the reverse):
+
+- **Relocated outright**: `saas.pricing` (the pricing engine), `saas.wallet`,
+  `saas.payment`, `saas.product`, `saas.support.plan`, and
+  **[Code-confirmed]** `saas.addon` (the sellable commercial add-on
+  catalog — e.g. "Daily Snapshots" — confirmed genuinely a billing
+  concern, not deploy-time addon management, which is
+  `saas.instance.package` above and stays with provisioning).
+- **Via `_inherit = 'account.move'`**: invoice-cancel → wallet-credit
+  refund, payment-state computation, payment-reversal → suspension
+  triggering — this addon's `account.move` code calls `saas.instance`'s
+  (provisioning-defined) suspend/resume actions, which is fine: billing
+  depends on provisioning, so it can call any public method provisioning
+  exposes.
+- **Via `_inherit = 'saas.instance'`**: `plan_id`, `billing_period`,
+  `next_invoice_date`, and the renewal/plan-change/proration methods
+  (`_generate_renewal_invoice`, `_apply_pending_plan_change`,
+  `_request_upgrade`/`_downgrade`, `_proration_credit`,
+  `_wallet_settle_consumption`). **`plan_id` living in `saas_billing`
+  rather than `saas_core` is deliberate** — it's what keeps the whole
+  chain acyclic. If `saas.instance.plan_id` were declared in `saas_core`,
+  `saas_core` would need to know about `saas.plan`, which needs to know
+  about resource limits, which `saas_provisioning` needs — a cycle.
+  Instead, `saas_core` never declares `plan_id` at all; `saas_billing`
+  adds it via `_inherit`, same as any other addon-contributed field.
+- **Via `_inherit = 'saas.plan'`**: adds the *commercial* shape — price,
+  currency, proration rules, `saas_product_ids` — on top of
+  `saas_provisioning`'s resource-limit shape. **This split-ownership of
+  one model across two addons (provisioning owns the technical tier
+  shape, billing owns the commercial tier shape layered on it) is the
+  specific design move that resolves what would otherwise be a real
+  circular dependency**: provisioning needs resource limits at deploy
+  time and must not depend on billing; billing needs to trigger
+  provisioning actions (suspend on non-payment, resize on upgrade) and
+  correctly depends on it. Neither needs the other's half of `saas.plan`.
+- **Via `_inherit = 'res.partner'`**: wallet balance, trial-eligibility
+  fields — moved out of today's mixed `res_partner.py`, leaving a
+  separate, smaller `saas_core` extension for the generic identity fields
+  (phone/country validation, instance count) that don't belong to any one
+  domain.
+- **Its own `res.config.settings` extension**, taking the ~30
+  billing/pricing fields out of the current grab-bag file.
+
+**Why Subscriptions is *not* split out from Billing as a fifth addon —
+the case the user's own example raised.** "Subscription" (what plan a
+customer is on, upgrade/downgrade requests, proration) and "Billing"
+(invoice generation, payment processing, wallet) are legitimately
+different concerns in mature SaaS platforms, and some businesses do staff
+and own them separately. But in *this* codebase, right now, they are not
+separable without fighting real, present coupling: proration math,
+plan-change requests, and invoice generation currently live interleaved
+in the same ~2,800 lines across two non-contiguous clusters of
+`saas_instance.py` — there is no existing seam to split along, and forcing
+one today would mean inventing a boundary the code doesn't have yet,
+purely on the theory that it might be wanted later. That is exactly the
+premature-fragmentation this evaluation was asked to avoid. The right
+move now is to keep them as one `saas_billing` addon but organize the
+*files inside it* along that seam from day one — a `models/
+saas_subscription.py` mixin for plan-state/proration/renewal, separate
+from `models/saas_payment.py`/`saas_wallet.py` for money movement — so the
+seam exists in code organization without paying for a second addon's
+dependency-graph and migration overhead until real demand (a second team,
+a genuine need to deploy/version them independently) shows up. This is
+the same "seam now, infrastructure later" principle as ADR-5 in §8,
+applied one level down from infrastructure to code organization.
+
+#### 4.6.6 How modules communicate, and the contract problem
+
+Within this chain, modules communicate by **calling public methods
+directly** on `_inherit`-merged recordsets — one process, one registry, no
+serialization. That only stays safe if "public" actually means something.
+Today it doesn't (§4.6.2's nine-method finding). This redesign should ship
+with:
+
+- A **naming/documentation convention**: a method another addon is allowed
+  to call has no leading underscore and a docstring stating which
+  addon(s) call it. Underscore-prefixed methods are addon-private by
+  construction — a downstream addon reaching into one is treated as a bug,
+  not a shortcut.
+- A **static lint in CI**, following the exact precedent already
+  established this cycle for `csrf=False` routes
+  (`control-plane/scripts/lint_csrf_routes.py`): an AST-based check that
+  flags any addon's code calling an underscore-prefixed method defined in
+  a *different* addon's model class. This turns "we agreed not to do
+  that" into something CI actually enforces, the same way the CSRF lint
+  did for route safety.
+- A specific **status-aggregation pattern** for the one method
+  (`_get_status_dict`) that legitimately needs data from every domain at
+  once (it's the portal's main per-instance status payload): `saas_core`
+  defines a thin `_get_status_dict()` that returns the identity-level
+  fields and calls a small set of extension points (e.g.
+  `_status_dict_provisioning_extra()`, `_status_dict_billing_extra()`);
+  `saas_provisioning` and `saas_billing` each `_inherit` just their own
+  hook to merge in their own keys. The portal keeps calling one method: it
+  becomes an aggregation point every domain contributes to explicitly,
+  not a hole in the boundary.
+
+#### 4.6.7 Migration strategy
+
+This is a live production Odoo module with real customer data — moving a
+model from one addon to another is **not** a plain file move. Odoo tracks
+which addon owns which model/table/XML-ID via `ir.model.data` and
+`ir.module.module`; moving ownership needs a migration script (Odoo's
+standard `migrations/<version>/pre-` or `post-migrate.py` hook) that
+re-parents the relevant `ir_model_data` rows to the new addon's name
+*before* the new addon's models are loaded against the existing table —
+done correctly, the table and its data are untouched, only the metadata
+saying which addon "owns" it changes. Getting this wrong (e.g. letting the
+new addon's `_auto_init` try to create a table that already exists, or
+leaving stale `ir_model_data` pointing at the old module name) breaks
+upgrades or duplicates data. This is well-trodden ground in the Odoo
+ecosystem but must be treated with real caution, tested against a copy of
+production data, and never attempted as a live edit against the actual
+production database.
+
+**Recommended order — extract the least-coupled pieces first, prove the
+pattern, then tackle the god model itself:**
+
+1. **`saas_billing`'s wholesale-relocated models first**: `saas.pricing`,
+   `saas.wallet`, `saas.payment`, `saas.product`, `saas.support.plan`,
+   `saas.addon`. These are new tables with no `_inherit` entanglement with
+   `saas.instance` — the lowest-risk, highest-confidence proof that the
+   migration mechanism works, before touching anything that needs
+   `_inherit` re-parenting.
+2. **Split the two grab-bag Odoo-core extensions** (`res_config_settings.py`,
+   `res_partner.py`) along the same lines, into each addon's own file —
+   small, mechanical, no schema risk (adding a field via `_inherit` from a
+   different addon than before is a routine Odoo operation, not a
+   migration hazard, as long as the field itself doesn't move addons after
+   already existing — these do move, so this step does need the
+   `ir.model.data` re-parenting treatment, just at field/view granularity
+   rather than whole-model).
+3. **`saas_provisioning`'s hosting self-service DB operations** (the
+   ~1,950 already-contiguous lines) as the first `_inherit` extraction
+   from `saas_instance.py` itself — chosen deliberately because it's
+   already the best-bounded section in the file, i.e. the cheapest way to
+   validate the `_inherit`-based god-model decomposition pattern before
+   applying it to the messier, non-contiguous clusters.
+4. **The rest of `saas_provisioning`'s `_inherit` extraction** (deploy/
+   redeploy/scale, backup/restore, reconciliation/metrics, git-deploy
+   hooks, compute-driver/`DataService` relocation) — the largest and
+   riskiest step, done last and incrementally, one cohesive cluster per
+   change, full characterization-test coverage before each move, exactly
+   the discipline already used for the `ComputeDriver` routing work this
+   cycle (§3.1).
+5. **`saas_billing`'s `_inherit` extraction from `saas.instance`/
+   `saas.plan`** (the two non-contiguous billing clusters, plus the
+   `saas.plan` shape split described in §4.6.5) — last, because it's the
+   most entangled with both the god model and step 4's provisioning
+   extraction landing first.
+6. Ship the naming convention + CI lint (§4.6.6) **before or alongside**
+   step 3, not after — enforcing the contract from the first extraction
+   means the next four steps can't quietly reintroduce the same kind of
+   boundary leak `saas_website` already has.
+
+**This is a continuation of Phase 10 (§5), not a new competing
+initiative** — do not start this migration until `saas_instance.py`'s line
+count has demonstrably stopped growing (Phase 10's own existing
+acceptance signal). Splitting a file that's still actively accreting new
+lines faster than it's decomposed is fighting the tide; the growth needs
+to stop first.
+
+**Acceptance criteria for this redesign** (once Phase 10 picks it up):
+each extraction step lands as its own reviewable change with the full
+test suite green before and after; the CI lint from §4.6.6 has zero
+findings against the final four-addon layout; `saas_core`'s own manifest
+dependency list has shrunk to `base, mail, portal` (no more `sale,
+account, payment, account_payment` — those move to `saas_billing`'s
+manifest, a concrete, checkable signal the boundary is real and not just
+aspirational); and `saas_instance.py` itself is reduced to the thin
+identity shape described in §4.6.3 with no business-domain method bodies
+left in it.
 
 ---
 
@@ -703,7 +1065,7 @@ encryption/immutability + drills). This is not engineering work in the
 traditional sense but blocks any real commercial go-live regardless of how
 complete the technical phases above are.
 
-### Phase 10 — God-model decomposition — **ONGOING, OPPORTUNISTIC**
+### Phase 10 — God-model decomposition & `saas_core` module split — **ONGOING, OPPORTUNISTIC. Concrete design exists (§4.6), not yet started.**
 
 **Priority: P3, continuous.** Not a dedicated phase with a start/end date —
 per every prior planning document's own conclusion, this should be peeled
@@ -712,6 +1074,19 @@ already touches a given area of `saas_instance.py` (the same discipline
 already used for the Phase 1 `ComputeDriver` routing work). Track progress
 by line count and method count at each check-in; the goal is "stops
 growing, then shrinks," not a fixed target.
+
+**§4.6 gives this phase an actual target architecture**: a redesign of
+`saas_core` into a `saas_core → saas_provisioning → saas_billing →
+saas_website` addon chain (thin core + kernel infra, `_inherit`-based
+behavior extraction, no table splits, no new runtime service boundaries),
+with a specific migration order (§4.6.7) starting from the
+least-coupled, wholesale-relocatable billing models and ending with the
+god model's own `_inherit` extraction. **Do not start the migration until
+line-count growth has genuinely stopped** — see §4.6.7's own gating note.
+
+**Acceptance criteria**: see §4.6.7's own criteria (manifest dependency
+shrinkage, CI lint with zero findings, `saas_instance.py` reduced to its
+thin identity shape) once this phase actually begins.
 
 ---
 
@@ -742,7 +1117,9 @@ Phase 10 (god-model) ── continuous, opportunistic, no hard dependency
 | Metrics/logs isolation boundary is a new, high-consequence attack surface | High if shipped carelessly | Not yet built | Phase 3, §4.3 |
 | Server-capacity race lets a host be overcommitted | Medium-high, live today on the path carrying 100% of traffic | SCALE-005, open | Phase 4 |
 | No PITR — RPO is "since last daily backup," not continuous | Medium-high for any customer needing real DR guarantees | Confirmed absent | Phase 5, §4.5 |
-| God-model keeps growing, raising the cost of every future change | Medium, compounding | 12,619 lines and rising | Phase 10 |
+| God-model keeps growing, raising the cost of every future change | Medium, compounding | 12,619 lines and rising | Phase 10, §4.6 |
+| `saas_core` module split, if attempted, corrupts model/table ownership metadata on a live DB | High if mishandled, but avoidable — a well-understood Odoo migration pattern (§4.6.7), not attempted yet | Design only, not started | Phase 10, §4.6.7 |
+| Existing single addon boundary (`saas_website` → `saas_core`) is already bypassed by convention (9 private-method call sites) | Medium — shows a naming convention alone won't hold under a real split | Confirmed, documented | §4.6.2, §4.6.6 |
 | SEC-004 (tenant `CREATEDB` grant) | Medium, scoped/accepted tradeoff, not silently ignored | Documented decision, two forward paths recorded | §3.6 |
 | Multi-contact orgs can't share instance access | Medium, blocks Phase 7's teams feature | ISO-002, open | §3.9, Phase 7 |
 | No DR drills, no GDPR/compliance posture, no SLA | High for a real commercial launch, low if this stays internal | Untouched | Phase 9 |
@@ -785,6 +1162,20 @@ Phase 10 (god-model) ── continuous, opportunistic, no hard dependency
    what makes Phase 3's isolation model possible at all. Any new
    observability code that doesn't carry this label is a bug, not a
    style choice.
+7. **`saas_core`'s proposed split (§4.6) is addon-level, not service-level.**
+   Every addon in the proposed `saas_core → saas_provisioning →
+   saas_billing → saas_website` chain shares one process, one database,
+   one ORM registry — modules communicate via direct method calls, not a
+   queue or network API. This is deliberately a *different kind* of
+   boundary than the control-plane/compute split (§4.1), which is a real
+   service reached over the Kubernetes API. Don't conflate the two, and
+   don't introduce a runtime service boundary inside the control plane
+   itself without a much stronger reason than "clean architecture" —
+   that would be exactly the over-engineering this design was asked to
+   avoid. Also: Odoo's `_inherit` mechanism means decomposing a god model
+   never requires splitting one table into several — prefer relocating
+   code across addons over relocating data across tables whenever both
+   would achieve the same separation of concerns.
 
 ---
 

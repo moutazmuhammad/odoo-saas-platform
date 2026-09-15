@@ -923,3 +923,88 @@ this pass established: understand it, write characterization tests
 against today's real behavior, only then design and swap — not a
 batch operation given the total absence of a regression safety net
 across this file before this session.
+
+2026-09-15 — third cluster done: `hosting_db_upgrade_module`, the
+customer-facing module-repair tool (`docker compose stop`/`run --rm -T
+odoo -u <module>`/`up -d` around what were lines ~11218-11262). Zero
+test coverage existed. Wrote 6 characterization tests first (happy
+path, invalid module name, unknown database, stop-failure-aborts,
+upgrade-failure-still-restarts, restart-failure-after-success,
+both-fail), verified green against the unmodified method, then swapped
+all three raw calls for the already-existing `driver.stop()` /
+`driver.run_once()` / `driver.start()` — no new driver code needed.
+`driver.stop()` issues `docker stop <container>` rather than the
+original `docker compose stop odoo`; a deliberate, understood
+command-string change (behaviorally identical for this
+single-service-per-project setup) rather than a second way to stop a
+container. Hit the same lambda-`self`-shadowing footgun as before
+(`patch.object(type(self.instance), 'hosting_db_list', lambda self:
+...)` — the bare-lambda `new=` form auto-binds, so `self` resolved to
+the record, not the TestCase); fixed by renaming to `rec` and closing
+over the value needed. Full suite green throughout. Commits: `b1d7a04`
+(characterize), `67c0816` (route).
+
+2026-09-15 — fourth and last originally-catalogued cluster done:
+`_hosting_build_template_db`, the one-time per-instance template DB
+bootstrap (pause container → `docker compose run --rm -T odoo odoo -i
+base ...` on a core-only addons path → always resume → verify at PG
+level → clean up on failure). The pause/resume (`destroy()`/`start()`)
+were already routed from an earlier, undocumented pass; only the
+middle init call was still raw, with zero test coverage. Wrote 5
+characterization tests first (happy path, pause-failure-tolerated,
+container-always-resumed-on-init-failure, resume-failure-logged-not-
+raised, pg-verification-failure-cleans-up), verified green against the
+unmodified method (hit a variant of the same mocking footgun — a bare
+`MagicMock()` standing in for the SSH connection doesn't make
+`.execute()` return a real 3-tuple, which the pre-swap code still
+needed; fixed with an explicit `_ssh_mock()` helper), then swapped the
+init call for the existing `driver.run_once()` — again no new driver
+code needed. Full suite green: 533 tests, 0 failed/errors throughout.
+Commits: `ee6d430` (characterize), `11f7fa3` (route).
+
+**Phase 2.3's four originally-scoped clusters (from this session's
+review of `DRIVER-BOUNDARY.md`) are now all done and tested**:
+`_do_deploy_locked`'s DB-init, `_do_redeploy`'s blue/green shadow
+mechanism, `hosting_db_upgrade_module`, `_hosting_build_template_db`.
+A fresh, non-stale grep of `saas_instance.py` for raw `docker`/`docker
+compose` command-building (excluding comments/docstrings/log-message
+text) turns up four remaining call sites, all architecturally
+different in kind from the per-instance lifecycle management
+`ComputeDriver` models — noted here rather than swapped, since routing
+them would mean either extending the driver's scope beyond an
+instance's own container or a new interface design decision, not a
+mechanical swap:
+
+1. **Tenant image build/push pipeline** (`docker push`, `docker
+   inspect --format ... RepoDigests`, ~line 3002-3011) — builds and
+   pushes a new image to the registry; operates on an image tag, not
+   a running instance container. Arguably outside `ComputeDriver`'s
+   remit entirely (that's image lifecycle, not container lifecycle).
+2. **`_get_container_uid`** (~line 3159) — `docker run --rm
+   --entrypoint id <image> -u` to probe an image's default UID before
+   first deploy. Runs against an image directly, no instance handle
+   exists yet at this point in the flow.
+3. **`_validate_requirements`** (~line 5717) — dry-runs `pip install`
+   in a throwaway scratch container built from the instance's image,
+   as a pre-flight check before a redeploy. Not the instance's actual
+   container.
+4. **`_wait_until_healthy`** (~line 5748-5773) — polls a container by
+   *name* (`docker inspect`/`docker exec curl`/`docker logs`), used for
+   both the canonical container AND the blue/green green/shadow
+   container. A driver equivalent would need a name-override variant
+   of `wait_until_running()`/`logs()` (or a shadow-aware health-check
+   method, extending the `create_shadow`/`destroy_shadow` precedent) —
+   a real interface design decision, not a drop-in swap.
+
+Everything else `DRIVER-BOUNDARY.md`'s original "~140 call sites"
+catalog worried about turned out, on inspection this session, to
+already be routed via `service_exec`/`run_once`/`stop`/`start`/
+`destroy`/`exec` from earlier, undocumented passes: `_docker_exec_python`,
+`_docker_exec_sql`, `_hosting_patch_admin_creds`, both
+`_DEPRECATED_*_dockerexec` methods (still routed via
+`_docker_exec_python` despite being marked deprecated),
+`_restart_container`, `_apply_pip_packages`, and the addons-restart /
+start / wait-until-running / logs calls inside `_do_deploy_locked`.
+The catalog's own line numbers and "~23 already routed" count were
+stale from the outset — a fresh audit of the actual file, not the
+document, is what should be trusted going forward.

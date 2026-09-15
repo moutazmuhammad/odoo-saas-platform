@@ -5379,27 +5379,28 @@ class SaasInstance(models.Model):
                 snapshot_restored = self._restore_snapshot(ssh)
 
                 if not snapshot_restored:
-                    # No snapshot — initialize database with base modules
+                    # No snapshot — initialize database with base modules.
+                    # Routed through ComputeDriver.run_once (Phase 2.3,
+                    # MICROSERVICES-PLAN.md) instead of a raw ssh.execute —
+                    # same command, same behavior, now going through the
+                    # same seam every other lifecycle call site uses.
                     self._append_log("Initializing database...")
-                    init_cmd = (
-                        'cd %s && docker compose run --rm -T odoo '
+                    init_args = (
                         'odoo -d %s '
                         '-i base '
                         '--without-demo=all '
                         '--stop-after-init '
-                        '--no-http 2>&1'
-                    ) % (
-                        shlex.quote(instance_path),
-                        shlex.quote(self.subdomain),
-                    )
-                    exit_code, stdout, stderr = ssh.execute(init_cmd, timeout=600)
+                        '--no-http'
+                    ) % shlex.quote(self.subdomain)
+                    result = self._compute_driver(connection=ssh).run_once(
+                        self._compute_handle(), init_args, timeout=600)
                     self._append_log(
-                        "Init output (last 1000 chars):\n%s" % stdout[-1000:]
+                        "Init output (last 1000 chars):\n%s" % result.stdout[-1000:]
                     )
-                    if exit_code != 0:
+                    if not result.ok:
                         raise UserError(
                             _("Database initialization failed:\n%s\n%s")
-                            % (stdout[-500:], stderr[-500:])
+                            % (result.stdout[-500:], result.stderr[-500:])
                         )
                     self._append_log("Database initialized.")
 

@@ -80,6 +80,32 @@ class TestComputeDriver(TransactionCase):
         self.assertIn('docker stats --no-stream --format', calls[-1])
         self.assertIn('odoo_a', calls[-1])
         self.assertIn('odoo_b', calls[-1])
+        # run_once: a one-shot `docker compose run --rm`, distinct from
+        # exec() (persistent container) and start() (`up -d`).
+        r = d.run_once(h, 'odoo -d mydb -i base --stop-after-init')
+        self.assertTrue(r.ok)
+        self.assertIn('docker compose run --rm -T odoo', calls[-1])
+        self.assertIn('odoo -d mydb -i base --stop-after-init', calls[-1])
+        self.assertIn('cd /srv/x', calls[-1])
+
+    def test_run_once_reports_nonzero_exit_without_raising(self):
+        from odoo.addons.saas_core.drivers.ssh_docker_driver import SshDockerDriver
+        from odoo.addons.saas_core.drivers.base import ComputeHandle
+
+        class FakeSSH:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def execute(self, cmd, timeout=None):
+                return (1, 'boom output', '')
+
+        server = MagicMock()
+        server._get_ssh_connection.return_value = FakeSSH()
+        d = SshDockerDriver(server)
+        h = ComputeHandle(server_id=1, container_name='odoo_x', instance_path='/srv/x')
+        r = d.run_once(h, 'odoo -d mydb -i base')
+        self.assertFalse(r.ok)
+        self.assertEqual(r.rc, 1)
+        self.assertIn('boom output', r.stdout)
 
     def test_start_retries_transient_compose_failure_then_succeeds(self):
         # A transient `docker compose up` blip (daemon hiccup / recreate port

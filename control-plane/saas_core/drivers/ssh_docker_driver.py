@@ -71,6 +71,28 @@ class SshDockerDriver(ComputeDriver):
             timeout=timeout,
         )
 
+    def run_once(self, handle, command, *, service='odoo', timeout=None) -> ExecResult:
+        """Run `docker compose run --rm -T <service> <command>` — a one-shot,
+        EPHEMERAL container (e.g. `odoo -i base --stop-after-init` at first
+        deploy, before the persistent service is ever started), distinct
+        from exec() (which runs inside the already-running persistent
+        service container) and from start() (`up -d`, which creates the
+        persistent container). `--rm` cleans up the ephemeral container
+        regardless of exit code, matching the god-model's original inline
+        call. `command` is taken verbatim, matching exec()'s own
+        convention — caller does any quoting; `2>&1` is added here so
+        stdout/stderr interleave exactly as the original inline command
+        did (meaning ExecResult.stderr is always empty for this method,
+        by design — preserved rather than "fixed" so log output/error
+        text stay byte-identical to before this was routed through the
+        driver)."""
+        with self._ssh() as ssh:
+            rc, out, err = ssh.execute(
+                'cd %s && docker compose run --rm -T %s %s 2>&1' % (
+                    shlex.quote(handle.instance_path), service, command),
+                timeout=timeout or 600)
+        return ExecResult(rc=rc, stdout=out, stderr=err)
+
     # -- lifecycle ----------------------------------------------------------
     def create(self, spec: ComputeSpec) -> ComputeHandle:
         # Full provisioning (render configs + first `up`) still lives in the

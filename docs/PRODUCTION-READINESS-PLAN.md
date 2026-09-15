@@ -1344,7 +1344,7 @@ above it for SEC-001/002). Status:
 | SEC-016 RBAC granularity | Medium | **Partially fixed (2026-09-15)** | A third group, `group_saas_host_shell`, now exists (split out of `group_saas_manager` as part of the SEC-005 fix below) — the first crack in the "2 groups total" ceiling, though still far short of the audit's broader recommendation (e.g. separate billing/support/infra tiers). |
 | SEC-017 restore-confirm UX | Low | **Still open (cosmetic)** | `backup_restore` (`api.py:1366`) still confirms against `backup.db_name or instance.subdomain`, unchanged. Ownership enforcement itself (the actual security control) remains correct. |
 | SEC-018 SPA session refresh | Low | **Fixed (2026-09-15)** | `AuthContext` now auto-logs out after 30 minutes of no activity (mouse/keyboard/touch/scroll), with a 1-minute warning toast first. Additive to server-side session expiry, not a replacement. Commit `ec2ab35`. |
-| SEC-019 CSRF posture | Low | **Recommendation not implemented; premise partly wrong, conclusion still holds** | 4 `csrf=False` routes exist, same count as the audit. But the audit's stated reason ("these are all `type='json'`") is **factually wrong for 2 of the 4**: `webhook.py`'s route and `portal.py`'s new `portal_instance_log_stream` are both `type='http'`. Each is still safe for a *different* reason than the audit gave: the webhook route is `auth='none'` (authority comes from the URL secret + HMAC, not the session cookie, so CSRF is moot regardless of type), and the 3 stream routes (`ssh_terminal.py`×2, `portal.py`×1) are all `methods=['GET']`-only with no state mutation, and same-origin policy blocks a cross-site page from reading the response anyway. The recommended CI lint is not implemented, and a naive "no `type='http'` + `csrf=False`" rule would false-positive on all 4 — any future lint needs a GET/`auth='none'` carve-out. |
+| SEC-019 CSRF posture | Low | **Fixed (2026-09-15)** | 4 `csrf=False` routes exist, same count as the audit. The audit's stated reason ("these are all `type='json'`") was already known factually wrong for 2 of the 4 (`webhook.py`, `portal.py`'s `portal_instance_log_stream` are `type='http'`). **New this pass**: the audit's OTHER claim — "the 3 stream routes are all `methods=['GET']`-only" — was *also* factually wrong for `portal_instance_log_stream`, which declared no `methods=` at all; Odoo's own default when omitted is **all methods**, not GET-only (confirmed by reading `odoo/http.py`'s `route()` docstring). Not a live vulnerability (the handler has no side effects and same-origin policy blocks reading the response), but the safety property was incidental, not enforced — fixed by adding `methods=['GET']` explicitly. The recommended CI lint is now implemented (`control-plane/scripts/lint_csrf_routes.py`, wired into CI), encoding the actual verified-safe rule (`auth='none'` OR `methods` ⊆ `{GET, HEAD}`) rather than the naive `type='http'`-based rule the audit itself warned would false-positive. Commit `fd14906`. |
 
 **C.4 (CREATEDB), in depth**: `_provision_postgresql` (`saas_instance.py:3319-3354`) unconditionally grants `CREATEDB` to every tenant Postgres role — hosting and non-hosting instances alike, regardless of whether the platform creates the DB itself (`create_db=True`) or leaves it to the tenant (`create_db=False`). Since Phase D (Compute-layer migration) has not started, **every current tenant** is on this legacy path — "remaining SSH/Docker-driven tenants" is not a shrinking edge case yet, it's the whole fleet. The portal's own customer-facing DB-create flow (`api.dbCreate` → `saas.instance` methods) already provisions databases via **control-plane-mediated** `sudo -u postgres createdb` over SSH, not as the tenant's own low-privilege role — so *that* flow does not depend on the grant.
 
@@ -1547,3 +1547,38 @@ more actionable than it looked:
   activity reset, disable-mid-session cleanup, listener cleanup on
   unmount), full frontend suite green (19 tests, was 14), typecheck +
   build clean. Commit: `ec2ab35`.
+
+2026-09-15 — SEC-019 (CSRF posture) — implemented the audit's own
+recommended CI lint, which it had explicitly flagged as needing care:
+a naive "`type='http'` + `csrf=False`" rule would false-positive on
+every one of the 4 existing routes, since each is safe for a different
+reason. `control-plane/scripts/lint_csrf_routes.py` (AST-based, stdlib
+only, no Odoo/DB needed) instead encodes the actual rule: a
+`csrf=False` route must be either `auth='none'` or explicitly
+restricted to `methods` ⊆ `{GET, HEAD}`.
+
+Running it against the real codebase immediately caught a genuine gap
+in the *audit's own* prior claim, not just a hypothetical the lint was
+designed to catch: "the 3 stream routes are all `methods=['GET']`-only"
+was factually wrong for `portal_instance_log_stream`
+(`saas_website/controllers/portal.py`) — it declared no `methods=` at
+all, and Odoo's own documented default when omitted is **all methods**
+(confirmed by reading `odoo/http.py`'s `route()` docstring), not
+GET-only. This was never a live vulnerability (the handler has no side
+effects, and same-origin policy blocks a cross-site page from reading
+the response regardless of verb) — but the safety property was
+incidental, resting on the handler happening to have no side effects,
+not on anything actually enforced. Added `methods=['GET']` explicitly
+so the route's real behavior matches its documented reasoning. Full
+Odoo suite still green after the change (503 tests, 0 failed/errors) —
+confirms nothing relied on a non-GET verb reaching it.
+
+10 new tests for the lint itself (both directions: flags unsafe/
+non-literal `csrf=`, allows both carve-outs, handles syntax errors),
+wired into a new fast CI job. Commit: `fd14906`.
+
+**This is genuinely the last easily-fixable item from the original 19
+SEC-00x audit findings this session identified opportunistically** —
+everything remaining now needs either live production access, external
+infra credentials, or a product decision on RBAC tiers this session
+can't make alone.

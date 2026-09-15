@@ -1335,7 +1335,7 @@ above it for SEC-001/002). Status:
 | SEC-007 supply chain | High | **Partially fixed, more so (2026-09-15)** | `_PIP_PACKAGE_RE` (`saas_instance.py:1393`) is strictly `^...$`-anchored. **New**: a `trivy` CI job now builds and scans the operator + backup-tool container images, failing on any HIGH/CRITICAL vulnerability with an available fix (`--ignore-unfixed`, so upstream OS CVEs with no patch yet don't produce permanent unactionable red builds). Also removed a real, if minor, finding it caught: an unused `gosu` binary in the backup-tool image carrying 22 stale Go-stdlib CVEs. Package allow-listing / an internal mirror — the audit's other recommendations — are still not implemented. |
 | SEC-008 presigned URL TTL | High | **Mostly fixed** | `PRESIGNED_URL_EXPIRY` cut from 7 days to **15 min** (`saas_instance_backup.py:17`), lists re-mint fresh links. Per-download audit logging (pairing with SEC-010) still not wired — no `_saas_audit` call anywhere in that file. |
 | SEC-009 security telemetry | High | **Partially fixed** | `saas.alert._notify()` exists and is wired to server-health degradation + operation failures (opt-in webhook). No Sentry/Prometheus/SIEM — `grep -ri 'sentry\|prometheus\|datadog\|statsd'` across both addons is empty. |
-| SEC-010 audit log | Medium | **Partially fixed** | Append-only `saas.audit.log` exists (write/unlink raise), but wired to only **2** events (`instance_delete`, `db_drop` — `saas_instance.py:6173,11650`). Restore/scale/deploy not yet wired. |
+| SEC-010 audit log | Medium | **Fixed (2026-09-15)** | Append-only `saas.audit.log` exists (write/unlink raise), now wired to **8** events: the original `instance_delete`/`db_drop`, plus `instance_deploy`, `instance_redeploy`, `instance_restore_backup`, `instance_restore_full`, and `instance_scale` (both upgrade and scheduled-downgrade paths) — every category the audit's own description named ("who scaled, deployed, restored, or deleted an instance"). Per-download audit logging for presigned backup URLs (the SEC-008 pairing note) is still not wired — a separate, narrower gap. Commit `9298189`. |
 | SEC-011 webhook oracle | Medium | **Mostly fixed** | Uniform 404 deny (`webhook.py:_webhook_deny`) + per-repo rate limit (30/60ish window) added. Residual: the initial secret lookup (`webhook.py:61-64`) is still a plain ORM equality `search`, not constant-time — the "minor" timing oracle the audit already downgraded is technically still there. |
 | SEC-012 log-stream authz | Medium | **Fixed — but untracked** | `stream_instance_logs` now calls `instance.check_access('read')` explicitly (`container_logs.py:41`) before streaming. This fix isn't mentioned anywhere in `REMEDIATION_PLAN.md`, i.e. it shipped without the tracking doc being updated — exactly the "audit document stops being the only source of truth" problem C.1 exists to catch. |
 | SEC-013 OTP brute force | Medium | **Fixed** | Window tightened to 6/600 (`registration.py:225`, `api.py:259,354`); `code` is `EncryptedChar`; `hmac.compare_digest` constant-time verify (`saas_registration.py:32,126`). |
@@ -1577,8 +1577,43 @@ confirms nothing relied on a non-GET verb reaching it.
 non-literal `csrf=`, allows both carve-outs, handles syntax errors),
 wired into a new fast CI job. Commit: `fd14906`.
 
-**This is genuinely the last easily-fixable item from the original 19
-SEC-00x audit findings this session identified opportunistically** —
-everything remaining now needs either live production access, external
+**Correction to the above**: that turned out not to be the last one —
+SEC-010 (below) was also fixable.
+
+2026-09-15 — SEC-010 (audit log) — the audit's own description named
+the exact gap: "no append-only audit of who scaled, deployed, restored,
+or deleted an instance." `instance_delete`/`db_drop` were already
+wired; the other three categories were not. Added `_saas_audit()` calls
+at the same point `action_delete_instance` already logs at (right where
+the operation is queued/applied, so a subsequent failure during the
+operation itself still leaves a record it was attempted):
+`action_deploy`/`action_redeploy` → `instance_deploy`/
+`instance_redeploy`; `action_restore_backup`/
+`action_restore_full_instance` → `instance_restore_backup`/
+`instance_restore_full`; and both the immediate-upgrade path
+(`_apply_pending_plan_change`) and the scheduled-downgrade path (inside
+`_generate_renewal_invoice`) → `instance_scale`, the closest concrete
+analog to "scaled" in this codebase (a plan change is what actually
+changes an instance's CPU/RAM/worker allocation).
+
+6 new tests — deploy/redeploy extend the existing job-queue test
+fixtures; restore (both kinds) and scale (both directions) get a new
+test class. The scheduled-downgrade test deliberately lets the
+real-invoice-generation tail of `_generate_renewal_invoice` fail if it
+must (full billing fixtures are out of scope) and asserts on the audit
+log regardless, since the write it cares about happens earlier in the
+same method and stays visible on the same cursor either way. Full suite
+green: 509 tests (503 + 6), 0 failed/errors. Commit: `9298189`.
+
+**This is now genuinely the last easily-fixable item from the original
+19 SEC-00x audit findings this session identified opportunistically** —
+everything remaining needs either live production access, external
 infra credentials, or a product decision on RBAC tiers this session
-can't make alone.
+can't make alone. (Famous last words, per the correction above — but
+this one's for real: the remaining items are SEC-004 [documented,
+needs an architecture decision], SEC-009 [needs real Sentry/Prometheus
+credentials], SEC-011 [genuinely minor, already downgraded, fixing it
+would add real overhead for no measurable risk reduction], SEC-015
+[an intentional cron-resilience pattern, not a bug], SEC-016 [needs
+product input on role tiers beyond the one crack already made], and
+SEC-017 [cosmetic UX].)

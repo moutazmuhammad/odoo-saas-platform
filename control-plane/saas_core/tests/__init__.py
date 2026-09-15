@@ -36,6 +36,7 @@ from . import test_billing_crons
 from . import test_operational_crons
 from . import test_provisioning_crons
 from . import test_host_shell_security
+from . import test_hosting_build_template_db
 from . import test_hosting_db_upgrade_module
 from . import test_terminal_session
 from . import test_instance_package

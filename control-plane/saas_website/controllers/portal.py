@@ -1491,7 +1491,7 @@ class SaasPortal(CustomerPortal):
 
     @http.route(
         '/my/instances/<int:instance_id>/logs/stream',
-        type='http', auth='user', csrf=False,
+        type='http', auth='user', methods=['GET'], csrf=False,
     )
     def portal_instance_log_stream(self, instance_id, tail='100', access_token=None, **kw):
         """Portal-safe SSE proxy for live container logs.

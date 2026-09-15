@@ -141,6 +141,29 @@ jobs:
       - name: Coverage report
         run: python -m coverage report --data-file="$GITHUB_WORKSPACE/.coverage"
 
+  csrf-lint:
+    # SEC-019 — the audit recommended a CI lint for csrf=False routes but
+    # flagged that a naive "no type='http' + csrf=False" rule would
+    # false-positive on every route in this codebase, since each one is
+    # safe for a different reason (auth='none', or GET-only). This lint
+    # (control-plane/scripts/lint_csrf_routes.py) encodes the actual,
+    # verified-safe rule instead. Pure stdlib (ast) — no Odoo/Postgres
+    # setup needed, so it's its own fast job rather than a step in
+    # odoo-tests.
+    name: CSRF route safety lint (SEC-019)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test the lint itself
+        working-directory: control-plane/scripts
+        run: python3 -m unittest test_lint_csrf_routes
+      - name: Lint csrf=False routes
+        working-directory: control-plane
+        run: python3 scripts/lint_csrf_routes.py
+
   secret-scan:
     # C.3 — proactive guard against a repeat of the root-SSH-password-in-chat
     # exposure (SESSION_NOTES.md) and the prior SECURITY-INCIDENT-2026-06-17

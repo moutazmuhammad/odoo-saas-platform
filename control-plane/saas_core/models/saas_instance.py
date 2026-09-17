@@ -238,6 +238,34 @@ class SaasInstance(models.Model):
         help='PostgreSQL server that hosts the database for this instance. '
              'Auto-derived from the Docker server topology when left empty.',
     )
+    migration_state = fields.Selection(
+        selection=[
+            ('none', 'Not migrating'),
+            ('dumping', 'Dumping source data'),
+            ('uploading', 'Uploading to object storage'),
+            ('restoring', 'Restoring on Kubernetes'),
+            ('verifying', 'Verifying restored data'),
+            ('verified', 'Verified'),
+            ('failed', 'Failed'),
+        ],
+        string='Migration State',
+        default='none',
+        readonly=True,
+        copy=False,
+        help='Phase 2 (/ROADMAP.md §5): progress of DataService.'
+             'migrate_to_kubernetes() for this instance, when it is the '
+             'target of a legacy-to-Kubernetes migration.',
+    )
+    migration_source_instance_id = fields.Many2one(
+        'saas.instance',
+        string='Migrated From',
+        ondelete='set null',
+        index=True,
+        copy=False,
+        help='Set on the target instance created by DataService.'
+             'migrate_to_kubernetes() — the legacy instance whose data it '
+             'was restored from. Never set on the source itself.',
+    )
     provisioning_mode = fields.Selection(
         selection=[
             ('strict', 'Strict'),
@@ -3108,6 +3136,20 @@ class SaasInstance(models.Model):
         """Return the DataService (snapshot/materialize primitives)."""
         from ..dataservice.service import DataService
         return DataService(self.env)
+
+    def _do_migrate_to_kubernetes(self, target_server_id):
+        """saas.job entrypoint for DataService.migrate_to_kubernetes()
+        (/ROADMAP.md §5 Phase 2). ``self`` is the legacy source instance;
+        a new saas.instance is created on ``target_server_id`` and left
+        running in parallel once verified — this never modifies ``self``
+        and never flips any traffic. See saas_job._enqueue's lock_key
+        convention: callers should enqueue with
+        lock_key='instance:%s' % self.id so a migration can't overlap
+        another job touching the same source instance.
+        """
+        self.ensure_one()
+        target_server = self.env['saas.server'].browse(target_server_id)
+        self._data_service().migrate_to_kubernetes(self, target_server)
 
     def _get_db_host(self):
         """Return the hostname/IP for odoo.conf (used inside the container).

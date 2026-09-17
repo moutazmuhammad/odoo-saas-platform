@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import TransactionCase, tagged
 
@@ -63,3 +63,138 @@ class TestDataService(TransactionCase):
         bk = self._done_backup(inst, 'snap3')
         with self.assertRaises(NotImplementedError):
             inst._data_service().materialize(bk, neutralize=True)
+
+    # -- Phase 2 (/ROADMAP.md §5): migrate_to_kubernetes cleanup ------------
+    def test_cleanup_failed_migration_unlinks_even_if_destroy_raises(self):
+        """A failed migration must never leave an orphaned CR/namespace OR
+        an orphaned saas.instance row lying around — and a failure tearing
+        down the Kubernetes side must not prevent cleaning up the DB side
+        (best-effort, matches SaasInstanceBackup.unlink()'s own pattern for
+        cloud-object cleanup)."""
+        inst = self._instance('dscleanup')
+        ds = inst._data_service()
+
+        target = MagicMock()
+        driver = MagicMock()
+        driver.destroy.side_effect = RuntimeError('cluster unreachable')
+        target._compute_driver.return_value = driver
+
+        ds._cleanup_failed_migration(target, handle='some-handle')
+
+        driver.destroy.assert_called_once_with('some-handle')
+        target.sudo.return_value.unlink.assert_called_once()
+
+    def test_cleanup_failed_migration_without_handle_still_unlinks(self):
+        inst = self._instance('dscleanup2')
+        ds = inst._data_service()
+        target = MagicMock()
+        ds._cleanup_failed_migration(target, handle=None)
+        target._compute_driver.assert_not_called()
+        target.sudo.return_value.unlink.assert_called_once()
+
+    # -- Phase 2: _wait_for_restore_ready must not treat an in-progress
+    # restore (status=False, reason=RestoreRunning/RestorePending) as a
+    # failure — only reason=RestoreFailed is terminal (a real local
+    # microk8s run surfaced this: reconcileRestore reports status=False
+    # while genuinely still running, compute/operator/internal/controller
+    # /restore.go). --------------------------------------------------------
+    def test_wait_for_restore_ready_returns_on_true(self):
+        inst = self._instance('dswait1')
+        ds = inst._data_service()
+        driver = MagicMock()
+        driver._get_cr.return_value = {'status': {'conditions': [
+            {'type': 'RestoreReady', 'status': 'True', 'reason': 'RestoreSucceeded'}]}}
+        ds._wait_for_restore_ready(driver, 'odoo-x', timeout=5)  # must not raise
+
+    def test_wait_for_restore_ready_tolerates_running_state(self):
+        inst = self._instance('dswait2')
+        ds = inst._data_service()
+        driver = MagicMock()
+        calls = {'n': 0}
+
+        def _get_cr(name):
+            calls['n'] += 1
+            if calls['n'] < 3:
+                return {'status': {'conditions': [
+                    {'type': 'RestoreReady', 'status': 'False',
+                     'reason': 'RestoreRunning',
+                     'message': 'restoring database and filestore from backup'}]}}
+            return {'status': {'conditions': [
+                {'type': 'RestoreReady', 'status': 'True', 'reason': 'RestoreSucceeded'}]}}
+        driver._get_cr.side_effect = _get_cr
+
+        with patch('odoo.addons.saas_core.dataservice.service.time.sleep'):
+            ds._wait_for_restore_ready(driver, 'odoo-x', timeout=5)  # must not raise
+        self.assertEqual(calls['n'], 3)
+
+    def test_wait_for_restore_ready_raises_on_restore_failed(self):
+        inst = self._instance('dswait3')
+        ds = inst._data_service()
+        driver = MagicMock()
+        driver._get_cr.return_value = {'status': {'conditions': [
+            {'type': 'RestoreReady', 'status': 'False', 'reason': 'RestoreFailed',
+             'message': 'restore Job failed after exhausting retries'}]}}
+        with self.assertRaises(RuntimeError) as cm:
+            ds._wait_for_restore_ready(driver, 'odoo-x', timeout=5)
+        self.assertIn('exhausting retries', str(cm.exception))
+
+    # -- Phase 2: _ensure_restore_secret must not write into a namespace
+    # that still exists but is mid-termination from a prior failed attempt
+    # reusing the same (deterministic) namespace name — a real 403
+    # (NamespaceTerminating) was observed against a live microk8s cluster
+    # on an immediate retry. -------------------------------------------------
+    def test_ensure_restore_secret_waits_out_terminating_namespace(self):
+        from kubernetes.client.rest import ApiException
+        inst = self._instance('dsns1')
+        ds = inst._data_service()
+        driver = MagicMock()
+        core_api = MagicMock()
+        driver._core_api.return_value = core_api
+
+        terminating_ns = MagicMock()
+        terminating_ns.status.phase = 'Terminating'
+        active_ns = MagicMock()
+        active_ns.status.phase = 'Active'
+        core_api.read_namespace.side_effect = [
+            terminating_ns,
+            ApiException(status=404),
+            active_ns,
+        ]
+
+        with patch('odoo.addons.saas_core.dataservice.service.time.sleep'):
+            ds._ensure_restore_secret(
+                driver, 'odoo-tenant-odoo-x', 'odoo-x-restore-creds',
+                {'endpoint': 'http://minio:9000', 'access_key': 'a', 'secret_key': 'b'},
+                timeout=5)
+
+        self.assertEqual(core_api.read_namespace.call_count, 3)
+        core_api.create_namespaced_secret.assert_called_once()
+
+    # -- Phase 2: _wait_until_healthy must tolerate the post-restore web
+    # Deployment rollout window (RestoreReady=True but the Deployment
+    # hasn't rolled out yet — observed against a real cluster as
+    # status='restarting'/phase='Provisioning' right after restore). ------
+    def test_wait_until_healthy_tolerates_post_restore_rollout(self):
+        from odoo.addons.saas_core.drivers.base import HealthStatus
+        inst = self._instance('dshealth1')
+        ds = inst._data_service()
+        driver = MagicMock()
+        driver.health.side_effect = [
+            HealthStatus(running=False, status='restarting', detail='Provisioning'),
+            HealthStatus(running=False, status='restarting', detail='Provisioning'),
+            HealthStatus(running=True, status='running', detail='Ready'),
+        ]
+        with patch('odoo.addons.saas_core.dataservice.service.time.sleep'):
+            ds._wait_until_healthy(driver, 'handle', timeout=5)  # must not raise
+        self.assertEqual(driver.health.call_count, 3)
+
+    def test_wait_until_healthy_raises_on_timeout(self):
+        from odoo.addons.saas_core.drivers.base import HealthStatus
+        inst = self._instance('dshealth2')
+        ds = inst._data_service()
+        driver = MagicMock()
+        driver.health.return_value = HealthStatus(
+            running=False, status='restarting', detail='Provisioning')
+        with patch('odoo.addons.saas_core.dataservice.service.time.sleep'):
+            with self.assertRaises(RuntimeError):
+                ds._wait_until_healthy(driver, 'handle', timeout=-1)

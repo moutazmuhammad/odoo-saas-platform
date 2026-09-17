@@ -211,7 +211,7 @@ class KubernetesDriver(ComputeDriver):
         if not sep:
             repository, tag = spec.image, odoo_version
 
-        return {
+        body = {
             'apiVersion': '%s/%s' % (_GROUP, _VERSION),
             'kind': 'OdooInstance',
             'metadata': {'name': name},
@@ -237,6 +237,27 @@ class KubernetesDriver(ComputeDriver):
                 },
             },
         }
+
+        # Phase 2 (/ROADMAP.md §5): DataService.migrate_to_kubernetes hands
+        # a restore source through spec.env['restore'] rather than a new
+        # ComputeSpec field, for the same reason domain/tls/resources do
+        # (see the docstring above). Mirrors RestoreSourceSpec exactly
+        # (compute/operator/api/v1alpha1/odooinstance_types.go) — restore
+        # is immutable once set on the CR, so this must be present at
+        # create() time; there is no later "attach a restore" call.
+        restore_cfg = spec.env.get('restore')
+        if restore_cfg:
+            source = {
+                'type': 'ObjectStorage',
+                'bucket': restore_cfg['bucket'],
+                'prefix': restore_cfg['prefix'],
+                'objectStorageSecretRef': {'name': restore_cfg['secret_name']},
+            }
+            if restore_cfg.get('backup_id'):
+                source['backupId'] = restore_cfg['backup_id']
+            body['spec']['restore'] = {'source': source}
+
+        return body
 
     def destroy(self, handle: ComputeHandle, *, purge=False) -> None:
         # `purge` has no separate meaning here (kept only for signature

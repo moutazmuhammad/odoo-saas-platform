@@ -136,6 +136,54 @@ class TestKubernetesDriver(TransactionCase):
         with self.assertRaises(RuntimeError):
             driver.create(spec)
 
+    # -------- create() with a restore source (Phase 2 migration) ----------
+    def test_create_with_restore_source_sets_spec_restore(self):
+        """DataService.migrate_to_kubernetes hands a restore source through
+        spec.env['restore'] (see _build_odoo_instance's docstring) — this
+        must translate exactly onto RestoreSourceSpec's field names
+        (compute/operator/api/v1alpha1/odooinstance_types.go)."""
+        from odoo.addons.saas_core.drivers.base import ComputeSpec
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
+
+        spec = ComputeSpec(
+            container_name='odoo_acme_k8s', image='odoo:18.0',
+            instance_path='/unused', http_port=8069, longpolling_port=8072,
+            db_name='acme-k8s', db_host='',
+            env={
+                'domain': 'acme-k8s.example.com',
+                'restore': {
+                    'bucket': 'saas-backups',
+                    'prefix': 'acme-k8s',
+                    'secret_name': 'odoo-acme-k8s-restore-creds',
+                    'backup_id': '20260101T000000Z',
+                },
+            })
+        driver.create(spec)
+
+        body = custom_api.create_cluster_custom_object.call_args.args[3]
+        self.assertEqual(body['spec']['restore'], {'source': {
+            'type': 'ObjectStorage',
+            'bucket': 'saas-backups',
+            'prefix': 'acme-k8s',
+            'objectStorageSecretRef': {'name': 'odoo-acme-k8s-restore-creds'},
+            'backupId': '20260101T000000Z',
+        }})
+
+    def test_create_without_restore_source_omits_spec_restore(self):
+        from odoo.addons.saas_core.drivers.base import ComputeSpec
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
+        spec = ComputeSpec(
+            container_name='odoo_acme', image='odoo:18.0', instance_path='/x',
+            http_port=8069, longpolling_port=8072, db_name='acme', db_host='db',
+            env={'domain': 'acme.example.com'})
+        driver.create(spec)
+        body = custom_api.create_cluster_custom_object.call_args.args[3]
+        self.assertNotIn('restore', body['spec'])
+
     # -------- destroy() ---------------------------------------------------
     def test_destroy_deletes_cr(self):
         driver, _server = _make_driver()

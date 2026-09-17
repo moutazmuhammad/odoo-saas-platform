@@ -612,6 +612,147 @@ class SaasInstanceBackup(models.Model):
 
         return reader.bytes_read
 
+    # ------------------------------------------------------------------
+    # Phase 2 (/ROADMAP.md §5): dump a legacy (ssh_docker) instance's real
+    # data into the object-storage layout compute/operator's restore Job
+    # expects (<bucket>/<prefix>/<stamp>/{db.dump,filestore.tar.gz,
+    # manifest.json}), so DataService.migrate_to_kubernetes can point a
+    # fresh OdooInstance's spec.restore.source at it. These bridge the two
+    # previously-disconnected backup systems (restic-based legacy backups
+    # vs. the operator's pg_dump+tar convention) without reimplementing
+    # either — same pg_dump/upload plumbing as the methods above, just a
+    # different key layout and a bare (non-zip) filestore tarball.
+    # ------------------------------------------------------------------
+    def _stream_pg_dump_for_k8s_restore(self, instance, prefix, stamp, db_name=None):
+        """Same pg_dump invocation as _stream_pg_dump_to_bucket (``-Fc -Z3``
+        is pg_restore-compatible with the plain ``--format=custom`` the
+        operator's run-restore.sh expects — compression level doesn't
+        affect readability), targeting the k8s-restore key layout
+        ``<prefix>/<stamp>/db.dump`` instead of a backup record's own
+        ``bucket_path``. Returns the uploaded size in bytes.
+        """
+        object_key = '%s/%s/db.dump' % (prefix, stamp)
+        return self._stream_pg_dump_to_bucket(
+            instance, object_key, db_name or instance.subdomain)
+
+    def _stream_filestore_tar_for_k8s_restore(self, instance, prefix, stamp, db_name=None):
+        """Bare ``filestore.tar.gz`` matching compute/tools/backup-tool/
+        run-backup.sh's exact convention (``find . -mindepth 1 -print0 |
+        tar --null --no-recursion``, no top-level ``.`` entry) so
+        run-restore.sh's ``tar -x`` lands files at the right relative
+        path. Locates the container's real filestore path the same way
+        ``_HOST_ZIP_BUILDER``'s probe does. Returns the uploaded size in
+        bytes.
+        """
+        instance._ensure_can_ssh()
+        container = instance._get_container_name()
+        db_name = db_name or instance.subdomain
+        object_key = '%s/%s/filestore.tar.gz' % (prefix, stamp)
+
+        probe_cmd = (
+            'docker exec %(c)s sh -c \'if [ -d /var/lib/odoo/filestore/%(db)s ]; then '
+            'echo /var/lib/odoo/filestore/%(db)s; '
+            'elif [ -d /var/lib/odoo/.local/share/Odoo/filestore/%(db)s ]; then '
+            'echo /var/lib/odoo/.local/share/Odoo/filestore/%(db)s; fi\''
+        ) % {'c': shlex.quote(container), 'db': db_name}
+
+        with instance.docker_server_id._get_ssh_connection() as ssh:
+            rc, out, err = ssh.execute(probe_cmd, timeout=30)
+            fspath = (out or '').strip()
+            if rc != 0 or not fspath:
+                raise UserError(_(
+                    "Could not locate the filestore directory inside "
+                    "container %s for database %s."
+                ) % (container, db_name))
+
+            tar_cmd = (
+                "docker exec %(c)s sh -c 'cd %(fp)s && "
+                "find . -mindepth 1 -print0 | "
+                "tar --null --no-recursion -czf - -T -'"
+            ) % {'c': shlex.quote(container), 'fp': shlex.quote(fspath)}
+
+            stdout, stderr = ssh.exec_command_streaming(
+                tar_cmd, timeout=BACKUP_STREAM_READ_TIMEOUT,
+            )
+            reader = _CountingReader(stdout)
+            upload_error = None
+            try:
+                self._upload_stream_to_bucket(
+                    object_key, reader, content_type='application/gzip',
+                )
+            except Exception as e:
+                upload_error = e
+            exit_code = stdout.channel.recv_exit_status()
+            err_tail = ''
+            try:
+                err_tail = stderr.read().decode('utf-8', 'replace')[-2000:]
+            except Exception:
+                pass
+
+            if upload_error is not None or exit_code != 0:
+                try:
+                    self._delete_bucket_path(object_key)
+                except Exception:
+                    pass
+                if exit_code != 0:
+                    raise UserError(_(
+                        "The filestore archive failed:\n%s"
+                    ) % (err_tail or 'exit code %s' % exit_code))
+                raise UserError(_(
+                    "Uploading the filestore archive failed:\n%s"
+                ) % upload_error)
+
+        return reader.bytes_read
+
+    def _write_k8s_restore_manifest(self, prefix, stamp, instance_name, retention=0):
+        """Upload manifest.json matching run-backup.sh's exact shape.
+        Informational only — run-restore.sh hardcodes the db.dump/
+        filestore.tar.gz filenames rather than parsing this — but keeps
+        the object layout indistinguishable from a real scheduled backup
+        for any future tooling that does read it.
+        """
+        import json
+        object_key = '%s/%s/manifest.json' % (prefix, stamp)
+        body = json.dumps({
+            'instance': instance_name,
+            'timestamp': stamp,
+            'db_dump': 'db.dump',
+            'filestore_archive': 'filestore.tar.gz',
+            'retention': retention,
+        }).encode('utf-8')
+        self._upload_to_bucket(object_key, body)
+
+    @api.model
+    def dump_for_k8s_migration(self, instance, target_prefix):
+        """Dump ``instance``'s live DB + filestore into the object-storage
+        layout compute/operator's restore Job expects, under one ``stamp``.
+        On any failure, best-effort deletes whatever was already uploaded
+        for that stamp and re-raises — never leaves a partial/corrupt
+        restore source behind. Returns ``(bucket, target_prefix, stamp)``.
+
+        ``target_prefix`` should be the NEW (target) instance's subdomain,
+        chosen by the caller, so ``spec.restore.source.prefix`` trivially
+        matches what was written here.
+        """
+        cfg = self._get_backup_config()
+        stamp = fields.Datetime.now().strftime('%Y%m%dT%H%M%SZ')
+        uploaded_keys = []
+        try:
+            self._stream_pg_dump_for_k8s_restore(instance, target_prefix, stamp)
+            uploaded_keys.append('%s/%s/db.dump' % (target_prefix, stamp))
+            self._stream_filestore_tar_for_k8s_restore(instance, target_prefix, stamp)
+            uploaded_keys.append('%s/%s/filestore.tar.gz' % (target_prefix, stamp))
+            self._write_k8s_restore_manifest(target_prefix, stamp, instance.subdomain)
+            uploaded_keys.append('%s/%s/manifest.json' % (target_prefix, stamp))
+        except Exception:
+            for key in uploaded_keys:
+                try:
+                    self._delete_bucket_path(key)
+                except Exception:
+                    pass
+            raise
+        return cfg['bucket'], target_prefix, stamp
+
     def _generate_presigned_url(self, expiry=None):
         """Return a presigned GET URL for this backup's bucket object.
 

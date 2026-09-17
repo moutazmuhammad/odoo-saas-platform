@@ -184,6 +184,84 @@ for prod) is wired into the backup/restore path and **[Live-verified]** for
 the Kubernetes path this year (a real backup → cross-instance-restore round
 trip against both PVC and ObjectStorage backends).
 
+**[Live-verified]** `DataService.migrate_to_kubernetes(instance, target_server)`
+— Phase 2's first work item, "build the migration path" — bridges the two
+previously-disconnected backup systems above (restic-based legacy vs. the
+operator's `pg_dump`+tar convention). It dumps a live `ssh_docker` tenant's
+real DB+filestore straight from its container into the exact object-storage
+layout `compute/operator`'s restore Job expects (new helpers on
+`SaasInstanceBackup`: `_stream_pg_dump_for_k8s_restore`,
+`_stream_filestore_tar_for_k8s_restore`, `_write_k8s_restore_manifest`,
+`dump_for_k8s_migration`), creates a new parallel `saas.instance` +
+`OdooInstance` CR with `spec.restore.source` pointing at it
+(`KubernetesDriver._build_odoo_instance` now translates a
+`spec.env['restore']` block onto `RestoreSourceSpec`), provisions the
+namespace's restore-credentials Secret (the operator creates none itself),
+polls the `RestoreReady` condition and then the instance's actual health
+(the web Deployment rollout after restore takes a little longer than
+restore itself), and verifies real data made it across (a `res.users`
+row-count comparison between source and restored instance, not just
+pod-health) before returning the new instance — verified but never cut
+over. On any failure the new CR/namespace/instance are torn down and the
+source is never touched. Unit-tested (41 tests,
+`tests/test_k8s_migration_dump.py` + additions to `test_kubernetes_driver.py`/
+`test_dataservice.py`), full `saas_core`+`saas_website` suite green (548
+tests).
+
+**Live-verified this session** against this machine's real microk8s cluster
++ a local MinIO stand-in (a real `ssh_docker`-mode tenant — a genuine
+running Odoo 18 container with real Postgres data and filestore — migrated
+end-to-end onto a fresh `OdooInstance`, reaching CR phase `Ready` with a
+real Ingress route, `res.users` row counts matching, and the restored
+instance's `/web/login` returning HTTP 200 over that route). Three real
+bugs were found and fixed by this run (all now covered by regression
+tests):
+1. `_wait_for_restore_ready` treated `status=False` alone as terminal —
+   `reconcileRestore` legitimately reports `status=False` with
+   `reason=RestoreRunning`/`RestorePending` while the restore Job is still
+   in progress; only `reason=RestoreFailed` is terminal.
+2. `_ensure_restore_secret` could 403 writing into a namespace still
+   mid-termination from an immediately-prior attempt reusing the same
+   (deterministic) namespace name — now waits out `Terminating` before
+   proceeding.
+3. The post-restore health check was a single `driver.health()` call;
+   the web Deployment's rollout after a successful restore visibly takes
+   longer than the restore itself, so this is now `_wait_until_healthy`,
+   a proper poll.
+
+One real, **environment-specific finding, not a code bug**: the tenant
+container's own `pg_dump` version must not exceed the restore tool image's
+`pg_restore` version (`compute/tools/backup-tool`, currently pinned to
+PostgreSQL 16) — `pg_dump`'s custom archive format is forward- but not
+backward-compatible, and a newer `pg_dump` (e.g. a stock Docker Hub
+`odoo:18.0` image, which bundles PostgreSQL 18 client tools) produces an
+archive the restore tool's older `pg_restore` cannot read
+(`unsupported version (1.16) in file header`). This platform's own
+production tenant images should be checked against the restore tool's
+pinned Postgres version as part of Phase 2's rollout — not yet audited.
+
+Two things intentionally NOT fixed, left as accepted local-dev-only
+friction (real production infra doesn't have either problem): this
+bare-metal microk8s has no LoadBalancer provider, so a fresh Ingress
+never gets a real address without manually patching the ingress
+controller's Service status (stood in for what a real cloud LB/MetalLB
+provides automatically); and the `saas.instance` DB write for the target
+record is not crash-safe against a hard process kill mid-migration (a
+Python exception is handled correctly — verified repeatedly, every
+failure this session cleaned up its CR/namespace/DB row — but a raw
+process kill mid-flight, e.g. an Odoo worker recycle, leaves the real K8s
+resources orphaned with no DB row tracking them, since the DB write and
+the K8s API calls aren't in the same transaction). The second one is worth
+a real design decision before Phase 2 goes further (incremental commits
+per step? a pre-created "in-progress" row committed before touching
+Kubernetes?) — flagged, not solved, here.
+
+**Still open** for Phase 2: wiring the already-added `saas.job` entry
+(`saas.instance._do_migrate_to_kubernetes`) into an actual per-tenant
+cutover decision (canary cohort, traffic/DNS flip) — this primitive only
+produces a verified parallel instance, it does not decide or perform a
+cutover.
+
 **[Known gap]** No PITR/WAL archiving anywhere — no `archive_command`,
 `wal-g`, or `pgbackrest` in the codebase. Real recovery-point objective is
 bounded by backup-cron frequency (daily), not continuous, regardless of what
@@ -922,7 +1000,7 @@ suite; control-plane routes container operations through the driver
 interface with characterization-test coverage; live cluster round-trip
 verified.
 
-### Phase 2 — Kubernetes cutover — **NOT STARTED. Top priority.**
+### Phase 2 — Kubernetes cutover — **IN PROGRESS. Top priority.**
 
 **Priority: P0.** **Depends on**: Phase 1 (done).
 
@@ -931,7 +1009,11 @@ Work items:
 - Build the migration path: move an existing tenant's live data
   (database + filestore) onto a fresh `OdooInstance`, verified
   bit-for-bit or functionally equivalent, with a rollback path if the
-  cutover instance fails health checks.
+  cutover instance fails health checks. **[Live-verified]** — done, see
+  `DataService.migrate_to_kubernetes` in §3.1 for the full writeup
+  (including two real findings from the live run worth reading before
+  relying on this: a Postgres client version-compatibility constraint on
+  tenant images, and a not-yet-crash-safe DB write during migration).
 - Decide and implement the cutover mechanism: per-tenant flag
   (`compute_driver` already exists as a setting — verify it actually
   gates real provisioning, not just driver-layer tests), a canary cohort,

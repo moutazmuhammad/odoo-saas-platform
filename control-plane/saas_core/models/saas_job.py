@@ -1,6 +1,6 @@
 """Durable job queue.
 
-A DB-backed queue: ``_enqueue`` persists a job row; ``_cron_run_jobs`` claims due
+A DB-backed queue: ``enqueue`` persists a job row; ``_cron_run_jobs`` claims due
 jobs with ``FOR UPDATE SKIP LOCKED`` and runs them; ``_cron_reap_jobs`` requeues
 (idempotent) or fails (non-idempotent) jobs whose worker died (stale heartbeat).
 Retries use exponential back-off; a per-resource advisory ``lock_key``
@@ -75,7 +75,7 @@ class SaasJob(models.Model):
 
     # ------------------------------------------------------------------ API
     @api.model
-    def _enqueue(self, record, method, args=(), *, idempotency_key=None,
+    def enqueue(self, record, method, args=(), *, idempotency_key=None,
                  channel='default', lock_key=None, max_attempts=3,
                  idempotent=False, priority=10, eta=None, run_now=True,
                  on_error=None, on_error_args=()):
@@ -86,7 +86,11 @@ class SaasJob(models.Model):
         ``run_now`` (default True, and only when not delayed by ``eta``) kicks
         an immediate background worker so the job starts promptly — like the old
         ``run_in_background`` — while the durable row + reaper guarantee it still
-        runs if that worker (or the process) dies. The cron is the backstop."""
+        runs if that worker (or the process) dies. The cron is the backstop.
+
+        Public cross-addon API: called from saas_billing (account_move.py)
+        in addition to saas_core's own instance/backup/webhook code.
+        """
         if idempotency_key:
             existing = self.sudo().search([
                 ('idempotency_key', '=', idempotency_key),

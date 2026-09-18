@@ -1,0 +1,290 @@
+ Billing/pricing architecture: extract saas_billing, keep the pricing model, add margin clarity
+
+     Status: approved, implementing step by step. This file is the tracked
+     checklist — each step gets checked off, tested, and verified against the
+     real dev DB before moving to the next. See "Implementation checklist"
+     near the bottom for current progress; everything above it is the
+     approved architecture proposal (unchanged).
+
+     Implementation checklist (tracked — update as work proceeds)
+
+     Order follows §6's migration strategy: least-coupled/lowest-risk first,
+     the god-model split last. Each step: move code → add a migration script
+     that re-parents ir_model_data → upgrade a copy of saas_dev → run the
+     full test suite → live-check the portal/admin UI still works before
+     moving on. Never done against a real production DB (none exists yet, but
+     the same discipline applies to saas_dev/saas_test as if it did).
+
+     - [ ] Step 0 — scaffold saas_billing: new addon skeleton
+       (__manifest__.py depends on saas_core; models/, security/,
+       data/, views/, migrations/ dirs), empty but installable.
+     - [ ] Step 1 — wholesale-relocated models (no saas.instance/saas.plan
+       touched yet): saas.payment.*, saas.wallet.*,
+       saas.support.plan, saas.addon (+ their data/views/security
+       rows) move to saas_billing. Migration script re-parents their
+       ir_model_data. saas_core's manifest drops sale/account/
+       payment/account_payment deps if nothing else in core still
+       needs them (check first).
+     - [ ] Step 2 — pricing engine: saas.pricing (AbstractModel, no
+       table) moves to saas_billing — pure file move + dependency
+       update, no data migration.
+     - [ ] Step 3 — settings/partner split: res.config.settings billing
+       fields (~30) and res.partner wallet/trial fields move to
+       saas_billing's own extension files.
+     - [ ] Step 4 — saas.plan commercial half: saas_billing adds
+       price/yearly_price/discount_amount/manual_price/
+       saas_product_ids/tier-display fields + the auto-price
+       formula/constraints via _inherit; saas_core keeps the
+       resource-limit shape. Field-level ir_model_data re-parenting for
+       the fields that move.
+     - [ ] Step 5 — saas.instance billing half (biggest, last): billing
+       fields/methods listed in the proposal move via _inherit;
+       account.move/res.partner inherits follow. Full regression +
+       live portal checkout/renewal/upgrade verification required before
+       calling this done.
+     - [ ] Step 6 — boundary enforcement + margin visibility: the
+       AST cross-addon-private-call lint (§4), and the margin-%
+       display / cost_price fields (§2).
+
+     Current status: about to start Step 0.
+
+     ---
+
+     Context
+
+     saas_core today is 32 models / ~15,500 model-layer lines. saas_instance.py
+     alone is now 13,258 lines (up from 12,619 at the last measurement in
+     ROADMAP.md §4.6, after this session's compute-tier/cutover work) — billing
+     logic (invoicing, proration, plan-change, wallet settlement, add-on
+     purchase flows) is interleaved with provisioning/lifecycle logic across
+     non-contiguous stretches of that one file. ROADMAP.md §4.6 already
+     contains a thorough prior analysis of splitting saas_core along domain
+     lines; this proposal reuses and adapts that analysis rather than
+     starting over, narrowed to exactly what you asked for (core + one new
+     billing module, not the earlier 3-way core/provisioning/billing split —
+     you were explicit that core keeps "instances, compute, lifecycle,
+     deployment").
+
+     Important finding up front, so expectations are set correctly: the
+     pricing model itself — saas.pricing.engine (models/saas_pricing.py)
+     — is already a mature, well-designed "single source of truth" covering
+     almost everything goal #1 and #2 ask for: a linear per-worker/per-GB rate,
+     a cost floor so price can never drop below actual infra cost, a
+     tier ceiling so a custom config never costs more than an equivalent
+     named plan, a minimum monthly charge, a region multiplier, a
+     yearly discount, and a generic saas.addon catalog for sellable
+     add-ons (flat or per-block pricing) — all driven by ir.config_parameter
+     settings, none hardcoded. This is not a demo-quality pricing system. So
+     this proposal is not a pricing-formula rewrite; it is (a) the module
+     extraction you asked for, and (b) targeted clarity additions so the
+     existing cost/margin relationship is visible to the operator, not a new
+     pricing engine.
+
+     1. What's already good (keep as-is)
+
+     - saas.pricing.engine.compute() — the one method every quote/invoice
+       path calls. Cost floor + tier ceiling already guarantee "covers
+       infrastructure cost, never undercuts a bigger tier."
+     - saas.addon — a generic, code-driven catalog (code, price_mode
+       flat/per-block, block_gb) already lets an operator add a new sellable
+       add-on from the UI with zero code changes.
+     - saas.plan's auto-price formula (linear rate − a fixed
+       discount_amount, floored at cost) — an operator tunes one number
+       (the discount) per named tier and the price/yearly-price recompute
+       automatically; manual_price escapes to a hand-set number when wanted.
+     - The proration/renewal machinery (_generate_renewal_invoice,
+       _apply_pending_upgrade, the wallet credit/consumption system) —
+       correct, tested, in active use. Not being touched.
+
+     2. What's missing for goal #1 (margin visibility)
+
+     Today "cost" (*_worker_floor/*_storage_floor) and "price"
+     (*_worker_price/*_storage_price_per_gb) are separate raw numbers
+     sitting in a 45-field settings grab-bag with no computed relationship
+     shown anywhere — an operator can't see "we charge $10/worker, it costs us
+     $4, that's 60% margin" without doing the subtraction by hand. Proposed
+     addition (small, additive, no formula change):
+     - A read-only margin summary block in the new billing settings page:
+       per rate (hosting worker, hosting storage, services worker, services
+       storage) show price, floor (cost), and a computed margin %
+       side-by-side. Pure display — reads the same two existing fields,
+       computes (price - floor) / price.
+     - Same treatment for compute tiers and add-ons: since saas.compute.tier/
+       saas.addon don't currently have a "this is what it costs us" field at
+       all (only a price), add an optional cost_price (Float, default 0) to
+       each — purely informational, shown next to the sale price in the admin
+       list view, not enforced the way the hosting/services floor is (no
+       behavior change, just visibility; making it a hard floor like the main
+       engine's is a natural follow-up once real cost data exists for these).
+
+     This directly serves "business-friendly and profitable... flexible enough
+     to change prices/margins later" without inventing new pricing mechanics.
+
+     3. Module boundary: saas_core + new saas_billing
+
+     Rule for where a model/field belongs (this is the actual design
+     decision, not just a file-move list): a model or field belongs to
+     billing if its primary job is pricing, invoicing, payment, or the
+     commercial relationship; it stays in core if its primary job is
+     describing or controlling how the tenant runs, even when it happens to
+     carry a price tag. Two consequences of this rule that deliberately
+     depart from ROADMAP.md §4.6.5's earlier draft, based on how the
+     code actually reads today:
+
+     - saas.compute.tier stays entirely in saas_core. Unlike
+       saas.plan (where the resource-shape half and the commercial half are
+       each substantial, independently-evolving concerns, justifying a real
+       split), saas.compute.tier is small (name, code, replicas,
+       monthly_price) and its primary job is telling
+       _do_deploy_locked_kubernetes/KubernetesDriver.scale() how many pods
+       to run — provisioning reads .replicas directly, with no addon
+       dependency to route through. Splitting it the way saas.plan is split
+       would add a second model-split pattern for negligible benefit. The
+       behavior that spends money — action_change_compute_tier,
+       _do_scale_compute_tier, the activation-invoice proration, the
+       account.move payment hook — is genuinely billing, and moves via
+       _inherit, same as the saas.plan pattern below.
+     - saas.product (+ SaasProductRepo/SaasProductFeature) stays
+       entirely in saas_core. is_hosting is a load-bearing discriminator
+       read throughout the provisioning/backup/DB-manager code paths; there is
+       no substantial commercial-only half to extract (its actual price lives
+       on saas.plan via the M2M, not on the product itself).
+
+     saas.plan split (this part keeps §4.6.5's already-correct
+     reasoning): saas_core keeps the resource-limit shape
+     (cpu_limit/ram_limit/workers/storage_limit) that provisioning
+     reads at deploy/resize time; saas_billing adds the commercial shape
+     (price/yearly_price/discount_amount/manual_price/
+     saas_product_ids/the auto-price formula) via _inherit. This is what
+     keeps the dependency direction a straight line — if plan_id itself
+     were declared in saas_core, saas_core would need to know about
+     saas.plan's commercial fields, which is exactly the cycle this split
+     exists to avoid. So: saas_core never declares plan_id; saas_billing
+     adds it via _inherit, like any other addon-contributed field.
+
+     saas.instance.state stays in saas_core (unchanged from §4.6): both
+     provisioning transitions and billing's non-payment suspension write to
+     it, so it can't live in either alone.
+
+     What moves to saas_billing (relocated outright, new addon ownership)
+
+     saas.pricing (the engine), saas.wallet/saas.wallet.lot/
+     saas.wallet.transaction, saas.payment.* (the whole provider-routing/
+     gateway abstraction — pure payment concern, models/saas_payment.py),
+     saas.support.plan, saas.addon.
+
+     What moves via _inherit = 'saas.instance' (same table, relocated code)
+
+     plan_id, billing_period, next_invoice_date/last_invoice_date,
+     sale_order_id, pending_plan_id/scheduled_plan_id (+ their
+     billing-period counterparts), daily_backup_*, compute_tier_pending_*/
+     pending_compute_tier_id (the billing-side half of compute tiers, per
+     the rule above — compute_tier_id itself stays core-declared),
+     storage_block_*, payment_token_id, auto_renew_*, and every
+     proration/renewal/purchase method: _generate_renewal_invoice,
+     _apply_pending_upgrade, _apply_pending_plan_change,
+     _snapshot_order_line/_support_order_line/_compute_tier_order_line/
+     _storage_block_order_line/_environment_order_lines, _wallet_*,
+     every action_purchase_*/action_change_compute_tier,
+     _get_all_invoices/_get_cancellable_unpaid_invoice (the two of the
+     nine leaky-boundary methods from §4.6.2 that are genuinely billing —
+     promoted to real public methods, no leading underscore, as part of this
+     move; see §4 below on the other seven).
+
+     What moves via _inherit elsewhere
+
+     - account.move: invoice-cancel → wallet-credit refund, payment-state →
+       suspend/resume triggering (calls saas.instance's public
+       suspend/resume actions — fine, billing depends on core).
+     - res.partner: wallet balance, trial-eligibility fields.
+     - res.config.settings: the ~30 pricing/billing fields (rates, floors,
+       minimums, discounts, grace-period/dunning timing, wallet-credit
+       expiry) move to saas_billing's own extension file; saas_core keeps
+       infra settings (backup-storage credentials, port range, compute
+       backend default) in its own, now much smaller, file. Config parameter
+       keys (saas_master.worker_price etc.) don't change — only which
+       addon's Python file declares the field, so no data migration needed
+       for settings themselves (ir.config_parameter rows aren't
+       addon-owned).
+
+     Dependency direction
+
+     saas_core (no billing deps) → saas_billing (depends on saas_core
+     only) → saas_website (depends on saas_billing, transitively gets
+     saas_core). saas_billing is where sale/account/payment/
+     account_payment dependencies move to — saas_core no longer needs
+     them once billing is extracted, which is itself a concrete, checkable
+     signal the boundary is right (today those deps sit on saas_core for
+     billing's sake alone, per §4.6.2's original finding).
+
+     4. Enforcing the boundary (not just a convention)
+
+     §4.6.2 already found the existing single boundary (saas_core ↔
+     saas_website) is leaked through nine underscore-prefixed "private"
+     methods called cross-addon. Splitting billing out only helps if the new
+     boundary doesn't immediately suffer the same fate. Carrying over §4.6.6's
+     answer, unchanged because it's still the right one:
+     - Naming convention: no leading underscore + a docstring saying which
+       addon(s) call it = the real public contract.
+     - A CI lint (AST-based, same pattern as the existing
+       lint_csrf_routes.py) flagging any addon calling another addon's
+       underscore-prefixed method.
+     - The _get_status_dict() aggregation point stays: saas_core defines
+       the identity-level status payload and calls extension hooks
+       (_status_dict_billing_extra()) that saas_billing fills in — the
+       portal keeps calling one method, each domain contributes explicitly.
+
+     5. On introducing a separate saas.subscription model — considered, not recommended now
+
+     A "real SaaS business" lens (goal #6) raises the question of whether
+     subscription state (plan, period, next invoice date) should be its own
+     model instead of fields bolted onto saas.instance. Not recommended
+     yet: today the relationship is exactly 1:1 (one instance, one implicit
+     subscription) and nothing in the current product needs it to be anything
+     else. Introducing a new table now would be complexity with no present
+     payoff — exactly the premature abstraction the project's own conventions
+     warn against. The _inherit-contributed fields above already give
+     saas_billing full ownership of subscription behavior without a new
+     table. Revisit if the business ever needs multi-instance subscriptions,
+     seat-based billing, or a subscription that outlives a single instance
+     (e.g. reprovisioning) — none of which exist today.
+
+     6. Migration strategy
+
+     Reuses ROADMAP.md §4.6.7's approach exactly, since the mechanics are
+     identical regardless of 2-way vs. 3-way split: moving a model's addon
+     ownership needs a pre-/post-migrate.py hook that re-parents the
+     relevant ir_model_data rows to saas_billing before it loads against
+     the existing table — table and data untouched, only ownership metadata
+     changes. Recommended order (least-coupled first, prove the pattern
+     before touching the god model):
+     1. Wholesale-relocated standalone models with few inbound references:
+        saas.payment.*, saas.wallet.*, saas.support.plan, saas.addon.
+     2. saas.pricing (the engine) — many callers, but it's a stateless
+        AbstractModel, so moving it is a pure Python-file move plus updating
+        every self.env['saas.pricing.engine'] call site's addon dependency,
+        no table/data migration at all.
+     3. res.config.settings / res.partner extensions — split the field
+        lists into the two files; no data migration (transient model /
+        existing table, just which addon declares which field).
+     4. saas.plan's commercial half via _inherit, then finally the
+        saas.instance billing fields/methods via _inherit — the biggest,
+        highest-risk step, done last and only after 1–3 have proven the
+        migration mechanism works cleanly in this codebase.
+     - Every step tested against a copy of real data (this machine's
+       saas_dev/saas_test, never a live production DB), per the project's
+       existing, already-stated caution on this exact kind of migration.
+
+     Non-goals (explicitly out of scope for this pass)
+
+     - No pricing-formula changes — the engine's actual math is not being
+       rewritten, only made more visible (margin display) and relocated.
+     - No new saas.subscription model (see §5).
+     - No saas_provisioning split — core keeps deploy/lifecycle/compute, per
+       your explicit instruction.
+     - No change to the compute-tier/HA-scaling work from the prior session —
+       compute_tier_id and its provisioning behavior are untouched; only its
+       billing half (invoicing, payment hook) relocates.
+     - Actual implementation (creating the saas_billing addon, writing the
+       migration scripts, moving code) — this document is the proposal only,
+       per your request.

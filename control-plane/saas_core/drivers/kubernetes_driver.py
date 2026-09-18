@@ -27,6 +27,8 @@ Mapping (ComputeDriver -> Kubernetes):
   logs             -> Kubernetes pods/log subresource
   health           -> OdooInstance.status.phase + the web pod's own
                        container restart count (for crash-loop detection)
+  scale            -> patch spec.replicas (Kubernetes-only, not part of
+                       the shared ComputeDriver interface — see scale())
 
 The naming below (group/version/plural, the "odoo-tenant-" namespace
 prefix, the Deployment always being literally named "odoo") mirrors the
@@ -35,18 +37,20 @@ internal/resources/naming.go) byte for byte. There is no way to discover
 these from the cluster at runtime — keeping the two sides in sync by hand
 is a real, standing constraint on ever renaming either one.
 
-Scope note: ``create()`` is implemented and live-verified (see
-test_kubernetes_driver.py and this session's cluster verification) but is
-NOT YET called by real tenant provisioning — ``saas.instance`` still
-provisions everything via its own legacy code path regardless of
-``compute_driver``. Actually cutting real tenants over to
-``ComputeDriver.create()`` is /ROADMAP.md §5 Phase 2's job, not this one.
+Scope note: ``create()`` IS called by real tenant provisioning —
+``saas.instance._do_deploy_locked`` branches on
+``docker_server_id.compute_driver`` and, for ``kubernetes``, calls this
+driver's ``create()`` directly (no legacy SSH/Docker-Compose steps at
+all); see ``_do_deploy_locked_kubernetes``. Which backend a NEW instance
+lands on is a platform-level setting
+(``saas_master.default_compute_driver``, default ``kubernetes``),
+independent of the per-instance compute tier (replica count, e.g.
+Standard/HA/Scale — see ``scale()`` below).
 """
 
 from __future__ import annotations
 
 import logging
-import urllib.parse
 from typing import Optional
 
 import yaml
@@ -196,10 +200,14 @@ class KubernetesDriver(ComputeDriver):
         share, which is less invasive for identical effect.
 
         Fields the CRD schema itself defaults server-side (workers,
-        replicas, database mode, networking) are deliberately omitted
-        rather than hand-duplicated here — see OdooInstanceSpec's own
+        database mode, networking) are deliberately omitted rather than
+        hand-duplicated here — see OdooInstanceSpec's own
         +kubebuilder:default markers in
-        compute/operator/api/v1alpha1/odooinstance_types.go."""
+        compute/operator/api/v1alpha1/odooinstance_types.go. ``replicas``
+        IS set explicitly (default 1) because a value > 1 has a required
+        companion (the filestore's accessMode, below) this driver must set
+        consistently, not something safe to leave to the CRD's own default.
+        """
         domain = (spec.env.get('domain') or '').strip()
         if not domain:
             raise RuntimeError(
@@ -210,6 +218,19 @@ class KubernetesDriver(ComputeDriver):
         repository, sep, tag = spec.image.rpartition(':')
         if not sep:
             repository, tag = spec.image, odoo_version
+        replicas = int(spec.env.get('replicas') or 1)
+
+        filestore = {'size': spec.env.get('filestore_size') or '5Gi'}
+        if replicas > 1:
+            # Required companion of replicas > 1 — see FilestoreSpec's own
+            # comment (odoo_types.go): RWO is the safe default and the
+            # controller rejects RWO with replicas > 1 (Degraded condition)
+            # rather than corrupting data. Requesting RWX here only ever
+            # succeeds if the region's cluster actually has an RWX-capable
+            # StorageClass (e.g. NFS/CephFS/EFS) — this driver cannot verify
+            # that in advance; a cluster without one will surface as a real,
+            # visible Degraded condition on the CR, which health() picks up.
+            filestore['accessMode'] = 'ReadWriteMany'
 
         body = {
             'apiVersion': '%s/%s' % (_GROUP, _VERSION),
@@ -222,9 +243,8 @@ class KubernetesDriver(ComputeDriver):
                     'hostname': domain,
                     'tls': {'enabled': bool(spec.env.get('tls_enabled', False))},
                 },
-                'storage': {
-                    'filestore': {'size': spec.env.get('filestore_size') or '5Gi'},
-                },
+                'storage': {'filestore': filestore},
+                'replicas': replicas,
                 'resources': {
                     'requests': {
                         'cpu': spec.env.get('cpu_request') or '250m',
@@ -285,6 +305,32 @@ class KubernetesDriver(ComputeDriver):
             raise RuntimeError(
                 'patching OdooInstance %s suspended=%s failed: %s'
                 % (name, suspended, e)) from e
+
+    def scale(self, handle: ComputeHandle, replicas: int) -> None:
+        """Patch this instance's pod replica count in place — the
+        underlying primitive behind the compute-tier feature
+        (saas.instance.compute_tier_id / saas.compute.tier, e.g.
+        Standard=1 / HA=2 / Scale=4 replicas). Kubernetes-only; there is
+        no equivalent concept for SshDockerDriver, so this is NOT part of
+        the shared ComputeDriver interface — callers must check
+        ``compute_driver == 'kubernetes'`` first.
+
+        Going from 1 to 2+ only actually works if the instance's filestore
+        was already provisioned with an RWX-capable StorageClass (see
+        _build_odoo_instance) — this call cannot verify or change that
+        after the fact (a PVC's access mode is not something the API lets
+        you patch in place). A cluster without one will make the CR go
+        Degraded, which the caller's post-scale health() poll surfaces as
+        a real, visible failure rather than a silent no-op.
+        """
+        name = self._cr_name(handle)
+        try:
+            self._custom_api().patch_cluster_custom_object(
+                _GROUP, _VERSION, _PLURAL, name, {'spec': {'replicas': int(replicas)}})
+        except ApiException as e:
+            raise RuntimeError(
+                'patching OdooInstance %s replicas=%s failed: %s'
+                % (name, replicas, e)) from e
 
     def start(self, handle: ComputeHandle) -> None:
         self._patch_suspended(handle, False)
@@ -354,13 +400,25 @@ class KubernetesDriver(ComputeDriver):
             raise RuntimeError('reading logs for %s failed: %s' % (pod.metadata.name, e)) from e
 
     def endpoint(self, handle: ComputeHandle) -> tuple[str, int]:
-        cr = self._get_cr(self._cr_name(handle))
-        url = ((cr or {}).get('status') or {}).get('url') or ''
-        if not url:
+        """Return where an external reverse proxy should connect to reach
+        this tenant — NOT the tenant's own public domain (``status.url``,
+        which a caller can't route to: that hostname's DNS still points at
+        whatever fronted the tenant before, so "connecting" to it would
+        loop back rather than reach the cluster). This is the cluster's own
+        ingress front door, a manually-configured, per-region value (see
+        ``saas.region.ingress_host`` — which controller/Service backs it
+        isn't safely auto-discoverable from here; the operator supports
+        both plain Ingress and Gateway API, chosen at the operator level).
+
+        The caller is expected to route with the tenant's own domain
+        (``status.url``'s hostname) sent as the Host header — that's what
+        the cluster's ingress rule for this CR actually matches on.
+        """
+        region = self.server.region_id
+        host = (region.ingress_host or '').strip() if region else ''
+        if not host:
             return ('', 0)
-        parsed = urllib.parse.urlsplit(url)
-        port = parsed.port or (443 if parsed.scheme == 'https' else 80)
-        return (parsed.hostname or '', port)
+        return (host, region.ingress_port or 80)
 
     def health(self, handle: ComputeHandle) -> HealthStatus:
         name = self._cr_name(handle)

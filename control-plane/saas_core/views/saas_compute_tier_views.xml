@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="saas_compute_tier_action" model="ir.actions.act_window">
+        <field name="name">Compute Tiers</field>
+        <field name="res_model">saas.compute.tier</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create a compute tier</p>
+            <p>Selectable Kubernetes pod-replica tiers (e.g. Standard / HA /
+               Scale). Kubernetes-only — a Docker-Compose-backed instance
+               never offers these. The customer picks one from their
+               instance page; it's a flat monthly fee added after
+               infrastructure pricing and is not scaled by region. Mark
+               exactly one as the default (normally the 1-replica tier).
+               Add more records here for additional replica counts —
+               no code change needed.</p>
+        </field>
+    </record>
+
+    <record id="saas_compute_tier_view_list" model="ir.ui.view">
+        <field name="name">saas.compute.tier.list</field>
+        <field name="model">saas.compute.tier</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="replicas"/>
+                <field name="monthly_price"/>
+                <field name="cost_price" optional="show"/>
+                <field name="margin_pct" optional="show"/>
+                <field name="is_default"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="saas_compute_tier_view_form" model="ir.ui.view">
+        <field name="name">saas.compute.tier.form</field>
+        <field name="model">saas.compute.tier</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="e.g. HA"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="code" placeholder="e.g. ha"/>
+                            <field name="replicas"/>
+                            <field name="is_default"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Pricing">
+                            <field name="monthly_price"/>
+                            <field name="currency_id"/>
+                            <field name="cost_price"/>
+                            <field name="margin_pct" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Description">
+                        <field name="description" nolabel="1"
+                               placeholder="What this tier includes — shown to the customer on the portal…"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="saas_compute_tier_view_search" model="ir.ui.view">
+        <field name="name">saas.compute.tier.search</field>
+        <field name="model">saas.compute.tier</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="code"/>
+                <filter string="Active" name="active" domain="[('active', '=', True)]"/>
+                <filter string="Default" name="is_default" domain="[('is_default', '=', True)]"/>
+            </search>
+        </field>
+    </record>
+</odoo>

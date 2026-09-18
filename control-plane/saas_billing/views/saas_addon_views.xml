@@ -25,6 +25,8 @@
                 <field name="monthly_price"/>
                 <field name="price_per_block" optional="show"/>
                 <field name="block_gb" optional="show"/>
+                <field name="cost_price" optional="show"/>
+                <field name="margin_pct" optional="show"/>
                 <field name="price_config_param" optional="hide"/>
                 <field name="active" widget="boolean_toggle"/>
             </list>
@@ -54,6 +56,8 @@
                                    invisible="price_mode == 'flat'"/>
                             <field name="price_config_param"
                                    placeholder="e.g. saas_master.snapshot_price_per_gb"/>
+                            <field name="cost_price"/>
+                            <field name="margin_pct" readonly="1"/>
                         </group>
                     </group>
                     <field name="description" placeholder="Optional description"/>

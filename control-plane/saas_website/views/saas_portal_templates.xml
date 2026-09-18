@@ -526,6 +526,13 @@
                                             <t t-else="">Not included</t>
                                         </span>
                                     </div>
+                                    <div class="vx-config-item" t-if="instance.docker_server_id.compute_driver == 'kubernetes'">
+                                        <span class="vx-config-label">Compute Tier</span>
+                                        <span class="vx-config-value">
+                                            <t t-esc="instance.compute_tier_id.name or 'Standard'"/>
+                                            (<t t-esc="instance.compute_tier_id.replicas or 1"/> replica<t t-if="(instance.compute_tier_id.replicas or 1) != 1">s</t>)
+                                        </span>
+                                    </div>
                                     <div class="vx-config-item" t-if="instance.is_hosting and instance.child_env_ids">
                                         <span class="vx-config-label">Environments</span>
                                         <span class="vx-config-value" t-esc="', '.join([(e.environment or '').capitalize() for e in instance.child_env_ids])"/>
@@ -1259,5 +1266,141 @@
         </t>
     </template>
 
+    <template id="portal_compute_tier_checkout" name="Compute Tier Checkout">
+        <t t-call="saas_website.cloudodoo_layout">
+            <section class="py-6">
+                <div class="container">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb">
+                            <li class="breadcrumb-item"><a href="/my/instances">My Instances</a></li>
+                            <li class="breadcrumb-item">
+                                <a t-attf-href="/my/instances/#{instance.id}" t-esc="instance.subdomain or instance.name"/>
+                            </li>
+                            <li class="breadcrumb-item active">Upgrade Compute Tier</li>
+                        </ol>
+                    </nav>
+
+                    <h1 class="mb-4">Upgrade to the <t t-esc="tier.name"/> tier</h1>
+
+                    <div class="row g-4">
+                        <!-- Order summary -->
+                        <div class="col-lg-7">
+                            <div class="info-card">
+                                <h5>Order Summary</h5>
+                                <p class="text-muted small">
+                                    Runs <strong t-esc="instance.subdomain"/> across
+                                    <strong><t t-esc="tier.replicas"/> pod replicas</strong>:
+                                    more replicas means resilience (if one fails or is
+                                    being updated, the others keep serving your users
+                                    with no downtime) and extra capacity under higher
+                                    traffic. Billed as a <strong>flat monthly fee</strong>
+                                    with no proration — the same amount is charged
+                                    whether you upgrade on the 1st or the 28th. Charged
+                                    again on every renewal while you stay on this tier.
+                                </p>
+                                <p class="text-muted small" t-if="tier.description" t-esc="tier.description"/>
+                                <table class="table align-middle mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Item</th>
+                                            <th class="text-end">Price</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>
+                                                Compute Tier: <t t-esc="tier.name"/> (<t t-esc="tier.replicas"/> replicas)
+                                                <span class="badge ms-2 bg-info">Monthly</span>
+                                                <div class="small text-muted">
+                                                    Flat monthly fee — no proration. Once applied, the next charge is one full month after today's payment.
+                                                </div>
+                                            </td>
+                                            <td class="text-end">
+                                                <t t-esc="monthly_price"
+                                                   t-options="{'widget': 'monetary', 'display_currency': currency}"/>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <td class="fw-bold fs-5">Total Due Today</td>
+                                            <td class="text-end fw-bold fs-5">
+                                                <t t-esc="amount"
+                                                   t-options="{'widget': 'monetary', 'display_currency': currency}"/>
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                                <p class="small text-muted mt-3 mb-0">
+                                    Invoice: <code t-esc="invoice.name"/>.
+                                    You can pay any time from
+                                    <a t-att-href="invoice.get_portal_url()">
+                                        the invoice page
+                                    </a>
+                                    too.
+                                </p>
+                            </div>
+                        </div>
+                        <!-- Payment widget -->
+                        <div class="col-lg-5">
+                            <div class="info-card">
+                                <h5>Payment Method</h5>
+                                <t t-call="payment.form"/>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-center mt-4">
+                        <a t-attf-href="/my/instances/#{instance.id}"
+                           class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Cancel and go back
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Same trick as portal_daily_backup_checkout: rewrite the
+                     post-pay redirect target so the customer lands back on
+                     the instance page, not Odoo's generic /payment/status. -->
+                <script>
+                    (function () {
+                        var url = '/my/instances/<t t-esc="instance.id"/>?notice=Payment+received.+Scaling+to+the+<t t-esc="tier.name"/>+tier.';
+
+                        var observer = new MutationObserver(function () {
+                            if (window.location.pathname === '/payment/status') {
+                                window.location.replace(url);
+                            }
+                        });
+                        observer.observe(document, { childList: true, subtree: true });
+
+                        var origPush = history.pushState;
+                        history.pushState = function () {
+                            if (arguments[2] &amp;&amp; String(arguments[2]).indexOf('/payment/status') !== -1) {
+                                window.location.replace(url);
+                                return;
+                            }
+                            return origPush.apply(this, arguments);
+                        };
+
+                        var origReplace = history.replaceState;
+                        history.replaceState = function () {
+                            if (arguments[2] &amp;&amp; String(arguments[2]).indexOf('/payment/status') !== -1) {
+                                window.location.replace(url);
+                                return;
+                            }
+                            return origReplace.apply(this, arguments);
+                        };
+
+                        var checkInterval = setInterval(function () {
+                            if (window.location.pathname === '/payment/status') {
+                                clearInterval(checkInterval);
+                                window.location.replace(url);
+                            }
+                        }, 500);
+                        setTimeout(function () { clearInterval(checkInterval); }, 60000);
+                    })();
+                </script>
+            </section>
+        </t>
+    </template>
 
 </odoo>

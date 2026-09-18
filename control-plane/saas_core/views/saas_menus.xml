@@ -32,31 +32,11 @@
               action="saas_instance_action_hosting"
               sequence="20"/>
 
-    <!-- Billing (A1/A4) -->
-    <menuitem id="saas_master_menu_billing"
-              name="Billing"
-              parent="saas_master_menu_root"
-              sequence="20"/>
-    <menuitem id="saas_master_menu_wallets"
-              name="Customer Wallets"
-              parent="saas_master_menu_billing"
-              action="saas_wallet_action"
-              sequence="10"/>
-    <menuitem id="saas_master_menu_payment_methods"
-              name="Saved Payment Methods"
-              parent="saas_master_menu_billing"
-              action="saas_payment_method_action"
-              sequence="20"/>
-    <menuitem id="saas_master_menu_payment_attempts"
-              name="Payment Attempts"
-              parent="saas_master_menu_billing"
-              action="saas_payment_attempt_action"
-              sequence="30"/>
-    <menuitem id="saas_master_menu_margins"
-              name="Tenant Margins"
-              parent="saas_master_menu_billing"
-              action="action_saas_tenant_margins"
-              sequence="35"/>
+    <!-- Billing menu (A1/A4) lives in saas_billing/views/saas_menus.xml —
+         moved there along with the wallet/payment models. Tenant Margins
+         (action still defined here, in saas_core) is nested under it
+         from that file, since saas_billing depends on saas_core and can
+         reference this module's action, but not vice versa. -->
 
     <!-- Configuration -->
     <menuitem id="saas_master_menu_configuration"
@@ -64,12 +44,8 @@
               parent="saas_master_menu_root"
               sequence="90"/>
 
-    <!-- Configuration > Payment Provider Routing -->
-    <menuitem id="saas_master_menu_payment_routing"
-              name="Payment Provider Routing"
-              parent="saas_master_menu_configuration"
-              action="saas_payment_provider_config_action"
-              sequence="60"/>
+    <!-- Configuration > Payment Provider Routing lives in
+         saas_billing/views/saas_menus.xml now. -->
 
     <!-- Configuration > Services -->
     <menuitem id="saas_master_menu_services"
@@ -85,19 +61,15 @@
               action="saas_plan_action"
               sequence="20"/>
 
-    <!-- Configuration > Add-ons -->
-    <menuitem id="saas_master_menu_addons"
-              name="Add-ons"
-              parent="saas_master_menu_configuration"
-              action="saas_addon_action"
-              sequence="22"/>
+    <!-- Configuration > Add-ons and > Support Plans live in
+         saas_billing/views/saas_menus.xml now. -->
 
-    <!-- Configuration > Support Plans -->
-    <menuitem id="saas_master_menu_support_plans"
-              name="Support Plans"
+    <!-- Configuration > Compute Tiers -->
+    <menuitem id="saas_master_menu_compute_tiers"
+              name="Compute Tiers"
               parent="saas_master_menu_configuration"
-              action="saas_support_plan_action"
-              sequence="24"/>
+              action="saas_compute_tier_action"
+              sequence="25"/>
 
     <!-- Configuration > Base Domains -->
     <menuitem id="saas_master_menu_based_domain"

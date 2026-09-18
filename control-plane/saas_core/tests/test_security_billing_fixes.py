@@ -474,7 +474,7 @@ class TestApiSecurityHttp(HttpCase):
     # duplicate actually completing) — tried it, found a real hazard, and
     # backed out rather than leave a fragile test in the tree:
     # hosting_db_create_async/_drop_async/_duplicate_async all end in
-    # self.env['saas.job']._enqueue(...), which — even with
+    # self.env['saas.job'].enqueue(...), which — even with
     # saas.job._spawn_worker patched to a no-op exactly like
     # test_job_queue.py's own setUp does — still corrupted later tests in
     # this same class when actually exercised through HttpCase (a `FAIL`
@@ -484,7 +484,7 @@ class TestApiSecurityHttp(HttpCase):
     # already in a test"). Root cause: _spawn_worker's real worker thread
     # opens its OWN fresh DB connection, which structurally cannot see
     # savepoint-nested, uncommitted test data — TransactionCase tests
-    # that call _enqueue rely on that suppression working reliably;
+    # that call enqueue rely on that suppression working reliably;
     # something about HttpCase's own per-request handling means it did
     # not hold here. Testing these SUCCESS paths properly belongs at the
     # model layer (TransactionCase, mirroring test_compute_driver.py /
@@ -496,7 +496,7 @@ class TestApiSecurityHttp(HttpCase):
         """Make instance.hosting_db_list() return existing_db_names (already
         full-name-qualified, e.g. via instance._hosting_db_full_name(...))
         without touching real SSH/Docker. Safe to use for paths that never
-        reach self.env['saas.job']._enqueue(...) (e.g. a rejection before
+        reach self.env['saas.job'].enqueue(...) (e.g. a rejection before
         any operation record is created) — see the caution above for why
         a path that DOES enqueue is not safe to drive through a live
         HttpCase HTTP request yet."""

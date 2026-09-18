@@ -1920,7 +1920,7 @@ fi
             # backup of the same instance (shared restic repo).
             method = ('_run_daily_full_backup' if instance.is_hosting
                       else '_run_daily_db_backup')
-            Job._enqueue(
+            Job.enqueue(
                 instance, method, channel='backup',
                 lock_key='instance:%s' % instance.id, max_attempts=1,
                 idempotency_key='daily_backup:%s:%s' % (

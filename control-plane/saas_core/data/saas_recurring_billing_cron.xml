@@ -1,27 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- Recurring billing: generate renewal invoices -->
-    <record id="ir_cron_saas_recurring_billing" model="ir.cron">
-        <field name="name">SaaS: Generate Recurring Invoices</field>
-        <field name="model_id" ref="saas_core.model_saas_instance"/>
-        <field name="state">code</field>
-        <field name="code">model._cron_generate_recurring_invoices()</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
-        <field name="active" eval="True"/>
-    </record>
-
-    <!-- Dunning: check overdue invoices and suspend after grace period -->
-    <record id="ir_cron_saas_dunning" model="ir.cron">
-        <field name="name">SaaS: Check Overdue Invoices (Dunning)</field>
-        <field name="model_id" ref="saas_core.model_saas_instance"/>
-        <field name="state">code</field>
-        <field name="code">model._cron_check_overdue_invoices()</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
-        <field name="active" eval="True"/>
-    </record>
+    <!-- The recurring-billing/dunning/renewal/wallet crons all moved to
+         saas_billing/data/saas_billing_cron.xml along with the
+         saas.instance billing methods they drive. Only the zombie
+         reaper stays here — it's a pure provisioning safety net, not a
+         billing concern. -->
 
     <!-- Zombie reaper: any database operation (create/duplicate/drop/
          upgrade) still in 'running' state past the timeout is auto-
@@ -34,68 +18,6 @@
         <field name="code">model._cron_reap_stuck_db_operations()</field>
         <field name="interval_number">5</field>
         <field name="interval_type">minutes</field>
-        <field name="active" eval="True"/>
-    </record>
-
-    <!-- Safety net: apply pending plan changes whose invoice is paid but
-         where the payment hook never (fully) ran — without this a paying
-         customer can stay stuck on the old plan forever. -->
-    <record id="ir_cron_saas_apply_paid_pending_changes" model="ir.cron">
-        <field name="name">SaaS: Apply Paid Pending Plan Changes (Safety Net)</field>
-        <field name="model_id" ref="saas_core.model_saas_instance"/>
-        <field name="state">code</field>
-        <field name="code">model._cron_apply_paid_pending_changes()</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">hours</field>
-        <field name="active" eval="True"/>
-    </record>
-
-    <!-- Auto-renew reminders: notify customers 7 days and 1 day before the
-         renewal date (A1). -->
-    <record id="ir_cron_saas_renewal_reminders" model="ir.cron">
-        <field name="name">SaaS: Send Renewal Reminders (7d / 1d)</field>
-        <field name="model_id" ref="saas_core.model_saas_instance"/>
-        <field name="state">code</field>
-        <field name="code">model._cron_send_renewal_reminders()</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
-        <field name="active" eval="True"/>
-    </record>
-
-    <!-- Auto-renew retry: re-charge unpaid mandatory invoices on the
-         retry schedule (1, 3, 5 days after the invoice date), all inside
-         the grace period (A1). -->
-    <record id="ir_cron_saas_payment_retry" model="ir.cron">
-        <field name="name">SaaS: Retry Failed Auto-renew Payments</field>
-        <field name="model_id" ref="saas_core.model_saas_instance"/>
-        <field name="state">code</field>
-        <field name="code">model._cron_retry_failed_payments()</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
-        <field name="active" eval="True"/>
-    </record>
-
-    <!-- Wallet: expire spent-down system-issued (bonus) credit lots past
-         their expiry date. Customer-funded money is never touched (v47). -->
-    <record id="ir_cron_saas_wallet_expire_credits" model="ir.cron">
-        <field name="name">SaaS: Expire Bonus Wallet Credits</field>
-        <field name="model_id" ref="saas_core.model_saas_wallet"/>
-        <field name="state">code</field>
-        <field name="code">model._cron_expire_credits()</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
-        <field name="active" eval="True"/>
-    </record>
-
-    <!-- Daily-backup add-on: monthly renewal invoices, independent of the
-         main subscription billing cycle. -->
-    <record id="ir_cron_saas_daily_backup_renewal" model="ir.cron">
-        <field name="name">SaaS: Renew Daily-Backup Add-on (Monthly)</field>
-        <field name="model_id" ref="saas_core.model_saas_instance"/>
-        <field name="state">code</field>
-        <field name="code">model._cron_renew_daily_backup_addons()</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
         <field name="active" eval="True"/>
     </record>
 

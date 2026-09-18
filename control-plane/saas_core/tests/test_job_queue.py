@@ -47,7 +47,7 @@ class TestJobQueue(TransactionCase):
             self.addCleanup(p.stop)
         # Suppress the immediate worker thread so execution is driven
         # deterministically via _cron_run_jobs / _run_one in the tests (and so
-        # _enqueue doesn't commit the test cursor).
+        # enqueue doesn't commit the test cursor).
         wp = patch.object(type(self.Job), '_spawn_worker', lambda self: None)
         wp.start()
         self.addCleanup(wp.stop)
@@ -62,15 +62,15 @@ class TestJobQueue(TransactionCase):
 
     # ---- enqueue / idempotency ----
     def test_enqueue_creates_pending(self):
-        job = self.Job._enqueue(self.partner, '_job_ok', args=(1, 2))
+        job = self.Job.enqueue(self.partner, '_job_ok', args=(1, 2))
         self.assertEqual(job.state, 'pending')
         self.assertEqual(job.model, 'res.partner')
         self.assertEqual(job.res_id, self.partner.id)
         self.assertEqual(json.loads(job.args_json), [1, 2])
 
     def test_enqueue_idempotent(self):
-        j1 = self.Job._enqueue(self.partner, '_job_ok', idempotency_key='k1')
-        j2 = self.Job._enqueue(self.partner, '_job_ok', idempotency_key='k1')
+        j1 = self.Job.enqueue(self.partner, '_job_ok', idempotency_key='k1')
+        j2 = self.Job.enqueue(self.partner, '_job_ok', idempotency_key='k1')
         self.assertEqual(j1, j2, "same idempotency key must not create a 2nd job")
 
     # ---- backstop cron drains one job at a time (reaper-safety) ----
@@ -82,7 +82,7 @@ class TestJobQueue(TransactionCase):
         execution exactly one job — itself — is 'running'."""
         self._no_commit()
         for i in range(4):
-            self.Job._enqueue(self.partner, '_job_count_running',
+            self.Job.enqueue(self.partner, '_job_count_running',
                               idempotency_key='cnt%d' % i)
         self.Job._cron_run_jobs()
         self.assertEqual(len(self._running_counts), 4, "all jobs ran once")
@@ -93,7 +93,7 @@ class TestJobQueue(TransactionCase):
     # ---- run ----
     def test_run_success_stores_result(self):
         self._no_commit()
-        job = self.Job._enqueue(self.partner, '_job_ok', args=(1, 2))
+        job = self.Job.enqueue(self.partner, '_job_ok', args=(1, 2))
         self.Job._cron_run_jobs()
         self.assertEqual(job.state, 'done')
         self.assertEqual(job.attempts, 1)
@@ -101,7 +101,7 @@ class TestJobQueue(TransactionCase):
 
     def test_run_with_lock_key(self):
         self._no_commit()
-        job = self.Job._enqueue(self.partner, '_job_ok',
+        job = self.Job.enqueue(self.partner, '_job_ok',
                                 lock_key='res:%s' % self.partner.id)
         self.Job._cron_run_jobs()
         self.assertEqual(job.state, 'done')
@@ -109,7 +109,7 @@ class TestJobQueue(TransactionCase):
     # ---- failure: retry then terminal ----
     def test_failure_requeues_with_backoff(self):
         self._no_commit()
-        job = self.Job._enqueue(self.partner, '_job_boom', max_attempts=3)
+        job = self.Job.enqueue(self.partner, '_job_boom', max_attempts=3)
         self.Job._cron_run_jobs()
         self.assertEqual(job.state, 'pending', "retries remain -> requeued")
         self.assertEqual(job.attempts, 1)
@@ -119,7 +119,7 @@ class TestJobQueue(TransactionCase):
 
     def test_failure_terminal_alerts(self):
         self._no_commit()
-        job = self.Job._enqueue(self.partner, '_job_boom', max_attempts=1)
+        job = self.Job.enqueue(self.partner, '_job_boom', max_attempts=1)
         self.Job._cron_run_jobs()
         self.assertEqual(job.state, 'failed')
         self.assertEqual(job.attempts, 1)
@@ -127,7 +127,7 @@ class TestJobQueue(TransactionCase):
 
     def test_on_error_handler_invoked_on_failure(self):
         self._no_commit()
-        job = self.Job._enqueue(self.partner, '_job_boom', max_attempts=1,
+        job = self.Job.enqueue(self.partner, '_job_boom', max_attempts=1,
                                 on_error='_job_onerror', on_error_args=('x',))
         self.Job._cron_run_jobs()
         self.assertEqual(job.state, 'failed')
@@ -140,7 +140,7 @@ class TestJobQueue(TransactionCase):
         # With retries remaining, a failed attempt reschedules WITHOUT firing
         # on_error; on_error fires once, only when attempts are exhausted.
         self._no_commit()
-        job = self.Job._enqueue(self.partner, '_job_boom', max_attempts=2,
+        job = self.Job.enqueue(self.partner, '_job_boom', max_attempts=2,
                                 on_error='_job_onerror', on_error_args=('z',))
         self.Job._cron_run_jobs()  # attempt 1 -> reschedule
         self.assertEqual(job.state, 'pending')
@@ -159,7 +159,7 @@ class TestJobQueue(TransactionCase):
         # A single worker drains all due pending jobs in its channel (the basis
         # for bounded-parallel throughput, e.g. nightly backups).
         self._no_commit()
-        jobs = [self.Job._enqueue(self.partner, '_job_ok', channel='drain',
+        jobs = [self.Job.enqueue(self.partner, '_job_ok', channel='drain',
                                   run_now=False) for _i in range(3)]
         self.env.flush_all()
         self.Job._worker_loop(jobs[0].id, 'drain')
@@ -169,8 +169,8 @@ class TestJobQueue(TransactionCase):
 
     def test_claim_next_in_channel_is_scoped(self):
         self._no_commit()
-        mine = self.Job._enqueue(self.partner, '_job_ok', channel='c1', run_now=False)
-        self.Job._enqueue(self.partner, '_job_ok', channel='c2', run_now=False)
+        mine = self.Job.enqueue(self.partner, '_job_ok', channel='c1', run_now=False)
+        self.Job.enqueue(self.partner, '_job_ok', channel='c2', run_now=False)
         self.env.flush_all()
         claimed = self.Job._claim_next_in_channel('c1')
         self.assertEqual(claimed, mine, "must claim only within the channel")
@@ -182,10 +182,10 @@ class TestJobQueue(TransactionCase):
         self.env['ir.config_parameter'].sudo().set_param(
             'saas_master.job_channel_concurrency', '2')
         self.assertTrue(self.Job._should_spawn_now('capx'))
-        j1 = self.Job._enqueue(self.partner, '_job_ok', channel='capx', run_now=False)
+        j1 = self.Job.enqueue(self.partner, '_job_ok', channel='capx', run_now=False)
         j1.state = 'running'
         self.assertTrue(self.Job._should_spawn_now('capx'), "1 < cap -> spawn ok")
-        j2 = self.Job._enqueue(self.partner, '_job_ok', channel='capx', run_now=False)
+        j2 = self.Job.enqueue(self.partner, '_job_ok', channel='capx', run_now=False)
         j2.state = 'running'
         self.assertFalse(self.Job._should_spawn_now('capx'), "2 >= cap -> defer")
         # Cap is per-channel: a different channel still has capacity.
@@ -194,7 +194,7 @@ class TestJobQueue(TransactionCase):
     # ---- claim gating ----
     def test_future_job_not_claimed(self):
         self._no_commit()
-        job = self.Job._enqueue(self.partner, '_job_ok',
+        job = self.Job.enqueue(self.partner, '_job_ok',
                                 eta=fields.Datetime.now() + timedelta(hours=1))
         self.Job._cron_run_jobs()
         self.assertEqual(job.state, 'pending')
@@ -203,7 +203,7 @@ class TestJobQueue(TransactionCase):
     # ---- reaper ----
     def test_reaper_requeues_idempotent(self):
         self._no_commit()
-        job = self.Job._enqueue(self.partner, '_job_ok', idempotent=True)
+        job = self.Job.enqueue(self.partner, '_job_ok', idempotent=True)
         job.write({'state': 'running', 'attempts': 1,
                    'last_heartbeat': fields.Datetime.now() - timedelta(minutes=30)})
         self.Job._cron_reap_jobs()
@@ -211,7 +211,7 @@ class TestJobQueue(TransactionCase):
 
     def test_reaper_fails_non_idempotent(self):
         self._no_commit()
-        job = self.Job._enqueue(self.partner, '_job_ok', idempotent=False)
+        job = self.Job.enqueue(self.partner, '_job_ok', idempotent=False)
         job.write({'state': 'running', 'attempts': 1,
                    'last_heartbeat': fields.Datetime.now() - timedelta(minutes=30)})
         self.Job._cron_reap_jobs()
@@ -220,7 +220,7 @@ class TestJobQueue(TransactionCase):
 
     def test_reaper_leaves_fresh_running(self):
         self._no_commit()
-        job = self.Job._enqueue(self.partner, '_job_ok', idempotent=True)
+        job = self.Job.enqueue(self.partner, '_job_ok', idempotent=True)
         job.write({'state': 'running', 'attempts': 1,
                    'last_heartbeat': fields.Datetime.now()})
         self.Job._cron_reap_jobs()
@@ -400,7 +400,7 @@ class TestDbOpViaQueue(TransactionCase):
         op = self.env['saas.instance.db.operation'].sudo().create({
             'instance_id': self.instance.id, 'db_name': 'd', 'operation': 'drop'})
         op.last_heartbeat = fields.Datetime.now() - timedelta(minutes=10)
-        job = self.Job._enqueue(op, '_run_drop', channel='dbop', run_now=False)
+        job = self.Job.enqueue(op, '_run_drop', channel='dbop', run_now=False)
         job.state = 'running'
         self.assertTrue(self.Job._heartbeat_tick(job.id))
         self.assertTrue(job.last_heartbeat)
@@ -411,7 +411,7 @@ class TestDbOpViaQueue(TransactionCase):
     def test_heartbeat_tick_target_without_field_is_safe(self):
         backup = self.env['saas.instance.backup'].sudo().create({
             'instance_id': self.instance.id, 'name': 'b', 'state': 'running'})
-        job = self.Job._enqueue(backup, '_run_portal_backup', run_now=False)
+        job = self.Job.enqueue(backup, '_run_portal_backup', run_now=False)
         job.state = 'running'
         self.assertTrue(self.Job._heartbeat_tick(job.id))  # must not raise
         self.assertTrue(job.last_heartbeat)
@@ -419,7 +419,7 @@ class TestDbOpViaQueue(TransactionCase):
     def test_heartbeat_tick_stops_when_not_running(self):
         op = self.env['saas.instance.db.operation'].sudo().create({
             'instance_id': self.instance.id, 'db_name': 'd2', 'operation': 'drop'})
-        job = self.Job._enqueue(op, '_run_drop', run_now=False)  # state pending
+        job = self.Job.enqueue(op, '_run_drop', run_now=False)  # state pending
         self.assertFalse(self.Job._heartbeat_tick(job.id),
                          "a non-running job stops the beater")
 
@@ -558,7 +558,7 @@ class TestDeployViaQueue(TransactionCase):
         inst = self._instance('dpqstuck', state='provisioning')
         inst.pending_operation = 'deploy'
         inst.write({'pre_provisioning_state': 'failed'})
-        job = self.Job._enqueue(inst, '_do_deploy', channel='deploy',
+        job = self.Job.enqueue(inst, '_do_deploy', channel='deploy',
                                 idempotent=True, run_now=False)
         job.state = 'running'
         # Make it look stuck (old write_date) for the cron's search window.

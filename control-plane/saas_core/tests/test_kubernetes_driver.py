@@ -113,6 +113,58 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(handle.container_name, 'odoo_acme')
         self.assertEqual(handle.instance_path, 'odoo-tenant-odoo-acme')
 
+    def test_create_defaults_to_one_replica_and_rwo_storage(self):
+        from odoo.addons.saas_core.drivers.base import ComputeSpec
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
+        spec = ComputeSpec(
+            container_name='odoo_solo', image='odoo:18.0', instance_path='/x',
+            http_port=8069, longpolling_port=8072, db_name='solo', db_host='db',
+            env={'domain': 'solo.example.com'})
+        driver.create(spec)
+        body = custom_api.create_cluster_custom_object.call_args.args[3]
+        self.assertEqual(body['spec']['replicas'], 1)
+        self.assertNotIn('accessMode', body['spec']['storage']['filestore'])
+
+    def test_create_with_replicas_2_requests_rwx_storage(self):
+        """A compute tier above 1 replica (saas.instance.compute_tier_id,
+        e.g. HA=2/Scale=4) — RWX is REQUIRED alongside it (the operator
+        rejects RWO with replicas > 1, see FilestoreSpec's own comment in
+        odoo_types.go) so this driver must always set both together."""
+        from odoo.addons.saas_core.drivers.base import ComputeSpec
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
+        spec = ComputeSpec(
+            container_name='odoo_ha', image='odoo:18.0', instance_path='/x',
+            http_port=8069, longpolling_port=8072, db_name='ha', db_host='db',
+            env={'domain': 'ha.example.com', 'replicas': 2})
+        driver.create(spec)
+        body = custom_api.create_cluster_custom_object.call_args.args[3]
+        self.assertEqual(body['spec']['replicas'], 2)
+        self.assertEqual(
+            body['spec']['storage']['filestore']['accessMode'], 'ReadWriteMany')
+
+    # -------- scale() (compute tier replica count) --------------------------
+    def test_scale_patches_replicas(self):
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
+        driver.scale(_handle(), 2)
+        custom_api.patch_cluster_custom_object.assert_called_once_with(
+            'saas.odoo.example.com', 'v1alpha1', 'odooinstances', 'odoo-acme',
+            {'spec': {'replicas': 2}})
+
+    def test_scale_raises_on_api_error(self):
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        custom_api.patch_cluster_custom_object.side_effect = ApiException(
+            status=422, reason='Invalid')
+        driver._custom_api = MagicMock(return_value=custom_api)
+        with self.assertRaises(RuntimeError):
+            driver.scale(_handle(), 2)
+
     def test_create_requires_domain(self):
         from odoo.addons.saas_core.drivers.base import ComputeSpec
         driver, _server = _make_driver()
@@ -266,17 +318,28 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(hs.restart_count, 5)
 
     # -------- endpoint() ----------------------------------------------------
-    def test_endpoint_parses_https_url(self):
-        driver, _server = _make_driver()
-        driver._get_cr = MagicMock(
-            return_value={'status': {'url': 'https://acme.example.com'}})
+    def test_endpoint_returns_region_ingress_address(self):
+        """endpoint() must return a CONNECT-TO address (the cluster's own
+        ingress front door), not the tenant's own public domain — that
+        hostname's DNS still points wherever it pointed before cutover, so
+        "connecting" to it would loop back rather than reach the cluster."""
+        driver, server = _make_driver()
+        server.region_id.ingress_host = '192.168.1.15'
+        server.region_id.ingress_port = 80
         host, port = driver.endpoint(_handle())
-        self.assertEqual(host, 'acme.example.com')
-        self.assertEqual(port, 443)
+        self.assertEqual(host, '192.168.1.15')
+        self.assertEqual(port, 80)
 
-    def test_endpoint_empty_when_no_status_url(self):
-        driver, _server = _make_driver()
-        driver._get_cr = MagicMock(return_value={'status': {}})
+    def test_endpoint_defaults_port_80(self):
+        driver, server = _make_driver()
+        server.region_id.ingress_host = '192.168.1.15'
+        server.region_id.ingress_port = False
+        host, port = driver.endpoint(_handle())
+        self.assertEqual(port, 80)
+
+    def test_endpoint_empty_when_no_ingress_host_configured(self):
+        driver, server = _make_driver()
+        server.region_id.ingress_host = False
         self.assertEqual(driver.endpoint(_handle()), ('', 0))
 
     # -------- logs() ----------------------------------------------------

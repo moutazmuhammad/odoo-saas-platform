@@ -1524,7 +1524,7 @@ class SaasInstanceRepo(models.Model):
             rec.instance_id._ensure_can_ssh()
             # Durable queue (ARCH-004): clone+restart is re-runnable (idempotent)
             # and serialised per instance; no secret args (token is on the row).
-            self.env['saas.job']._enqueue(
+            self.env['saas.job'].enqueue(
                 rec, '_do_clone_and_restart', channel='deploy',
                 lock_key='instance:%s' % rec.instance_id.id, idempotent=True,
                 on_error='_on_repo_background_error')
@@ -1553,7 +1553,7 @@ class SaasInstanceRepo(models.Model):
         for rec in self:
             if rec.state != 'cloned':
                 raise UserError(_("Repository must be cloned first."))
-            self.env['saas.job']._enqueue(
+            self.env['saas.job'].enqueue(
                 rec, '_do_pull_repo', channel='deploy',
                 lock_key='instance:%s' % rec.instance_id.id, idempotent=True,
                 on_error='_on_repo_background_error')

@@ -72,7 +72,7 @@ class TestWebhookSecurity(HttpCase):
                       "a known secret must be rate-limited (got %s)" % set(codes))
 
     # ---- B.1.4: previously untested branches — every one of these
-    # returns BEFORE the controller ever reaches saas.job._enqueue(...),
+    # returns BEFORE the controller ever reaches saas.job.enqueue(...),
     # so they're all safe to drive through a real HttpCase request (no
     # risk of the background-worker-thread hazard this project's testing
     # convention exists to avoid). ---------------
@@ -126,7 +126,7 @@ class TestWebhookSecurity(HttpCase):
         self.assertEqual(resp.json().get('reason'), 'repo not cloned')
 
     def _patched_enqueue(self):
-        """A MagicMock standing in for saas.job._enqueue: records call args
+        """A MagicMock standing in for saas.job.enqueue: records call args
         for assertions, returns an empty recordset (the controller discards
         the return value anyway), and — critically — never creates a real
         job row or spawns saas.job._spawn_worker's background thread. Same
@@ -142,7 +142,7 @@ class TestWebhookSecurity(HttpCase):
         `with self._patched_enqueue() as m:`."""
         mock = MagicMock(
             side_effect=lambda *a, **kw: self.env['saas.job'].browse())
-        return patch.object(type(self.env['saas.job']), '_enqueue', mock)
+        return patch.object(type(self.env['saas.job']), 'enqueue', mock)
 
     def test_duplicate_delivery_ignored(self):
         with self._patched_enqueue():

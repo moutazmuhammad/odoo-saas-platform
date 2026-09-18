@@ -226,6 +226,15 @@ export interface ApiBackup {
   format?: string;
 }
 
+export interface ApiComputeTier {
+  id: number;
+  name: string;
+  code: string;
+  replicas: number;
+  price: number;
+  description: string;
+}
+
 export interface ApiInvoice {
   id: number;
   number: string;
@@ -389,6 +398,10 @@ export interface ApiInstance {
   daily_backup_pending?: boolean;
   daily_backup_price?: number;
   daily_backup_next_invoice_date?: string;
+  compute_driver?: "kubernetes" | "ssh_docker";
+  compute_tier?: ApiComputeTier | null;
+  compute_tiers?: ApiComputeTier[];
+  compute_tier_pending?: ApiComputeTier | null;
   pip_packages?: string;
   pip_install_error?: string;
   last_error?: string;
@@ -664,6 +677,9 @@ export const api = {
     rpc<{ backup_id: number }>(`/saas/api/v1/instances/${id}/databases/backup`, { name, format }),
   dailyBackupEnable: (id: number) =>
     rpc<{ checkout_url: string }>(`/saas/api/v1/instances/${id}/daily-backup/enable`),
+  computeTierChange: (id: number, tierId: number) =>
+    rpc<{ checkout_url?: string; applied?: boolean }>(
+      `/saas/api/v1/instances/${id}/compute-tier/change`, { tier_id: tierId }),
   setRepo: (
     id: number,
     p: { repo_url: string; repo_branch: string; git_token?: string }

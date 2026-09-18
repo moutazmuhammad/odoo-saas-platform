@@ -114,6 +114,17 @@ export const HELP_TOPICS: HelpTopic[] = [
     ],
   },
   {
+    anchor: "compute-tiers",
+    category: "Add-ons",
+    title: "Compute tiers",
+    tip: "Standard (1 replica), HA (2), Scale (4) and beyond — more replicas means resilience and extra capacity.",
+    body: [
+      "Compute tiers set how many pod replicas your instance runs across. Standard is 1 replica (included); HA runs 2 for resilience — if one replica fails or is being updated, the other keeps serving your users with no downtime; Scale runs 4 for resilience plus extra capacity under higher traffic.",
+      "It's only available on the Kubernetes backend; instances running on Docker Compose don't offer tier selection.",
+      "Upgrading to a priced tier is billed monthly and takes effect once paid; downgrading takes effect immediately with no refund for the current period. Changing tiers scales your instance in place — no downtime, no data changes.",
+    ],
+  },
+  {
     anchor: "support-plan",
     category: "Add-ons",
     title: "Support plan",

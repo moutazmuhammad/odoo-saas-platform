@@ -100,9 +100,14 @@ class SaasWallet(models.Model):
     # Lookup / creation / locking
     # ------------------------------------------------------------------
     @api.model
-    def _for_partner(self, partner, create=True):
+    def for_partner(self, partner, create=True):
         """Wallet for ``partner``'s commercial entity (shared across its
-        contacts), created on demand when ``create``."""
+        contacts), created on demand when ``create``.
+
+        Public cross-addon API: called from saas_core (saas_instance.py,
+        res_partner.py, account_move.py) and saas_website
+        (controllers/api.py).
+        """
         if not partner:
             return self.browse()
         commercial = partner.commercial_partner_id or partner

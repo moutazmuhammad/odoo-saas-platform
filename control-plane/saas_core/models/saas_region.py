@@ -50,6 +50,26 @@ class SaasRegion(models.Model):
              "SSH path. Manager-only; encrypted at rest once a "
              "saas_secret_key is configured.",
     )
+    ingress_host = fields.Char(
+        string='Ingress Host',
+        groups='saas_core.group_saas_manager',
+        help="Reachable host/IP of this region's cluster ingress front door "
+             "(e.g. the Traefik/Gateway API LoadBalancer address) — where an "
+             "external reverse proxy sends traffic for a Kubernetes-hosted "
+             "tenant. Which controller/Service actually backs this isn't "
+             "safely auto-discoverable (the operator supports both plain "
+             "Ingress and Gateway API, configured at the operator level — "
+             "see compute/operator/internal/controller/network.go), so this "
+             "is a manually-configured, ops-owned value, the same way "
+             "``kubeconfig`` is.",
+    )
+    ingress_port = fields.Integer(
+        string='Ingress Port',
+        default=80,
+        help='Port on ingress_host to connect to. Tenants keep TLS '
+             'termination at the existing nginx/Certbot layer, so this is '
+             'plain HTTP (80) by default — see KubernetesDriver.endpoint().',
+    )
 
     _sql_constraints = [
         ('code_uniq', 'unique(code)', 'Region code must be unique.'),

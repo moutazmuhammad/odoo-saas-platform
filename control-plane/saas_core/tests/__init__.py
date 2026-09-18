@@ -43,3 +43,5 @@ from . import test_instance_package
 from . import test_config_settings
 from . import test_payment
 from . import test_k8s_migration_dump
+from . import test_cutover_to_kubernetes
+from . import test_compute_backend_selection

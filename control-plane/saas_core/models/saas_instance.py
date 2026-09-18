@@ -61,6 +61,7 @@ ORIGIN_SUBSCRIPTION = 'SAAS:SUBSCRIPTION:%s'
 ORIGIN_PLAN_UPGRADE = 'SAAS:UPGRADE:%s'
 ORIGIN_DATA_RESTORATION = 'SAAS:RESTORATION:%s'
 ORIGIN_BACKUP_ADDON = 'SAAS:BACKUP-ADDON:%s'
+ORIGIN_COMPUTE_TIER = 'SAAS:COMPUTE-TIER:%s'
 ORIGIN_STORAGE_BLOCK = 'SAAS:STORAGE-BLOCK:%s'
 # Adding a Staging/Development environment server: the prorated activation
 # invoice that gates provisioning of a child env (mirrors STORAGE-BLOCK).
@@ -76,6 +77,9 @@ OPTIONAL_INVOICE_ORIGIN_PREFIXES = (
     # Adding an env server is opt-in — an unpaid env invoice must not suspend
     # the project; the child simply stays unprovisioned until paid.
     'SAAS:ENVIRONMENT:',
+    # A compute-tier upgrade is opt-in — an unpaid upgrade invoice must not
+    # suspend the instance; it simply stays on its current tier until paid.
+    'SAAS:COMPUTE-TIER:',
 )
 # Days past a daily-backup add-on invoice's due date before snapshots are
 # paused. Snapshots resume automatically once the invoice is paid.
@@ -218,16 +222,13 @@ class SaasInstance(models.Model):
              'Empty on legacy instances (treated as the default region, '
              'multiplier 1.0).',
     )
-    support_plan_id = fields.Many2one(
-        'saas.support.plan',
-        string='Support Plan',
-        ondelete='restrict',
-        default=lambda self: self.env['saas.support.plan']._get_default(),
-        help='Paid support tier for this instance (P3). A flat monthly fee '
-             'billed alongside the plan; not scaled by region. Defaults to '
-             'the free best-effort tier; the customer can pick a higher one '
-             'at create / upgrade.',
-    )
+    # support_plan_id lives in saas_billing/models/saas_instance.py now —
+    # its comodel (saas.support.plan) moved there, and a Many2one's
+    # comodel must belong to an already-loaded module at _auto_init time,
+    # so the field declaration has to move with it (see the plan doc's
+    # "Critical finding"). Read freely from here via self.support_plan_id
+    # — Odoo merges _inherit contributions into one class regardless of
+    # which addon's file declares the field.
     db_server_id = fields.Many2one(
         'saas.server',
         string='Database Server',
@@ -265,6 +266,19 @@ class SaasInstance(models.Model):
         help='Set on the target instance created by DataService.'
              'migrate_to_kubernetes() — the legacy instance whose data it '
              'was restored from. Never set on the source itself.',
+    )
+    active_instance_id = fields.Many2one(
+        'saas.instance',
+        string='Serving Instance',
+        ondelete='set null',
+        index=True,
+        copy=False,
+        help='Set on a (legacy) instance once its live traffic has been cut '
+             'over to a migrated Kubernetes instance (/ROADMAP.md §5 Phase '
+             '2) — this record stays the billing/domain identity, but its '
+             "vhost proxies to the pointed-to instance's compute instead of "
+             'its own. Empty means this instance serves its own traffic. '
+             'Set/cleared only by _do_cutover_to_kubernetes.',
     )
     provisioning_mode = fields.Selection(
         selection=[
@@ -502,6 +516,50 @@ class SaasInstance(models.Model):
         copy=False,
         help='Most recent month the daily-backup add-on was billed for.',
     )
+    # ---------- Compute tier (/ROADMAP.md §5 Phase 2) ----------
+    # Selectable Kubernetes pod-replica tier (Standard=1 / HA=2 / Scale=4,
+    # extensible — see saas.compute.tier). Deliberately NOT a boolean HA
+    # flag: replica count and "High Availability" are related but not the
+    # same thing (HA is just the commercial name for the 2-replica tier;
+    # a customer might pick Scale for capacity without caring about the
+    # HA framing). Does NOT change which backend the instance runs on
+    # (that's saas_master.default_compute_driver, an independent,
+    # platform-level choice) — only ever meaningful on an instance already
+    # on the Kubernetes backend, see action_change_compute_tier.
+    compute_tier_id = fields.Many2one(
+        'saas.compute.tier',
+        string='Compute Tier',
+        ondelete='restrict',
+        default=lambda self: self.env['saas.compute.tier']._get_default(),
+        tracking=True,
+        help='Kubernetes pod-replica tier for this instance (Standard/HA/'
+             'Scale — see saas.compute.tier). Meaningless on a Docker-'
+             'Compose-backed instance. Changing it patches the running '
+             'instance in place (KubernetesDriver.scale) — an upgrade '
+             '(more replicas) is billed immediately (prorated); a '
+             'downgrade (fewer replicas) applies immediately with no '
+             'refund for the current period.',
+    )
+    pending_compute_tier_id = fields.Many2one(
+        'saas.compute.tier',
+        string='Pending Compute Tier',
+        copy=False,
+        ondelete='set null',
+        help='Target tier of an in-progress UPGRADE, gated by '
+             'compute_tier_pending_invoice_id. Set when the customer '
+             'requests an upgrade; cleared (and compute_tier_id updated) '
+             'once the invoice is paid and the scale succeeds.',
+    )
+    compute_tier_pending_invoice_id = fields.Many2one(
+        'account.move',
+        string='Compute Tier Pending Invoice',
+        tracking=True,
+        copy=False,
+        ondelete='set null',
+        help='Unpaid invoice gating a compute-tier UPGRADE (downgrades are '
+             'immediate and free — see action_change_compute_tier). '
+             'Cleared once the invoice transitions to paid / in_payment.',
+    )
     # ---------- Saved card + auto-renewal ----------
     # ``payment_token_id`` holds the saved card that renewal crons
     # charge automatically. It's captured the first time the customer
@@ -632,14 +690,12 @@ class SaasInstance(models.Model):
     renewal_reminder_7d_sent = fields.Boolean(default=False, copy=False)
     renewal_reminder_1d_sent = fields.Boolean(default=False, copy=False)
 
-    # Saved payment method chosen for auto-renew (A1). Provider-agnostic
-    # wrapper that stores ONLY safe references (provider id + external
-    # customer / token refs); the legacy ``payment_token_id`` is kept in
-    # sync for the existing charge path.
-    saas_payment_method_id = fields.Many2one(
-        'saas.payment.method', string='Auto-renew Payment Method',
-        copy=False, ondelete='set null',
-    )
+    # saas_payment_method_id lives in saas_billing/models/saas_instance.py
+    # now — same reason as support_plan_id above: its comodel
+    # (saas.payment.method) moved there, so the field declaration must
+    # move with it. The methods below that read/write it
+    # (self.saas_payment_method_id) are untouched — they keep working
+    # since Odoo merges _inherit contributions into one class.
 
     # Wallet (A4): surplus prepaid value to move into the customer's
     # wallet when a pending plan change is actually applied (on payment),
@@ -913,7 +969,19 @@ class SaasInstance(models.Model):
         support = self.support_plan_id.monthly_price if self.support_plan_id else 0.0
         return (base or 0.0) + (support or 0.0)
 
-    @api.depends('plan_id', 'billing_period', 'support_plan_id', 'storage_used_gb',
+    # NOTE: 'support_plan_id' is intentionally NOT in this @depends list.
+    # @api.depends is resolved against the model's registered fields at
+    # THIS module's (saas_core's) load time, which happens before
+    # saas_billing contributes that field — including it here would
+    # crash registry setup with "Dependency field 'support_plan_id' not
+    # found in model saas.instance". _instance_monthly_revenue() still
+    # reads self.support_plan_id fine at runtime (Odoo merges _inherit
+    # contributions into one class); the only effect of leaving it out of
+    # @depends is that an in-memory cached value of these non-stored
+    # fields won't auto-invalidate within the same transaction if
+    # support_plan_id changes — negligible here since a fresh read always
+    # recomputes them regardless.
+    @api.depends('plan_id', 'billing_period', 'storage_used_gb',
                  'docker_server_id.cost_per_cpu_month',
                  'docker_server_id.cost_per_gb_ram_month',
                  'docker_server_id.cost_per_gb_storage_month',
@@ -1724,6 +1792,26 @@ class SaasInstance(models.Model):
             used_bytes=used_bytes,
         )
 
+    def _get_compute_tier_product(self):
+        """Return the singleton product.product for a compute-tier upgrade
+        invoice. Created on first use, same as the daily-backup product —
+        one generic product, the actual tier name/price go on the order
+        line (see action_change_compute_tier)."""
+        product = self.env['product.product'].sudo().search(
+            [('default_code', '=', 'SAAS-COMPUTE-TIER')], limit=1,
+        )
+        if not product:
+            product = self.env['product.product'].sudo().create({
+                'name': 'Compute Tier Upgrade',
+                'default_code': 'SAAS-COMPUTE-TIER',
+                'type': 'service',
+                'list_price': 0.0,
+                'sale_ok': True,
+                'purchase_ok': False,
+                'taxes_id': [(5, 0, 0)],
+            })
+        return product
+
     def _get_retained_snapshot_fee(self):
         """One-off charge for restoring the snapshot retained after the
         instance was deleted.
@@ -1852,6 +1940,185 @@ class SaasInstance(models.Model):
         )
         return invoice
 
+    def action_change_compute_tier(self, tier_id):
+        """Change this instance's compute tier (Standard/HA/Scale/...).
+
+        A tier with MORE replicas than the current one is an upgrade: it
+        costs more, so it's gated behind a prorated activation invoice —
+        same shape as ``action_purchase_daily_backup`` — and the actual
+        scale only happens once that invoice is paid (see the
+        ``account.move`` payment hook). A tier with FEWER replicas (or an
+        equally/less expensive one, including any free tier) applies
+        immediately with no charge and no refund for the current period —
+        there is nothing to gate payment behind.
+        """
+        self.ensure_one()
+        if self.docker_server_id.compute_driver != 'kubernetes':
+            raise UserError(_(
+                "Compute tiers require the Kubernetes backend — this "
+                "instance runs on Docker Compose."
+            ))
+        tier = self.env['saas.compute.tier'].sudo().browse(tier_id)
+        if not tier.exists() or not tier.active:
+            raise UserError(_("That compute tier is not available."))
+        current = self.compute_tier_id
+        if current == tier:
+            raise UserError(_(
+                "'%s' is already on the %s tier."
+            ) % (self.subdomain, tier.name))
+
+        current_replicas = current.replicas if current else 1
+        if tier.monthly_price <= 0 or tier.replicas <= current_replicas:
+            # Free tier, downgrade, or lateral move — nothing to charge.
+            self.env['saas.job'].enqueue(
+                self, '_do_scale_compute_tier', args=(tier.id,),
+                channel='deploy', lock_key='instance:%s' % self.id,
+                max_attempts=1, idempotent=False,
+                on_error='_on_compute_tier_scale_error')
+            self._append_log(
+                "Compute tier change to '%s' (%d replica(s)) queued — no "
+                "charge." % (tier.name, tier.replicas))
+            return True
+
+        # Upgrade to a priced tier: pay first, same proration math as the
+        # daily-backup/HA activation flow.
+        if self.is_trial:
+            raise UserError(_(
+                "Compute tier upgrades can't be purchased on a trial plan."
+            ))
+        if self.compute_tier_pending_invoice_id:
+            existing = self.compute_tier_pending_invoice_id
+            if existing.state == 'posted' and existing.payment_state not in (
+                'paid', 'in_payment', 'reversed', 'invoicing_legacy',
+            ):
+                return existing
+            self.compute_tier_pending_invoice_id = False
+
+        today = fields.Date.today()
+        period = self.billing_period or 'monthly'
+        period_label = 'Yearly' if period == 'yearly' else 'Monthly'
+        months = self.env['saas.pricing.engine'].period_months(period)
+        full = months * tier.monthly_price
+        charge = full
+        if self.next_invoice_date and self.last_invoice_date:
+            total_days = (self.next_invoice_date - self.last_invoice_date).days
+            left = (self.next_invoice_date - today).days
+            if total_days > 0 and 0 < left < total_days:
+                charge = round(full * left / total_days, 2)
+
+        product = self._get_compute_tier_product()
+        pricelist = self.partner_id.property_product_pricelist
+        line_name = _(
+            'Compute Tier Upgrade: %s (%s) — %s (prorated to your renewal date)'
+        ) % (tier.name, period_label, self.name or self.subdomain)
+        order_lines = [(0, 0, {
+            'product_id': product.id,
+            'name': line_name,
+            'product_uom_qty': 1,
+            'price_unit': charge,
+        })]
+
+        order_vals = {
+            'partner_id': self.partner_id.id,
+            'origin': ORIGIN_COMPUTE_TIER % (self.name or self.subdomain),
+            'order_line': order_lines,
+        }
+        if pricelist:
+            order_vals['pricelist_id'] = pricelist.id
+        order = self.env['sale.order'].sudo().create(order_vals)
+        order.action_confirm()
+        invoice = order._create_invoices()
+        invoice.action_post()
+        self.write({
+            'compute_tier_pending_invoice_id': invoice.id,
+            'pending_compute_tier_id': tier.id,
+        })
+        self._append_log(
+            "Compute tier upgrade to '%s' activation invoice %s created — "
+            "%s period, prorated catch-up %.2f (full %.2f)." % (
+                tier.name, invoice.name, period_label, charge, full)
+        )
+        return invoice
+
+    def _do_scale_compute_tier(self, tier_id):
+        """saas.job entrypoint: patch this instance's Kubernetes CR to
+        ``tier``'s replica count and verify it actually comes back healthy
+        BEFORE committing ``compute_tier_id`` — for a paid upgrade, the
+        customer has already paid by the time this runs (enqueued from the
+        account_move payment hook), but the portal should never claim a
+        tier is active if the scale didn't really work; for a free/
+        downgrade change (enqueued directly from
+        action_change_compute_tier) there's no payment involved at all.
+
+        On failure: patch back to the replica count it had before, leave
+        ``compute_tier_id``/``pending_compute_tier_id`` untouched, and
+        alert ops — a paid invoice is not refunded here; that's a billing
+        decision for a human, not this job.
+        """
+        self.ensure_one()
+        if self.docker_server_id.compute_driver != 'kubernetes':
+            raise UserError(_(
+                "Cannot scale '%s': not running on the Kubernetes backend."
+            ) % self.subdomain)
+        tier = self.env['saas.compute.tier'].sudo().browse(tier_id)
+        previous_tier = self.compute_tier_id
+        previous_replicas = previous_tier.replicas if previous_tier else 1
+        driver = self._compute_driver()
+        handle = self._compute_handle()
+        self._append_log(
+            "Scaling to '%s' tier (%d replica(s))..." % (tier.name, tier.replicas))
+        driver.scale(handle, tier.replicas)
+        # Settle delay before the first health check — live-verified this is
+        # necessary: patching spec.replicas doesn't synchronously update
+        # status.phase, so a health() call in the same instant as scale()
+        # can still read the PRE-patch "Ready" phase (the operator's
+        # reconciler hasn't run yet) and _wait_until_healthy would exit
+        # successfully on that first, stale reading — even when the new
+        # replica count is actually invalid (e.g. RWO storage rejecting
+        # replicas > 1) and the CR is about to go Degraded. Reproduced live
+        # against a real cluster: without this delay, a genuinely broken
+        # scale was reported as healthy.
+        time.sleep(5)
+        try:
+            self._data_service()._wait_until_healthy(driver, handle, timeout=300)
+        except Exception as e:
+            self._append_log(
+                "Scale to '%s' (%d replica(s)) failed its health check (%s) "
+                "— rolling back to %d replica(s)." % (
+                    tier.name, tier.replicas, e, previous_replicas))
+            driver.scale(handle, previous_replicas)
+            self.env['saas.alert']._notify(
+                'compute_tier_scale_failed',
+                'Compute tier scale failed for %s' % self.subdomain,
+                level='error', detail=str(e))
+            raise UserError(_(
+                "Could not switch '%s' to the %s tier: the instance did "
+                "not come back healthy at the new replica count. Rolled "
+                "back to %d replica(s). Support has been notified."
+            ) % (self.subdomain, tier.name, previous_replicas)) from e
+        self.write({'compute_tier_id': tier.id, 'pending_compute_tier_id': False})
+        self._append_log(
+            "Now on the '%s' tier (%d replica(s))." % (tier.name, tier.replicas))
+        self.message_post(body=_(
+            "Compute tier changed to %s — this instance now runs across "
+            "%d replica(s)."
+        ) % (tier.name, tier.replicas))
+
+    def _on_compute_tier_scale_error(self, exception):
+        """on_error handler for the _do_scale_compute_tier job — the
+        method itself already rolls back and alerts on a HEALTH-CHECK
+        failure; this only fires for something it couldn't (an exception
+        raised before/after that try/except, e.g. the initial ``scale()``
+        call itself failing). Mirrors _on_background_error's alerting
+        without touching ``state`` (tier scaling never changes it)."""
+        self.ensure_one()
+        error_msg = str(exception)
+        self._append_log("COMPUTE TIER SCALE FAILED: %s" % error_msg)
+        self.env['saas.alert']._notify(
+            'compute_tier_scale_failed',
+            'Compute tier scale failed for %s' % self.subdomain,
+            level='error', detail=error_msg)
+
     def _get_billing_product(self):
         """Return the default product.product used on SaaS sale order lines.
 
@@ -1924,6 +2191,33 @@ class SaasInstance(models.Model):
             ),
             'product_uom_qty': months,
             'price_unit': price,
+        })
+
+    def _compute_tier_order_line(self, period, period_label):
+        """Sale-order line tuple for the instance's compute tier, or None.
+
+        Same shape as ``_support_order_line`` — once a priced tier is
+        selected it's simply billed every renewal at its flat monthly
+        price, same cycle as the plan (x12 on a yearly plan). No separate
+        next-invoice-date tracking needed: unlike the daily-backup add-on
+        (which can be turned on mid-cycle independently), a tier change
+        is always synced to now via action_change_compute_tier's own
+        proration, so it's already aligned to the plan's cycle by the
+        time the first renewal rolls around. The default (free) tier
+        adds nothing, so this is behaviour-neutral until a priced tier is
+        picked."""
+        self.ensure_one()
+        tier = self.compute_tier_id
+        if not tier or tier.monthly_price <= 0:
+            return None
+        months = 12 if period == 'yearly' else 1
+        return (0, 0, {
+            'product_id': self._get_compute_tier_product().id,
+            'name': _('Compute Tier: %s (%s) — %s') % (
+                tier.name, period_label, self.name or self.subdomain,
+            ),
+            'product_uom_qty': months,
+            'price_unit': tier.monthly_price,
         })
 
     # ==================================================================
@@ -2259,6 +2553,9 @@ class SaasInstance(models.Model):
             'environment': env_type,
             'parent_id': self.id,
             'state': 'draft',
+            # High Availability defaults to off (the field's own default) —
+            # a Staging/Development environment doesn't need the extra
+            # replica/cost Production might have.
         })
         # Copy the project's repo onto the child, pinned to its branch, and
         # create the linked branch from the project's main branch (Odoo.sh).
@@ -2584,7 +2881,7 @@ class SaasInstance(models.Model):
     def _wallet(self, create=True):
         """This instance's customer wallet (commercial partner)."""
         self.ensure_one()
-        return self.env['saas.wallet']._for_partner(
+        return self.env['saas.wallet'].for_partner(
             self.partner_id, create=create)
 
     @staticmethod
@@ -2698,7 +2995,7 @@ class SaasInstance(models.Model):
 
         plan = self.plan_id
         period = self.billing_period or 'monthly'
-        price = plan._get_price_for_period(period)
+        price = plan.get_price_for_period(period)
         period_label = 'Monthly' if period == 'monthly' else 'Yearly'
         # -- Build order lines (respect partner pricelist when available) --
         pricelist = self.partner_id.property_product_pricelist
@@ -3142,7 +3439,7 @@ class SaasInstance(models.Model):
         (/ROADMAP.md §5 Phase 2). ``self`` is the legacy source instance;
         a new saas.instance is created on ``target_server_id`` and left
         running in parallel once verified — this never modifies ``self``
-        and never flips any traffic. See saas_job._enqueue's lock_key
+        and never flips any traffic. See saas_job.enqueue's lock_key
         convention: callers should enqueue with
         lock_key='instance:%s' % self.id so a migration can't overlap
         another job touching the same source instance.
@@ -3150,6 +3447,139 @@ class SaasInstance(models.Model):
         self.ensure_one()
         target_server = self.env['saas.server'].browse(target_server_id)
         self._data_service().migrate_to_kubernetes(self, target_server)
+
+    def action_cutover_to_kubernetes(self):
+        """Manual, per-tenant trigger: flip this (legacy) instance's live
+        traffic to an already-migrated, verified Kubernetes instance
+        (/ROADMAP.md §5 Phase 2's "cutover mechanism"). Deliberately a
+        manual, one-tenant-at-a-time action — this IS the "canary" at MVP
+        scope; automating it into a scheduled/percentage rollout is a
+        later, separate step once this primitive is trusted.
+        """
+        for rec in self:
+            target = self.env['saas.instance'].search([
+                ('migration_source_instance_id', '=', rec.id),
+                ('migration_state', '=', 'verified'),
+            ], order='id desc', limit=1)
+            if not target:
+                raise UserError(_(
+                    "No verified Kubernetes migration found for '%s'. Run "
+                    "the migration (migrate_to_kubernetes) first."
+                ) % rec.subdomain)
+            if rec.active_instance_id:
+                raise UserError(_(
+                    "'%s' is already cut over to '%s'."
+                ) % (rec.subdomain, rec.active_instance_id.subdomain))
+            rec._append_log(
+                "Cutover to Kubernetes instance '%s' queued..." % target.subdomain)
+            self.env['saas.job'].enqueue(
+                rec, '_do_cutover_to_kubernetes', args=(target.id,),
+                channel='deploy', lock_key='instance:%s' % rec.id,
+                max_attempts=1, idempotent=False,
+                on_error='_on_background_error', on_error_args=('running',))
+
+    def _wait_until_domain_healthy(self, ssh, timeout=180):
+        """Post-flip boot check: probe the tenant's REAL public domain
+        THROUGH the just-reloaded nginx (not the backend directly), from
+        the proxy host itself — pins DNS to localhost via ``--resolve`` so
+        the check exercises the exact vhost (SNI/cert/Host/location
+        matching) a real client would hit, without depending on public DNS
+        already pointing here. Mirrors ``_wait_until_healthy``'s "actively
+        probe, don't just check the process exists" philosophy, one layer
+        up the stack (nginx, not the container).
+        """
+        self.ensure_one()
+        domain = self.name
+        deadline = time.monotonic() + timeout
+        cmd = (
+            "curl -sf -o /dev/null --max-time 5 -k "
+            "--resolve %s:443:127.0.0.1 https://%s/web/login"
+            % (shlex.quote(domain), shlex.quote(domain))
+        )
+        while time.monotonic() < deadline:
+            rc, _out, _err = ssh.execute(cmd)
+            if rc == 0:
+                return True
+            time.sleep(5)
+        return False
+
+    def _do_cutover_to_kubernetes(self, target_id):
+        """saas.job entrypoint: flip THIS (legacy) instance's live traffic
+        to an already-migrated, verified Kubernetes instance ``target_id``.
+
+        Health-gated and reversible: re-checks the target is actually
+        healthy right now (``migration_state='verified'`` could be stale),
+        flips this instance's nginx vhost to the target's Kubernetes
+        ingress (with a Host-header override — the target CR routes on its
+        own internal hostname, not this domain, see
+        ``KubernetesDriver.endpoint()``), then re-probes the real domain
+        THROUGH nginx before committing. On any failure, nginx is re-flipped
+        to this instance's own original backend and nothing is left
+        changed.
+
+        Deliberately never renames or stops ``self`` or its own container —
+        ``self`` stays the billing/domain identity and a live rollback
+        target forever; reclaiming its compute is Phase 6 (legacy
+        decommission)'s job, out of scope here. On success, only
+        ``self.active_instance_id`` is set, pointing at ``target``.
+        """
+        self.ensure_one()
+        target = self.env['saas.instance'].browse(target_id)
+        if (target.migration_state != 'verified'
+                or target.migration_source_instance_id != self):
+            raise UserError(_(
+                "'%s' is not a verified Kubernetes migration target for "
+                "'%s'.") % (target.subdomain, self.subdomain))
+
+        driver = target._compute_driver()
+        handle = target._compute_handle()
+        health = driver.health(handle)
+        if not health.running:
+            raise UserError(_(
+                "Refusing to cut over '%s': target '%s' is not currently "
+                "healthy (%s)."
+            ) % (self.subdomain, target.subdomain, health.status))
+
+        backend_ip, http_port = driver.endpoint(handle)
+        if not backend_ip:
+            raise UserError(_(
+                "Refusing to cut over '%s': target server's region has no "
+                "ingress_host configured (Region > Kubeconfig tab)."
+            ) % self.subdomain)
+
+        proxy = self.domain_id.proxy_server_id
+        proxy_server = proxy if proxy and proxy != self.docker_server_id else self.docker_server_id
+        original_backend_ip = (
+            self._get_proxy_backend_ip()
+            if proxy and proxy != self.docker_server_id else None)
+
+        self._append_log(
+            "Cutting over to Kubernetes instance '%s' (%s:%s)..."
+            % (target.subdomain, backend_ip, http_port))
+        with proxy_server._get_ssh_connection() as ssh:
+            self._refresh_nginx_config(
+                ssh, backend_ip=backend_ip, http_port=http_port,
+                upstream_host=target.name)
+
+            ok = self._wait_until_domain_healthy(ssh)
+            if not ok:
+                self._append_log(
+                    "Post-cutover health check failed — rolling back to "
+                    "the previous backend.")
+                self._refresh_nginx_config(ssh, backend_ip=original_backend_ip)
+                raise UserError(_(
+                    "Cutover to '%s' failed its post-flip health check; "
+                    "traffic has been rolled back to '%s'."
+                ) % (target.subdomain, self.subdomain))
+
+        self.active_instance_id = target
+        self._append_log(
+            "Cutover complete — '%s' now served by Kubernetes instance "
+            "'%s'." % (self.subdomain, target.subdomain))
+        self.env['saas.audit.log']._saas_audit(
+            'instance_cutover_k8s', model='saas.instance', res_id=self.id,
+            res_name=self.subdomain,
+            detail='Cut over to Kubernetes instance %s' % target.subdomain)
 
     def _get_db_host(self):
         """Return the hostname/IP for odoo.conf (used inside the container).
@@ -3698,6 +4128,27 @@ class SaasInstance(models.Model):
             # instances have no region -> no constraint (today's behaviour).
             region = self.region_id
 
+            # Which backend a NEW instance provisions on — a platform-level
+            # choice (Settings > SaaS > Compute Backend), independent of
+            # the customer-facing compute tier (replica count within
+            # Kubernetes, not a backend choice — see
+            # action_change_compute_tier). Kubernetes is the default;
+            # Docker Compose is kept only as a simpler alternative for an
+            # operator without a cluster.
+            #
+            # If literally no server anywhere runs the preferred backend
+            # (e.g. an operator who has only ever set up Docker Compose
+            # hosts, or a test fixture with no compute_driver='kubernetes'
+            # server), don't strand every deploy over a preference — fall
+            # back to driver-blind allocation, exactly like before this
+            # setting existed.
+            desired_driver = self.env['ir.config_parameter'].sudo().get_param(
+                'saas_master.default_compute_driver', 'kubernetes')
+            if desired_driver and not Server.search_count(
+                    [('is_docker_host', '=', True),
+                     ('compute_driver', '=', desired_driver)]):
+                desired_driver = None
+
             # Serialize allocation per region: without this, two concurrent
             # deploys both read the same least-loaded host (capacity is only
             # committed once an instance flips to provisioning/running) and both
@@ -3719,13 +4170,15 @@ class SaasInstance(models.Model):
             if mode == 'strict':
                 self.docker_server_id = Server._allocate_docker_server(
                     plan=plan, raise_on_failure=True, region=region,
+                    compute_driver=desired_driver,
                 )
                 self._append_log(
                     "Allocated Docker server (strict): %s"
                     % self.docker_server_id.name
                 )
             else:
-                server = Server._allocate_docker_server(plan=plan, region=region)
+                server = Server._allocate_docker_server(
+                    plan=plan, region=region, compute_driver=desired_driver)
                 if server:
                     self.docker_server_id = server
                     self._append_log(
@@ -3733,7 +4186,8 @@ class SaasInstance(models.Model):
                     )
                 else:
                     # Level 2 — Overcommit fallback
-                    server = Server._allocate_overcommit_server(plan=plan, region=region)
+                    server = Server._allocate_overcommit_server(
+                        plan=plan, region=region, compute_driver=desired_driver)
                     if server:
                         self.docker_server_id = server
                         self.is_overcommitted = True
@@ -3753,7 +4207,10 @@ class SaasInstance(models.Model):
                         return False
 
         # -- DB server allocation --
-        if not self.db_server_id and self.docker_server_id:
+        # Not for Kubernetes: its database lives inside the cluster
+        # (CloudNativePG), not on a separate saas.server db_server_id.
+        if (not self.db_server_id and self.docker_server_id
+                and self.docker_server_id.compute_driver != 'kubernetes'):
             self._allocate_db_server()
 
         return True
@@ -3834,6 +4291,12 @@ class SaasInstance(models.Model):
         self.ensure_one()
         if self.xmlrpc_port and self.longpolling_port:
             return
+        if self.docker_server_id.compute_driver == 'kubernetes':
+            # No per-tenant host-port concept in Kubernetes — one shared
+            # ingress port serves every tenant on that "server" (see
+            # KubernetesDriver.endpoint() / saas.region.ingress_port).
+            # Assigning one anyway would just be unused metadata.
+            return
         server_id = self.docker_server_id.id
         if not server_id:
             raise ValidationError(_(
@@ -3887,15 +4350,21 @@ class SaasInstance(models.Model):
         )
 
     def _validate_deploy_fields(self):
-        """Validate all required fields before deployment."""
+        """Validate all required fields before deployment.
+
+        A ``kubernetes``-backed instance skips every SSH/Docker-host/
+        Database-server check below: it authenticates via the region's
+        kubeconfig (``KubernetesDriver``), not SSH, and its database lives
+        inside the cluster (CloudNativePG), not on a separate
+        ``db_server_id`` — requiring either would make every Kubernetes
+        deploy fail validation before it even starts.
+        """
         self.ensure_one()
         errors = []
         if not self.subdomain:
             errors.append(_("Subdomain is required."))
         if not self.docker_server_id:
             errors.append(_("Docker Server is required."))
-        if not self.db_server_id:
-            errors.append(_("Database Server is required."))
         if not self.odoo_version_id:
             errors.append(_("Odoo Version is required."))
         if not self.partner_id:
@@ -3905,6 +4374,12 @@ class SaasInstance(models.Model):
         if not self.odoo_version_id or not self.odoo_version_id.docker_image_tag:
             errors.append(_("Docker image tag is not set on the selected Odoo version."))
         server = self.docker_server_id
+        if server and server.compute_driver == 'kubernetes':
+            if errors:
+                raise ValidationError('\n'.join(str(e) for e in errors))
+            return
+        if not self.db_server_id:
+            errors.append(_("Database Server is required."))
         if server and (not server.ssh_key_pair_id or not server.ssh_key_pair_id._private_key_b64()):
             errors.append(_("Docker server SSH key pair with private key is required."))
         if server:
@@ -5280,7 +5755,7 @@ class SaasInstance(models.Model):
             # No secret args. (Capacity-waiting still flows through
             # pending_provision + _cron_retry_pending_provision; per-host death
             # is moot — _allocate_servers keeps the same host once assigned.)
-            self.env['saas.job']._enqueue(
+            self.env['saas.job'].enqueue(
                 rec, '_do_deploy', channel='deploy',
                 lock_key='instance:%s' % rec.id,
                 max_attempts=max(1, rec.max_deploy_retries + 1), idempotent=True,
@@ -5334,6 +5809,8 @@ class SaasInstance(models.Model):
     def _do_deploy_locked(self):
         """Internal deploy logic for a single record."""
         self.ensure_one()
+        if self.docker_server_id.compute_driver == 'kubernetes':
+            return self._do_deploy_locked_kubernetes()
 
         server = self.docker_server_id
         instance_path = self._get_instance_path()
@@ -5562,6 +6039,85 @@ class SaasInstance(models.Model):
         if self.is_trial:
             self._sync_partner_trial()
 
+    def _do_deploy_locked_kubernetes(self):
+        """Kubernetes-backend counterpart of ``_do_deploy_locked``'s
+        ssh_docker path above — provisioning a BRAND-NEW instance directly
+        on Kubernetes (contrast with ``DataService.migrate_to_kubernetes``,
+        which moves an EXISTING ssh_docker tenant's data across; nothing
+        here touches another instance).
+
+        None of the ssh_docker path's steps apply: no SSH/mkdir/chown, no
+        ``_provision_postgresql``, no ``_render_and_write_configs``, no
+        manual ``-i base`` init — ``compute/operator``'s
+        ``reconcileInitJob`` already runs that automatically and gates the
+        web Deployment on it succeeding
+        (``internal/controller/odooinstance_controller.go``,
+        ``internal/resources/init_job.go``), so a bare ``create()`` with no
+        ``restore`` key is a complete, self-initializing fresh tenant.
+
+        Duplicates the small state-transition tail of ``_do_deploy_locked``
+        (state='running' etc.) rather than falling through to it, since
+        this whole path is an early return — see that method.
+        """
+        self.ensure_one()
+        server = self.docker_server_id
+        region = server.region_id
+        if not (region and region.ingress_host):
+            raise UserError(_(
+                "Cannot deploy '%s' on Kubernetes: server '%s's region "
+                "has no ingress_host configured."
+            ) % (self.subdomain, server.name))
+
+        self._append_log("Creating Kubernetes instance...")
+        from ..drivers.base import ComputeSpec
+        replicas = self.compute_tier_id.replicas or 1
+        spec = ComputeSpec(
+            container_name=self._get_container_name(),
+            image=self.odoo_version_id._get_docker_image(),
+            instance_path=self._get_instance_path(),
+            http_port=0,
+            longpolling_port=0,
+            db_name=self.subdomain,
+            db_host='',
+            env={
+                'domain': self.name,
+                'odoo_version': self.odoo_version_id.name,
+                'replicas': replicas,
+            },
+        )
+        driver = self._compute_driver()
+        handle = driver.create(spec)
+        self._append_log("Waiting for the instance to become healthy...")
+        self._data_service()._wait_until_healthy(driver, handle, timeout=600)
+
+        backend_ip, http_port = driver.endpoint(handle)
+        if not backend_ip:
+            raise UserError(_(
+                "Cannot configure Nginx for '%s': region '%s' has no "
+                "ingress_host configured."
+            ) % (self.subdomain, region.name))
+        self._append_log("Configuring Nginx reverse proxy with SSL...")
+        proxy_server = self.domain_id.proxy_server_id or server
+        with proxy_server._get_ssh_connection() as ssh:
+            self._provision_nginx(
+                ssh, backend_ip=backend_ip,
+                http_port=http_port, longpolling_port=http_port)
+        self._append_log("Nginx configured successfully.")
+
+        self.state = 'running'
+        self.deploy_retry_count = 0
+        self.last_error = False
+        self.last_error_date = False
+        self.pending_operation = False
+        self.pending_provision_since = False
+        self.pending_provision_attempts = 0
+        self._append_log("Deployment completed successfully. State: running.")
+        self._safe_refresh_usage()
+        self._record_build('initial', 'success', commit_message='Deployment')
+        self._send_notification('saas_core.mail_template_saas_deployed')
+        if self.is_trial:
+            self._sync_partner_trial()
+
     # ========== Lifecycle Actions ==========
 
     def action_stop(self):
@@ -5616,7 +6172,7 @@ class SaasInstance(models.Model):
             # Durable queue (ARCH-004): restart is recoverable + idempotent, so a
             # worker that dies mid-restart is re-run by the reaper (completing the
             # op) rather than left for recover-stuck to merely revert.
-            self.env['saas.job']._enqueue(
+            self.env['saas.job'].enqueue(
                 rec, '_do_restart', channel='deploy',
                 lock_key='instance:%s' % rec.id, idempotent=True, max_attempts=2,
                 on_error='_on_background_error', on_error_args=(prev_state,))
@@ -5723,7 +6279,7 @@ class SaasInstance(models.Model):
                 'instance_redeploy', model='saas.instance', res_id=rec.id,
                 res_name=rec.subdomain, detail='Redeployment queued (was %s)' % prev_state)
             # Durable queue (ARCH-004): redeploy is recoverable + idempotent.
-            self.env['saas.job']._enqueue(
+            self.env['saas.job'].enqueue(
                 rec, '_do_redeploy', channel='deploy',
                 lock_key='instance:%s' % rec.id, idempotent=True, max_attempts=2,
                 on_error='_on_background_error', on_error_args=(prev_state,))
@@ -6258,7 +6814,7 @@ class SaasInstance(models.Model):
             # Durable queue (ARCH-004 Phase 3). Delete is non-idempotent, so the
             # job-reaper won't auto-retry it; _on_background_error restores the
             # prior state on failure.
-            self.env['saas.job']._enqueue(
+            self.env['saas.job'].enqueue(
                 rec, '_do_delete_instance', channel='deploy',
                 lock_key='instance:%s' % rec.id, max_attempts=1,
                 on_error='_on_background_error', on_error_args=(prev_state,))
@@ -6579,6 +7135,13 @@ class SaasInstance(models.Model):
             'daily_backup_pending_invoice_id': False,
             'daily_backup_next_invoice_date': False,
             'daily_backup_last_invoice_date': False,
+            # Compute tier is reset to the default (free) tier the same
+            # way — a cancelled instance shouldn't show as being on a
+            # paid tier; the customer re-selects (and pays for) one again
+            # after reactivating.
+            'compute_tier_id': self.env['saas.compute.tier']._get_default().id,
+            'pending_compute_tier_id': False,
+            'compute_tier_pending_invoice_id': False,
         })
         if retained_backup:
             self._append_log(
@@ -6791,7 +7354,7 @@ class SaasInstance(models.Model):
         self._append_log("Backup queued. Running in background...")
         # Durable queue (ARCH-004 Phase 1): starts promptly via the immediate
         # worker, but survives a crash (reaper) and records failures.
-        self.env['saas.job']._enqueue(
+        self.env['saas.job'].enqueue(
             backup, '_run_portal_backup',
             channel='backup', lock_key='instance:%s' % self.id,
             max_attempts=1,
@@ -8246,7 +8809,8 @@ class SaasInstance(models.Model):
             return 'nginx_old_odoo_versions.jinja'
         return 'nginx_new_odoo_versions.jinja'
 
-    def _provision_nginx(self, ssh, backend_ip=None):
+    def _provision_nginx(self, ssh, backend_ip=None, http_port=None,
+                         longpolling_port=None):
         """Obtain SSL certificate via Certbot and deploy Nginx config.
 
         Args:
@@ -8255,6 +8819,15 @@ class SaasInstance(models.Model):
             backend_ip: IP address of the Docker server. When None (single-server
                         setup), the Nginx upstream uses 127.0.0.1. When set
                         (proxy server setup), it uses the Docker server's IP.
+            http_port/longpolling_port: override the instance's stored ports
+                        — same optional override ``_refresh_nginx_config``
+                        already has, needed here too for a fresh Kubernetes
+                        deploy (see ``_do_deploy_locked_kubernetes``): there
+                        is no per-tenant host-port to store on the record,
+                        so the region's shared ingress port is passed
+                        explicitly instead of falling back to
+                        ``self.xmlrpc_port`` (which stays unset for a
+                        Kubernetes-backed instance).
         """
         self.ensure_one()
         domain = self.name  # e.g. acme.odoo.example.com
@@ -8292,8 +8865,10 @@ class SaasInstance(models.Model):
         nginx_context = {
             'subdomain': self.subdomain,
             'subdomainchat': '%s-chat' % self.subdomain,
-            'http_port': self.xmlrpc_port,
-            'longpolling_port': self.longpolling_port,
+            'http_port': http_port if http_port is not None else self.xmlrpc_port,
+            'longpolling_port': (
+                longpolling_port if longpolling_port is not None
+                else self.longpolling_port),
             'domain': domain,
         }
         if backend_ip:
@@ -8428,7 +9003,8 @@ class SaasInstance(models.Model):
                     pass
 
     def _refresh_nginx_config(self, ssh, backend_ip=None,
-                             http_port=None, longpolling_port=None):
+                             http_port=None, longpolling_port=None,
+                             upstream_host=None):
         """Re-render the nginx vhost and reload — no certbot step.
 
         Used by the restore flow to apply any topology / port / plan
@@ -8439,6 +9015,13 @@ class SaasInstance(models.Model):
         ``http_port``/``longpolling_port`` override the instance's stored
         ports — the blue/green deploy uses this to flip traffic to a
         transient green container without mutating the record.
+
+        ``upstream_host``, when set, makes nginx send that value as the
+        upstream ``Host`` header instead of passing the client's original
+        Host through — needed when ``backend_ip`` points at a Kubernetes
+        ingress that routes by Host header on its own (internal) hostname,
+        not this vhost's public domain (see the Kubernetes cutover flip,
+        ``_do_cutover_to_kubernetes``).
         """
         self.ensure_one()
         domain = self.name
@@ -8454,6 +9037,8 @@ class SaasInstance(models.Model):
         }
         if backend_ip:
             nginx_context['backend_ip'] = backend_ip
+        if upstream_host:
+            nginx_context['upstream_host'] = upstream_host
         nginx_content = self._render_template(template_name, nginx_context)
         # Atomic, per-proxy-serialised install + reload (SCALE-001/003).
         self._nginx_apply_vhost(ssh, nginx_content)
@@ -9145,6 +9730,11 @@ class SaasInstance(models.Model):
             self.daily_backup_last_invoice_date = today
             self.daily_backup_next_invoice_date = self.next_invoice_date
 
+        # The compute tier needs no equivalent anchoring — see
+        # _compute_tier_order_line's docstring: it's always billed on the
+        # SAME cycle as the plan, no independent next-invoice-date to
+        # align.
+
     # ============================================================
     # Saved card + auto-renewal
     # ============================================================
@@ -9173,7 +9763,7 @@ class SaasInstance(models.Model):
         )[:1]
         if not tx:
             return
-        method = self.env['saas.payment.gateway']._save_method_from_transaction(
+        method = self.env['saas.payment.gateway'].save_method_from_transaction(
             self.partner_id, tx)
         if not method:
             return
@@ -9224,7 +9814,7 @@ class SaasInstance(models.Model):
                 "method. Please add one from Billing settings." % invoice.name)
             return False
         # Delegate the actual charge to the provider-agnostic gateway.
-        state, message = self.env['saas.payment.gateway']._charge(method, invoice)
+        state, message = self.env['saas.payment.gateway'].charge(method, invoice)
         self._record_payment_attempt(invoice, state, message)
         if state == 'done':
             self._append_log(
@@ -9258,7 +9848,7 @@ class SaasInstance(models.Model):
         method = self.saas_payment_method_id
         if method and method.active and method.token_id and method.token_id.active:
             return method
-        return self.env['saas.payment.method']._default_for_partner(
+        return self.env['saas.payment.method'].default_for_partner(
             self.partner_id)
 
     def _record_payment_attempt(self, invoice, state, message=''):
@@ -9658,7 +10248,7 @@ class SaasInstance(models.Model):
             return
 
         period = self.billing_period or 'monthly'
-        price = plan._get_price_for_period(period)
+        price = plan.get_price_for_period(period)
         period_label = 'Monthly' if period == 'monthly' else 'Yearly'
 
         pricelist = self.partner_id.property_product_pricelist
@@ -9698,6 +10288,13 @@ class SaasInstance(models.Model):
                 # price 0 / backups off between the check and here — don't
                 # advance the backup date for a line we didn't add.
                 merge_snapshot = False
+
+        # Compute tier: same simple always-included shape as the support
+        # plan above — no merge/alignment tracking needed (see
+        # _compute_tier_order_line's docstring).
+        tier_line = self._compute_tier_order_line(period, period_label)
+        if tier_line:
+            order_lines.append(tier_line)
 
         # v47: storage is billed ONLY for blocks the customer deliberately
         # PURCHASED (extra_storage_blocks) — never an automatic usage-based
@@ -10000,7 +10597,7 @@ class SaasInstance(models.Model):
         if billing_period == 'yearly' and not new_plan.yearly_price:
             billing_period = 'monthly'
 
-        price = new_plan._get_price_for_period(billing_period)
+        price = new_plan.get_price_for_period(billing_period)
         period_label = 'Monthly' if billing_period == 'monthly' else 'Yearly'
 
         # Store the chosen plan + period — applied on payment. v47: no promo.
@@ -10213,9 +10810,9 @@ class SaasInstance(models.Model):
                 ' (%s)' % self.next_invoice_date.strftime('%B %d, %Y')
                 if self.next_invoice_date else ''
             ))
-        new_price = new_plan._get_price_for_period(billing_period)
+        new_price = new_plan.get_price_for_period(billing_period)
         old_period = self.billing_period or 'monthly'
-        old_price = self.plan_id._get_price_for_period(old_period) if self.plan_id else 0
+        old_price = self.plan_id.get_price_for_period(old_period) if self.plan_id else 0
 
         # Monthly → Yearly on the same plan is always an immediate upgrade
         # (customer commits to paying more upfront, with remaining days credited).
@@ -11344,7 +11941,7 @@ class SaasInstance(models.Model):
             'operation': 'upgrade',
             'module_name': module_norm,
         })
-        self.env['saas.job']._enqueue(
+        self.env['saas.job'].enqueue(
             op, '_run_upgrade', channel='dbop',
             lock_key='instance:%s' % self.id, idempotent=False, max_attempts=1)
         return op
@@ -11505,7 +12102,7 @@ class SaasInstance(models.Model):
             'operation': 'upgrade',
             'module_name': ' '.join(mod_list),
         })
-        self.env['saas.job']._enqueue(
+        self.env['saas.job'].enqueue(
             op, '_run_upgrade_live', channel='dbop',
             lock_key='instance:%s' % self.id, idempotent=False, max_attempts=1)
         return op
@@ -11604,7 +12201,7 @@ class SaasInstance(models.Model):
             'db_name': backup.db_name,
             'operation': 'restore',
         })
-        self.env['saas.job']._enqueue(
+        self.env['saas.job'].enqueue(
             op, '_run_restore', args=(backup.id,), channel='dbop',
             lock_key='instance:%s' % self.id, idempotent=False, max_attempts=1)
         return op
@@ -11848,7 +12445,7 @@ class SaasInstance(models.Model):
             'format': fmt,
         })
         # Durable queue (ARCH-004 Phase 1).
-        self.env['saas.job']._enqueue(
+        self.env['saas.job'].enqueue(
             backup, '_run_portal_backup',
             channel='backup', lock_key='instance:%s' % self.id,
             max_attempts=1,
@@ -12277,7 +12874,7 @@ class SaasInstance(models.Model):
             'source_db': source_full,
             'operation': 'duplicate',
         })
-        self.env['saas.job']._enqueue(
+        self.env['saas.job'].enqueue(
             op, '_run_duplicate', channel='dbop',
             lock_key='instance:%s' % self.id, idempotent=False, max_attempts=1)
         return op
@@ -12305,7 +12902,7 @@ class SaasInstance(models.Model):
             'db_name': full_name,
             'operation': 'drop',
         })
-        self.env['saas.job']._enqueue(
+        self.env['saas.job'].enqueue(
             op, '_run_drop', channel='dbop',
             lock_key='instance:%s' % self.id, idempotent=False, max_attempts=1)
         return op
@@ -12632,6 +13229,13 @@ class SaasInstance(models.Model):
             'daily_backup_pending_invoice_id': False,
             'daily_backup_next_invoice_date': False,
             'daily_backup_last_invoice_date': False,
+            # Compute tier is reset the same way — a fresh commitment
+            # re-provisions at the default (free) tier; the customer
+            # re-selects (and pays for) a higher tier again if they still
+            # want one.
+            'compute_tier_id': self.env['saas.compute.tier']._get_default().id,
+            'pending_compute_tier_id': False,
+            'compute_tier_pending_invoice_id': False,
             # Saved card + auto-renew are tied to the previous
             # subscription. Reactivation is a fresh commitment; force
             # the customer to opt in again so the new subscription

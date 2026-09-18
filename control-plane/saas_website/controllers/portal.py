@@ -557,13 +557,13 @@ class SaasPortal(CustomerPortal):
         proration_credit = 0.0
         proration_remaining_days = 0
         original_plan_name = ''
-        target_full_price = target_plan._get_price_for_period(
+        target_full_price = target_plan.get_price_for_period(
             instance_sudo.pending_billing_period or instance_sudo.billing_period or 'monthly'
         ) if target_plan else 0
         if instance_sudo.plan_id and instance_sudo.pending_plan_id:
             # This is an upgrade — calculate what was credited
             old_period = instance_sudo.billing_period or 'monthly'
-            old_price = instance_sudo.plan_id._get_price_for_period(old_period)
+            old_price = instance_sudo.plan_id.get_price_for_period(old_period)
             original_plan_name = instance_sudo.plan_id.name
             # Use the authoritative backend proration so the displayed quote
             # matches the invoice the customer is actually charged
@@ -639,7 +639,7 @@ class SaasPortal(CustomerPortal):
         # Proration info for display — via the authoritative backend helper so
         # the quote matches the invoice (BILL-V2-001, no "-2").
         old_period = instance_sudo.billing_period or 'monthly'
-        old_price = current_plan._get_price_for_period(old_period) if current_plan else 0
+        old_price = current_plan.get_price_for_period(old_period) if current_plan else 0
         remaining_value, remaining_days, _td = (
             instance_sudo._proration_credit(old_price) if current_plan
             else (0.0, 0, 0))
@@ -1119,6 +1119,98 @@ class SaasPortal(CustomerPortal):
         })
         return request.render(
             'saas_website.portal_daily_backup_checkout', values,
+        )
+
+    @http.route(
+        '/my/instances/<int:instance_id>/compute-tier/checkout',
+        type='http', auth='user', website=True,
+    )
+    def portal_compute_tier_checkout(self, instance_id,
+                                     access_token=None, **kw):
+        """Custom checkout for a compute-tier upgrade — same shape as
+        ``portal_daily_backup_checkout`` above. On successful payment the
+        ``account.move`` write hook enqueues the actual scale job, which
+        sets ``compute_tier_id`` only once the scale is confirmed
+        healthy."""
+        try:
+            instance = self._document_check_access(
+                'saas.instance', instance_id, access_token=access_token,
+            )
+        except (AccessError, MissingError):
+            return request.redirect('/my/instances')
+
+        invoice = instance.compute_tier_pending_invoice_id
+        target_tier = instance.pending_compute_tier_id
+        if not invoice or invoice.payment_state in ('paid', 'in_payment') or not target_tier:
+            return request.redirect(
+                '/my/instances/%d?notice=%s'
+                % (instance_id, url_quote(_(
+                    "No pending payment. If you just paid, your compute "
+                    "tier should now be changing."
+                )))
+            )
+
+        partner_sudo = request.env.user.partner_id.sudo()
+        invoice_company = invoice.company_id or request.env.company
+        landing_route = (
+            '/my/instances/%d?notice=%s'
+            % (instance_id, url_quote(_(
+                "Payment received. Scaling to the %s tier — this can take "
+                "a few minutes."
+            ) % target_tier.name))
+        )
+
+        availability_report = {}
+        providers_sudo = request.env['payment.provider'].sudo()._get_compatible_providers(
+            invoice_company.id,
+            partner_sudo.id,
+            invoice.amount_residual,
+            currency_id=invoice.currency_id.id,
+            report=availability_report,
+        )
+        payment_methods_sudo = request.env['payment.method'].sudo()._get_compatible_payment_methods(
+            providers_sudo.ids,
+            partner_sudo.id,
+            currency_id=invoice.currency_id.id,
+            report=availability_report,
+        )
+        tokens_sudo = request.env['payment.token'].sudo().browse()
+        invoice_access_token = invoice._portal_ensure_token()
+
+        # No proration on activation, same reasoning as daily backups: a
+        # flat monthly commitment, full month charged regardless of the
+        # day enabled; the renewal cron bills monthly from there.
+        monthly_price = target_tier.monthly_price
+
+        values = self._prepare_portal_layout_values()
+        values.update({
+            'instance': instance,
+            'invoice': invoice,
+            'tier': target_tier,
+            'monthly_price': monthly_price,
+            'period': 'monthly',
+            'page_name': 'saas_compute_tier_checkout',
+            'payment_action_id': request.env.ref('payment.action_payment_provider').id,
+            'providers_sudo': providers_sudo,
+            'payment_methods_sudo': payment_methods_sudo,
+            'tokens_sudo': tokens_sudo,
+            'show_tokenize_input_mapping': {p.id: False for p in providers_sudo},
+            'amount': invoice.amount_residual,
+            'currency': invoice.currency_id,
+            'partner_id': partner_sudo.id,
+            'access_token': invoice_access_token,
+            'transaction_route': '/invoice/transaction/%d' % invoice.id,
+            'landing_route': landing_route,
+            'company_mismatch': not PaymentPortal._can_partner_pay_in_company(
+                partner_sudo, invoice_company,
+            ),
+            'expected_company': invoice_company,
+            'invoice_id': invoice.id,
+            'transaction_type': 'online_direct',
+            'availability_report': availability_report,
+        })
+        return request.render(
+            'saas_website.portal_compute_tier_checkout', values,
         )
 
     # ==================== Backups: list + download ====================

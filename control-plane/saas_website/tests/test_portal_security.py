@@ -73,7 +73,7 @@ class TestPortalInstanceSecurity(_PortalTestBase):
     self-service actions (start/stop/restart).
 
     Same standing rule as saas_core's job-queue tests: action_restart()
-    and action_portal_start() end in saas.job._enqueue(...), and
+    and action_portal_start() end in saas.job.enqueue(...), and
     action_stop()/action_portal_stop() end in run_in_background() — neither
     may be allowed to run for real inside a live HttpCase request, so their
     success paths patch those functions directly (never _spawn_worker),
@@ -142,7 +142,7 @@ class TestPortalInstanceSecurity(_PortalTestBase):
         self.assertIn('overdue invoices', (result or {}).get('error', ''))
 
     # ---- Self-service lifecycle actions: success paths ---------------------
-    # action_restart()/action_portal_start() end in saas.job._enqueue(...);
+    # action_restart()/action_portal_start() end in saas.job.enqueue(...);
     # action_stop() ends in run_in_background(). Patch those directly so no
     # real job row or background thread is ever created under HttpCase.
 
@@ -151,7 +151,7 @@ class TestPortalInstanceSecurity(_PortalTestBase):
             side_effect=lambda *a, **kw: self.env['saas.job'].browse())
         self.authenticate('portalowner@example.com', 'ownerpass123')
         with patch.object(type(self.instance), '_ensure_can_ssh', lambda self: None), \
-                patch.object(type(self.env['saas.job']), '_enqueue', mock_enqueue):
+                patch.object(type(self.env['saas.job']), 'enqueue', mock_enqueue):
             result = self._json_call('/my/instances/%d/restart' % self.instance.id)
         self.assertTrue((result or {}).get('success'))
         mock_enqueue.assert_called_once()
@@ -177,7 +177,7 @@ class TestPortalDatabaseOps(_PortalTestBase):
     """B.1.5 continued: /my/instances/<id>/databases/* form-post routes.
 
     These are thin wrappers: real create/duplicate/drop/upgrade success
-    paths (SSH, saas.job._enqueue vs. run_in_background) are already
+    paths (SSH, saas.job.enqueue vs. run_in_background) are already
     covered at the model layer in test_job_queue.py. Here the model
     methods themselves are mocked out entirely so these tests exercise
     only what's actually new at this layer: the ownership boundary, the
@@ -972,6 +972,107 @@ class TestPortalBackups(_PortalTestBase):
                 '/my/instances/%d/backup/%d/restore'
                 % (self.instance.id, backup.id))
         self.assertIn('error=', resp.headers['Location'])
+
+
+@tagged('post_install', '-at_install')
+class TestPortalComputeTiers(_PortalTestBase):
+    """/my/instances/<id>/compute-tier/{change (JSON),checkout (GET)} —
+    same shape as TestPortalBackups' daily-backup coverage would be, had
+    one existed (see saas_core's action_change_compute_tier, which this
+    JSON route just calls)."""
+
+    def _k8s_server(self):
+        region = self.env['saas.region'].sudo().create(
+            {'name': 'Portal Tier Region', 'code': 'portal-tier-region'})
+        return self.env['saas.server'].sudo().create(
+            {'name': 'portal-tier-k8s', 'compute_driver': 'kubernetes',
+             'region_id': region.id})
+
+    def _ha_tier(self):
+        return self.env['saas.compute.tier'].sudo().create(
+            {'name': 'HA', 'code': 'ha-portaltest', 'replicas': 2,
+             'monthly_price': 15.0})
+
+    def test_change_denies_non_owner(self):
+        self.instance.sudo().docker_server_id = self._k8s_server()
+        tier = self._ha_tier()
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        result = self._json_call(
+            '/saas/api/v1/instances/%d/compute-tier/change'
+            % self.instance.id, {'tier_id': tier.id})
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['code'], 'not_found')
+
+    def test_change_rejects_ssh_docker_backend(self):
+        tier = self._ha_tier()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        result = self._json_call(
+            '/saas/api/v1/instances/%d/compute-tier/change'
+            % self.instance.id, {'tier_id': tier.id})
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['code'], 'change_failed')
+        self.assertIn('Kubernetes', result['error'])
+        self.assertFalse(self.instance.compute_tier_pending_invoice_id)
+
+    def test_change_rejects_instance_not_running(self):
+        tier = self._ha_tier()
+        self.instance.sudo().write({
+            'docker_server_id': self._k8s_server().id, 'state': 'stopped'})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        result = self._json_call(
+            '/saas/api/v1/instances/%d/compute-tier/change'
+            % self.instance.id, {'tier_id': tier.id})
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['code'], 'change_failed')
+
+    def test_change_to_priced_tier_creates_invoice_and_returns_checkout_url(self):
+        self.instance.sudo().docker_server_id = self._k8s_server()
+        tier = self._ha_tier()
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        result = self._json_call(
+            '/saas/api/v1/instances/%d/compute-tier/change'
+            % self.instance.id, {'tier_id': tier.id})
+        self.assertTrue(result['ok'])
+        self.assertEqual(
+            result['data'].get('checkout_url'),
+            '/my/instances/%d/compute-tier/checkout' % self.instance.id)
+        self.assertTrue(self.instance.compute_tier_pending_invoice_id)
+
+    def test_change_to_free_tier_applies_immediately(self):
+        """A free (or downgrade) tier change is applied via a background
+        job with no checkout — see action_change_compute_tier."""
+        self.instance.sudo().docker_server_id = self._k8s_server()
+        free_tier = self.env['saas.compute.tier'].sudo().create(
+            {'name': 'Free2', 'code': 'free2-portaltest', 'replicas': 2,
+             'monthly_price': 0.0})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        with patch.object(type(self.env['saas.job']), '_spawn_worker',
+                          lambda self: None):
+            result = self._json_call(
+                '/saas/api/v1/instances/%d/compute-tier/change'
+                % self.instance.id, {'tier_id': free_tier.id})
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['data'].get('applied'))
+        self.assertFalse(self.instance.compute_tier_pending_invoice_id)
+
+    def test_checkout_page_renders_with_pending_invoice(self):
+        self.instance.sudo().docker_server_id = self._k8s_server()
+        tier = self._ha_tier()
+        self.instance.sudo().action_change_compute_tier(tier.id)
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self.url_open(
+            '/my/instances/%d/compute-tier/checkout' % self.instance.id)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Upgrade to the', resp.content)
+
+    def test_checkout_page_redirects_when_no_pending_invoice(self):
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self.url_open(
+            '/my/instances/%d/compute-tier/checkout' % self.instance.id,
+            allow_redirects=False)
+        self.assertIn(resp.status_code, (301, 302, 303))
+        self.assertIn('/my/instances/%d?notice=' % self.instance.id,
+                      resp.headers['Location'])
 
 
 @tagged('post_install', '-at_install')

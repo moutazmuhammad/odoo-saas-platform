@@ -48,12 +48,17 @@ is functional and has had a full security-hardening pass this cycle (see §3.6).
 In parallel, a **Kubernetes compute layer** has been built from scratch this
 year: a real operator (`compute/operator`), a `ComputeDriver` abstraction in
 the control plane that can target either backend, and a live, working
-microk8s cluster this repo has been developed and tested against. **Zero
-production tenants have been cut over yet** — the Kubernetes path is
-built and live-verified in isolation, but `create()`/`destroy()` are not
-called by real provisioning. This is the single most important fact to
-carry forward: *the new compute layer is a parallel, tested, unused system
-today, not yet the production system.*
+microk8s cluster this repo has been developed and tested against. Real
+provisioning now calls `create()` for a brand-new instance — Kubernetes is
+the platform default (`saas_master.default_compute_driver`), Docker
+Compose an available alternative — and an existing tenant can be migrated
+across via a manual, admin-invoked tool. **Zero real paying customers have
+actually used either path in production yet** — every live verification
+so far has been against this repo's own dev/test fixtures on a local
+microk8s cluster, never a real customer's data or domain. This is the
+single most important fact to carry forward: *the new compute layer is
+code-complete and live-verified against test infrastructure, not yet
+proven against real production traffic.*
 
 The platform has **no customer-facing observability** — no Prometheus, no
 Grafana, no Loki, anywhere. What exists is a homegrown Odoo-DB metrics
@@ -256,11 +261,166 @@ a real design decision before Phase 2 goes further (incremental commits
 per step? a pre-created "in-progress" row committed before touching
 Kubernetes?) — flagged, not solved, here.
 
-**Still open** for Phase 2: wiring the already-added `saas.job` entry
-(`saas.instance._do_migrate_to_kubernetes`) into an actual per-tenant
-cutover decision (canary cohort, traffic/DNS flip) — this primitive only
-produces a verified parallel instance, it does not decide or perform a
-cutover.
+**[Test-verified, partially live-verified]** `saas.instance
+.action_cutover_to_kubernetes()` / `_do_cutover_to_kubernetes` — Phase 2's
+cutover mechanism. A manual, per-tenant, health-gated, reversible action
+that flips a legacy instance's live nginx vhost to an already-migrated
+(`migration_state='verified'`) Kubernetes instance — deliberately the
+"canary" primitive at MVP scope (one tenant at a time, by a human/ops
+action); automating it into a scheduled/percentage rollout is left as a
+later, separate step.
+
+Two real design problems surfaced while building this, neither obvious
+from the migration primitive alone:
+1. `KubernetesDriver.endpoint()` used to return the tenant's own public
+   domain (from the CR's `status.url`) — not a connectable address, since
+   that hostname's DNS still points at the legacy proxy (connecting to it
+   would loop back, not reach the cluster). It now returns a new
+   manually-configured, per-region value, `saas.region.ingress_host`/
+   `ingress_port` — treated the same way `kubeconfig` already is, since
+   which Service/controller actually fronts a cluster (the operator
+   supports both plain `Ingress` and Gateway API, chosen at the operator
+   level) isn't safely auto-discoverable from the driver.
+2. `migrate_to_kubernetes` gives the target a *different* subdomain
+   (`<source>-k8s`) than the source, so the target's own `OdooInstance`
+   Ingress rule routes on that internal hostname, not the tenant's real
+   domain — nginx must send it as an explicit upstream `Host` header (a
+   small, additive, opt-in template change: `upstream_host`, unset for
+   every existing ssh_docker vhost). This also ruled out "promote target,
+   retire source" as the cutover model: `saas.instance.subdomain` is under
+   a strict, unconditional unique index, and there's no verified way to
+   rename a live CR's domain post-creation. Instead, the source instance
+   stays the tenant's permanent billing/domain identity forever (its own
+   container is left running, untouched, as the live rollback target —
+   reclaiming it is Phase 6's job); a new self-referencing
+   `active_instance_id` field is the only persistent state added, set
+   once a cutover succeeds.
+
+Covered by 7 new tests (`test_cutover_to_kubernetes.py`) plus 3 rewritten
+`KubernetesDriver.endpoint()` tests; full `saas_core`+`saas_website` suite
+green (556 tests). Live-verified against this machine's real microk8s
+cluster: the region's real Traefik LB IP, hit directly with the target
+CR's own hostname as an explicit `Host` header, correctly reaches the real
+pod (`HTTP 200` on `/web/login`; a wrong `Host` header correctly `404`s,
+proving it really routes on Host and isn't just always succeeding) — the
+one genuinely new, previously-unverified assumption this step relies on.
+**Not** live-verified: an actual end-to-end nginx flip (this machine's
+lightweight sshd-over-Docker stand-in for the legacy fleet has no
+nginx/systemd installed — installing a full VM-like target for this ssh
+stand-in was judged disproportionate to this step); that mechanism itself
+is the pre-existing, already-in-production blue/green atomic-vhost
+machinery, exercised only through the (real, unmocked) Jinja template
+render in the new tests, not a live host.
+
+**[Live-verified]** `_do_deploy_locked` now has a real Kubernetes branch —
+a brand-new instance can be provisioned directly on Kubernetes, no
+migration involved. Fixed three real bugs found while making this work,
+none of which were obvious from the driver abstraction alone:
+1. `saas.server._probe_reachable()` was a raw TCP/SSH connect — a
+   `compute_driver='kubernetes'` server has no `ip_v4`/SSH, so it was
+   **permanently reported unreachable** and could never be allocated. Now
+   branches: `ssh_docker` keeps the TCP probe, `kubernetes` makes one
+   short-timeout K8s API call (`list_namespace`).
+2. Allocation (`_allocate_docker_server`/`_allocate_overcommit_server`)
+   never filtered by `compute_driver` at all. Now takes an optional
+   `compute_driver` param (backward-compatible — `None` keeps the old
+   driver-blind behavior for other callers/tests); `_allocate_servers`
+   always passes the platform default (`saas_master
+   .default_compute_driver`, see below), **falling back to driver-blind
+   allocation when literally no server of that type exists** — an
+   operator with only Docker Compose hosts must not have every deploy
+   fail over an unmet preference.
+3. `_validate_deploy_fields`/`_allocate_servers`' DB-server step both
+   unconditionally required SSH keys and a separate `db_server_id` —
+   meaningless for Kubernetes (auth is via the region's kubeconfig; the
+   database lives in-cluster via CloudNativePG). Both now skip entirely
+   for a `kubernetes`-backed instance.
+
+The fresh-create path itself (`_do_deploy_locked_kubernetes`) needs none
+of the legacy SSH/mkdir/`_provision_postgresql`/manual `-i base` init
+sequence — confirmed live that `compute/operator`'s `reconcileInitJob`
+already runs `-i base --without-demo=all` and gates the web Deployment on
+it, so a bare `driver.create()` with no `restore` key is a complete,
+self-initializing tenant. **Live-verified end-to-end** against this
+machine's real microk8s: `driver.create()` with no restore key reached CR
+phase `Ready` and served a real `HTTP 200` on `/web/login` — the one
+genuinely new, previously-unexercised code path this step relies on
+(every prior live run always went through `migrate_to_kubernetes`'s
+`restore` key).
+
+**[Live-verified]** The customer-facing compute is a **multi-tier model**
+(`saas.compute.tier` — Standard=1 replica/free, HA=2/priced, Scale=4/
+priced, extensible by adding records, no code change), not a binary HA
+flag. `saas.instance.compute_tier_id` points at the instance's current
+tier; changing it patches the Kubernetes CR's replica count
+(`KubernetesDriver.scale()`, a `spec.replicas` patch). An upgrade (more
+replicas) is gated behind a prorated activation invoice, same shape as
+the Daily Backup add-on; a downgrade or a free tier applies immediately
+via a background job, no invoice. **Deliberately decoupled from which
+backend an instance runs on**: a platform-level setting
+(`saas_master.default_compute_driver`, Settings > SaaS > Compute Backend,
+default `kubernetes`) decides Docker Compose vs. Kubernetes for new
+instances; tiers are only ever offered on an instance already on
+Kubernetes.
+
+Three things confirmed live, none obvious from the CRD/code alone:
+1. `spec.replicas > 1` requires the filestore's PVC to be `ReadWriteMany`
+   — on THIS single-node microk8s cluster (`microk8s-hostpath` provisioner,
+   otherwise RWO-only), an RWX PVC actually bound and a genuine 2-replica
+   instance reached `Ready` and served real traffic when created fresh
+   with the tier already selected.
+2. The operator already solves the "Odoo cron workers are singletons"
+   problem a naive multi-replica Deployment would hit: cron runs in its
+   own dedicated single-replica Deployment, separate from the scalable web
+   replicas (confirmed by inspecting the live pod list: `odoo-cron-*`
+   alongside 2× `odoo-*` web pods) — nothing extra needed on the control-
+   plane side for this.
+3. **A real race condition, caught only by testing the full flow against
+   a live cluster, not by unit tests**: scaling an *already-running*
+   instance whose filestore was provisioned RWO (e.g. the earlier
+   migration-verification instance, created before compute tiers existed)
+   correctly goes `Degraded` — the operator's own message is exact:
+   `"spec.replicas=2 requires spec.storage.filestore.accessMode=
+   ReadWriteMany; ReadWriteOnce (the default) only safely supports a
+   single replica"`. But `driver.scale()` patching `spec.replicas` does
+   **not** synchronously update `status.phase` — a health check in the
+   same instant can still read the pre-patch `Ready` phase before the
+   operator's reconciler has run, so `_do_scale_compute_tier`'s post-scale
+   health gate could exit successfully on that stale reading and commit
+   `compute_tier_id` to a tier that was actually rejected. Fixed with a
+   short settle delay before the first health check; re-verified live
+   against the same broken-storage instance afterward — it now correctly
+   detects the `Degraded` condition and rolls back the replica count
+   without committing the tier change.
+
+**[Code-confirmed]** Compute tiers have a real customer-facing surface,
+not just a backend model — mirrors the existing Daily Backup add-on's UI
+shape: a tier-picker card on the instance's own portal page
+(`frontend/veltnex/src/pages/portal/InstanceDetail.tsx`, hidden entirely
+on a Docker-Compose-backed instance, showing every active tier with its
+replica count/price/description and Upgrade/Downgrade buttons), a JSON
+API route (`/saas/api/v1/instances/<id>/compute-tier/change`,
+`saas_website/controllers/api.py`), a QWeb checkout page for upgrades
+(`portal_compute_tier_checkout`), and a help-topic entry. An admin manages
+the tier catalog at SaaS > Configuration > Compute Tiers
+(`saas.compute.tier`, seeded with Standard/HA/Scale,
+`data/saas_compute_tier_data.xml`) — adding a new tier (e.g. an 8-replica
+one later) is a data record, not a code change. Full backend suite 589
+tests, frontend suite 19 tests, both green.
+
+**Non-goals, explicitly not built this pass** (all confirmed with the
+person requesting this feature, after several rounds of narrowing scope):
+automated horizontal autoscaling beyond the fixed replica tiers — the
+CRD's own `spec.autoscaling` is explicitly inert in this API version
+("reserved for future use... validated but rejected", per its own Go
+doc-comment) and would need real operator/Go work, not an Odoo-side flag;
+reverse migration (Kubernetes → Docker Compose) when a tier is
+downgraded; code-redeploy (`_do_redeploy`) for a Kubernetes-backed
+instance; automating the existing cutover primitive into a cohort/
+percentage rollout (it remains a manual, admin-invoked tool for moving an
+*existing* tenant between backends, entirely independent of compute tiers
+above); the multi-region seam and CNPG live-validation bullets below; and
+the legacy decommission plan (Phase 6).
 
 **[Known gap]** No PITR/WAL archiving anywhere — no `archive_command`,
 `wal-g`, or `pgbackrest` in the codebase. Real recovery-point objective is
@@ -880,7 +1040,18 @@ with:
   flags any addon's code calling an underscore-prefixed method defined in
   a *different* addon's model class. This turns "we agreed not to do
   that" into something CI actually enforces, the same way the CSRF lint
-  did for route safety.
+  did for route safety. **Implemented** as
+  `control-plane/scripts/lint_addon_boundaries.py` (billing/pricing
+  architecture plan, Step C) — scoped to calls through an explicit
+  `self.env['model.name']` string-literal lookup (optionally chained
+  with `.sudo()`/`.with_context()`), checked against each addon's
+  `models/*.py` `_name =` declarations to know which addon owns which
+  model. Caught and fixed 5 real violations in `saas_core` calling into
+  `saas_billing`-owned `saas.wallet`/`saas.payment.*` private helpers
+  (`_for_partner`, `_default_for_partner`,
+  `_save_method_from_transaction`, `_charge`) — all four renamed to
+  drop the leading underscore, with a docstring naming their cross-addon
+  callers, since they are genuinely public contracts now.
 - A specific **status-aggregation pattern** for the one method
   (`_get_status_dict`) that legitimately needs data from every domain at
   once (it's the portal's main per-instance status payload): `saas_core`
@@ -1014,13 +1185,24 @@ Work items:
   (including two real findings from the live run worth reading before
   relying on this: a Postgres client version-compatibility constraint on
   tenant images, and a not-yet-crash-safe DB write during migration).
-- Decide and implement the cutover mechanism: per-tenant flag
-  (`compute_driver` already exists as a setting — verify it actually
-  gates real provisioning, not just driver-layer tests), a canary cohort,
-  then staged rollout.
-- Multi-region mapping seam (§4.2) — at minimum, confirm `saas.region`
-  can carry a target-cluster reference before the first tenant moves, even
-  if only one cluster exists at cutover time.
+- Decide and implement the cutover mechanism: a per-tenant, health-gated,
+  reversible flip. **[Test-verified, partially live-verified]** — done,
+  see `saas.instance.action_cutover_to_kubernetes` in §3.1 for the full
+  writeup. Remains a manual, admin-invoked tool for moving an *existing*
+  tenant between backends; automating it into a canary cohort / staged
+  rollout is still open.
+- `compute_driver` now gates a brand-new tenant's *initial* provisioning
+  too — **[Live-verified]**, see `_do_deploy_locked_kubernetes` in §3.1.
+  Kubernetes is the platform default (`saas_master
+  .default_compute_driver`); Docker Compose remains available as a
+  simpler alternative. A separate, customer-facing, priced High
+  Availability add-on (2 pod replicas vs. 1 — **[Live-verified]**, §3.1)
+  is deliberately NOT a backend switch.
+- Multi-region mapping seam (§4.2) — confirm `saas.region` can carry a
+  target-cluster reference before the first tenant moves. **[Live-verified]**
+  — `saas.region.kubeconfig` (one cluster per region) already did this; this
+  session added `ingress_host`/`ingress_port` alongside it (see §3.1) for
+  the same reason — where a cutover's traffic flip actually connects to.
 - CloudNativePG database mode needs real-cluster validation before any
   tenant relying on HA/PITR uses it — today it's implemented but
   **[Documented, unverified]** against a live CNPG install.

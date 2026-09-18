@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Adds support_plan_id back into saas_core's instance form, right
+         after plan_id — pulled out of that view because its comodel
+         (saas.support.plan) lives in this addon, which loads after
+         saas_core, so the base view can't reference it directly. -->
+    <record id="saas_instance_view_form_billing" model="ir.ui.view">
+        <field name="name">saas.instance.form.billing</field>
+        <field name="model">saas.instance</field>
+        <field name="inherit_id" ref="saas_core.saas_instance_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='plan_id']" position="after">
+                <field name="support_plan_id" options="{'no_create_edit': True}"/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

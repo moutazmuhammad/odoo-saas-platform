@@ -39,7 +39,7 @@ class TestBillingV47(TransactionCase):
                 {'name': 'v47.example.com'})
 
     def _wallet(self):
-        return self.env['saas.wallet']._for_partner(self.partner)
+        return self.env['saas.wallet'].for_partner(self.partner)
 
     def _inst(self, sub, **kw):
         vals = {

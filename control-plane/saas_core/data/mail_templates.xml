@@ -313,28 +313,7 @@
         <field name="auto_delete" eval="True"/>
     </record>
 
-    <!-- ============================================================ -->
-    <!--  Bonus wallet credit expiring soon (v47)                      -->
-    <!--  Customer money NEVER expires — only labeled bonus credit.    -->
-    <!-- ============================================================ -->
-    <record id="mail_template_saas_wallet_bonus_expiring" model="mail.template">
-        <field name="name">SaaS: Bonus Credit Expiring</field>
-        <field name="model_id" ref="saas_core.model_saas_wallet"/>
-        <field name="subject">You have bonus credit expiring soon</field>
-        <field name="email_from">{{ (object.env.company.email or user.email) }}</field>
-        <field name="email_to">{{ object.partner_id.email }}</field>
-        <field name="body_html" type="html">
-<div style="margin:0;padding:0;font-family:Arial,sans-serif;">
-    <p>Hi <t t-out="object.partner_id.name"/>,</p>
-    <p>You have <strong><t t-out="object.currency_id.symbol or ''"/><t t-out="'%.2f' % object.balance_bonus"/></strong>
-       of <strong>bonus credit</strong> that will expire soon. It is applied
-       to your invoices automatically — no action needed to use it.</p>
-    <p><strong>Your own balance never expires</strong> — only promotional
-       bonus credit has an expiry date.</p>
-    <p>Best regards,<br/><t t-out="object.env.company.name"/></p>
-</div>
-        </field>
-        <field name="auto_delete" eval="True"/>
-    </record>
+    <!-- Bonus wallet credit expiring soon (v47) lives in
+         saas_billing/data/mail_templates.xml now, alongside saas.wallet. -->
 
 </odoo>

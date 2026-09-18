@@ -34,7 +34,9 @@
                 <field name="is_trial_plan"/>
                 <field name="is_custom"/>
                 <field name="is_public_tier" string="Public"/>
-                <field name="price" widget="monetary"/>
+                <!-- price is added back here by
+                     saas_billing/views/saas_plan_views.xml (its field
+                     lives there now). -->
                 <field name="currency_id" column_invisible="1"/>
                 <field name="cpu_limit" optional="show"/>
                 <field name="ram_limit" optional="show"/>
@@ -56,30 +58,18 @@
                         </h1>
                     </div>
                     <group>
-                        <group string="General">
+                        <group string="General" name="saas_plan_general_group">
                             <field name="saas_product_ids" string="Services" widget="many2many_tags"/>
                             <field name="sequence"/>
                             <field name="is_trial_plan"/>
                             <field name="is_custom" readonly="1"/>
                             <field name="instance_count"/>
                         </group>
-                        <group string="Pricing" invisible="is_trial_plan">
-                            <!-- For named tiers the price is auto-derived from
-                                 resources minus the discount. Tick "Set price
-                                 manually" (or just type a price) to override it
-                                 by hand — a manual price is never repriced by
-                                 the formula or a global rate change. -->
-                            <field name="manual_price"
-                                   string="Set price manually"
-                                   invisible="not is_public_tier"/>
-                            <field name="discount_amount" widget="monetary"
-                                   string="Plan Discount ($/mo)"
-                                   invisible="not is_public_tier or manual_price"/>
-                            <field name="price" widget="monetary" string="Monthly Price"/>
-                            <field name="yearly_price" widget="monetary"/>
-                            <field name="yearly_discount_pct" string="Yearly Savings"/>
-                            <field name="currency_id" groups="base.group_multi_currency"/>
-                        </group>
+                        <!-- The Pricing group (price/yearly_price/
+                             manual_price/discount_amount/yearly_discount_pct)
+                             is added back here by
+                             saas_billing/views/saas_plan_views.xml — those
+                             fields live there now. -->
                     </group>
                     <group>
                         <group string="Resource Limits">

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Billing (A1/A4) — top-level menu moved here from saas_core along
+         with the wallet/payment models. References saas_core's root menu
+         as parent (allowed: saas_billing depends on saas_core). -->
+    <menuitem id="saas_master_menu_billing"
+              name="Billing"
+              parent="saas_core.saas_master_menu_root"
+              sequence="20"/>
+    <menuitem id="saas_master_menu_wallets"
+              name="Customer Wallets"
+              parent="saas_master_menu_billing"
+              action="saas_wallet_action"
+              sequence="10"/>
+    <menuitem id="saas_master_menu_payment_methods"
+              name="Saved Payment Methods"
+              parent="saas_master_menu_billing"
+              action="saas_payment_method_action"
+              sequence="20"/>
+    <menuitem id="saas_master_menu_payment_attempts"
+              name="Payment Attempts"
+              parent="saas_master_menu_billing"
+              action="saas_payment_attempt_action"
+              sequence="30"/>
+    <!-- Tenant Margins: the action stays defined in saas_core
+         (views/saas_margin_views.xml, still saas.instance-scoped), but
+         the menu ITEM has to live wherever its parent ("Billing") lives,
+         referencing that action across the (allowed) billing->core
+         direction. -->
+    <menuitem id="saas_master_menu_margins"
+              name="Tenant Margins"
+              parent="saas_master_menu_billing"
+              action="saas_core.action_saas_tenant_margins"
+              sequence="35"/>
+
+    <!-- Configuration > Payment Provider Routing -->
+    <menuitem id="saas_master_menu_payment_routing"
+              name="Payment Provider Routing"
+              parent="saas_core.saas_master_menu_configuration"
+              action="saas_payment_provider_config_action"
+              sequence="60"/>
+
+    <!-- Configuration > Add-ons -->
+    <menuitem id="saas_master_menu_addons"
+              name="Add-ons"
+              parent="saas_core.saas_master_menu_configuration"
+              action="saas_addon_action"
+              sequence="22"/>
+
+    <!-- Configuration > Support Plans -->
+    <menuitem id="saas_master_menu_support_plans"
+              name="Support Plans"
+              parent="saas_core.saas_master_menu_configuration"
+              action="saas_support_plan_action"
+              sequence="24"/>
+
+</odoo>

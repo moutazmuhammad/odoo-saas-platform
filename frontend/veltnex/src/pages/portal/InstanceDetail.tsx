@@ -13,6 +13,7 @@ import {
   CreditCard,
   ArrowUpCircle,
   Clock,
+  ShieldCheck,
 } from "lucide-react";
 import { GitBranch } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -68,6 +69,7 @@ export default function InstanceDetail() {
   const [live, setLive] = React.useState<{ cpu: number; ram: number } | null>(null);
   const [cpuHist, setCpuHist] = React.useState<number[]>([]);
   const [ramHist, setRamHist] = React.useState<number[]>([]);
+  const [changingTier, setChangingTier] = React.useState<number | null>(null);
 
   const load = React.useCallback(async () => {
     try {
@@ -175,6 +177,25 @@ export default function InstanceDetail() {
       toast.error("Couldn't cancel", e instanceof ApiError ? e.message : "Please try again.");
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const changeComputeTier = async (tierId: number) => {
+    setChangingTier(tierId);
+    try {
+      const { checkout_url, applied } = await api.computeTierChange(instanceId, tierId);
+      if (checkout_url) {
+        window.location.href = checkout_url;
+        return;
+      }
+      if (applied) {
+        toast.success("Compute tier changed", "Scaling in the background — this can take a few minutes.");
+        await load();
+      }
+    } catch (e) {
+      toast.error("Couldn't change compute tier", e instanceof ApiError ? e.message : "Please try again.");
+    } finally {
+      setChangingTier(null);
     }
   };
 
@@ -361,6 +382,15 @@ export default function InstanceDetail() {
         </Button>
       </Card>
 
+      {instance.compute_driver === "kubernetes" && (
+        <ComputeTierCard
+          instance={instance}
+          changingTier={changingTier}
+          onChange={changeComputeTier}
+          onCheckout={() => (window.location.href = `/my/instances/${id}/compute-tier/checkout`)}
+        />
+      )}
+
       {!instance.is_trial && <BillingPanel instance={instance} onChange={load} />}
 
       <Dialog
@@ -383,6 +413,93 @@ export default function InstanceDetail() {
         </div>
       </Dialog>
     </div>
+  );
+}
+
+function ComputeTierCard({
+  instance,
+  changingTier,
+  onChange,
+  onCheckout,
+}: {
+  instance: ApiInstance;
+  changingTier: number | null;
+  onChange: (tierId: number) => void;
+  onCheckout: () => void;
+}) {
+  const tiers = instance.compute_tiers || [];
+  const current = instance.compute_tier;
+  const pending = instance.compute_tier_pending;
+  if (!tiers.length) return null;
+
+  return (
+    <Card className="mt-4 p-5">
+      <div className="flex items-center justify-between">
+        <p className="font-medium">
+          Compute Tier<HelpHint anchor="compute-tiers" className="ml-1.5" />
+        </p>
+        {current && (
+          <span className="inline-flex items-center gap-1.5 text-xs text-success">
+            <ShieldCheck className="size-3.5" /> {current.name} ({current.replicas} replica{current.replicas !== 1 ? "s" : ""})
+          </span>
+        )}
+      </div>
+
+      {pending && (
+        <div className="mt-3 flex flex-col gap-2 rounded-lg border border-info/40 bg-info/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2">
+            <Clock className="mt-0.5 size-4 shrink-0 text-info" />
+            <p className="text-xs text-muted">
+              Payment pending for the <strong>{pending.name}</strong> tier ({pending.replicas} replicas).
+            </p>
+          </div>
+          <Button size="sm" className="shrink-0" onClick={onCheckout}>
+            Complete checkout
+          </Button>
+        </div>
+      )}
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        {tiers.map((tier) => {
+          const isCurrent = current?.id === tier.id;
+          const isUpgrade = !current || tier.replicas > current.replicas;
+          return (
+            <div
+              key={tier.id}
+              className={cn(
+                "flex flex-col gap-2 rounded-lg border p-3",
+                isCurrent ? "border-success/50 bg-success/5" : "border-border",
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">{tier.name}</p>
+                <span className="text-xs text-muted">{tier.replicas} replica{tier.replicas !== 1 ? "s" : ""}</span>
+              </div>
+              <p className="text-xs text-muted">
+                {tier.price > 0 ? `${tier.price}/month` : "Included"}
+              </p>
+              {tier.description && (
+                <p className="text-xs text-muted">{tier.description}</p>
+              )}
+              {isCurrent ? (
+                <span className="mt-1 text-center text-xs font-medium text-success">Current tier</span>
+              ) : (
+                <ActionButton
+                  size="sm"
+                  variant={isUpgrade ? "default" : "secondary"}
+                  loading={changingTier === tier.id}
+                  loadingText="Starting…"
+                  onClick={() => onChange(tier.id)}
+                  disabled={changingTier !== null && changingTier !== tier.id}
+                >
+                  {isUpgrade ? "Upgrade" : "Downgrade"}
+                </ActionButton>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 

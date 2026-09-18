@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate so an admin's edited prices/names aren't overwritten on
+         upgrade. Prices are PLACEHOLDERS — set real values in
+         SaaS ▸ Configuration ▸ Compute Tiers. Standard is the default
+         (price 0, 1 replica) so existing/new instances without a pick
+         are unaffected. Add more records here (or in the UI) for
+         additional replica counts later — no code change needed. -->
+    <data noupdate="1">
+        <record id="saas_compute_tier_standard" model="saas.compute.tier">
+            <field name="name">Standard</field>
+            <field name="code">standard</field>
+            <field name="is_default">1</field>
+            <field name="replicas">1</field>
+            <field name="monthly_price">0.0</field>
+            <field name="sequence">10</field>
+            <field name="description">1 pod replica. Included with every plan.</field>
+        </record>
+        <record id="saas_compute_tier_ha" model="saas.compute.tier">
+            <field name="name">HA</field>
+            <field name="code">ha</field>
+            <field name="replicas">2</field>
+            <field name="monthly_price">0.0</field>
+            <field name="sequence">20</field>
+            <field name="description">2 pod replicas for resilience — if one fails or is being updated, the other keeps serving your users with no downtime.</field>
+        </record>
+        <record id="saas_compute_tier_scale" model="saas.compute.tier">
+            <field name="name">Scale</field>
+            <field name="code">scale</field>
+            <field name="replicas">4</field>
+            <field name="monthly_price">0.0</field>
+            <field name="sequence">30</field>
+            <field name="description">4 pod replicas for resilience and extra capacity under higher traffic.</field>
+        </record>
+    </data>
+</odoo>

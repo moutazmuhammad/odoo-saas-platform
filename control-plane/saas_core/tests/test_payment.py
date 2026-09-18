@@ -72,7 +72,7 @@ class TestSaasPaymentModels(TransactionCase):
         token2 = self._token(self.partner, provider)
         token2.active = False
         inactive_token = self._method(self.partner, provider=provider, token=token2)
-        found = self.env['saas.payment.method']._for_partner(self.partner)
+        found = self.env['saas.payment.method'].for_partner(self.partner)
         self.assertEqual(found, active)
         self.assertNotIn(inactive_method, found)
         self.assertNotIn(inactive_token, found)
@@ -82,14 +82,14 @@ class TestSaasPaymentModels(TransactionCase):
         child = self.env['res.partner'].sudo().create(
             {'name': 'Contact', 'parent_id': self.partner.id})
         method = self._method(self.partner, provider=provider)
-        found = self.env['saas.payment.method']._for_partner(child)
+        found = self.env['saas.payment.method'].for_partner(child)
         self.assertEqual(found, method)
 
     def test_for_partner_empty_without_partner(self):
-        found = self.env['saas.payment.method']._for_partner(self.env['res.partner'])
+        found = self.env['saas.payment.method'].for_partner(self.env['res.partner'])
         self.assertFalse(found)
 
-    def test_default_for_partner_falls_back_to_most_recent(self):
+    def testdefault_for_partner_falls_back_to_most_recent(self):
         # No method flagged is_default: _for_partner's order
         # ('is_default desc, id desc') makes the highest-id (most recently
         # created) method the fallback.
@@ -97,14 +97,14 @@ class TestSaasPaymentModels(TransactionCase):
         self._method(self.partner, provider=provider)
         m2 = self._method(self.partner, provider=provider)
         self.assertEqual(
-            self.env['saas.payment.method']._default_for_partner(self.partner), m2)
+            self.env['saas.payment.method'].default_for_partner(self.partner), m2)
 
-    def test_default_for_partner_prefers_flagged_default(self):
+    def testdefault_for_partner_prefers_flagged_default(self):
         provider = self._provider()
         self._method(self.partner, provider=provider)
         m2 = self._method(self.partner, provider=provider, is_default=True)
         self.assertEqual(
-            self.env['saas.payment.method']._default_for_partner(self.partner), m2)
+            self.env['saas.payment.method'].default_for_partner(self.partner), m2)
 
     def test_make_default_clears_others(self):
         provider = self._provider()
@@ -191,7 +191,7 @@ class TestSaasPaymentGatewayRouting(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestSaasPaymentGatewaySaveAndCharge(TransactionCase):
-    """SaasPaymentGateway._save_method_from_transaction and _charge — the two
+    """SaasPaymentGateway.save_method_from_transaction and _charge — the two
     methods saas.instance actually calls for saved-card auto-renewal."""
 
     def setUp(self):
@@ -237,32 +237,32 @@ class TestSaasPaymentGatewaySaveAndCharge(TransactionCase):
         vals.update(kw)
         return self.env['saas.payment.method'].sudo().create(vals)
 
-    # ---------------- _save_method_from_transaction ----------------
+    # ---------------- save_method_from_transaction ----------------
     def test_save_method_noop_without_partner_or_tx(self):
         token = self._token()
         tx = self._tx(token)
-        self.assertFalse(self.gateway._save_method_from_transaction(
+        self.assertFalse(self.gateway.save_method_from_transaction(
             self.env['res.partner'], tx))
-        self.assertFalse(self.gateway._save_method_from_transaction(
+        self.assertFalse(self.gateway.save_method_from_transaction(
             self.partner, self.env['payment.transaction']))
 
     def test_save_method_noop_without_token(self):
         tx = self._tx(self._token())
         tx.token_id = False
         self.assertFalse(
-            self.gateway._save_method_from_transaction(self.partner, tx))
+            self.gateway.save_method_from_transaction(self.partner, tx))
 
     def test_save_method_noop_with_inactive_token(self):
         token = self._token()
         tx = self._tx(token)
         token.active = False
         self.assertFalse(
-            self.gateway._save_method_from_transaction(self.partner, tx))
+            self.gateway.save_method_from_transaction(self.partner, tx))
 
     def test_save_method_creates_and_defaults_first(self):
         token = self._token(payment_details='Visa •••• 4242')
         tx = self._tx(token)
-        method = self.gateway._save_method_from_transaction(self.partner, tx)
+        method = self.gateway.save_method_from_transaction(self.partner, tx)
         self.assertTrue(method)
         self.assertEqual(method.token_id, token)
         self.assertEqual(method.display_label, 'Visa •••• 4242')
@@ -271,8 +271,8 @@ class TestSaasPaymentGatewaySaveAndCharge(TransactionCase):
     def test_save_method_is_idempotent_per_token(self):
         token = self._token()
         tx = self._tx(token)
-        first = self.gateway._save_method_from_transaction(self.partner, tx)
-        second = self.gateway._save_method_from_transaction(self.partner, tx)
+        first = self.gateway.save_method_from_transaction(self.partner, tx)
+        second = self.gateway.save_method_from_transaction(self.partner, tx)
         self.assertEqual(first, second)
         self.assertEqual(
             self.env['saas.payment.method'].search_count(
@@ -280,9 +280,9 @@ class TestSaasPaymentGatewaySaveAndCharge(TransactionCase):
 
     def test_save_method_second_method_not_forced_default(self):
         tx1 = self._tx(self._token(provider_ref='tok-a'))
-        first = self.gateway._save_method_from_transaction(self.partner, tx1)
+        first = self.gateway.save_method_from_transaction(self.partner, tx1)
         tx2 = self._tx(self._token(provider_ref='tok-b'))
-        second = self.gateway._save_method_from_transaction(self.partner, tx2)
+        second = self.gateway.save_method_from_transaction(self.partner, tx2)
         self.assertTrue(first.is_default)
         self.assertFalse(second.is_default)
 
@@ -290,27 +290,27 @@ class TestSaasPaymentGatewaySaveAndCharge(TransactionCase):
     def test_charge_fails_without_token(self):
         method = self._method(self._token())
         method.token_id = False
-        state, _msg = self.gateway._charge(method, self._invoice())
+        state, _msg = self.gateway.charge(method, self._invoice())
         self.assertEqual(state, 'failed')
 
     def test_charge_fails_with_inactive_token(self):
         token = self._token()
         method = self._method(token)
         token.active = False
-        state, _msg = self.gateway._charge(method, self._invoice())
+        state, _msg = self.gateway.charge(method, self._invoice())
         self.assertEqual(state, 'failed')
 
     def test_charge_already_paid_invoice_short_circuits(self):
         method = self._method(self._token())
         invoice = self._invoice()
         invoice.payment_state = 'paid'
-        state, _msg = self.gateway._charge(method, invoice)
+        state, _msg = self.gateway.charge(method, invoice)
         self.assertEqual(state, 'done')
 
     def test_charge_fails_when_provider_disabled(self):
         self.provider.state = 'disabled'
         method = self._method(self._token())
-        state, _msg = self.gateway._charge(method, self._invoice())
+        state, _msg = self.gateway.charge(method, self._invoice())
         self.assertEqual(state, 'failed')
 
     # ---------------- _charge: reaches the provider ----------------
@@ -324,7 +324,7 @@ class TestSaasPaymentGatewaySaveAndCharge(TransactionCase):
         with patch.object(
                 type(self.env['payment.transaction']),
                 '_send_payment_request', _fake_send):
-            state, msg = self.gateway._charge(method, invoice)
+            state, msg = self.gateway.charge(method, invoice)
         self.assertEqual(state, 'done')
         self.assertIn(invoice.name or '', msg)
 
@@ -338,7 +338,7 @@ class TestSaasPaymentGatewaySaveAndCharge(TransactionCase):
         with patch.object(
                 type(self.env['payment.transaction']),
                 '_send_payment_request', _fake_send):
-            state, _msg = self.gateway._charge(method, invoice)
+            state, _msg = self.gateway.charge(method, invoice)
         self.assertEqual(state, 'pending')
 
     def test_charge_falls_through_to_failed_on_other_states(self):
@@ -351,7 +351,7 @@ class TestSaasPaymentGatewaySaveAndCharge(TransactionCase):
         with patch.object(
                 type(self.env['payment.transaction']),
                 '_send_payment_request', _fake_send):
-            state, _msg = self.gateway._charge(method, invoice)
+            state, _msg = self.gateway.charge(method, invoice)
         self.assertEqual(state, 'failed')
 
     def test_charge_exception_during_send_is_caught(self):
@@ -364,7 +364,7 @@ class TestSaasPaymentGatewaySaveAndCharge(TransactionCase):
         with patch.object(
                 type(self.env['payment.transaction']),
                 '_send_payment_request', _boom):
-            state, msg = self.gateway._charge(method, invoice)
+            state, msg = self.gateway.charge(method, invoice)
         self.assertEqual(state, 'failed')
         self.assertIn('provider unreachable', msg)
 
@@ -387,6 +387,6 @@ class TestSaasPaymentGatewaySaveAndCharge(TransactionCase):
         })
         self.provider.invalidate_recordset(['journal_id'])
         invoice = self._invoice(currency_id=foreign.id)
-        state, msg = self.gateway._charge(method, invoice)
+        state, msg = self.gateway.charge(method, invoice)
         self.assertEqual(state, 'failed')
         self.assertIn('urrency', msg)

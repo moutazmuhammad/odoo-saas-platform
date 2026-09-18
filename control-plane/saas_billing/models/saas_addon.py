@@ -69,10 +69,30 @@ class SaasAddon(models.Model):
              'decimals. Must be > 0.',
     )
     description = fields.Text()
+    cost_price = fields.Float(
+        string='Cost / month', default=0.0,
+        help='Optional: what this add-on actually costs to run (e.g. '
+             'backup storage). Purely informational — compared against '
+             'Monthly Price for margin visibility, NOT enforced as a '
+             'floor. Most meaningful for flat-priced add-ons; for '
+             'storage/hybrid modes it is compared against the flat/base '
+             'component only. 0 = not tracked.',
+    )
+    margin_pct = fields.Float(
+        string='Margin %', compute='_compute_margin_pct',
+        help='(Monthly Price − Cost) / Monthly Price. Display-only.',
+    )
 
     _sql_constraints = [
         ('code_uniq', 'unique(code)', 'Add-on code must be unique.'),
     ]
+
+    @api.depends('monthly_price', 'cost_price')
+    def _compute_margin_pct(self):
+        for rec in self:
+            rec.margin_pct = (
+                100.0 * (rec.monthly_price - rec.cost_price) / rec.monthly_price
+            ) if rec.monthly_price else 0.0
 
     @api.constrains('price_mode', 'block_gb')
     def _check_block_gb(self):

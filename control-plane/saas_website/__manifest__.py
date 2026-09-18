@@ -5,7 +5,7 @@
     'summary': 'Customer-facing website for SaaS plan selection, ordering, and instance management',
     'author': 'SaaS Platform',
     'license': 'LGPL-3',
-    'depends': ['saas_core', 'website', 'portal', 'payment', 'account_payment'],
+    'depends': ['saas_core', 'saas_billing', 'website', 'portal', 'payment', 'account_payment'],
     'data': [
         'security/saas_website_security.xml',
         'security/ir.model.access.csv',

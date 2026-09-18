@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Adds the commercial fields (price/yearly_price/manual_price/
+         discount_amount/yearly_discount_pct) back into saas_core's plan
+         list and form views — pulled out of those views because the
+         fields now live in this addon. -->
+
+    <record id="saas_plan_view_list_billing" model="ir.ui.view">
+        <field name="name">saas.plan.list.billing</field>
+        <field name="model">saas.plan</field>
+        <field name="inherit_id" ref="saas_core.saas_plan_view_list"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='is_public_tier']" position="after">
+                <field name="price" widget="monetary"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="saas_plan_view_form_billing" model="ir.ui.view">
+        <field name="name">saas.plan.form.billing</field>
+        <field name="model">saas.plan</field>
+        <field name="inherit_id" ref="saas_core.saas_plan_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='saas_plan_general_group']" position="after">
+                <group string="Pricing" invisible="is_trial_plan">
+                    <!-- For named tiers the price is auto-derived from
+                         resources minus the discount. Tick "Set price
+                         manually" (or just type a price) to override it
+                         by hand — a manual price is never repriced by
+                         the formula or a global rate change. -->
+                    <field name="manual_price"
+                           string="Set price manually"
+                           invisible="not is_public_tier"/>
+                    <field name="discount_amount" widget="monetary"
+                           string="Plan Discount ($/mo)"
+                           invisible="not is_public_tier or manual_price"/>
+                    <field name="price" widget="monetary" string="Monthly Price"/>
+                    <field name="yearly_price" widget="monetary"/>
+                    <field name="yearly_discount_pct" string="Yearly Savings"/>
+                    <field name="currency_id" groups="base.group_multi_currency"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

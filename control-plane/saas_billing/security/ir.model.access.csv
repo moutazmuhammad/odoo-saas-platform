@@ -1,0 +1,17 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_saas_addon_user,saas.addon user,model_saas_addon,saas_core.group_saas_user,1,0,0,0
+access_saas_addon_manager,saas.addon manager,model_saas_addon,saas_core.group_saas_manager,1,1,1,1
+access_saas_support_plan_user,saas.support.plan user,model_saas_support_plan,saas_core.group_saas_user,1,0,0,0
+access_saas_support_plan_manager,saas.support.plan manager,model_saas_support_plan,saas_core.group_saas_manager,1,1,1,1
+access_saas_wallet_user,saas.wallet user,model_saas_wallet,saas_core.group_saas_user,1,0,0,0
+access_saas_wallet_manager,saas.wallet manager,model_saas_wallet,saas_core.group_saas_manager,1,1,1,1
+access_saas_wallet_transaction_user,saas.wallet.transaction user,model_saas_wallet_transaction,saas_core.group_saas_user,1,0,0,0
+access_saas_wallet_transaction_manager,saas.wallet.transaction manager,model_saas_wallet_transaction,saas_core.group_saas_manager,1,1,1,1
+access_saas_wallet_lot_user,saas.wallet.lot user,model_saas_wallet_lot,saas_core.group_saas_user,1,0,0,0
+access_saas_wallet_lot_manager,saas.wallet.lot manager,model_saas_wallet_lot,saas_core.group_saas_manager,1,1,1,1
+access_saas_payment_method_user,saas.payment.method user,model_saas_payment_method,saas_core.group_saas_user,1,0,0,0
+access_saas_payment_method_manager,saas.payment.method manager,model_saas_payment_method,saas_core.group_saas_manager,1,1,1,1
+access_saas_payment_provider_config_user,saas.payment.provider.config user,model_saas_payment_provider_config,saas_core.group_saas_user,1,0,0,0
+access_saas_payment_provider_config_manager,saas.payment.provider.config manager,model_saas_payment_provider_config,saas_core.group_saas_manager,1,1,1,1
+access_saas_payment_attempt_user,saas.payment.attempt user,model_saas_payment_attempt,saas_core.group_saas_user,1,0,0,0
+access_saas_payment_attempt_manager,saas.payment.attempt manager,model_saas_payment_attempt,saas_core.group_saas_manager,1,1,1,1

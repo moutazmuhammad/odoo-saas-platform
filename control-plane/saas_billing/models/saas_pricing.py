@@ -396,6 +396,7 @@ class SaasPricingEngine(models.AbstractModel):
         except (TypeError, ValueError):
             return 0.0
 
+
     @api.model
     def daily_backup_price(self, used_bytes=None):
         """Monthly price of the daily-backup add-on.

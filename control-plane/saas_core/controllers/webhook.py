@@ -186,7 +186,7 @@ class SaasWebhookController(http.Controller):
             'source': 'push',
             'state': 'running',
         })
-        env['saas.job']._enqueue(
+        env['saas.job'].enqueue(
             repo, '_run_webhook_deploy', args=(build.id,),
             channel='deploy', lock_key='instance:%s' % instance.id,
             idempotent=True,

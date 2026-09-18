@@ -1,6 +1,7 @@
 import socket
 import contextlib
 import itertools
+from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import TransactionCase, tagged
 
@@ -118,3 +119,71 @@ class TestServerHealth(TransactionCase):
             self.assertFalse(
                 Server._allocate_docker_server(plan=None),
                 'a host flagged unreachable is excluded from candidates')
+
+    # -------- Kubernetes servers: a TCP/SSH probe would always fail -------
+    def test_probe_reachable_dispatches_to_kubernetes_check(self):
+        """A compute_driver='kubernetes' server has no ip_v4/SSH — the old
+        TCP-only probe would report it permanently unreachable. It must go
+        through the Kubernetes-specific check instead."""
+        host = _next_ip()
+        server = self._server(
+            'k8s', host, _closed_port(host), compute_driver='kubernetes')
+        with patch.object(
+                type(server), '_probe_kubernetes_reachable',
+                return_value=(True, '')) as probe:
+            ok, err = server._probe_reachable()
+        self.assertTrue(ok, err)
+        probe.assert_called_once()
+
+    def test_probe_kubernetes_reachable_uses_core_api(self):
+        host = _next_ip()
+        server = self._server(
+            'k8s2', host, _closed_port(host), compute_driver='kubernetes')
+        fake_driver = MagicMock()
+        with patch(
+                'odoo.addons.saas_core.drivers.kubernetes_driver.KubernetesDriver',
+                return_value=fake_driver):
+            ok, err = server._probe_kubernetes_reachable()
+        self.assertTrue(ok, err)
+        fake_driver._core_api.return_value.list_namespace.assert_called_once()
+
+    def test_probe_kubernetes_reachable_false_on_api_error(self):
+        host = _next_ip()
+        server = self._server(
+            'k8s3', host, _closed_port(host), compute_driver='kubernetes')
+        fake_driver = MagicMock()
+        fake_driver._core_api.return_value.list_namespace.side_effect = (
+            RuntimeError('no kubeconfig'))
+        with patch(
+                'odoo.addons.saas_core.drivers.kubernetes_driver.KubernetesDriver',
+                return_value=fake_driver):
+            ok, err = server._probe_kubernetes_reachable()
+        self.assertFalse(ok)
+        self.assertIn('no kubeconfig', err)
+
+    # -------- Allocation honors compute_driver -----------------------------
+    def test_allocator_filters_by_compute_driver(self):
+        self._isolate_docker_hosts()
+        Server = self.env['saas.server'].sudo()
+        dh, kh = _next_ip(), _next_ip()
+        with _listening(dh) as dport, _listening(kh) as kport:
+            docker_srv = self._server('docker', dh, dport)
+            k8s_srv = self._server(
+                'k8s', kh, kport, compute_driver='kubernetes')
+            with patch.object(
+                    type(k8s_srv), '_probe_kubernetes_reachable',
+                    return_value=(True, '')):
+                chosen = Server._allocate_docker_server(
+                    plan=None, compute_driver='kubernetes')
+            self.assertEqual(chosen, k8s_srv)
+            self.assertNotEqual(chosen, docker_srv)
+
+    def test_allocator_no_filter_when_compute_driver_not_passed(self):
+        """Backward compatibility: existing callers that don't pass
+        compute_driver keep today's driver-blind behavior."""
+        self._isolate_docker_hosts()
+        Server = self.env['saas.server'].sudo()
+        h = _next_ip()
+        with _listening(h) as port:
+            srv = self._server('plain', h, port)
+            self.assertEqual(Server._allocate_docker_server(plan=None), srv)

@@ -199,11 +199,15 @@ class SaasServer(models.Model):
     compute_driver = fields.Selection(
         [('ssh_docker', 'Docker over SSH'), ('kubernetes', 'Kubernetes')],
         string='Compute Driver', default='ssh_docker', required=True,
-        help='Phase 6: which ComputeDriver backend runs tenants on this server. '
-             'The Control Plane is identical for both — selecting "Kubernetes" '
-             'routes the same business logic through KubernetesDriver instead of '
-             'SshDockerDriver (proves the Phase-1 seam: a new backend is a new '
-             'file, not a rewrite).')
+        help='Which ComputeDriver backend runs tenants on this server. The '
+             'Control Plane is identical for both — selecting "Kubernetes" '
+             'routes the same business logic through KubernetesDriver '
+             'instead of SshDockerDriver. New instances are allocated onto '
+             'a server matching the platform default '
+             '(Settings > SaaS > Compute Backend, '
+             'saas_master.default_compute_driver) when one exists; '
+             'existing instances keep whatever server they were deployed '
+             'on regardless of this setting changing later.')
     registry_host = fields.Char(
         string='Container Registry Host',
         help="Phase 2.2: registry endpoint for immutable tenant images "
@@ -250,13 +254,27 @@ class SaasServer(models.Model):
     _HEALTH_PROBE_TIMEOUT = 4
 
     def _probe_reachable(self, timeout=None):
+        """Fast reachability probe, run inline at allocation.
+
+        Returns ``(ok: bool, error: str)``. Branches on ``compute_driver``:
+        a ``kubernetes`` server has no SSH endpoint at all (no ``ip_v4``,
+        no SSH key) — a TCP/SSH probe against it would ALWAYS fail,
+        permanently marking every such server unreachable and making it
+        un-allocatable forever. See ``_probe_kubernetes_reachable``.
+        """
+        self.ensure_one()
+        if self.compute_driver == 'kubernetes':
+            return self._probe_kubernetes_reachable(timeout=timeout)
+        return self._probe_ssh_reachable(timeout=timeout)
+
+    def _probe_ssh_reachable(self, timeout=None):
         """Fast TCP-connect probe to the server's SSH endpoint.
 
-        Returns ``(ok: bool, error: str)``. A plain TCP connect (no SSH
-        handshake / auth) is enough to catch the failure that strands a
-        customer deploy: a host that is down, a wrong / placeholder IP
-        (e.g. an RFC-5737 ``203.0.113.x`` test address), a closed port, or
-        a dropped/filtered route. Cheap enough to run inline at allocation.
+        A plain TCP connect (no SSH handshake / auth) is enough to catch
+        the failure that strands a customer deploy: a host that is down, a
+        wrong / placeholder IP (e.g. an RFC-5737 ``203.0.113.x`` test
+        address), a closed port, or a dropped/filtered route. Cheap enough
+        to run inline at allocation.
         """
         self.ensure_one()
         try:
@@ -270,6 +288,21 @@ class SaasServer(models.Model):
                 return True, ''
         except OSError as e:
             return False, '%s:%s — %s' % (ip, port, e)
+
+    def _probe_kubernetes_reachable(self, timeout=None):
+        """Equally cheap reachability probe for a Kubernetes-backed server:
+        load the region's kubeconfig and make one short-timeout API call.
+        Reuses KubernetesDriver's own client-loading rather than
+        duplicating the kubeconfig-parsing/auth logic here."""
+        self.ensure_one()
+        from ..drivers.kubernetes_driver import KubernetesDriver
+        try:
+            driver = KubernetesDriver(self)
+            driver._core_api().list_namespace(
+                limit=1, _request_timeout=timeout or self._HEALTH_PROBE_TIMEOUT)
+            return True, ''
+        except Exception as e:
+            return False, str(e)
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -511,20 +544,27 @@ class SaasServer(models.Model):
 
     @api.model
     def _allocate_docker_server(self, plan=None, raise_on_failure=False,
-                               region=None):
+                               region=None, compute_driver=None):
         """Level 1 — Ideal allocation: least-loaded host with capacity.
 
         Returns a saas.server record, or None if no host qualifies.
         When *raise_on_failure* is True, raises ValidationError instead of
         returning None (used by strict provisioning mode). When *region*
-        is set, only hosts in that region are considered (co-location)."""
+        is set, only hosts in that region are considered (co-location).
+        When *compute_driver* is set, only servers running that backend are
+        considered — the only real production caller,
+        ``saas.instance._allocate_servers``, always passes this (from
+        ``saas_master.default_compute_driver``); left ``None`` (the
+        default) this method is driver-blind, unchanged from before that
+        setting existed — kept for backward compatibility with other
+        callers/tests that don't care which backend they get."""
         # Exclude hosts already known to be unreachable (last health cron) so
         # we never even consider a dead box for a new customer.
-        candidates = self.search(
-            [('is_docker_host', '=', True),
-             ('health_state', '!=', 'unreachable')]
-            + self._region_match_domain(region)
-        )
+        domain = [('is_docker_host', '=', True),
+                  ('health_state', '!=', 'unreachable')]
+        if compute_driver:
+            domain.append(('compute_driver', '=', compute_driver))
+        candidates = self.search(domain + self._region_match_domain(region))
         if not candidates:
             if raise_on_failure:
                 raise ValidationError(
@@ -559,20 +599,25 @@ class SaasServer(models.Model):
         return None
 
     @api.model
-    def _allocate_overcommit_server(self, plan=None, region=None):
+    def _allocate_overcommit_server(self, plan=None, region=None,
+                                    compute_driver=None):
         """Level 2 — Overcommit fallback: least-loaded host that allows overcommit.
 
         Ignores capacity limits, but only considers servers that have
         ``allow_overcommit`` enabled. When *region* is set, stays within
-        that region (co-location).
+        that region (co-location). *compute_driver* — see
+        ``_allocate_docker_server``'s docstring; same optional filter.
 
         Returns a saas.server record, or None.
         """
-        candidates = self.search([
+        domain = [
             ('is_docker_host', '=', True),
             ('allow_overcommit', '=', True),
             ('health_state', '!=', 'unreachable'),
-        ] + self._region_match_domain(region))
+        ]
+        if compute_driver:
+            domain.append(('compute_driver', '=', compute_driver))
+        candidates = self.search(domain + self._region_match_domain(region))
         if not candidates:
             return None
         # Live-probe (least-loaded first) so overcommit can't strand a deploy

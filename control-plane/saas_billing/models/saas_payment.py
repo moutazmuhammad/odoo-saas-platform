@@ -103,8 +103,12 @@ class SaasPaymentMethod(models.Model):
     is_default = fields.Boolean(string='Default Method')
 
     @api.model
-    def _for_partner(self, partner):
-        """Active saved methods for the partner's commercial entity."""
+    def for_partner(self, partner):
+        """Active saved methods for the partner's commercial entity.
+
+        Public cross-addon API: called from saas_core (saas_instance.py,
+        res_partner.py) and saas_website (controllers/api.py).
+        """
         if not partner:
             return self.browse()
         commercial = partner.commercial_partner_id or partner
@@ -115,13 +119,17 @@ class SaasPaymentMethod(models.Model):
         ])
 
     @api.model
-    def _default_for_partner(self, partner):
-        methods = self._for_partner(partner)
+    def default_for_partner(self, partner):
+        """The partner's default saved method, or its most recent one.
+
+        Public cross-addon API: called from saas_core (saas_instance.py).
+        """
+        methods = self.for_partner(partner)
         return methods.filtered('is_default')[:1] or methods[:1]
 
     def _make_default(self):
         self.ensure_one()
-        others = self._for_partner(self.partner_id) - self
+        others = self.for_partner(self.partner_id) - self
         others.write({'is_default': False})
         self.is_default = True
 
@@ -205,11 +213,14 @@ class SaasPaymentGateway(models.AbstractModel):
         return providers[:1]
 
     @api.model
-    def _save_method_from_transaction(self, partner, tx):
+    def save_method_from_transaction(self, partner, tx):
         """Persist the safe references for a tokenized transaction as a
         ``saas.payment.method`` (creating none if there's no token). Stores
         ONLY provider id + external customer ref + external token ref +
-        masked label. Returns the method (or empty)."""
+        masked label. Returns the method (or empty).
+
+        Public cross-addon API: called from saas_core (saas_instance.py).
+        """
         if not partner or not tx:
             return self.env['saas.payment.method']
         token = tx.token_id
@@ -236,17 +247,20 @@ class SaasPaymentGateway(models.AbstractModel):
             'country_id': commercial.country_id.id or False,
         })
         # First saved method becomes the default.
-        if len(Method._for_partner(commercial)) == 1:
+        if len(Method.for_partner(commercial)) == 1:
             method.is_default = True
         return method
 
     @api.model
-    def _charge(self, method, invoice):
+    def charge(self, method, invoice):
         """Charge a saved ``saas.payment.method`` for an invoice's residual.
 
         Returns a tuple ``(state, message)`` where state is 'done',
         'pending' or 'failed'. Pure transport: no logging policy, no
-        retry scheduling — callers own that."""
+        retry scheduling — callers own that.
+
+        Public cross-addon API: called from saas_core (saas_instance.py).
+        """
         if not method or not method.token_id or not method.token_id.active:
             return 'failed', _("Saved payment method is no longer available.")
         if not invoice or invoice.payment_state in ('paid', 'in_payment'):

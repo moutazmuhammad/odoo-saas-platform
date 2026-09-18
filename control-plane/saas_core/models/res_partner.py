@@ -26,39 +26,9 @@ class ResPartner(models.Model):
         string='Instances',
         compute='_compute_saas_instance_count',
     )
-    saas_wallet_id = fields.Many2one(
-        'saas.wallet', string='SaaS Wallet',
-        compute='_compute_saas_wallet', search='_search_saas_wallet',
-    )
-    saas_wallet_balance = fields.Monetary(
-        string='Wallet Balance', compute='_compute_saas_wallet',
-        currency_field='currency_id',
-    )
-
-    def _compute_saas_wallet(self):
-        Wallet = self.env['saas.wallet'].sudo()
-        for rec in self:
-            wallet = Wallet.search(
-                [('partner_id', '=', rec.commercial_partner_id.id)], limit=1)
-            rec.saas_wallet_id = wallet.id or False
-            rec.saas_wallet_balance = wallet.balance if wallet else 0.0
-
-    def _search_saas_wallet(self, operator, value):
-        wallets = self.env['saas.wallet'].sudo().search(
-            [('id', operator, value)])
-        return [('id', 'in', wallets.mapped('partner_id').ids)]
-
-    def action_view_saas_wallet(self):
-        self.ensure_one()
-        wallet = self.env['saas.wallet']._for_partner(self, create=True)
-        return {
-            'type': 'ir.actions.act_window',
-            'name': _('Wallet'),
-            'res_model': 'saas.wallet',
-            'res_id': wallet.id,
-            'view_mode': 'form',
-            'target': 'current',
-        }
+    # saas_wallet_id / saas_wallet_balance and their compute/search/action
+    # live in saas_billing/models/res_partner.py now — their comodel
+    # (saas.wallet) moved there.
 
     def _compute_saas_instance_count(self):
         data = self.env['saas.instance']._read_group(

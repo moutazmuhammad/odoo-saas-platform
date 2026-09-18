@@ -178,7 +178,9 @@
                             <field name="domain_id" options="{'no_open': True}"/>
                             <field name="saas_product_id" string="Service"/>
                             <field name="plan_id" domain="['|', ('saas_product_ids', '=', False), ('saas_product_ids', 'in', saas_product_id)]"/>
-                            <field name="support_plan_id" options="{'no_create_edit': True}"/>
+                            <!-- support_plan_id is added back here by
+                                 saas_billing/views/saas_instance_views.xml
+                                 (its comodel lives there now). -->
                             <field name="partner_id"/>
                             <field name="url" widget="url"/>
                             <field name="is_trial" widget="boolean_toggle" readonly="1"/>

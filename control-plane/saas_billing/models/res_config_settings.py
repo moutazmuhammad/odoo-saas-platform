@@ -267,19 +267,42 @@ class ResConfigSettings(models.TransientModel):
              'customer\'s own money (customer-funded credit) NEVER expires.',
     )
 
-    # ========== Margin visibility (display-only, no formula change) ==========
-    # (price - floor) / price for each of the four rates above, so an
-    # operator can see "we charge $10/worker, floor is $4, that's 60%
-    # margin" without doing the subtraction by hand. Purely informational:
-    # reads the same fields the pricing engine already uses.
+    # ========== Profitability target ==========
+    # The one input saas.pricing.engine.minimum_profitable_price() needs.
+    # Used to compute "the price you'd need to charge to hit this margin"
+    # for plans/compute tiers/add-ons/support plans — a real number, not a
+    # hardcoded example (billing/pricing architecture redesign, Part 9).
+    saas_target_margin_pct = fields.Float(
+        string='Target Margin %',
+        config_parameter='saas_master.target_margin_pct',
+        default=30.0,
+        help='The gross margin the business wants on every priced item. '
+             'Used to compute each plan/tier/add-on\'s Minimum Profitable '
+             'Price: cost / (1 - target/100). Does not change any stored '
+             'price by itself — it\'s a benchmark shown next to the '
+             'current price so you can see whether it\'s below the '
+             'economically safe threshold.',
+    )
+
+    # ========== Rate headroom above cost floor (display-only, no formula
+    # change) ==========
+    # (price - floor) / price for each of the four rates above — NOT the
+    # same thing as a plan/tenant's real gross margin (see saas.plan's
+    # Profitability section, or Billing > Profitability for real,
+    # per-tenant numbers): this is headroom between the SALE RATE and its
+    # FLOOR, before any discount is applied. A named plan's actual margin
+    # can be lower than this (a discount eats into it) but never lower
+    # than 0, since _check_price_floor blocks saving a plan below the
+    # floor. Purely informational: reads the same fields the pricing
+    # engine already uses.
     margin_hosting_worker_pct = fields.Float(
-        string='Hosting Worker Margin %', compute='_compute_margin_pcts')
+        string='Hosting Worker Rate Headroom %', compute='_compute_margin_pcts')
     margin_hosting_storage_pct = fields.Float(
-        string='Hosting Storage Margin %', compute='_compute_margin_pcts')
+        string='Hosting Storage Rate Headroom %', compute='_compute_margin_pcts')
     margin_services_worker_pct = fields.Float(
-        string='Services Worker Margin %', compute='_compute_margin_pcts')
+        string='Services Worker Rate Headroom %', compute='_compute_margin_pcts')
     margin_services_storage_pct = fields.Float(
-        string='Services Storage Margin %', compute='_compute_margin_pcts')
+        string='Services Storage Rate Headroom %', compute='_compute_margin_pcts')
 
     @api.depends('saas_hosting_worker_price', 'saas_hosting_worker_floor',
                  'saas_hosting_storage_price_per_gb', 'saas_hosting_storage_floor',

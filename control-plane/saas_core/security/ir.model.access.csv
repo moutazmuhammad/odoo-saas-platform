@@ -8,6 +8,7 @@ access_saas_odoo_version_manager,saas.odoo.version manager,model_saas_odoo_versi
 access_saas_server_user,saas.server user,model_saas_server,saas_core.group_saas_user,1,0,0,0
 access_saas_server_manager,saas.server manager,model_saas_server,saas_core.group_saas_manager,1,1,1,1
 access_saas_ssh_key_pair_manager,saas.ssh.key.pair manager,model_saas_ssh_key_pair,saas_core.group_saas_manager,1,1,1,1
+access_saas_kubeconfig_manager,saas.kubeconfig manager,model_saas_kubeconfig,saas_core.group_saas_manager,1,1,1,1
 access_saas_docker_container_user,saas.docker.container user,model_saas_docker_container,saas_core.group_saas_user,1,0,0,0
 access_saas_docker_container_manager,saas.docker.container manager,model_saas_docker_container,saas_core.group_saas_manager,1,1,1,1
 access_saas_product_repo_user,saas.product.repo user,model_saas_product_repo,saas_core.group_saas_user,1,0,0,0

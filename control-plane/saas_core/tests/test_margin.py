@@ -78,3 +78,19 @@ class TestTenantMargin(TransactionCase):
         self.assertAlmostEqual(child.monthly_revenue, 0.0, places=2)
         # parent revenue is the plan price (covers both)
         self.assertAlmostEqual(prod.monthly_revenue, 100.0, places=2)
+
+    def test_margin_fields_are_sortable_via_orm_search(self):
+        """Regression: the Profitability dashboard's list view
+        (default_order='monthly_margin asc') and its column-header sort
+        both go through ORM search ordering, which Odoo refuses for a
+        non-stored computed field ("Cannot convert ... to SQL because it
+        is not stored") — this crashed the dashboard the moment it was
+        opened until monthly_cost/monthly_revenue/monthly_margin/
+        margin_pct/is_profitable/margin_currency_id became store=True."""
+        self._inst('msort1')
+        self._inst('msort2')
+        Instance = self.env['saas.instance'].sudo()
+        for order in ('monthly_margin asc', 'monthly_cost desc',
+                      'monthly_revenue asc', 'margin_pct desc',
+                      'is_profitable asc', 'margin_currency_id asc'):
+            Instance.search([], order=order)  # must not raise

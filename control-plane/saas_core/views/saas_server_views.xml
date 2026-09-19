@@ -6,43 +6,57 @@
         <field name="name">saas.server.form</field>
         <field name="model">saas.server</field>
         <field name="arch" type="xml">
-            <form string="Server">
+            <form string="Compute Target">
                 <header>
                     <button name="action_test_connection"
                             string="Test Connection"
                             type="object"
-                            class="oe_highlight"/>
+                            class="oe_highlight"
+                            invisible="compute_driver == 'kubernetes'"/>
                     <button name="action_open_terminal"
                             string="Terminal"
                             type="object"
                             icon="fa-terminal"
-                            groups="saas_core.group_saas_host_shell"/>
+                            groups="saas_core.group_saas_host_shell"
+                            invisible="compute_driver == 'kubernetes'"/>
                     <button name="action_refresh_containers"
                             string="Refresh Containers"
                             type="object"
                             icon="fa-refresh"
-                            invisible="not is_docker_host"/>
+                            invisible="not is_docker_host or compute_driver == 'kubernetes'"/>
                 </header>
                 <sheet>
                     <div class="oe_title">
                         <label for="name"/>
                         <h1>
-                            <field name="name" placeholder="e.g. EU Production 1"/>
+                            <field name="name" placeholder="e.g. EU Production 1, or EU Kubernetes Cluster"/>
                         </h1>
                     </div>
                     <group>
-                        <group string="Roles">
+                        <group string="Deployment">
+                            <field name="compute_driver" widget="radio"/>
+                            <field name="region_id"
+                                   options="{'no_create_edit': True}"/>
+                        </group>
+                        <group string="Roles" invisible="compute_driver == 'kubernetes'">
                             <field name="is_docker_host"/>
                             <field name="is_db_server"/>
                             <field name="is_proxy_server"/>
-                        </group>
-                        <group string="Region &amp; Topology">
-                            <field name="region_id"
-                                   options="{'no_create_edit': True}"/>
                             <field name="db_server_id" invisible="not is_docker_host"/>
                         </group>
                     </group>
-                    <group>
+                    <div class="alert alert-info" role="alert"
+                         invisible="compute_driver != 'kubernetes'">
+                        This entry represents a <b>Kubernetes cluster</b>, not
+                        a single machine — it exists so the cluster can be
+                        allocated capacity and priced like any other compute
+                        target. The cluster's actual connection (kubeconfig,
+                        ingress address) is configured once on its
+                        <b>Region</b>, since one region maps to exactly one
+                        cluster — open the Region record above to view or
+                        change it.
+                    </div>
+                    <group invisible="compute_driver == 'kubernetes'">
                         <group string="SSH Configuration">
                             <field name="ssh_key_pair_id"/>
                             <field name="ssh_user"/>
@@ -91,12 +105,11 @@
                             <field name="monthly_cost"/>
                         </group>
                         <group string="Phase 2 (disposable compute)">
-                            <field name="compute_driver"/>
                             <field name="object_filestore_mount"/>
                             <field name="registry_host"/>
                         </group>
                     </group>
-                    <notebook invisible="not is_docker_host">
+                    <notebook invisible="not is_docker_host or compute_driver == 'kubernetes'">
                         <page string="Docker Containers">
                             <field name="docker_container_ids" nolabel="1"/>
                         </page>
@@ -112,18 +125,19 @@
         <field name="name">saas.server.list</field>
         <field name="model">saas.server</field>
         <field name="arch" type="xml">
-            <list string="Servers">
+            <list string="Compute">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
+                <field name="compute_driver"/>
                 <field name="region_id" optional="show"/>
-                <field name="ip_v4"/>
-                <field name="private_ip_v4"/>
-                <field name="is_docker_host"/>
-                <field name="is_db_server"/>
-                <field name="is_proxy_server"/>
+                <field name="ip_v4" invisible="compute_driver == 'kubernetes'"/>
+                <field name="private_ip_v4" invisible="compute_driver == 'kubernetes'"/>
+                <field name="is_docker_host" optional="hide"/>
+                <field name="is_db_server" optional="hide"/>
+                <field name="is_proxy_server" optional="hide"/>
                 <field name="instance_count" string="Instances" optional="show"/>
                 <field name="max_instances" optional="hide"/>
-                <field name="ssh_connect_using"/>
+                <field name="ssh_connect_using" invisible="compute_driver == 'kubernetes'"/>
             </list>
         </field>
     </record>
@@ -133,13 +147,16 @@
         <field name="name">saas.server.search</field>
         <field name="model">saas.server</field>
         <field name="arch" type="xml">
-            <search string="Search Servers">
+            <search string="Search Compute">
                 <field name="name"/>
                 <field name="ip_v4"/>
                 <field name="region_id"/>
                 <separator/>
-                <filter string="Docker Hosts" name="docker_hosts"
-                        domain="[('is_docker_host', '=', True)]"/>
+                <filter string="Docker Compose Hosts" name="docker_hosts"
+                        domain="[('compute_driver', '=', 'ssh_docker'), ('is_docker_host', '=', True)]"/>
+                <filter string="Kubernetes Clusters" name="kubernetes_clusters"
+                        domain="[('compute_driver', '=', 'kubernetes')]"/>
+                <separator/>
                 <filter string="Database Servers" name="db_servers"
                         domain="[('is_db_server', '=', True)]"/>
                 <filter string="Proxy Servers" name="proxy_servers"
@@ -147,24 +164,67 @@
                 <separator/>
                 <filter string="Region" name="group_region"
                         context="{'group_by': 'region_id'}"/>
+                <filter string="Deployment Type" name="group_compute_driver"
+                        context="{'group_by': 'compute_driver'}"/>
             </search>
         </field>
     </record>
 
-    <!-- Action -->
+    <!-- Actions: one umbrella ("All Compute") + two deployment-type-
+         specific entry points, so the menu itself teaches the vocabulary
+         (Docker Compose Hosts vs. Kubernetes Clusters) instead of hiding
+         it inside a "Servers" catch-all. -->
     <record id="saas_server_action" model="ir.actions.act_window">
-        <field name="name">Servers</field>
+        <field name="name">All Compute</field>
         <field name="res_model">saas.server</field>
         <field name="view_mode">list,form</field>
         <field name="search_view_id" ref="saas_server_view_search"/>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
-                Add your first server
+                Add your first compute target
             </p>
             <p>
-                A server can act as a Docker host, database server,
-                reverse proxy, or any combination of the three.
+                A Docker Compose host is a real machine (SSH access, runs
+                containers directly). A Kubernetes cluster entry is a
+                capacity/allocation placeholder for an entire managed
+                cluster — its connection is configured on its Region.
+                A single entry can also be a database server and/or
+                reverse proxy in a distributed Docker Compose topology.
             </p>
+        </field>
+    </record>
+
+    <record id="saas_server_action_docker" model="ir.actions.act_window">
+        <field name="name">Docker Compose Hosts</field>
+        <field name="res_model">saas.server</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('compute_driver', '=', 'ssh_docker'), ('is_docker_host', '=', True)]</field>
+        <field name="context">{'default_compute_driver': 'ssh_docker', 'default_is_docker_host': True}</field>
+        <field name="search_view_id" ref="saas_server_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No Docker Compose hosts yet
+            </p>
+            <p>A real machine, reached over SSH, that runs tenant containers directly.</p>
+        </field>
+    </record>
+
+    <record id="saas_server_action_kubernetes" model="ir.actions.act_window">
+        <field name="name">Kubernetes Clusters</field>
+        <field name="res_model">saas.server</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('compute_driver', '=', 'kubernetes')]</field>
+        <field name="context">{'default_compute_driver': 'kubernetes', 'default_is_docker_host': True}</field>
+        <field name="search_view_id" ref="saas_server_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No Kubernetes clusters registered yet
+            </p>
+            <p>One entry per managed Kubernetes cluster (any provider — EKS,
+               GKE, AKS, self-hosted...). Create the entry here for capacity/
+               pricing, then configure its actual connection (kubeconfig,
+               ingress address) on the matching Region — one region maps to
+               one cluster.</p>
         </field>
     </record>
 

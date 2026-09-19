@@ -13,8 +13,19 @@ _DB_NAME_RE = re.compile(r'^[a-z0-9-]+$')
 
 
 class SaasServer(models.Model):
+    """A compute-allocation target — either a Docker Compose host (a real
+    machine, reached over SSH) or a Kubernetes cluster registration
+    (`compute_driver='kubernetes'` — the cluster's actual connection
+    details, kubeconfig/ingress, live on `saas.region`, not here; this
+    record just represents that region's cluster as an allocation/
+    capacity unit). The technical model/field names below (``saas.server``,
+    ``is_docker_host``, ``docker_server_id`` elsewhere) predate the
+    Kubernetes backend and are kept unchanged to avoid a disruptive
+    rename — see the views for the user-facing "Docker Hosts" /
+    "Kubernetes Clusters" terminology split.
+    """
     _name = 'saas.server'
-    _description = 'Server'
+    _description = 'Compute Target (Docker Host or Kubernetes Cluster)'
     _inherit = ['mail.thread']
     _order = 'sequence, name'
 
@@ -197,17 +208,22 @@ class SaasServer(models.Model):
              'volumes + bandwidth). For sanity-checking the rate card against '
              'the sum of tenant costs.')
     compute_driver = fields.Selection(
-        [('ssh_docker', 'Docker over SSH'), ('kubernetes', 'Kubernetes')],
-        string='Compute Driver', default='ssh_docker', required=True,
-        help='Which ComputeDriver backend runs tenants on this server. The '
-             'Control Plane is identical for both — selecting "Kubernetes" '
-             'routes the same business logic through KubernetesDriver '
-             'instead of SshDockerDriver. New instances are allocated onto '
-             'a server matching the platform default '
-             '(Settings > SaaS > Compute Backend, '
-             'saas_master.default_compute_driver) when one exists; '
-             'existing instances keep whatever server they were deployed '
-             'on regardless of this setting changing later.')
+        [('ssh_docker', 'Docker Compose (Server)'),
+         ('kubernetes', 'Kubernetes (Cluster)')],
+        string='Deployment Type', default='ssh_docker', required=True,
+        help='Which backend this entry represents. "Docker Compose" means '
+             'a real machine reached over SSH (see SSH Configuration '
+             'below). "Kubernetes" means a managed cluster — this record '
+             'is an allocation/capacity placeholder for that cluster, NOT '
+             'a single server; the cluster\'s actual connection (kubeconfig, '
+             'ingress) is configured on this entry\'s Region, since one '
+             'region maps to one cluster. The Control Plane logic is '
+             'identical either way — selecting "Kubernetes" just routes '
+             'through KubernetesDriver instead of SshDockerDriver. New '
+             'instances are allocated onto an entry matching the platform '
+             'default (Settings > SaaS > Compute Backend) when one exists; '
+             'existing instances keep whatever they were deployed on '
+             'regardless of this setting changing later.')
     registry_host = fields.Char(
         string='Container Registry Host',
         help="Phase 2.2: registry endpoint for immutable tenant images "

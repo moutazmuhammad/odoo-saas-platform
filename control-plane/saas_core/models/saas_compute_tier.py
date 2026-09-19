@@ -3,7 +3,11 @@ from odoo.exceptions import ValidationError
 
 
 class SaasComputeTier(models.Model):
-    """A selectable Kubernetes compute tier (pod replica count), priced.
+    """A selectable Kubernetes compute tier (pod replica count) — resource
+    shape only. The commercial shape (monthly_price/cost_price/margin_pct)
+    lives in saas_billing/models/saas_compute_tier.py via _inherit — split
+    the same way as saas.plan, once this model grew a real commercial
+    surface (billing/pricing architecture redesign, Part 10).
 
     Kubernetes-only — see saas.instance.compute_tier_id and
     KubernetesDriver.scale(). Deliberately NOT the same thing as "High
@@ -40,24 +44,8 @@ class SaasComputeTier(models.Model):
              'Values above 1 require the region\'s cluster to have an '
              'RWX-capable StorageClass (see KubernetesDriver._build_odoo_instance).',
     )
-    monthly_price = fields.Float(
-        string='Monthly Price', default=0.0,
-        help='Flat monthly fee for this tier. Added after infrastructure '
-             'pricing; not scaled by region — same convention as '
-             'saas.support.plan.',
-    )
-    cost_price = fields.Float(
-        string='Cost / month', default=0.0,
-        help='Optional: what this tier actually costs to run (extra pod '
-             'replicas\' compute/RAM). Purely informational — shown next '
-             'to the sale price for margin visibility, NOT enforced as a '
-             'floor the way the main pricing engine\'s worker/storage '
-             'floors are. 0 = not tracked.',
-    )
-    margin_pct = fields.Float(
-        string='Margin %', compute='_compute_margin_pct',
-        help='(Monthly Price − Cost) / Monthly Price. Display-only.',
-    )
+    # monthly_price/cost_price/profit/margin_pct/is_profitable live in
+    # saas_billing/models/saas_compute_tier.py now — commercial concerns.
     description = fields.Text(
         help='Customer-facing explanation shown on the portal tier picker.',
     )
@@ -70,25 +58,10 @@ class SaasComputeTier(models.Model):
         ('code_uniq', 'unique(code)', 'Compute tier code must be unique.'),
     ]
 
-    @api.depends('monthly_price', 'cost_price')
-    def _compute_margin_pct(self):
-        for rec in self:
-            rec.margin_pct = (
-                100.0 * (rec.monthly_price - rec.cost_price) / rec.monthly_price
-            ) if rec.monthly_price else 0.0
-
     @api.constrains('is_default')
     def _check_single_default(self):
         if self.search_count([('is_default', '=', True)]) > 1:
             raise ValidationError(_("Only one compute tier may be the default."))
-
-    @api.constrains('monthly_price')
-    def _check_price(self):
-        for rec in self:
-            if rec.monthly_price < 0:
-                raise ValidationError(_(
-                    "Compute tier '%s': monthly price can't be negative."
-                ) % rec.name)
 
     @api.constrains('replicas')
     def _check_replicas(self):

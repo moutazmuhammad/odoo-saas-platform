@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Adds the commercial fields (monthly_price/cost_price/profit/
+         margin_pct/is_profitable) back into saas_core's compute-tier
+         list and form views — pulled out of those views because the
+         fields now live in this addon. -->
+
+    <record id="saas_compute_tier_view_list_billing" model="ir.ui.view">
+        <field name="name">saas.compute.tier.list.billing</field>
+        <field name="model">saas.compute.tier</field>
+        <field name="inherit_id" ref="saas_core.saas_compute_tier_view_list"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='replicas']" position="after">
+                <field name="monthly_price"/>
+                <field name="cost_price" optional="show"/>
+                <field name="profit" optional="show"/>
+                <field name="margin_pct" optional="show"/>
+                <field name="is_profitable" optional="hide"/>
+                <field name="minimum_profitable_price" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="saas_compute_tier_view_form_billing" model="ir.ui.view">
+        <field name="name">saas.compute.tier.form.billing</field>
+        <field name="model">saas.compute.tier</field>
+        <field name="inherit_id" ref="saas_core.saas_compute_tier_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='saas_compute_tier_general_group']" position="after">
+                <group string="Pricing">
+                    <field name="monthly_price"/>
+                    <field name="currency_id"/>
+                    <field name="cost_price"/>
+                </group>
+            </xpath>
+            <xpath expr="//group[@name='saas_compute_tier_description_group']" position="before">
+                <field name="cost_tracked" invisible="1"/>
+                <field name="is_profitable" invisible="1"/>
+                <group string="Profitability" invisible="not cost_tracked">
+                    <field name="profit" widget="monetary" readonly="1"
+                           string="Gross Profit"/>
+                    <field name="margin_pct" readonly="1" string="Gross Margin %"/>
+                    <field name="minimum_profitable_price" widget="monetary"
+                           readonly="1"/>
+                </group>
+                <div class="alert alert-warning" role="alert"
+                     invisible="not cost_tracked or is_profitable">
+                    ⚠ This tier is priced below its cost (loss-making).
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

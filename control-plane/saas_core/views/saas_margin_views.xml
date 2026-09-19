@@ -1,19 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- Phase 4: per-tenant margin dashboard (revenue − infra cost) -->
+    <!-- Profitability dashboard (was "Tenant Margins" — Phase 4's original
+         name): "can I make money on this?" answered per deployed tenant,
+         with list/pivot/graph views and group-by deployment backend
+         (billing/pricing architecture redesign, Part 6/11). Revenue −
+         infra cost per tenant, from saas.instance._compute_margin
+         (itself now calling saas.pricing.engine.profitability(), the
+         same formula every other priced model uses). -->
     <record id="view_saas_instance_margin_list" model="ir.ui.view">
         <field name="name">saas.instance.margin.list</field>
         <field name="model">saas.instance</field>
         <field name="arch" type="xml">
-            <list string="Tenant Margins" default_order="monthly_margin asc"
+            <list string="Profitability" default_order="monthly_margin asc"
                   decoration-danger="not is_profitable"
                   decoration-success="margin_pct >= 60">
                 <field name="subdomain"/>
                 <field name="partner_id"/>
                 <field name="plan_id"/>
+                <field name="compute_driver"/>
                 <field name="billing_period"/>
-                <field name="docker_server_id"/>
+                <field name="docker_server_id" optional="hide"/>
                 <field name="monthly_revenue" sum="Revenue"/>
                 <field name="monthly_cost" sum="Cost"/>
                 <field name="monthly_margin" sum="Margin"/>
@@ -28,8 +35,10 @@
         <field name="name">saas.instance.margin.pivot</field>
         <field name="model">saas.instance</field>
         <field name="arch" type="xml">
-            <pivot string="Tenant Margins">
+            <pivot string="Profitability">
+                <field name="compute_driver" type="row"/>
                 <field name="docker_server_id" type="row"/>
+                <field name="plan_id" type="col"/>
                 <field name="monthly_revenue" type="measure"/>
                 <field name="monthly_cost" type="measure"/>
                 <field name="monthly_margin" type="measure"/>
@@ -37,17 +46,34 @@
         </field>
     </record>
 
+    <record id="view_saas_instance_margin_graph" model="ir.ui.view">
+        <field name="name">saas.instance.margin.graph</field>
+        <field name="model">saas.instance</field>
+        <field name="arch" type="xml">
+            <graph string="Profitability" type="bar">
+                <field name="compute_driver"/>
+                <field name="monthly_revenue" type="measure"/>
+                <field name="monthly_cost" type="measure"/>
+                <field name="monthly_margin" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
     <record id="action_saas_tenant_margins" model="ir.actions.act_window">
-        <field name="name">Tenant Margins</field>
+        <field name="name">Profitability</field>
         <field name="res_model">saas.instance</field>
-        <field name="view_mode">list,pivot,form</field>
+        <field name="view_mode">list,pivot,graph,form</field>
         <field name="domain">[('parent_id', '=', False), ('plan_id', '!=', False)]</field>
         <field name="context">{'search_default_group_server': 0}</field>
         <field name="view_id" ref="view_saas_instance_margin_list"/>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiley_face">No billable tenants yet.</p>
             <p>Revenue − infra cost per tenant. Set each server's rate card
-               (cost / CPU / RAM / storage) for the cost side to populate.</p>
+               (cost / CPU / RAM / storage) for the cost side to populate.
+               Group or chart by Deployment to compare Kubernetes vs.
+               Docker Compose tenants — the pricing model is unified across
+               both (see the billing architecture plan), but realized
+               margin can still differ by where a tenant actually landed.</p>
         </field>
     </record>
     <!-- Menu lives in saas_menus.xml (loaded after this file) so its parent

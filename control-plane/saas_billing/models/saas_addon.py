@@ -78,9 +78,28 @@ class SaasAddon(models.Model):
              'storage/hybrid modes it is compared against the flat/base '
              'component only. 0 = not tracked.',
     )
+    profit = fields.Float(
+        string='Gross Profit / month', compute='_compute_profitability',
+        help='Monthly Price − Cost. Display-only.',
+    )
     margin_pct = fields.Float(
-        string='Margin %', compute='_compute_margin_pct',
+        string='Margin %', compute='_compute_profitability',
         help='(Monthly Price − Cost) / Monthly Price. Display-only.',
+    )
+    is_profitable = fields.Boolean(
+        string='Profitable', compute='_compute_profitability',
+        help='True when gross profit >= 0, or when cost is not tracked (0).',
+    )
+    cost_tracked = fields.Boolean(
+        string='Cost Tracked', compute='_compute_profitability',
+        help='False when Cost / month is 0 (not entered) — Profit/Margin '
+             'are not meaningful until a cost is set.',
+    )
+    minimum_profitable_price = fields.Float(
+        string='Minimum Profitable Price', compute='_compute_profitability',
+        help='The price needed to hit the platform\'s target margin '
+             '(Settings > Margin Protection) on this add-on\'s cost. 0 '
+             'when cost is not tracked.',
     )
 
     _sql_constraints = [
@@ -88,11 +107,23 @@ class SaasAddon(models.Model):
     ]
 
     @api.depends('monthly_price', 'cost_price')
-    def _compute_margin_pct(self):
+    def _compute_profitability(self):
+        engine = self.env['saas.pricing.engine']
+        icp = self.env['ir.config_parameter'].sudo()
+        try:
+            target_margin = float(
+                icp.get_param('saas_master.target_margin_pct', '30') or 30)
+        except (TypeError, ValueError):
+            target_margin = 30.0
         for rec in self:
-            rec.margin_pct = (
-                100.0 * (rec.monthly_price - rec.cost_price) / rec.monthly_price
-            ) if rec.monthly_price else 0.0
+            result = engine.profitability(rec.monthly_price, rec.cost_price)
+            rec.profit = result['profit']
+            rec.margin_pct = result['margin_pct']
+            rec.is_profitable = result['is_profitable']
+            rec.cost_tracked = rec.cost_price > 0
+            rec.minimum_profitable_price = (
+                engine.minimum_profitable_price(rec.cost_price, target_margin)
+                or 0.0) if rec.cost_tracked else 0.0
 
     @api.constrains('price_mode', 'block_gb')
     def _check_block_gb(self):

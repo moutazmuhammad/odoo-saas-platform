@@ -1,4 +1,5 @@
 from . import saas_product
+from . import saas_kubeconfig
 from . import saas_region
 from . import saas_compute_tier
 from . import saas_instance

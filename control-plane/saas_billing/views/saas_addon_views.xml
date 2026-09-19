@@ -26,7 +26,10 @@
                 <field name="price_per_block" optional="show"/>
                 <field name="block_gb" optional="show"/>
                 <field name="cost_price" optional="show"/>
+                <field name="profit" optional="show"/>
                 <field name="margin_pct" optional="show"/>
+                <field name="is_profitable" optional="hide"/>
+                <field name="minimum_profitable_price" optional="hide"/>
                 <field name="price_config_param" optional="hide"/>
                 <field name="active" widget="boolean_toggle"/>
             </list>
@@ -57,9 +60,21 @@
                             <field name="price_config_param"
                                    placeholder="e.g. saas_master.snapshot_price_per_gb"/>
                             <field name="cost_price"/>
-                            <field name="margin_pct" readonly="1"/>
                         </group>
                     </group>
+                    <field name="cost_tracked" invisible="1"/>
+                    <field name="is_profitable" invisible="1"/>
+                    <group string="Profitability" invisible="not cost_tracked">
+                        <field name="profit" widget="monetary" readonly="1"
+                               string="Gross Profit"/>
+                        <field name="margin_pct" readonly="1" string="Gross Margin %"/>
+                        <field name="minimum_profitable_price" widget="monetary"
+                               readonly="1"/>
+                    </group>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="not cost_tracked or is_profitable">
+                        ⚠ This add-on is priced below its cost (loss-making).
+                    </div>
                     <field name="description" placeholder="Optional description"/>
                 </sheet>
             </form>

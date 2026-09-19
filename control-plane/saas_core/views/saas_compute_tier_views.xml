@@ -26,9 +26,10 @@
                 <field name="name"/>
                 <field name="code"/>
                 <field name="replicas"/>
-                <field name="monthly_price"/>
-                <field name="cost_price" optional="show"/>
-                <field name="margin_pct" optional="show"/>
+                <!-- monthly_price/cost_price/profit/margin_pct/is_profitable
+                     are added back here by
+                     saas_billing/views/saas_compute_tier_views.xml (those
+                     fields live there now). -->
                 <field name="is_default"/>
                 <field name="active" widget="boolean_toggle"/>
             </list>
@@ -46,20 +47,19 @@
                         <h1><field name="name" placeholder="e.g. HA"/></h1>
                     </div>
                     <group>
-                        <group>
+                        <group name="saas_compute_tier_general_group">
                             <field name="code" placeholder="e.g. ha"/>
                             <field name="replicas"/>
                             <field name="is_default"/>
                             <field name="active"/>
                         </group>
-                        <group string="Pricing">
-                            <field name="monthly_price"/>
-                            <field name="currency_id"/>
-                            <field name="cost_price"/>
-                            <field name="margin_pct" readonly="1"/>
-                        </group>
+                        <!-- The Pricing group (monthly_price/currency_id/
+                             cost_price/profit/margin_pct/is_profitable) is
+                             added back here by
+                             saas_billing/views/saas_compute_tier_views.xml —
+                             those fields live there now. -->
                     </group>
-                    <group string="Description">
+                    <group string="Description" name="saas_compute_tier_description_group">
                         <field name="description" nolabel="1"
                                placeholder="What this tier includes — shown to the customer on the portal…"/>
                     </group>

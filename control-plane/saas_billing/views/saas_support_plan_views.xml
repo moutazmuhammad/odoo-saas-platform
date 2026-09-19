@@ -24,6 +24,11 @@
                 <field name="code"/>
                 <field name="response_time"/>
                 <field name="monthly_price"/>
+                <field name="cost_price" optional="show"/>
+                <field name="profit" optional="show"/>
+                <field name="margin_pct" optional="show"/>
+                <field name="is_profitable" optional="hide"/>
+                <field name="minimum_profitable_price" optional="hide"/>
                 <field name="is_default"/>
                 <field name="active" widget="boolean_toggle"/>
             </list>
@@ -50,8 +55,22 @@
                         <group string="Pricing">
                             <field name="monthly_price"/>
                             <field name="currency_id"/>
+                            <field name="cost_price"/>
                         </group>
                     </group>
+                    <field name="cost_tracked" invisible="1"/>
+                    <field name="is_profitable" invisible="1"/>
+                    <group string="Profitability" invisible="not cost_tracked">
+                        <field name="profit" widget="monetary" readonly="1"
+                               string="Gross Profit"/>
+                        <field name="margin_pct" readonly="1" string="Gross Margin %"/>
+                        <field name="minimum_profitable_price" widget="monetary"
+                               readonly="1"/>
+                    </group>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="not cost_tracked or is_profitable">
+                        ⚠ This support plan is priced below its cost (loss-making).
+                    </div>
                     <group string="Description">
                         <field name="description" nolabel="1"
                                placeholder="What this support tier includes — channels, SLA, escalation…"/>

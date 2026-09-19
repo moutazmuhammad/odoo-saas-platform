@@ -109,7 +109,8 @@ class KubernetesDriver(ComputeDriver):
         if self._api_client is not None:
             return self._api_client
         region = self.server.region_id
-        kubeconfig = (region.kubeconfig or '').strip() if region else ''
+        kc = region.kubeconfig_id if region else False
+        kubeconfig = (kc._kubeconfig_yaml() or '').strip() if kc else ''
         if not kubeconfig:
             raise RuntimeError(
                 "Server '%s' has compute_driver=kubernetes but its region "

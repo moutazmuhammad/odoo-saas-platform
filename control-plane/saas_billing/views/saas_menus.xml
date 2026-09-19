@@ -8,51 +8,59 @@
               name="Billing"
               parent="saas_core.saas_master_menu_root"
               sequence="20"/>
+    <!-- Commercial catalog config — moved here from Infrastructure/
+         Configuration (billing/pricing architecture redesign, Part 6/9):
+         these are pricing/plan decisions the owner makes, not
+         infrastructure config, so they belong alongside the rest of
+         Billing rather than mixed in with Servers/Regions/Domains. -->
+    <menuitem id="saas_master_menu_plans"
+              name="Plans"
+              parent="saas_master_menu_billing"
+              action="saas_core.saas_plan_action"
+              sequence="5"/>
+    <menuitem id="saas_master_menu_compute_tiers"
+              name="Compute Tiers"
+              parent="saas_master_menu_billing"
+              action="saas_core.saas_compute_tier_action"
+              sequence="7"/>
+    <menuitem id="saas_master_menu_addons"
+              name="Add-ons"
+              parent="saas_master_menu_billing"
+              action="saas_addon_action"
+              sequence="8"/>
+    <menuitem id="saas_master_menu_support_plans"
+              name="Support Plans"
+              parent="saas_master_menu_billing"
+              action="saas_support_plan_action"
+              sequence="9"/>
+    <!-- Tenant Margins/Profitability: the action stays defined in
+         saas_core (views/saas_margin_views.xml, still saas.instance-
+         scoped) and is ALSO the promoted Dashboard menu item at the app
+         root — kept here too so it's reachable from Billing directly. -->
+    <menuitem id="saas_master_menu_margins"
+              name="Profitability"
+              parent="saas_master_menu_billing"
+              action="saas_core.action_saas_tenant_margins"
+              sequence="35"/>
     <menuitem id="saas_master_menu_wallets"
               name="Customer Wallets"
               parent="saas_master_menu_billing"
               action="saas_wallet_action"
-              sequence="10"/>
+              sequence="40"/>
     <menuitem id="saas_master_menu_payment_methods"
               name="Saved Payment Methods"
               parent="saas_master_menu_billing"
               action="saas_payment_method_action"
-              sequence="20"/>
+              sequence="50"/>
     <menuitem id="saas_master_menu_payment_attempts"
               name="Payment Attempts"
               parent="saas_master_menu_billing"
               action="saas_payment_attempt_action"
-              sequence="30"/>
-    <!-- Tenant Margins: the action stays defined in saas_core
-         (views/saas_margin_views.xml, still saas.instance-scoped), but
-         the menu ITEM has to live wherever its parent ("Billing") lives,
-         referencing that action across the (allowed) billing->core
-         direction. -->
-    <menuitem id="saas_master_menu_margins"
-              name="Tenant Margins"
-              parent="saas_master_menu_billing"
-              action="saas_core.action_saas_tenant_margins"
-              sequence="35"/>
-
-    <!-- Configuration > Payment Provider Routing -->
+              sequence="60"/>
     <menuitem id="saas_master_menu_payment_routing"
               name="Payment Provider Routing"
-              parent="saas_core.saas_master_menu_configuration"
+              parent="saas_master_menu_billing"
               action="saas_payment_provider_config_action"
-              sequence="60"/>
-
-    <!-- Configuration > Add-ons -->
-    <menuitem id="saas_master_menu_addons"
-              name="Add-ons"
-              parent="saas_core.saas_master_menu_configuration"
-              action="saas_addon_action"
-              sequence="22"/>
-
-    <!-- Configuration > Support Plans -->
-    <menuitem id="saas_master_menu_support_plans"
-              name="Support Plans"
-              parent="saas_core.saas_master_menu_configuration"
-              action="saas_support_plan_action"
-              sequence="24"/>
+              sequence="70"/>
 
 </odoo>

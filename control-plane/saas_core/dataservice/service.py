@@ -156,7 +156,8 @@ class DataService:
                 "migrate_to_kubernetes: target server '%s' is not a "
                 "Kubernetes server."
             ) % target_server.name)
-        if not (target_server.region_id and target_server.region_id.kubeconfig):
+        if not (target_server.region_id and target_server.region_id.kubeconfig_id
+                and target_server.region_id.kubeconfig_id.kubeconfig_loaded):
             raise UserError(_(
                 "migrate_to_kubernetes: target server '%s' has no region "
                 "kubeconfig configured."

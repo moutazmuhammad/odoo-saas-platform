@@ -13,6 +13,12 @@
         <field name="arch" type="xml">
             <xpath expr="//field[@name='is_public_tier']" position="after">
                 <field name="price" widget="monetary"/>
+                <field name="cost_price" widget="monetary" optional="show"
+                       invisible="is_trial_plan"/>
+                <field name="profit" widget="monetary" optional="show"
+                       invisible="is_trial_plan"/>
+                <field name="margin_pct" optional="show" invisible="is_trial_plan"/>
+                <field name="is_profitable" optional="hide" invisible="is_trial_plan"/>
             </xpath>
         </field>
     </record>
@@ -39,6 +45,52 @@
                     <field name="yearly_price" widget="monetary"/>
                     <field name="yearly_discount_pct" string="Yearly Savings"/>
                     <field name="currency_id" groups="base.group_multi_currency"/>
+                </group>
+                <!-- "Can I make money on this plan?" answered in one
+                     glance (billing/pricing architecture redesign, Part
+                     2/8) — Customer Price / Estimated Cost / Gross
+                     Profit / Gross Margin / Status, plus a real (not
+                     invented) cost breakdown and a minimum-price check. -->
+                <group string="Profitability" invisible="is_trial_plan">
+                    <field name="cost_tracked" invisible="1"/>
+                    <field name="is_profitable" invisible="1"/>
+                    <field name="price" widget="monetary" readonly="1"
+                           string="Customer Price"/>
+                    <field name="cost_price" widget="monetary" readonly="1"
+                           string="Estimated Cost" invisible="not cost_tracked"/>
+                    <field name="profit" widget="monetary" readonly="1"
+                           string="Gross Profit" invisible="not cost_tracked"/>
+                    <field name="margin_pct" readonly="1"
+                           string="Gross Margin %" invisible="not cost_tracked"/>
+                    <field name="minimum_profitable_price" widget="monetary"
+                           readonly="1" invisible="not cost_tracked"
+                           help="The price needed to hit the platform's target margin (Settings > Margin Protection) on this plan's estimated cost."/>
+                </group>
+                <div class="alert alert-info" role="alert"
+                     invisible="is_trial_plan or cost_tracked">
+                    Cost is not tracked for this plan's resources yet — set
+                    the worker/storage cost floors in
+                    <b>Settings ▸ Margin Protection</b> to see estimated
+                    cost, profit and margin here.
+                </div>
+                <div class="alert alert-warning" role="alert"
+                     invisible="is_trial_plan or not cost_tracked or is_profitable">
+                    <field name="margin_pct" readonly="1" class="fw-bold"/>% margin —
+                    <b>⚠ this plan is priced below its estimated cost (loss-making)</b>.
+                    Raise the price to at least
+                    <field name="minimum_profitable_price" widget="monetary" readonly="1" class="fw-bold"/>
+                    to hit the target margin, or lower the discount.
+                </div>
+                <div class="alert alert-success" role="alert"
+                     invisible="is_trial_plan or not cost_tracked or not is_profitable">
+                    ✓ Profitable —
+                    <field name="margin_pct" readonly="1" class="fw-bold"/>% gross margin.
+                </div>
+                <group string="Cost Breakdown (Estimated)" invisible="is_trial_plan or not cost_tracked">
+                    <field name="cost_price_compute" widget="monetary" readonly="1"
+                           string="Compute"/>
+                    <field name="cost_price_storage" widget="monetary" readonly="1"
+                           string="Storage"/>
                 </group>
             </xpath>
         </field>

@@ -15,7 +15,10 @@ def _make_driver(kubeconfig='apiVersion: v1\nkind: Config\n'):
     server = MagicMock()
     server.id = 7
     server.name = 'k8s-test-server'
-    server.region_id.kubeconfig = kubeconfig
+    # kubeconfig now lives on a dedicated saas.kubeconfig record
+    # (region.kubeconfig_id), read via its _kubeconfig_yaml() accessor —
+    # same upload-only/encrypted-at-rest shape as saas.ssh.key.pair.
+    server.region_id.kubeconfig_id._kubeconfig_yaml.return_value = kubeconfig
     server.region_id.name = 'test-region'
     driver = KubernetesDriver(server)
     driver._api_client = MagicMock()

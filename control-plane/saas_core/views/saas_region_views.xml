@@ -47,13 +47,22 @@
                             <field name="currency_id"/>
                         </group>
                     </group>
-                    <group string="Kubernetes">
-                        <field name="kubeconfig" widget="text"
-                               placeholder="apiVersion: v1&#10;kind: Config&#10;..."/>
+                    <div class="text-muted mb-2">
+                        One region maps to exactly one Kubernetes cluster.
+                        This is where that cluster's connection lives — not
+                        on any individual entry under Compute. Leave empty
+                        if this region only serves Docker Compose hosts.
+                    </div>
+                    <group string="Kubernetes Cluster Connection">
+                        <field name="kubeconfig_id" options="{'no_open': False}"/>
+                        <field name="ingress_host"
+                               placeholder="e.g. 203.0.113.10 or ingress.eu-cluster.example.com"/>
+                        <field name="ingress_port"/>
                     </group>
-                    <field name="server_ids" readonly="1">
+                    <field name="server_ids" string="Compute" readonly="1">
                         <list>
                             <field name="name"/>
+                            <field name="compute_driver"/>
                             <field name="is_proxy_server"/>
                             <field name="is_docker_host"/>
                             <field name="is_db_server"/>

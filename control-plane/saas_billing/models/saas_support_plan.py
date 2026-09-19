@@ -47,10 +47,59 @@ class SaasSupportPlan(models.Model):
         'res.currency',
         default=lambda self: self.env.company.currency_id,
     )
+    cost_price = fields.Float(
+        string='Cost / month', default=0.0,
+        help='Optional: what this support tier actually costs to run '
+             '(staff time, on-call, tooling). Purely informational — '
+             'compared against Monthly Price for margin visibility, NOT '
+             'enforced as a floor. 0 = not tracked.',
+    )
+    profit = fields.Float(
+        string='Gross Profit / month', compute='_compute_profitability',
+        help='Monthly Price − Cost. Display-only.',
+    )
+    margin_pct = fields.Float(
+        string='Margin %', compute='_compute_profitability',
+        help='(Monthly Price − Cost) / Monthly Price. Display-only.',
+    )
+    is_profitable = fields.Boolean(
+        string='Profitable', compute='_compute_profitability',
+        help='True when gross profit >= 0, or when cost is not tracked (0).',
+    )
+    cost_tracked = fields.Boolean(
+        string='Cost Tracked', compute='_compute_profitability',
+        help='False when Cost / month is 0 (not entered) — Profit/Margin '
+             'are not meaningful until a cost is set.',
+    )
+    minimum_profitable_price = fields.Float(
+        string='Minimum Profitable Price', compute='_compute_profitability',
+        help='The price needed to hit the platform\'s target margin '
+             '(Settings > Margin Protection) on this plan\'s cost. 0 when '
+             'cost is not tracked.',
+    )
 
     _sql_constraints = [
         ('code_uniq', 'unique(code)', 'Support plan code must be unique.'),
     ]
+
+    @api.depends('monthly_price', 'cost_price')
+    def _compute_profitability(self):
+        engine = self.env['saas.pricing.engine']
+        icp = self.env['ir.config_parameter'].sudo()
+        try:
+            target_margin = float(
+                icp.get_param('saas_master.target_margin_pct', '30') or 30)
+        except (TypeError, ValueError):
+            target_margin = 30.0
+        for rec in self:
+            result = engine.profitability(rec.monthly_price, rec.cost_price)
+            rec.profit = result['profit']
+            rec.margin_pct = result['margin_pct']
+            rec.is_profitable = result['is_profitable']
+            rec.cost_tracked = rec.cost_price > 0
+            rec.minimum_profitable_price = (
+                engine.minimum_profitable_price(rec.cost_price, target_margin)
+                or 0.0) if rec.cost_tracked else 0.0
 
     @api.constrains('is_default')
     def _check_single_default(self):

@@ -60,6 +60,95 @@ class SaasPlan(models.Model):
         help='Percentage saved when choosing yearly vs monthly billing.',
     )
 
+    # ========== Profitability (computed, not manually entered) ==========
+    # A named plan's cost is the SAME cost-derived floor
+    # (saas.pricing.engine._cost_floor) already used to keep its price from
+    # undercutting infra cost — surfaced here rather than invented, since
+    # it's already the real number the engine uses for this plan's
+    # resources/kind.
+    cost_price = fields.Float(
+        string='Estimated Cost / month', compute='_compute_profitability',
+        help='Cost-derived floor for this plan\'s resources (workers × '
+             'worker cost floor + storage × storage cost floor — the '
+             'same rates Settings > Margin Protection uses). 0 when those '
+             'cost floors are not configured (see Cost Tracked).',
+    )
+    cost_price_compute = fields.Float(
+        string='Compute Cost / month', compute='_compute_profitability',
+        help='The compute component of Estimated Cost: workers × the '
+             'worker cost floor. Real breakdown of the number above, not '
+             'an invented category.',
+    )
+    cost_price_storage = fields.Float(
+        string='Storage Cost / month', compute='_compute_profitability',
+        help='The storage component of Estimated Cost: storage (GB) × '
+             'the storage cost floor.',
+    )
+    cost_tracked = fields.Boolean(
+        string='Cost Tracked', compute='_compute_profitability',
+        help='False when the cost floor for this plan\'s rate is 0 '
+             '(unconfigured in Settings) — Estimated Cost/Profit/Margin '
+             'are not meaningful until a cost floor is set.',
+    )
+    profit = fields.Float(
+        string='Gross Profit / month', compute='_compute_profitability',
+        help='Monthly Price − Estimated Cost.',
+    )
+    margin_pct = fields.Float(
+        string='Margin %', compute='_compute_profitability',
+        help='(Monthly Price − Estimated Cost) / Monthly Price.',
+    )
+    is_profitable = fields.Boolean(
+        string='Profitable', compute='_compute_profitability',
+        help='True when gross profit >= 0.',
+    )
+    minimum_profitable_price = fields.Float(
+        string='Minimum Profitable Price', compute='_compute_profitability',
+        help='The price needed to hit the platform\'s target margin '
+             '(Settings > Margin Protection) on this plan\'s estimated '
+             'cost. 0 when cost is not tracked.',
+    )
+
+    @api.depends('price', 'workers', 'storage_limit', 'saas_product_ids',
+                 'is_trial_plan')
+    def _compute_profitability(self):
+        engine = self.env['saas.pricing.engine']
+        icp = self.env['ir.config_parameter'].sudo()
+        try:
+            target_margin = float(
+                icp.get_param('saas_master.target_margin_pct', '30') or 30)
+        except (TypeError, ValueError):
+            target_margin = 30.0
+        for rec in self:
+            if rec.is_trial_plan:
+                # Free by construction (see _check_trial_plan_zero) —
+                # "is this profitable" isn't a meaningful question.
+                rec.cost_price = 0.0
+                rec.cost_price_compute = 0.0
+                rec.cost_price_storage = 0.0
+                rec.cost_tracked = False
+                rec.profit = 0.0
+                rec.margin_pct = 0.0
+                rec.is_profitable = True
+                rec.minimum_profitable_price = 0.0
+                continue
+            cfg = engine._rate_config(rec._kind())
+            workers = rec.workers or 0
+            storage = int(rec.storage_limit or 0)
+            compute_cost = workers * cfg['worker_floor']
+            storage_cost = storage * cfg['storage_floor']
+            cost = compute_cost + storage_cost
+            rec.cost_price = cost
+            rec.cost_price_compute = compute_cost
+            rec.cost_price_storage = storage_cost
+            rec.cost_tracked = cost > 0
+            result = engine.profitability(rec.price, cost)
+            rec.profit = result['profit']
+            rec.margin_pct = result['margin_pct']
+            rec.is_profitable = result['is_profitable']
+            rec.minimum_profitable_price = (
+                engine.minimum_profitable_price(cost, target_margin) or 0.0)
+
     @api.constrains('is_trial_plan', 'price', 'yearly_price')
     def _check_trial_plan_zero(self):
         for rec in self:

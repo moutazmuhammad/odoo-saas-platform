@@ -200,8 +200,8 @@
                         </table>
                     </setting>
                     <setting id="saas_margin_visibility_setting"
-                             string="Margin (display only)"
-                             help="(Price − Floor) / Price for each rate above. Read-only — not a new pricing mechanic, just makes the existing cost/margin relationship visible.">
+                             string="Rate headroom above cost floor (display only)"
+                             help="(Rate − Floor) / Rate for each rate above. This is NOT a plan's real gross margin — it's headroom on the sale RATE before any per-plan discount. For real, per-plan or per-tenant profit and margin (after discounts, against actual usage), see Billing ▸ Plans or Billing ▸ Profitability.">
                         <table class="table table-sm table-borderless mb-0 mt8" style="max-width:460px;">
                             <thead>
                                 <tr class="o_light_label">
@@ -212,17 +212,27 @@
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td class="o_light_label align-middle">Margin per worker</td>
+                                    <td class="o_light_label align-middle">Headroom per worker</td>
                                     <td><field name="margin_hosting_worker_pct" readonly="1"/> %</td>
                                     <td><field name="margin_services_worker_pct" readonly="1"/> %</td>
                                 </tr>
                                 <tr>
-                                    <td class="o_light_label align-middle">Margin per GB</td>
+                                    <td class="o_light_label align-middle">Headroom per GB</td>
                                     <td><field name="margin_hosting_storage_pct" readonly="1"/> %</td>
                                     <td><field name="margin_services_storage_pct" readonly="1"/> %</td>
                                 </tr>
                             </tbody>
                         </table>
+                    </setting>
+                    <setting id="saas_target_margin_setting"
+                             string="Target margin"
+                             help="The gross margin the business wants on every priced item. Used to compute each plan/tier/add-on's Minimum Profitable Price (shown next to its current price) — cost / (1 - target/100).">
+                        <div class="content-group">
+                            <div class="mt8">
+                                <field name="saas_target_margin_pct" class="oe_inline" style="max-width:6rem;"/>
+                                <span class="text-muted ms-2">%</span>
+                            </div>
+                        </div>
                     </setting>
                 </block>
 

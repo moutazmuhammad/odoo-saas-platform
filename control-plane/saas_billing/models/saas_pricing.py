@@ -104,6 +104,53 @@ class SaasPricingEngine(models.AbstractModel):
         """S3/S4: cost-derived price floor. Default rates 0 -> 0.0."""
         return (workers * cfg['worker_floor']) + (storage * cfg['storage_floor'])
 
+    # ------------------------------------------------------------------
+    # THE single profitability calculation. Every cost_price/margin_pct
+    # field anywhere in the platform (saas.plan, saas.compute.tier,
+    # saas.addon, saas.support.plan, saas.instance) must call this rather
+    # than re-deriving profit/margin by hand — three hand-rolled copies of
+    # this exact formula existed across the codebase before this method
+    # was added (billing/pricing architecture redesign, Part 12).
+    #
+    # Public cross-addon API: called from saas_core (saas_instance.py,
+    # saas_compute_tier.py) in addition to saas_billing's own models.
+    # ------------------------------------------------------------------
+    @api.model
+    def profitability(self, price, cost):
+        """Given a selling ``price`` and an estimated/real ``cost`` (same
+        currency, same period), return the one true profit/margin shape:
+        ``{'profit': price - cost, 'margin_pct': profit/price*100 (0 if
+        price <= 0), 'is_profitable': profit >= 0}``."""
+        price = price or 0.0
+        cost = cost or 0.0
+        profit = price - cost
+        margin_pct = (100.0 * profit / price) if price > 0 else 0.0
+        return {
+            'profit': profit,
+            'margin_pct': margin_pct,
+            'is_profitable': profit >= 0,
+        }
+
+    @api.model
+    def minimum_profitable_price(self, cost, target_margin_pct):
+        """The selling price needed to hit ``target_margin_pct`` on
+        ``cost``: ``price = cost / (1 - target_margin_pct/100)``.
+
+        Returns ``None`` when the target margin is undefined (>= 100%, a
+        divide-by-zero/negative-price asymptote) rather than a nonsensical
+        number. Cost <= 0 has no meaningful minimum price — returns 0.0
+        (any positive price is already infinitely profitable on zero cost).
+
+        Public cross-addon API: called from saas_core (saas_instance.py)
+        in addition to saas_billing's own models.
+        """
+        cost = cost or 0.0
+        if cost <= 0:
+            return 0.0
+        if target_margin_pct is None or target_margin_pct >= 100:
+            return None
+        return cost / (1 - (target_margin_pct / 100.0))
+
     # NOTE: the old "custom price can't undercut a tier" floor
     # (saas_master.custom_min_is_nearest_tier) was removed: under the
     # UNIFIED pricing model it is mathematically a no-op. A named tier's
@@ -319,6 +366,12 @@ class SaasPricingEngine(models.AbstractModel):
                 # for breakdown consumers.
                 'floor': round(floor, 2),
                 'cost_floor': round(floor, 2),
+                # The two real addends _cost_floor() sums — exposed
+                # separately so a "cost breakdown" UI can show Compute vs
+                # Storage truthfully (not invented categories; this is
+                # the actual formula, decomposed).
+                'worker_cost_floor': round(workers * cfg['worker_floor'], 2),
+                'storage_cost_floor': round(storage * cfg['storage_floor'], 2),
                 'resource_monthly': round(resource_monthly, 2),
                 'addons_monthly': round(addons_monthly, 2),
                 # P3: flat support-plan fee (not region-scaled).

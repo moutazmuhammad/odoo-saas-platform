@@ -45,3 +45,4 @@ from . import test_payment
 from . import test_k8s_migration_dump
 from . import test_cutover_to_kubernetes
 from . import test_compute_backend_selection
+from . import test_deployment_navigation

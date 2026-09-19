@@ -201,13 +201,29 @@ class SaasInstance(models.Model):
                 self.plan_id = False
     docker_server_id = fields.Many2one(
         'saas.server',
-        string='Docker Server',
+        string='Compute Target',
         tracking=True,
         ondelete='restrict',
         index=True,
         domain="[('is_docker_host', '=', True)]",
-        help='Physical server where the Docker container for this instance runs. '
-             'Leave empty for automatic allocation based on server capacity.',
+        help='Where this instance actually runs: a Docker Compose host '
+             '(a physical/VM server, reached over SSH) or a Kubernetes '
+             'cluster registration (see the Deployment field for which — '
+             'a Kubernetes entry represents a managed cluster, not a '
+             'single machine; its connection details live on the '
+             'server\'s Region, not here). Leave empty for automatic '
+             'allocation based on capacity.',
+    )
+    compute_driver = fields.Selection(
+        related='docker_server_id.compute_driver', string='Deployment',
+        store=True, readonly=True,
+        help='Which backend this instance actually runs on — Kubernetes or '
+             'Docker Compose. A convenience passthrough of '
+             'docker_server_id.compute_driver so it\'s glanceable on the '
+             'instance list/form and usable for grouping/filtering '
+             '(billing/pricing architecture redesign, Part 4/5) without '
+             'opening the server record. Stored so it can be grouped by '
+             'in the Profitability dashboard.',
     )
     region_id = fields.Many2one(
         'saas.region',
@@ -916,27 +932,36 @@ class SaasInstance(models.Model):
             rec.storage_limit_gb = rec.plan_id.storage_limit or 0.0
 
     # ===== Phase 4: per-tenant margin (revenue − infra cost) =====
+    # store=True (billing/pricing architecture redesign, Profitability
+    # dashboard): the dashboard's list/pivot/graph views sort and group by
+    # these fields, and Odoo's ORM refuses to generate SQL ORDER BY / most
+    # read_group aggregation for a non-stored field ("Cannot convert ...
+    # to SQL because it is not stored") — this crashed the dashboard the
+    # moment it was opened. See the @depends note below for the one
+    # accepted staleness tradeoff storing these introduces.
     margin_currency_id = fields.Many2one(
-        'res.currency', compute='_compute_margin', string='Margin Currency')
+        'res.currency', compute='_compute_margin', string='Margin Currency',
+        store=True)
     monthly_cost = fields.Monetary(
         string='Infra Cost / month', compute='_compute_margin',
-        currency_field='margin_currency_id', store=False,
+        currency_field='margin_currency_id', store=True,
         help='Phase 4: provisioned CPU/RAM + used storage × this server\'s rate '
              'card. For a Production env, includes its child (staging/dev) costs.')
     monthly_revenue = fields.Monetary(
         string='Revenue / month', compute='_compute_margin',
-        currency_field='margin_currency_id', store=False,
+        currency_field='margin_currency_id', store=True,
         help='Monthly-equivalent recurring revenue (plan + support, period-normalized). '
              'Child environments bill via the parent, so their own revenue is 0.')
     monthly_margin = fields.Monetary(
         string='Margin / month', compute='_compute_margin',
-        currency_field='margin_currency_id', store=False,
+        currency_field='margin_currency_id', store=True,
         help='Revenue − infra cost. Negative = this tenant loses money.')
     margin_pct = fields.Float(
-        string='Margin %', compute='_compute_margin',
+        string='Margin %', compute='_compute_margin', store=True,
         help='Margin as a percentage of revenue.')
     is_profitable = fields.Boolean(
-        string='Profitable', compute='_compute_margin', search='_search_profitable',
+        string='Profitable', compute='_compute_margin', store=True,
+        search='_search_profitable',
         help='True when monthly margin ≥ 0.')
 
     def _instance_infra_cost(self):
@@ -962,11 +987,26 @@ class SaasInstance(models.Model):
         plan = self.plan_id
         if not plan:
             return 0.0
+        if 'price' not in plan._fields:
+            # saas_billing (which contributes saas.plan.price/yearly_price
+            # and saas.instance.support_plan_id) hasn't loaded yet. This
+            # only happens during saas_core's OWN module init eagerly
+            # recomputing the now-store=True monthly_revenue/
+            # monthly_margin/etc. fields on a database with EXISTING
+            # saas.instance rows (see _profitability_safe's docstring) —
+            # a fresh install never hits this (nothing to backfill).
+            # Revenue is unknowable in that narrow window; returning 0
+            # here leaves a temporarily-wrong stored value that
+            # saas_billing's post_init_hook corrects immediately after
+            # it finishes loading (see saas_billing/hooks.py).
+            return 0.0
         base = (plan.yearly_price or plan.price * 12) / 12.0 \
             if self.billing_period == 'yearly' else plan.price
         # Support is a flat monthly price (per the pricing rules: support/backup
         # are flat ×12 for yearly), so it's the same per month regardless of period.
-        support = self.support_plan_id.monthly_price if self.support_plan_id else 0.0
+        support = 0.0
+        if 'support_plan_id' in self._fields and self.support_plan_id:
+            support = self.support_plan_id.monthly_price
         return (base or 0.0) + (support or 0.0)
 
     # NOTE: 'support_plan_id' is intentionally NOT in this @depends list.
@@ -976,11 +1016,20 @@ class SaasInstance(models.Model):
     # crash registry setup with "Dependency field 'support_plan_id' not
     # found in model saas.instance". _instance_monthly_revenue() still
     # reads self.support_plan_id fine at runtime (Odoo merges _inherit
-    # contributions into one class); the only effect of leaving it out of
-    # @depends is that an in-memory cached value of these non-stored
-    # fields won't auto-invalidate within the same transaction if
-    # support_plan_id changes — negligible here since a fresh read always
-    # recomputes them regardless.
+    # contributions into one class).
+    #
+    # Now that these fields are store=True (needed for the Profitability
+    # dashboard's sorting/grouping — see the field definitions above),
+    # this omission has a real (if narrow) consequence: changing ONLY
+    # support_plan_id on an instance, with nothing else changing at the
+    # same time, will NOT auto-refresh the stored monthly_revenue/
+    # monthly_margin/margin_pct/is_profitable columns — reads will return
+    # the last-computed value until some OTHER dependency changes (e.g.
+    # the next storage-usage refresh) or the row is force-recomputed.
+    # Accepted tradeoff: support-plan changes are infrequent, and getting
+    # this fully correct would need a cross-addon dependency-extension
+    # mechanism Odoo's ORM doesn't cleanly support (a subclass's
+    # @api.depends replaces, rather than extends, the base method's).
     @api.depends('plan_id', 'billing_period', 'storage_used_gb',
                  'docker_server_id.cost_per_cpu_month',
                  'docker_server_id.cost_per_gb_ram_month',
@@ -995,11 +1044,39 @@ class SaasInstance(models.Model):
             if not rec.parent_id:
                 cost += sum(c._instance_infra_cost() for c in rec.child_env_ids)
             revenue = rec._instance_monthly_revenue()
+            result = rec._profitability_safe(revenue, cost)
             rec.monthly_cost = cost
             rec.monthly_revenue = revenue
-            rec.monthly_margin = revenue - cost
-            rec.margin_pct = (100.0 * (revenue - cost) / revenue) if revenue else 0.0
-            rec.is_profitable = (revenue - cost) >= 0
+            rec.monthly_margin = result['profit']
+            rec.margin_pct = result['margin_pct']
+            rec.is_profitable = result['is_profitable']
+
+    def _profitability_safe(self, price, cost):
+        """Same formula as saas.pricing.engine.profitability() (saas_billing's
+        one authoritative profit/margin calculation) — called that way
+        whenever possible, so this figure can never drift from
+        saas.plan/saas.compute.tier/saas.addon/saas.support.plan's own
+        margin numbers. Falls back to an inline copy of the identical
+        formula ONLY in one narrow window: monthly_margin/monthly_cost/
+        etc. are store=True (needed for the Profitability dashboard's
+        sorting — see the field definitions above), so on an UPGRADE of a
+        database with existing saas.instance rows, Odoo eagerly recomputes
+        and backfills them during saas_core's OWN module init — which
+        happens before saas_billing (which owns the engine) has loaded.
+        A fresh install never hits this (no existing rows to backfill).
+        Confirmed live: this raised
+        ``KeyError: 'saas.pricing.engine'`` during `-u saas_core` on a
+        database with real instances, even though every automated test
+        passed (they only ever exercise a fresh `-i` install)."""
+        try:
+            return self.env['saas.pricing.engine'].profitability(price, cost)
+        except KeyError:
+            price = price or 0.0
+            cost = cost or 0.0
+            profit = price - cost
+            margin_pct = (100.0 * profit / price) if price > 0 else 0.0
+            return {'profit': profit, 'margin_pct': margin_pct,
+                    'is_profitable': profit >= 0}
 
     @api.model
     def _cron_flag_unprofitable_tenants(self):

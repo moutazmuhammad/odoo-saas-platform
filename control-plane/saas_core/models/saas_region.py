@@ -1,8 +1,6 @@
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
 
-from ..fields import EncryptedChar
-
 
 class SaasRegion(models.Model):
     """A hosting region. Server cost varies by region, so each region
@@ -40,15 +38,16 @@ class SaasRegion(models.Model):
     )
     currency_id = fields.Many2one('res.currency')
     server_ids = fields.One2many('saas.server', 'region_id', string='Servers')
-    kubeconfig = EncryptedChar(
+    kubeconfig_id = fields.Many2one(
+        'saas.kubeconfig',
         string='Kubeconfig',
         groups='saas_core.group_saas_manager',
-        copy=False,
-        help="Kubeconfig for the Kubernetes cluster hosting this region's "
+        help="Credential for the Kubernetes cluster hosting this region's "
              "compute-layer tenants (one cluster per region) — analogous "
-             "to how a Server holds SSH credentials for the Docker-over-"
-             "SSH path. Manager-only; encrypted at rest once a "
-             "saas_secret_key is configured.",
+             "to how a Compute entry holds an SSH Key Pair for the Docker "
+             "Compose path. A dedicated, encrypted-at-rest record (same "
+             "upload-only pattern as SSH Key Pairs), not a field pasted "
+             "directly here.",
     )
     ingress_host = fields.Char(
         string='Ingress Host',

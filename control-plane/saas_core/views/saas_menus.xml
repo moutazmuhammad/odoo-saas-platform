@@ -8,6 +8,16 @@
               web_icon="saas_core,static/description/icon.png"
               groups="base.group_user"/>
 
+    <!-- Dashboard: "can I make money on this?" answered in one click
+         (billing/pricing architecture redesign, Part 6) — the promoted
+         Profitability view (list/pivot/graph, group-by deployment
+         backend), first item in the app on purpose. -->
+    <menuitem id="saas_master_menu_dashboard"
+              name="Dashboard"
+              parent="saas_master_menu_root"
+              action="action_saas_tenant_margins"
+              sequence="5"/>
+
     <!-- Instances -->
     <menuitem id="saas_master_menu_instances"
               name="Instances"
@@ -32,74 +42,97 @@
               action="saas_instance_action_hosting"
               sequence="20"/>
 
+    <!-- Deployment-type filters (Part 5/7) -->
+    <menuitem id="saas_master_menu_instances_kubernetes"
+              name="Kubernetes Instances"
+              parent="saas_master_menu_instances"
+              action="saas_instance_action_kubernetes"
+              sequence="30"/>
+
+    <menuitem id="saas_master_menu_instances_compose"
+              name="Compose Instances"
+              parent="saas_master_menu_instances"
+              action="saas_instance_action_compose"
+              sequence="40"/>
+
     <!-- Billing menu (A1/A4) lives in saas_billing/views/saas_menus.xml —
          moved there along with the wallet/payment models. Tenant Margins
          (action still defined here, in saas_core) is nested under it
          from that file, since saas_billing depends on saas_core and can
          reference this module's action, but not vice versa. -->
 
-    <!-- Configuration -->
+    <!-- Infrastructure (renamed from "Configuration" — billing/pricing
+         architecture redesign, Part 6/9: commercial catalog config
+         (Plans, Compute Tiers, Add-ons, Support Plans, Payment Routing)
+         moved into Billing, leaving this menu purely infrastructure/
+         technical-operator config). Menu id kept unchanged so cross-addon
+         parent= references (saas_billing's menus) don't need touching. -->
     <menuitem id="saas_master_menu_configuration"
-              name="Configuration"
+              name="Infrastructure"
               parent="saas_master_menu_root"
               sequence="90"/>
 
-    <!-- Configuration > Payment Provider Routing lives in
-         saas_billing/views/saas_menus.xml now. -->
-
-    <!-- Configuration > Services -->
+    <!-- Infrastructure > Services -->
     <menuitem id="saas_master_menu_services"
               name="Services"
               parent="saas_master_menu_configuration"
               action="saas_product_action"
               sequence="10"/>
 
-    <!-- Configuration > Plans -->
-    <menuitem id="saas_master_menu_plans"
-              name="Plans"
-              parent="saas_master_menu_configuration"
-              action="saas_plan_action"
-              sequence="20"/>
+    <!-- Plans, Compute Tiers, Add-ons, Support Plans, and Payment
+         Provider Routing all live under Billing now
+         (saas_billing/views/saas_menus.xml) — they're commercial catalog
+         config, not infrastructure. -->
 
-    <!-- Configuration > Add-ons and > Support Plans live in
-         saas_billing/views/saas_menus.xml now. -->
-
-    <!-- Configuration > Compute Tiers -->
-    <menuitem id="saas_master_menu_compute_tiers"
-              name="Compute Tiers"
-              parent="saas_master_menu_configuration"
-              action="saas_compute_tier_action"
-              sequence="25"/>
-
-    <!-- Configuration > Base Domains -->
+    <!-- Infrastructure > Base Domains -->
     <menuitem id="saas_master_menu_based_domain"
               name="Base Domains"
               parent="saas_master_menu_configuration"
               action="saas_odoo_based_domain_action"
               sequence="30"/>
 
-    <!-- Configuration > Odoo Versions -->
+    <!-- Infrastructure > Odoo Versions -->
     <menuitem id="saas_master_menu_odoo_version"
               name="Odoo Versions"
               parent="saas_master_menu_configuration"
               action="saas_odoo_version_action"
               sequence="40"/>
 
-    <!-- Configuration > Regions -->
+    <!-- Infrastructure > Regions -->
     <menuitem id="saas_master_menu_regions"
               name="Regions"
               parent="saas_master_menu_configuration"
               action="saas_region_action"
               sequence="55"/>
 
-    <!-- Configuration > Servers -->
-    <menuitem id="saas_master_menu_servers"
-              name="Servers"
+    <!-- Infrastructure > Compute — a provider-agnostic umbrella (this
+         platform's deployment targets are either Docker Compose hosts or
+         managed Kubernetes clusters; "Servers"/"Clusters" only mean one
+         specific thing each, never used as the generic term). -->
+    <menuitem id="saas_master_menu_compute"
+              name="Compute"
               parent="saas_master_menu_configuration"
-              action="saas_server_action"
               sequence="50"/>
 
-    <!-- Configuration > Settings -->
+    <menuitem id="saas_master_menu_compute_all"
+              name="All Compute"
+              parent="saas_master_menu_compute"
+              action="saas_server_action"
+              sequence="10"/>
+
+    <menuitem id="saas_master_menu_compute_docker"
+              name="Docker Compose Hosts"
+              parent="saas_master_menu_compute"
+              action="saas_server_action_docker"
+              sequence="20"/>
+
+    <menuitem id="saas_master_menu_compute_kubernetes"
+              name="Kubernetes Clusters"
+              parent="saas_master_menu_compute"
+              action="saas_server_action_kubernetes"
+              sequence="30"/>
+
+    <!-- Infrastructure > Settings -->
     <menuitem id="saas_master_menu_settings"
               name="Settings"
               parent="saas_master_menu_configuration"

@@ -34,10 +34,12 @@ into these models).
         'views/saas_addon_views.xml',
         'views/saas_instance_views.xml',
         'views/saas_plan_views.xml',
+        'views/saas_compute_tier_views.xml',
         'views/res_config_settings_views.xml',
         'views/saas_menus.xml',
     ],
     'installable': True,
     'auto_install': False,
     'pre_init_hook': 'pre_init_hook',
+    'post_init_hook': 'post_init_hook',
 }

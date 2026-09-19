@@ -7,4 +7,5 @@ from . import saas_instance
 from . import res_config_settings
 from . import res_partner
 from . import saas_plan
+from . import saas_compute_tier
 from . import account_move

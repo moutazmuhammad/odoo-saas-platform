@@ -93,8 +93,7 @@ class TestCriticalFixes(TransactionCase):
 
     def test_b4_allocation_respects_capacity(self):
         server = self.env['saas.server'].sudo().create({
-            'name': 'cf-host', 'is_docker_host': True, 'is_db_server': True,
-            'max_instances': 1})
+            'name': 'cf-host', 'max_instances': 1})
         # One instance already occupies the host's only slot.
         self._inst(self.c1, 'cfcap1', state='provisioning', server=server)
         # A second deploy in STRICT mode must NOT overcommit it.
@@ -103,7 +102,11 @@ class TestCriticalFixes(TransactionCase):
         with self.assertRaises(ValidationError):
             inst2._allocate_servers()
 
-    # ---- B5: reconciler recreates a missing container, escalates if needed --
+    # ---- B5: reconciler recreates a missing container ----------------------
+    # The "compose files also missing -> escalate to a full redeploy" branch
+    # was removed along with action_redeploy/_do_redeploy (ssh_docker-only);
+    # a start() failure is now just reported as 'recreate_failed', not
+    # escalated to anything else.
 
     def _reconcile(self, inst, status, start_raises=False):
         from odoo.addons.saas_core.drivers.base import HealthStatus
@@ -111,26 +114,23 @@ class TestCriticalFixes(TransactionCase):
         fake.health.return_value = HealthStatus(
             running=False, status=status, restart_count=0, detail=status)
         if start_raises:
-            fake.start.side_effect = RuntimeError("compose file missing")
+            fake.start.side_effect = RuntimeError("cluster unreachable")
         with patch.object(type(inst), '_compute_driver', return_value=fake), \
-             patch.object(type(inst), '_compute_handle', return_value='H'), \
-             patch.object(type(inst), 'action_redeploy') as redeploy:
+             patch.object(type(inst), '_compute_handle', return_value='H'):
             action = inst.reconcile()
-        return fake, redeploy, action
+        return fake, action
 
-    def test_b5_not_found_recreates_from_compose(self):
+    def test_b5_not_found_recreates(self):
         inst = self._inst(self.c1, 'cfb5a', state='running',
                           server=self.env['saas.server'].sudo().create(
-                              {'name': 'cf5a', 'is_docker_host': True}))
-        fake, redeploy, action = self._reconcile(inst, 'not_found')
-        fake.start.assert_called_once()          # compose up -d = recreate
-        redeploy.assert_not_called()
+                              {'name': 'cf5a'}))
+        fake, action = self._reconcile(inst, 'not_found')
+        fake.start.assert_called_once()          # driver.start() = recreate
         self.assertEqual(action, 'recreated')
 
-    def test_b5_not_found_escalates_to_redeploy(self):
+    def test_b5_not_found_start_failure_reports_recreate_failed(self):
         inst = self._inst(self.c1, 'cfb5b', state='running',
                           server=self.env['saas.server'].sudo().create(
-                              {'name': 'cf5b', 'is_docker_host': True}))
-        fake, redeploy, action = self._reconcile(inst, 'not_found', start_raises=True)
-        redeploy.assert_called_once()            # compose gone → full redeploy
-        self.assertEqual(action, 'recreating')
+                              {'name': 'cf5b'}))
+        fake, action = self._reconcile(inst, 'not_found', start_raises=True)
+        self.assertEqual(action, 'recreate_failed')

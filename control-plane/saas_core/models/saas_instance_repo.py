@@ -1521,7 +1521,6 @@ class SaasInstanceRepo(models.Model):
     def action_clone_repo(self):
         """Clone the repository, update config, and restart the instance (async)."""
         for rec in self:
-            rec.instance_id._ensure_can_ssh()
             # Durable queue (ARCH-004): clone+restart is re-runnable (idempotent)
             # and serialised per instance; no secret args (token is on the row).
             self.env['saas.job'].enqueue(

@@ -2,14 +2,41 @@
 
 **Status: living document. Last synchronized with the codebase: 2026-09-15.**
 
+> **⚠️ Major update, 2026-09-21 — ssh_docker/Docker Compose backend fully
+> removed.** The dual-backend architecture described in several sections
+> below (compute_driver as a platform-level ssh_docker-vs-Kubernetes
+> choice, `SshDockerDriver`, `migrate_to_kubernetes`/cutover, the daily
+> backup add-on's restic-over-SSH implementation) no longer exists —
+> **Kubernetes is now the platform's only compute backend.** Every
+> ssh_docker feature was either ported onto Kubernetes exec (self-service
+> database operations, the pod-exec terminal) or redesigned around the
+> Kubernetes operator's own native mechanisms (scheduled backups now use
+> the operator's `spec.backup` CronJob, not restic). Sections below that
+> narrate the OLD dual-backend design/migration work are kept as a
+> historical record of that decision, not a current-state description —
+> see `TEST-CLUSTER-SETUP.md` for the current, accurate setup/architecture
+> reference. **Update, 2026-09-21**: the backup-tool image gap this note
+> originally flagged (`ghcr.io/freightright/odoo-saas-backup-tool` never
+> built/published, breaking backups AND blocking deletion of any
+> backed-up instance) is fixed on the test cluster — built from this
+> repo's already-existing `compute/tools/backup-tool/` source and loaded
+> directly into that cluster's containerd (see `TEST-CLUSTER-SETUP.md`
+> §11), live-verified producing real backup artifacts and no longer
+> blocking deletion. That fix is cluster-local (not a published registry
+> image yet) — repeat it for any other cluster, or publish the image for
+> real once there's registry access.
+
 This is the **single source of truth** for where this platform stands and where
 it's going. It replaces `docs/PRODUCTION-READINESS-PLAN.md` and
 `control-plane/docs/architecture/MICROSERVICES-PLAN.md` (both consolidated into
 this document and removed, along with every other one-off audit/plan/status
 report previously scattered across the repo — see "Document hygiene" below).
 Pure architecture/structure references survive separately (component READMEs,
-`compute/docs/architecture.md`, `control-plane/docs/architecture/architecture-spec-v1.md`)
-and are linked from the relevant sections instead of being duplicated here.
+`control-plane/docs/architecture/architecture-spec-v1.md`) and are linked from
+the relevant sections instead of being duplicated here — `compute/docs/architecture.md`
+was since removed; the CRD/operator source itself
+(`compute/operator/api/v1alpha1/odooinstance_types.go`,
+`compute/operator/internal/controller/`) is now the reference for that.
 
 **Vision**: an Odoo.sh-equivalent hosting platform — self-service instance
 provisioning, git-based deploys, branch environments, backups/restore,

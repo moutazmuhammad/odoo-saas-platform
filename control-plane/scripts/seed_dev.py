@@ -20,23 +20,44 @@ CUR = E.company.currency_id
 today = fields.Date.today()
 now = fields.Datetime.now()
 
-# SSH key stored on the (mock) seed server record. Path is overridable; if the
-# file is missing we generate a throwaway ed25519 key so the seed is
-# self-contained and portable (no real host is contacted in seed-only mode).
-KEY_PATH = os.environ.get(
-    'SAAS_SEED_KEY', os.path.expanduser('~/.saas-seed-key'))
-if not os.path.exists(KEY_PATH):
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-        Ed25519PrivateKey)
-    from cryptography.hazmat.primitives import serialization
-    pem = Ed25519PrivateKey.generate().private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.OpenSSH,
-        serialization.NoEncryption())
-    with open(KEY_PATH, 'wb') as fh:
-        fh.write(pem)
-    os.chmod(KEY_PATH, 0o600)
-    print('generated throwaway seed SSH key at', KEY_PATH)
+# Placeholder kubeconfig for the mock regions below — well-formed YAML
+# pointing at a deliberately unreachable address. This is NOT a real
+# cluster: has_capacity()'s region-picker check only reads the cached
+# health_state (forced to 'ok' below) and region.kubeconfig_id being
+# truthy, so checkout/billing/portal can be exercised for real without
+# any real infra. A live probe (at actual action_deploy() time — the
+# region picker never triggers one) will correctly fail to connect,
+# matching this project's "mock provisioning" contract: no real
+# provisioning ever happens in seed-only mode (see TEST-CLUSTER-SETUP.md).
+_MOCK_KUBECONFIG_YAML = """\
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://mock-cluster.invalid:6443
+  name: mock
+contexts:
+- context:
+    cluster: mock
+    user: mock
+  name: mock
+current-context: mock
+users:
+- name: mock
+  user:
+    token: mock-token
+"""
+
+
+def make_mock_kubeconfig(name):
+    kc = E['saas.kubeconfig'].sudo().search([('name', '=', name)], limit=1)
+    if kc:
+        return kc
+    return E['saas.kubeconfig'].sudo().create({
+        'name': name,
+        'kubeconfig_file': base64.b64encode(_MOCK_KUBECONFIG_YAML.encode()),
+        'kubeconfig_file_name': 'mock-kubeconfig.yaml',
+    })
 
 
 def upsert(model, domain, vals):
@@ -62,14 +83,6 @@ icp.set_param('saas_master.worker_price', '15.0')
 icp.set_param('saas_master.storage_price_per_gb', '0.5')
 icp.set_param('saas_master.snapshot_price_per_gb', '2.0')
 
-# ----------------------------------------------------------------- ssh key
-key_b64 = base64.b64encode(open(KEY_PATH, 'rb').read()).decode()
-sshkey = upsert('saas.ssh.key.pair', [('name', '=', 'seed-ed25519')], {
-    'name': 'seed-ed25519', 'type': 'ed25519',
-    'private_key_file': key_b64, 'private_key_file_name': 'seed_key',
-})
-print('sshkey', sshkey.id)
-
 # ----------------------------------------------------------------- regions
 region_default = E['saas.region'].sudo().search([('code', '=', 'default')], limit=1)
 region_fra = upsert('saas.region', [('code', '=', 'eu-fra')], {
@@ -79,6 +92,16 @@ region_fra = upsert('saas.region', [('code', '=', 'eu-fra')], {
 region_us = upsert('saas.region', [('code', '=', 'us-east')], {
     'name': 'US · East', 'code': 'us-east', 'price_multiplier': 1.15,
     'sequence': 3,
+})
+kc_fra = make_mock_kubeconfig('Mock Cluster (EU Frankfurt)')
+kc_us = make_mock_kubeconfig('Mock Cluster (US East)')
+region_fra.write({
+    'kubeconfig_id': kc_fra.id,
+    'ingress_host': 'mock-cluster.invalid', 'ingress_port': 80,
+})
+region_us.write({
+    'kubeconfig_id': kc_us.id,
+    'ingress_host': 'mock-cluster.invalid', 'ingress_port': 80,
 })
 print('regions', region_default.id, region_fra.id, region_us.id)
 
@@ -99,20 +122,16 @@ ver17 = upsert('saas.odoo.version', [('name', '=', '17.0')], {
 print('versions', ver18.id, ver17.id)
 
 # ----------------------------------------------------------------- servers
+# Mock Kubernetes cluster registrations — see make_mock_kubeconfig()'s
+# docstring above for why health_state is force-set to 'ok' here.
 srv_fra = upsert('saas.server', [('name', '=', 'fra-host-1')], {
-    'name': 'fra-host-1', 'is_docker_host': True, 'is_db_server': True,
-    'is_proxy_server': True,
+    'name': 'fra-host-1', 'compute_driver': 'kubernetes',
     'region_id': region_fra.id, 'ip_v4': '10.0.0.11',
-    'ssh_key_pair_id': sshkey.id, 'ssh_user': 'root', 'ssh_port': 22,
-    'ssh_connect_using': 'public_ip', 'docker_base_path': '/home/odoo',
-    'psql_port': 5432, 'health_state': 'ok', 'allow_overcommit': True})
+    'health_state': 'ok', 'allow_overcommit': True})
 srv_us = upsert('saas.server', [('name', '=', 'us-host-1')], {
-    'name': 'us-host-1', 'is_docker_host': True, 'is_db_server': True,
-    'is_proxy_server': True,
+    'name': 'us-host-1', 'compute_driver': 'kubernetes',
     'region_id': region_us.id, 'ip_v4': '10.0.0.21',
-    'ssh_key_pair_id': sshkey.id, 'ssh_user': 'root', 'ssh_port': 22,
-    'ssh_connect_using': 'public_ip', 'docker_base_path': '/home/odoo',
-    'psql_port': 5432, 'health_state': 'ok'})
+    'health_state': 'ok'})
 print('servers', srv_fra.id, srv_us.id)
 
 # ----------------------------------------------------------------- products
@@ -183,10 +202,10 @@ plan_c_pro = make_plan('Clinic Professional', {
 print('plans created')
 
 # support plans (seeded by module; give the paid ones real prices)
-sp_free = E.ref('saas_core.saas_support_plan_free')
-sp_std = E.ref('saas_core.saas_support_plan_standard')
-sp_pro = E.ref('saas_core.saas_support_plan_pro')
-sp_ent = E.ref('saas_core.saas_support_plan_enterprise')
+sp_free = E.ref('saas_billing.saas_support_plan_free')
+sp_std = E.ref('saas_billing.saas_support_plan_standard')
+sp_pro = E.ref('saas_billing.saas_support_plan_pro')
+sp_ent = E.ref('saas_billing.saas_support_plan_enterprise')
 sp_std.sudo().write({'monthly_price': 29.0})
 sp_pro.sudo().write({'monthly_price': 99.0})
 sp_ent.sudo().write({'monthly_price': 299.0})
@@ -209,7 +228,7 @@ def make_client(name, email, wallet_amount):
             'password': 'demo1234', 'partner_id': partner.id,
             'groups_id': [(6, 0, [portal_group.id])]})
     if wallet_amount:
-        wallet = E['saas.wallet']._for_partner(partner)
+        wallet = E['saas.wallet'].for_partner(partner)
         if wallet._live_balance() < wallet_amount:
             wallet._credit(wallet_amount - wallet._live_balance(),
                            'seed_topup', reason='Seed funds')

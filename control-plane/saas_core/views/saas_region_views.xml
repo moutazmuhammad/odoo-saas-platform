@@ -58,14 +58,18 @@
                         <field name="ingress_host"
                                placeholder="e.g. 203.0.113.10 or ingress.eu-cluster.example.com"/>
                         <field name="ingress_port"/>
+                        <field name="native_ingress_tls"/>
+                        <field name="tls_cluster_issuer"
+                               invisible="not native_ingress_tls"
+                               placeholder="e.g. letsencrypt-test-client"/>
                     </group>
                     <field name="server_ids" string="Compute" readonly="1">
                         <list>
                             <field name="name"/>
                             <field name="compute_driver"/>
-                            <field name="is_proxy_server"/>
-                            <field name="is_docker_host"/>
-                            <field name="is_db_server"/>
+                            <field name="health_state" widget="badge"
+                                   decoration-success="health_state == 'ok'"
+                                   decoration-danger="health_state == 'unreachable'"/>
                         </list>
                     </field>
                 </sheet>

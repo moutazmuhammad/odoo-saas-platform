@@ -253,15 +253,15 @@ class SaasInstanceDbOperation(models.Model):
             raise
 
     def _run_upgrade(self):
-        """Background worker: ``odoo -u <module> -d <db>`` on the container.
+        """Background worker: ``odoo -u <module> -d <db>`` in the pod.
 
         Recovery tool for when the customer's live Odoo is broken
         (500 Internal Server Error on every page). XML-RPC into the
-        live worker won't work in that state, so we bypass it: stop
-        the container, run ``docker compose run --rm odoo odoo -u``
-        with ``--stop-after-init`` (one-shot, no HTTP), then start the
-        container back up. The full stdout/stderr is captured on the
-        op record so the portal can show it.
+        live worker won't work in that state, so we bypass it: pod-exec
+        an independent, ``--stop-after-init`` one-shot CLI invocation
+        (see ``saas.instance.hosting_db_upgrade_module``'s own docstring
+        for why the pod itself isn't stopped first). The full stdout/
+        stderr is captured on the op record so the portal can show it.
         """
         self.ensure_one()
         try:

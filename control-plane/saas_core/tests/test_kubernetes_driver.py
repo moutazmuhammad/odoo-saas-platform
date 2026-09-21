@@ -179,10 +179,11 @@ class TestKubernetesDriver(TransactionCase):
             driver.create(spec)
 
     def test_create_raises_on_api_error(self):
+        """A non-409 API error always raises — no idempotency special-case."""
         from odoo.addons.saas_core.drivers.base import ComputeSpec
         driver, _server = _make_driver()
         custom_api = MagicMock()
-        custom_api.create_cluster_custom_object.side_effect = ApiException(status=409, reason='AlreadyExists')
+        custom_api.create_cluster_custom_object.side_effect = ApiException(status=500, reason='InternalError')
         driver._custom_api = MagicMock(return_value=custom_api)
         spec = ComputeSpec(
             container_name='odoo_dup', image='odoo:18.0', instance_path='/x',
@@ -191,12 +192,54 @@ class TestKubernetesDriver(TransactionCase):
         with self.assertRaises(RuntimeError):
             driver.create(spec)
 
-    # -------- create() with a restore source (Phase 2 migration) ----------
+    def _dup_spec(self):
+        from odoo.addons.saas_core.drivers.base import ComputeSpec
+        return ComputeSpec(
+            container_name='odoo_dup', image='odoo:18.0', instance_path='/x',
+            http_port=8069, longpolling_port=8072, db_name='x', db_host='db',
+            env={'domain': 'dup.example.com'})
+
+    def test_create_is_idempotent_when_cr_already_exists(self):
+        """A retried create() (e.g. after Odoo's own cron-worker time
+        limit orphaned the original attempt mid-poll — see
+        KubernetesDriver.create()'s own docstring) must succeed, not
+        raise, when the CR it's retrying already exists for real —
+        verified by actually reading it back, not just trusting the
+        409's wording."""
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        custom_api.create_cluster_custom_object.side_effect = ApiException(status=409, reason='AlreadyExists')
+        custom_api.get_cluster_custom_object.return_value = {
+            'status': {'phase': 'Ready'},
+        }
+        driver._custom_api = MagicMock(return_value=custom_api)
+        handle = driver.create(self._dup_spec())
+        self.assertEqual(handle.container_name, 'odoo_dup')
+
+    def test_create_raises_on_409_when_cr_does_not_actually_exist(self):
+        """A 409 whose follow-up read finds nothing (raced with a delete,
+        or a genuine name collision with an unrelated object) must still
+        raise — the idempotent-retry path only kicks in when the CR is
+        actually there."""
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        custom_api.create_cluster_custom_object.side_effect = ApiException(status=409, reason='AlreadyExists')
+        custom_api.get_cluster_custom_object.side_effect = ApiException(status=404, reason='NotFound')
+        driver._custom_api = MagicMock(return_value=custom_api)
+        with self.assertRaises(RuntimeError):
+            driver.create(self._dup_spec())
+
+    # -------- create() with a restore source ------------------------------
     def test_create_with_restore_source_sets_spec_restore(self):
-        """DataService.migrate_to_kubernetes hands a restore source through
-        spec.env['restore'] (see _build_odoo_instance's docstring) — this
-        must translate exactly onto RestoreSourceSpec's field names
-        (compute/operator/api/v1alpha1/odooinstance_types.go)."""
+        """A caller can hand a restore source through spec.env['restore']
+        (see _build_odoo_instance's docstring) — this must translate
+        exactly onto RestoreSourceSpec's field names
+        (compute/operator/api/v1alpha1/odooinstance_types.go). The
+        ssh_docker -> Kubernetes migrate_to_kubernetes() caller that used
+        to build such a spec was removed along with that backend, but this
+        driver-level capability is still real infrastructure — the
+        planned CR-based backup/restore replacement (see the removal
+        plan's Phase 5) is expected to reuse exactly this mapping."""
         from odoo.addons.saas_core.drivers.base import ComputeSpec
         driver, _server = _make_driver()
         custom_api = MagicMock()
@@ -383,10 +426,11 @@ class TestKubernetesDriver(TransactionCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.stdout, 'ok\n')
 
-    # -------- the SEAM: business logic is identical for both backends -----
+    # -------- the SEAM: _compute_driver() resolves to KubernetesDriver -----
     def test_compute_driver_selected_by_server_type(self):
+        # Kubernetes is the only compute backend left (ssh_docker removed);
+        # this just proves the god-model always resolves to KubernetesDriver.
         from odoo.addons.saas_core.drivers.kubernetes_driver import KubernetesDriver
-        from odoo.addons.saas_core.drivers.ssh_docker_driver import SshDockerDriver
         product = self.env['saas.product'].sudo().search([('is_hosting', '=', True)], limit=1) \
             or self.env['saas.product'].sudo().create({'name': 'K Host', 'is_hosting': True})
         plan = self.env['saas.plan'].sudo().create({
@@ -399,8 +443,6 @@ class TestKubernetesDriver(TransactionCase):
             or self.env['saas.based.domain'].sudo().create({'name': 'k.example.com'})
         k8s_srv = self.env['saas.server'].sudo().create(
             {'name': 'k8s', 'compute_driver': 'kubernetes'})
-        docker_srv = self.env['saas.server'].sudo().create(
-            {'name': 'dkr', 'compute_driver': 'ssh_docker'})
 
         def mk(sub, srv):
             return self.env['saas.instance'].sudo().create({
@@ -410,7 +452,6 @@ class TestKubernetesDriver(TransactionCase):
                 'environment': 'production', 'region_id': False, 'state': 'running'})
 
         self.assertIsInstance(mk('konk8s', k8s_srv)._compute_driver(), KubernetesDriver)
-        self.assertIsInstance(mk('kondkr', docker_srv)._compute_driver(), SshDockerDriver)
 
     def test_do_stop_routes_through_kubernetes_unchanged(self):
         """The god-model's _do_stop is NOT changed for K8s — it just calls

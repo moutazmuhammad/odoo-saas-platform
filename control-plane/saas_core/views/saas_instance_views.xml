@@ -87,45 +87,23 @@
                             type="object" icon="fa-pause"
                             invisible="state != 'running'"/>
 
-                    <!-- Redeploy: when running, stopped, or suspended -->
-                    <button name="action_redeploy" string="Redeploy"
-                            type="object" icon="fa-rocket"
-                            invisible="state not in ('running', 'stopped', 'suspended')"
-                            confirm="This will stop and restart the container (volumes are kept). Are you sure?"/>
-
-                    <!-- Config: when running -->
-                    <button name="action_config" string="Config"
-                            type="object" icon="fa-cog"
-                            invisible="state != 'running'"/>
-
-                    <!-- Docker Compose: when running -->
-                    <button name="action_docker_compose" string="Docker Compose"
-                            type="object" icon="fa-docker"
-                            invisible="state != 'running'"/>
-
                     <!-- Live Logs: when running -->
                     <button name="action_view_logs" string="Logs"
                             type="object" icon="fa-file-text-o"
+                            invisible="state != 'running'"/>
+
+                    <!-- Terminal: staff-only exec into this instance's own
+                         pod (SEC-005 — group_saas_pod_shell, narrower than
+                         plain SaaS Manager). See action_open_terminal. -->
+                    <button name="action_open_terminal" string="Terminal"
+                            type="object" icon="fa-terminal"
+                            groups="saas_core.group_saas_pod_shell"
                             invisible="state != 'running'"/>
 
                     <!-- Create Backup: when running -->
                     <button name="action_create_backup" string="Create Backup"
                             type="object"
                             invisible="state != 'running'"/>
-
-                    <!-- TEST-BUTTON-REMOVE-ME — fires the daily-backup
-                         flow on demand, bypassing the 03:00 UTC cron.
-                         Visible only to managers, only when the
-                         daily-backup flag is on. Delete this block
-                         (and `action_test_run_daily_backup` in
-                         saas_instance.py) after end-to-end QA. -->
-                    <button name="action_test_run_daily_backup"
-                            string="TEST: Run Daily Snapshot Now"
-                            type="object" class="btn-warning"
-                            icon="fa-flask"
-                            groups="saas_core.group_saas_manager"
-                            invisible="not is_hosting or state != 'running' or not daily_backup_enabled"
-                            confirm="Fire a full-instance restic snapshot right now? Same code path as the 03:00 UTC cron — produces a real billable snapshot."/>
 
                     <!-- Cancel: deployed or pre-deployment states -->
                     <button name="action_cancel" string="Cancel"
@@ -480,16 +458,9 @@
         </field>
     </record>
 
-    <record id="saas_instance_action_compose" model="ir.actions.act_window">
-        <field name="name">Compose Instances</field>
-        <field name="res_model">saas.instance</field>
-        <field name="view_mode">list,form</field>
-        <field name="domain">[('compute_driver', '=', 'ssh_docker')]</field>
-        <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">
-                No Docker-Compose-backed instances yet
-            </p>
-        </field>
-    </record>
+    <!-- saas_instance_action_compose ('Compose Instances', domain
+         compute_driver='ssh_docker') was removed: ssh_docker is no longer
+         a valid compute_driver value, so this filter could never match
+         anything now that Kubernetes is the only backend. -->
 
 </odoo>

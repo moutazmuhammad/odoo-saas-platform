@@ -42,18 +42,17 @@
               action="saas_instance_action_hosting"
               sequence="20"/>
 
-    <!-- Deployment-type filters (Part 5/7) -->
+    <!-- Deployment-type filter (Part 5/7). The sibling "Compose Instances"
+         filter was removed: ssh_docker is no longer a valid compute_driver
+         value (Kubernetes is the only backend), so a domain filtering for
+         it could never match anything. This one is kept since it's still
+         a harmless/forward-compatible filter (currently equivalent to no
+         filter, since every instance is Kubernetes-backed). -->
     <menuitem id="saas_master_menu_instances_kubernetes"
               name="Kubernetes Instances"
               parent="saas_master_menu_instances"
               action="saas_instance_action_kubernetes"
               sequence="30"/>
-
-    <menuitem id="saas_master_menu_instances_compose"
-              name="Compose Instances"
-              parent="saas_master_menu_instances"
-              action="saas_instance_action_compose"
-              sequence="40"/>
 
     <!-- Billing menu (A1/A4) lives in saas_billing/views/saas_menus.xml —
          moved there along with the wallet/payment models. Tenant Margins
@@ -106,31 +105,18 @@
               sequence="55"/>
 
     <!-- Infrastructure > Compute — a provider-agnostic umbrella (this
-         platform's deployment targets are either Docker Compose hosts or
-         managed Kubernetes clusters; "Servers"/"Clusters" only mean one
-         specific thing each, never used as the generic term). -->
+         platform's only deployment target is a managed Kubernetes
+         cluster, any provider — EKS, GKE, AKS, self-hosted...). -->
     <menuitem id="saas_master_menu_compute"
               name="Compute"
               parent="saas_master_menu_configuration"
               sequence="50"/>
 
-    <menuitem id="saas_master_menu_compute_all"
-              name="All Compute"
-              parent="saas_master_menu_compute"
-              action="saas_server_action"
-              sequence="10"/>
-
-    <menuitem id="saas_master_menu_compute_docker"
-              name="Docker Compose Hosts"
-              parent="saas_master_menu_compute"
-              action="saas_server_action_docker"
-              sequence="20"/>
-
     <menuitem id="saas_master_menu_compute_kubernetes"
               name="Kubernetes Clusters"
               parent="saas_master_menu_compute"
-              action="saas_server_action_kubernetes"
-              sequence="30"/>
+              action="saas_server_action"
+              sequence="10"/>
 
     <!-- Infrastructure > Settings -->
     <menuitem id="saas_master_menu_settings"

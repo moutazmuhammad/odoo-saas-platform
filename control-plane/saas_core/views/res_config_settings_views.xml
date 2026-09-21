@@ -91,35 +91,6 @@
                                  help="Charged when restoring data from a retained snapshot of a deleted instance. Computed automatically: months the snapshot was kept after deletion × snapshot size rounded up to the next whole GB × the Snapshot Price per GB (Backups &amp; Snapshots section). An invoice is generated automatically; the restore runs when it's paid."/>
                     </block>
 
-                    <!-- ==================== 8. Infrastructure ==================== -->
-                    <block title="Infrastructure" name="saas_infrastructure_container">
-                        <setting id="saas_default_instance_starting_port_setting"
-                                 string="Default starting port"
-                                 help="First port number used when auto-assigning HTTP / longpolling ports to new instances.">
-                            <div class="content-group">
-                                <div class="mt8">
-                                    <label for="saas_default_instance_starting_port" string="Port" class="o_light_label" style="display:inline-block;min-width:90px;"/>
-                                    <field name="saas_default_instance_starting_port" class="oe_inline" style="max-width:7rem;"/>
-                                </div>
-                            </div>
-                        </setting>
-                    </block>
-
-                    <!-- ==================== 8b. Compute Backend ====================
-                         Which backend new instances provision on
-                         (platform-level, default Kubernetes) — deliberately
-                         independent of compute tiers (Standard/HA/Scale,
-                         SaaS > Configuration > Compute Tiers): a Docker-
-                         Compose-backed instance simply never offers tier
-                         selection. -->
-                    <block title="Compute Backend" name="saas_compute_backend_container">
-                        <setting id="saas_default_compute_driver_setting"
-                                 string="Default backend"
-                                 help="Backend new instances provision on. Kubernetes is the modern default; Docker Compose remains available as a simpler alternative for an operator without a cluster.">
-                            <field name="saas_default_compute_driver"/>
-                        </setting>
-                    </block>
-
                     <!-- ==================== 9. Cloud Storage ====================
                          One bucket for both daily backups (restic-encrypted) and
                          product snapshots — the snapshot lookup reads these same

@@ -1920,7 +1920,7 @@ class SaasApi(http.Controller):
                 # at all. compute_tiers lists every ACTIVE tier so the
                 # portal can render the full picker, not just the current
                 # one.
-                'compute_driver': instance.docker_server_id.compute_driver or 'ssh_docker',
+                'compute_driver': instance.docker_server_id.compute_driver or 'kubernetes',
                 'compute_tier': (
                     self._serialize_compute_tier(instance.compute_tier_id)
                     if instance.compute_tier_id else None

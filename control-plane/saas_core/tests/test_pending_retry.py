@@ -50,13 +50,13 @@ class TestPendingRetry(TransactionCase):
         pend = self._pending('prpend2')
         self.assertFalse(pend.pending_retry_now)
         self.env['saas.server'].sudo().create({
-            'name': 'pr-new-host', 'ip_v4': '10.2.0.1', 'is_docker_host': True})
+            'name': 'pr-new-host', 'ip_v4': '10.2.0.1'})
         self.assertTrue(pend.pending_retry_now,
                         "adding a docker host must flag queued deploys")
 
     def test_health_recovery_flags_pending(self):
         server = self.env['saas.server'].sudo().create({
-            'name': 'pr-recover', 'ip_v4': '10.2.0.2', 'is_docker_host': True})
+            'name': 'pr-recover', 'ip_v4': '10.2.0.2'})
         server.health_state = 'unreachable'
         pend = self._pending('prpend3')
         self.assertFalse(pend.pending_retry_now)

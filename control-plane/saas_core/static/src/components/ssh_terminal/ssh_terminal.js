@@ -63,7 +63,7 @@ class SshTerminal extends Component {
         const ctx = this.props.action.context || {};
         this.serverModel = ctx.server_model;
         this.serverId = ctx.server_id;
-        this.state.serverName = ctx.server_name || "Server";
+        this.state.serverName = ctx.server_name || "Instance";
 
         onMounted(() => this._init());
         onWillUnmount(() => this._destroy());

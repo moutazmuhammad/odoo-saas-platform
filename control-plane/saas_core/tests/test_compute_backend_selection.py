@@ -1,99 +1,19 @@
-"""Tests for the platform-level compute-backend choice (Docker Compose vs.
-Kubernetes, saas_master.default_compute_driver) and the customer-facing
-compute tiers (saas.compute.tier — Standard/HA/Scale, replica count within
-Kubernetes, entirely independent of the backend choice — see
-saas_instance.py's own comments on _allocate_servers /
+"""Tests for the Kubernetes deploy path (_do_deploy_locked_kubernetes) and
+the customer-facing compute tiers (saas.compute.tier — Standard/HA/Scale,
+replica count within Kubernetes — see saas_instance.py's own comments on
 action_change_compute_tier).
+
+The old TestComputeBackendSelection class (platform-level ssh_docker vs.
+Kubernetes preference via saas_master.default_compute_driver) was removed
+along with ssh_docker and the default_compute_driver config setting —
+Kubernetes is the only compute backend now, so there is no preference left
+to test.
 """
 import json
 from unittest.mock import MagicMock, patch
 
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase, tagged
-
-
-@tagged('post_install', '-at_install')
-class TestComputeBackendSelection(TransactionCase):
-    def setUp(self):
-        super().setUp()
-        self.product = self.env['saas.product'].sudo().search(
-            [('is_hosting', '=', True)], limit=1) or self.env['saas.product'].sudo().create(
-            {'name': 'Backend Hosting', 'is_hosting': True, 'is_published': True})
-        self.plan = self.env['saas.plan'].sudo().create({
-            'name': 'Backend Plan', 'is_custom': True, 'workers': 1, 'storage_limit': 5,
-            'cpu_limit': 1.0, 'ram_limit': '1g', 'price': 20.0, 'yearly_price': 192.0,
-            'currency_id': self.env.company.currency_id.id,
-            'saas_product_ids': [(6, 0, [self.product.id])]})
-        self.domain = self.env['saas.based.domain'].sudo().create(
-            {'name': 'backend.example.com'})
-        self.partner = self.env['res.partner'].sudo().create({'name': 'Backend Cust'})
-        self.region = self.env['saas.region'].sudo().create(
-            {'name': 'Backend Region', 'code': 'backend-region',
-             'ingress_host': '192.168.1.20', 'ingress_port': 80})
-        self.icp = self.env['ir.config_parameter'].sudo()
-
-    def _isolate_docker_hosts(self):
-        self.env['saas.server'].sudo().search(
-            [('is_docker_host', '=', True)]).write({'is_docker_host': False})
-
-    # ---------------------------------------------------------------
-    # _allocate_servers honors saas_master.default_compute_driver
-    # ---------------------------------------------------------------
-    def test_new_instance_prefers_kubernetes_when_available(self):
-        self._isolate_docker_hosts()
-        self.icp.set_param('saas_master.default_compute_driver', 'kubernetes')
-        docker_srv = self.env['saas.server'].sudo().create(
-            {'name': 'bk-docker', 'is_docker_host': True, 'ip_v4': '127.0.0.1'})
-        k8s_srv = self.env['saas.server'].sudo().create(
-            {'name': 'bk-k8s', 'is_docker_host': True,
-             'compute_driver': 'kubernetes', 'region_id': self.region.id})
-        instance = self.env['saas.instance'].sudo().create({
-            'subdomain': 'backendtest1', 'domain_id': self.domain.id,
-            'partner_id': self.partner.id, 'saas_product_id': self.product.id,
-            'plan_id': self.plan.id, 'billing_period': 'monthly',
-            'environment': 'production', 'region_id': False, 'state': 'draft',
-        })
-        with patch.object(type(k8s_srv), '_probe_reachable', return_value=(True, '')), \
-                patch.object(type(docker_srv), '_probe_reachable', return_value=(True, '')):
-            instance._allocate_servers()
-        self.assertEqual(instance.docker_server_id, k8s_srv)
-
-    def test_falls_back_to_docker_compose_when_no_kubernetes_server_exists(self):
-        """The platform default is Kubernetes, but nothing stands up a
-        cluster automatically — an operator running only Docker Compose
-        hosts must not have every deploy fail over an unmet preference."""
-        self._isolate_docker_hosts()
-        self.icp.set_param('saas_master.default_compute_driver', 'kubernetes')
-        docker_srv = self.env['saas.server'].sudo().create(
-            {'name': 'bk-docker-only', 'is_docker_host': True, 'ip_v4': '127.0.0.1'})
-        instance = self.env['saas.instance'].sudo().create({
-            'subdomain': 'backendtest2', 'domain_id': self.domain.id,
-            'partner_id': self.partner.id, 'saas_product_id': self.product.id,
-            'plan_id': self.plan.id, 'billing_period': 'monthly',
-            'environment': 'production', 'region_id': False, 'state': 'draft',
-        })
-        with patch.object(type(docker_srv), '_probe_reachable', return_value=(True, '')):
-            instance._allocate_servers()
-        self.assertEqual(instance.docker_server_id, docker_srv)
-
-    def test_default_compute_driver_can_be_set_to_docker_compose(self):
-        self._isolate_docker_hosts()
-        self.icp.set_param('saas_master.default_compute_driver', 'ssh_docker')
-        docker_srv = self.env['saas.server'].sudo().create(
-            {'name': 'bk-docker2', 'is_docker_host': True, 'ip_v4': '127.0.0.1'})
-        k8s_srv = self.env['saas.server'].sudo().create(
-            {'name': 'bk-k8s2', 'is_docker_host': True,
-             'compute_driver': 'kubernetes', 'region_id': self.region.id})
-        instance = self.env['saas.instance'].sudo().create({
-            'subdomain': 'backendtest3', 'domain_id': self.domain.id,
-            'partner_id': self.partner.id, 'saas_product_id': self.product.id,
-            'plan_id': self.plan.id, 'billing_period': 'monthly',
-            'environment': 'production', 'region_id': False, 'state': 'draft',
-        })
-        with patch.object(type(k8s_srv), '_probe_reachable', return_value=(True, '')), \
-                patch.object(type(docker_srv), '_probe_reachable', return_value=(True, '')):
-            instance._allocate_servers()
-        self.assertEqual(instance.docker_server_id, docker_srv)
 
 
 @tagged('post_install', '-at_install')
@@ -116,7 +36,7 @@ class TestDeployOnKubernetes(TransactionCase):
         self.partner = self.env['res.partner'].sudo().create({'name': 'Deploy Cust'})
         self.region = self.env['saas.region'].sudo().create(
             {'name': 'Deploy Region', 'code': 'deploy-region',
-             'ingress_host': '192.168.1.30', 'ingress_port': 80})
+             'native_ingress_tls': True, 'tls_cluster_issuer': 'letsencrypt-prod'})
         self.k8s_server = self.env['saas.server'].sudo().create(
             {'name': 'deploy-k8s-srv', 'compute_driver': 'kubernetes',
              'region_id': self.region.id})
@@ -138,31 +58,13 @@ class TestDeployOnKubernetes(TransactionCase):
             'region_id': False, 'state': 'draft',
         })
 
-    def _fake_ssh(self):
-        class FakeSSH:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
-            def execute(self, cmd, timeout=None):
-                return (0, '', '')
-
-            def write_file(self, path, content):
-                pass
-
-        return FakeSSH()
-
-    def test_deploy_calls_driver_create_and_provisions_nginx(self):
+    def test_deploy_calls_driver_create_natively_no_ssh_or_nginx(self):
+        """A Kubernetes deploy never touches SSH/Nginx — TLS/ingress is
+        exclusively cert-manager + the cluster's own Ingress."""
         driver = MagicMock()
         driver.create.return_value = MagicMock()
-        driver.endpoint.return_value = ('192.168.1.30', 80)
-        fake_ssh = self._fake_ssh()
 
         with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
-                patch.object(type(self.k8s_server), '_get_ssh_connection',
-                             lambda self: fake_ssh), \
                 patch.object(type(self.instance), '_data_service') as mock_ds:
             mock_ds.return_value._wait_until_healthy.return_value = None
             self.instance._do_deploy_locked_kubernetes()
@@ -172,7 +74,10 @@ class TestDeployOnKubernetes(TransactionCase):
         self.assertEqual(spec.env['domain'], self.instance.name)
         # Default compute tier is Standard = 1 replica.
         self.assertEqual(spec.env['replicas'], 1)
-        driver.endpoint.assert_called_once()
+        self.assertTrue(spec.env['tls_enabled'])
+        self.assertEqual(spec.env['tls_issuer_name'], 'letsencrypt-prod')
+        # No external Nginx step for a Kubernetes-native-TLS region.
+        driver.endpoint.assert_not_called()
         self.assertEqual(self.instance.state, 'running')
         # No per-tenant host-port was ever assigned — there's no such
         # concept for a Kubernetes-backed instance.
@@ -182,12 +87,8 @@ class TestDeployOnKubernetes(TransactionCase):
         self.instance.compute_tier_id = self.ha_tier
         driver = MagicMock()
         driver.create.return_value = MagicMock()
-        driver.endpoint.return_value = ('192.168.1.30', 80)
-        fake_ssh = self._fake_ssh()
 
         with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
-                patch.object(type(self.k8s_server), '_get_ssh_connection',
-                             lambda self: fake_ssh), \
                 patch.object(type(self.instance), '_data_service') as mock_ds:
             mock_ds.return_value._wait_until_healthy.return_value = None
             self.instance._do_deploy_locked_kubernetes()
@@ -195,8 +96,10 @@ class TestDeployOnKubernetes(TransactionCase):
         spec = driver.create.call_args.args[0]
         self.assertEqual(spec.env['replicas'], 2)
 
-    def test_deploy_refuses_without_region_ingress_host(self):
-        self.region.ingress_host = False
+    def test_deploy_refuses_without_native_ingress_tls(self):
+        """No SSH-based Nginx fallback exists any more — a region without
+        native_ingress_tls simply can't deploy."""
+        self.region.native_ingress_tls = False
         driver = MagicMock()
         with patch.object(type(self.instance), '_compute_driver', return_value=driver):
             with self.assertRaises(UserError):
@@ -230,8 +133,6 @@ class TestComputeTiers(TransactionCase):
         self.k8s_server = self.env['saas.server'].sudo().create(
             {'name': 'tier-k8s-srv', 'compute_driver': 'kubernetes',
              'region_id': self.region.id})
-        self.docker_server = self.env['saas.server'].sudo().create(
-            {'name': 'tier-docker-srv'})
         self.standard_tier = self.env['saas.compute.tier'].sudo().search(
             [('code', '=', 'standard')], limit=1)
         self.ha_tier = self.env['saas.compute.tier'].sudo().create(
@@ -253,10 +154,13 @@ class TestComputeTiers(TransactionCase):
         self.assertEqual(self.instance.compute_tier_id.code, 'standard')
         self.assertEqual(self.instance.compute_tier_id.replicas, 1)
 
-    def test_change_requires_kubernetes_backend(self):
-        self.instance.docker_server_id = self.docker_server
-        with self.assertRaises(UserError):
-            self.instance.action_change_compute_tier(self.ha_tier.id)
+    # test_change_requires_kubernetes_backend was removed: it constructed a
+    # non-Kubernetes saas.server to prove the "must be Kubernetes" guard
+    # rejects it, but Kubernetes is now the only compute_driver value that
+    # can exist — there is no second backend left to construct such a
+    # server from, so the guard's rejection branch can no longer be
+    # exercised (it's still there in the code, just permanently dead until
+    # a second backend exists again).
 
     def test_change_rejects_same_tier(self):
         with self.assertRaises(UserError):
@@ -337,10 +241,9 @@ class TestComputeTiers(TransactionCase):
         self.assertEqual(driver.scale.call_args_list[1].args[1], 1)
         self.assertEqual(self.instance.compute_tier_id.code, 'standard')
 
-    def test_scale_requires_kubernetes_backend(self):
-        self.instance.docker_server_id = self.docker_server
-        with self.assertRaises(UserError):
-            self.instance._do_scale_compute_tier(self.ha_tier.id)
+    # test_scale_requires_kubernetes_backend was removed for the same
+    # reason as test_change_requires_kubernetes_backend above — no
+    # non-Kubernetes saas.server can be constructed any more.
 
     def test_paying_upgrade_invoice_enqueues_scale_and_clears_pending(self):
         """account_move's payment hook: paying the compute-tier upgrade

@@ -34,33 +34,45 @@ ONDEMAND_PREFIX = 'ondemand'
 BACKUP_STREAM_READ_TIMEOUT = 3600
 
 
-# Host-side builder for the on-demand ZIP. Streams an Odoo-format zip
-# (manifest.json + dump.sql + filestore/) to STDOUT so Odoo can pipe it
-# straight to object storage — nothing is staged on disk, so DB size is
-# not a constraint. ``dump.sql`` is PLAIN SQL (not -Fc) because that's
-# what Odoo's zip-restore feeds to psql. All inputs arrive via env.
-_HOST_ZIP_BUILDER = r'''
-import os, sys, json, shutil, subprocess, zipfile, tarfile
+# In-pod builder for the on-demand ZIP. Runs INSIDE the target pod
+# itself (via KubernetesDriver.exec_stream_out — see
+# _stream_odoo_zip_to_bucket), streaming an Odoo-format zip
+# (manifest.json + dump.sql + filestore/) straight to its own stdout,
+# which IS the exec channel Odoo reads from — nothing is staged on
+# disk, so DB size is not a constraint. ``dump.sql`` is PLAIN SQL (not
+# -Fc) because that's what Odoo's zip-restore feeds to psql.
+#
+# Unlike the ssh_docker-era ``_HOST_ZIP_BUILDER`` (which ran on the
+# DOCKER HOST and shelled out to ``docker exec``/``docker exec ... tar``
+# to reach the container from outside), this script already runs
+# INSIDE the same container as the target database's client tools and
+# filestore mount — so pg_dump is a plain local subprocess and the
+# filestore is walked directly with ``os.walk`` instead of round-
+# tripping through a ``tar`` subprocess. DB connection info comes from
+# ``/etc/odoo/odoo.conf`` (see ``saas_instance.py``'s
+# ``_PSQL_CONN_PRELUDE`` note), not from separate SSH env vars — there
+# is no host-side SSH env to populate any more.
+_ZIP_BUILDER_SCRIPT = r'''
+import configparser, os, shutil, subprocess, sys, zipfile
 
-C = os.environ['SAAS_C']
-DB = os.environ['SAAS_DB']
-H = os.environ['SAAS_H']
-P = os.environ['SAAS_P']
-U = os.environ['SAAS_U']
-PW = os.environ['SAAS_PGPASSWORD']
-MANIFEST = os.environ.get('SAAS_MANIFEST', '{}')
+DB = %(db)r
+MANIFEST = %(manifest)r
 CHUNK = 4 * 1024 * 1024
+
+cfg = configparser.ConfigParser()
+cfg.read('/etc/odoo/odoo.conf')
+o = cfg['options']
+env = dict(os.environ)
+env['PGPASSWORD'] = o.get('db_password', '')
 
 out = sys.stdout.buffer
 zf = zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, allowZip64=True)
 zf.writestr('manifest.json', MANIFEST)
 
-# dump.sql — plain SQL streamed from pg_dump inside the container.
 p = subprocess.Popen(
-    ['docker', 'exec', '-e', 'PGPASSWORD=' + PW, C, 'pg_dump',
-     '-h', H, '-p', P, '-U', U, '-d', DB,
-     '--no-owner', '--no-privileges'],
-    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ['pg_dump', '-h', o.get('db_host', 'localhost'), '-p', o.get('db_port', '5432'),
+     '-U', o.get('db_user', 'odoo'), '-d', DB, '--no-owner', '--no-privileges'],
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
 with zf.open('dump.sql', 'w') as e:
     shutil.copyfileobj(p.stdout, e, CHUNK)
 rc = p.wait()
@@ -68,35 +80,15 @@ if rc != 0:
     sys.stderr.write(p.stderr.read().decode('utf-8', 'replace'))
     sys.exit(10)
 
-# filestore/ — streamed as a tar from the container, repacked into the zip.
-probe = subprocess.run(
-    ['docker', 'exec', C, 'sh', '-c',
-     'if [ -d /var/lib/odoo/filestore/%s ]; then echo A; '
-     'elif [ -d /var/lib/odoo/.local/share/Odoo/filestore/%s ]; then echo B; '
-     'else echo N; fi' % (DB, DB)],
-    stdout=subprocess.PIPE)
-loc = probe.stdout.decode().strip()
-fspath = None
-if loc == 'A':
-    fspath = '/var/lib/odoo/filestore/%s' % DB
-elif loc == 'B':
-    fspath = '/var/lib/odoo/.local/share/Odoo/filestore/%s' % DB
-if fspath:
-    tp = subprocess.Popen(
-        ['docker', 'exec', C, 'tar', '-C', fspath, '-cf', '-', '.'],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    tar = tarfile.open(fileobj=tp.stdout, mode='r|')
-    for m in tar:
-        if not m.isfile():
-            continue
-        name = m.name[2:] if m.name.startswith('./') else m.name
-        src = tar.extractfile(m)
-        if src is None:
-            continue
-        with zf.open('filestore/' + name, 'w') as e:
-            shutil.copyfileobj(src, e, CHUNK)
-    tar.close()
-    tp.wait()
+for candidate in ('/var/lib/odoo/filestore/' + DB,
+                   '/var/lib/odoo/.local/share/Odoo/filestore/' + DB):
+    if os.path.isdir(candidate):
+        for root, _dirs, files in os.walk(candidate):
+            for fname in files:
+                fpath = os.path.join(root, fname)
+                arcname = 'filestore/' + os.path.relpath(fpath, candidate)
+                zf.write(fpath, arcname)
+        break
 
 zf.close()
 out.flush()
@@ -169,29 +161,34 @@ class SaasInstanceBackup(models.Model):
     )
     is_full_instance = fields.Boolean(
         string='Full Instance', default=False, index=True,
-        help='Hosting daily backups: a complete instance snapshot — '
-             'every database dump, the filestore, custom addons, '
-             'configuration files, docker-compose, and pip requirements. '
-             'Restorable as a single unit.',
+        help='A complete instance snapshot produced by the Kubernetes '
+             "operator's own backup mechanism (spec.backup CronJob): a "
+             'pg_dump of the instance\'s primary database plus a tar of '
+             'the whole filestore volume. Restorable as a single unit.',
     )
     format = fields.Selection(
         [('zip', 'Zip (dump.sql + filestore)'),
          ('dump', 'SQL dump (pg_dump custom)'),
-         ('restic', 'Restic (deduplicated)')],
+         ('operator', 'Operator (pg_dump + filestore tar)'),
+         ('restic', 'Restic (deduplicated) — legacy, pre-Kubernetes')],
         string='Backup Format', default='zip', index=True,
-        help='Storage format. Daily full-instance backups use restic '
-             '(deduplicated, encrypted). On-demand backups are either '
-             '``zip`` (Odoo zip: dump.sql + filestore, restorable via '
-             "Odoo's database manager) or ``dump`` (pg_dump custom "
-             'format, DB only, restorable via pg_restore) — both '
-             'streamed straight to storage so any DB size works.',
+        help='Storage format. Full-instance snapshots use ``operator`` '
+             "(the Kubernetes operator's own CronJob-produced db.dump + "
+             'filestore.tar.gz pair; see set_scheduled_backup). '
+             '``restic`` rows are historical, from before the ssh_docker '
+             'backend was removed, and are read-only going forward. '
+             'On-demand per-database backups are either ``zip`` (Odoo '
+             "zip: dump.sql + filestore, restorable via Odoo's database "
+             "manager) or ``dump`` (pg_dump custom format, DB only, "
+             'restorable via pg_restore) — both streamed straight to '
+             'storage so any DB size works.',
     )
     restic_run_tag = fields.Char(
         string='Restic Run Tag', index=True,
         help='ISO-8601 timestamp used as the restic ``run`` tag '
              'binding together all snapshots from one backup run '
              '(one per database + one for the filesystem). Set only '
-             'on ``format=restic`` rows.',
+             'on legacy ``format=restic`` rows.',
     )
     restic_db_names = fields.Char(
         string='Restic DB Snapshots',
@@ -236,17 +233,21 @@ class SaasInstanceBackup(models.Model):
         """Restore this backup to its instance.
 
         Dispatches by backup shape:
-        - ``is_full_instance`` (restic) → ``action_restore_full_instance``
-          which walks the per-DB ``restic dump`` + filesystem ``restic
-          restore`` path.
-        - Otherwise (legacy zip) → ``action_restore_backup`` which
-          downloads the single zip object and replays the SQL dump
-          + filestore inside it.
+        - ``is_full_instance`` → ``action_restore_full_instance``, which
+          downloads the operator-produced ``db.dump`` + ``filestore.tar.gz``
+          pair and replays them with the exact same ``pg_restore``/``tar``
+          invocation the operator's own restore tool uses (or, for legacy
+          ``format='restic'`` rows predating the Kubernetes-only backend,
+          this dispatch target no longer supports them — see that
+          method's docstring).
+        - Otherwise (per-database ``zip``/``dump``) → ``action_restore_backup``,
+          which downloads the single object and replays the SQL dump +
+          filestore inside it.
 
-        Without this dispatch, clicking Restore on the backend form of
-        a restic snapshot ran the zip path, which then crashed in
-        ``_generate_presigned_url`` because restic backups have no
-        ``backup_path`` (a restic repo isn't a single S3 object).
+        Without this dispatch, clicking Restore on the backend form of a
+        full-instance snapshot ran the per-DB path, which then crashed in
+        ``_generate_presigned_url`` because a full-instance run has TWO
+        artifacts under a stamp directory, not one single object key.
         """
         self.ensure_one()
         if self.is_full_instance:
@@ -479,76 +480,70 @@ class SaasInstanceBackup(models.Model):
         database-manager "pg_dump custom format" backup gives), so a
         developer can restore it locally with ``pg_restore`` or via
         Odoo's Restore. It's diskless and bounded-memory end to end:
-        ``pg_dump`` stdout is piped over SSH and handed to the SDK's
-        multipart uploader, so database size is not a constraint.
+        ``pg_dump`` runs INSIDE the target pod (via
+        ``KubernetesDriver.exec_stream_out``) and its stdout is handed
+        straight to the SDK's multipart uploader, so database size is
+        not a constraint. Connection info comes from ``/etc/odoo/
+        odoo.conf`` inside the pod, same as ``saas.instance._docker_exec_sql``
+        — there is no more separately-configured ``psql_port``.
         """
-        instance._ensure_can_ssh()
-        container = instance._get_container_name()
-        db_host = instance._get_db_host()
-        db_port = instance.db_server_id.psql_port or 5432
-        cmd = (
-            'docker exec -e PGPASSWORD=%s %s pg_dump -Fc -Z3 '
-            '-h %s -p %s -U %s -d %s --no-owner'
-        ) % (
-            shlex.quote(instance.sudo().db_password or ''),
-            shlex.quote(container),
-            shlex.quote(db_host),
-            shlex.quote(str(db_port)),
-            shlex.quote(instance.sudo().db_user or ''),
-            shlex.quote(db_name),
-        )
-        with instance.docker_server_id._get_ssh_connection() as ssh:
-            stdout, stderr = ssh.exec_command_streaming(
-                cmd, timeout=BACKUP_STREAM_READ_TIMEOUT,
-            )
-            reader = _CountingReader(stdout)
-            upload_error = None
+        script = (
+            "import configparser, os, subprocess, sys\n"
+            "cfg = configparser.ConfigParser()\n"
+            "cfg.read('/etc/odoo/odoo.conf')\n"
+            "o = cfg['options']\n"
+            "env = dict(os.environ)\n"
+            "env['PGPASSWORD'] = o.get('db_password', '')\n"
+            "p = subprocess.Popen(['pg_dump', '-Fc', '-Z3',\n"
+            "    '-h', o.get('db_host', 'localhost'), '-p', o.get('db_port', '5432'),\n"
+            "    '-U', o.get('db_user', 'odoo'), '-d', %s, '--no-owner'],\n"
+            "    stdout=sys.stdout.buffer, stderr=subprocess.PIPE, env=env)\n"
+            "rc = p.wait()\n"
+            "if rc != 0:\n"
+            "    sys.stderr.write(p.stderr.read().decode('utf-8', 'replace'))\n"
+            "    sys.exit(rc)\n"
+        ) % repr(db_name)
+        command = "python3 - <<'SAAS_DUMP_EOF'\n%s\nSAAS_DUMP_EOF" % script
+        raw = instance._compute_driver().exec_stream_out(
+            instance._compute_handle(), command, timeout=BACKUP_STREAM_READ_TIMEOUT)
+        reader = _CountingReader(raw)
+        upload_error = None
+        try:
+            self._upload_stream_to_bucket(object_key, reader)
+        except Exception as e:
+            upload_error = e
+        exit_code = raw.returncode
+        err_tail = (raw.stderr or '')[-2000:]
+
+        if upload_error is not None or exit_code != 0:
+            # Don't leave a truncated/corrupt object behind.
             try:
-                self._upload_stream_to_bucket(object_key, reader)
-            except Exception as e:
-                upload_error = e
-            # stdout is at EOF (upload drained it, or it errored) — now
-            # the exit code is available without deadlocking.
-            exit_code = stdout.channel.recv_exit_status()
-            err_tail = ''
-            try:
-                err_tail = stderr.read().decode('utf-8', 'replace')[-2000:]
+                self._delete_bucket_path(object_key)
             except Exception:
                 pass
-
-            if upload_error is not None or exit_code != 0:
-                # Don't leave a truncated/corrupt object behind.
-                try:
-                    self._delete_bucket_path(object_key)
-                except Exception:
-                    pass
-                if exit_code != 0:
-                    raise UserError(_(
-                        "The database backup (pg_dump) failed:\n%s"
-                    ) % (err_tail or 'exit code %s' % exit_code))
+            if exit_code != 0:
                 raise UserError(_(
-                    "Uploading the backup failed:\n%s"
-                ) % upload_error)
+                    "The database backup (pg_dump) failed:\n%s"
+                ) % (err_tail or 'exit code %s' % exit_code))
+            raise UserError(_(
+                "Uploading the backup failed:\n%s"
+            ) % upload_error)
 
         return reader.bytes_read
 
     def _stream_odoo_zip_to_bucket(self, instance, object_key, db_name):
         """Stream an Odoo-format zip (manifest + plain dump.sql +
-        filestore) from the instance's container straight to object
-        storage. Returns the uploaded size in bytes.
+        filestore) from the instance's pod straight to object storage.
+        Returns the uploaded size in bytes.
 
-        Diskless and bounded-memory: a small Python builder runs on the
-        docker host, writes the zip to stdout (pg_dump piped into a zip
-        entry, filestore repacked from a container tar stream), and Odoo
-        pipes that into the SDK's multipart uploader — so DB/filestore
-        size is not a constraint. The result restores via Odoo's
-        database manager (it's the same layout as Odoo's own zip backup).
+        Diskless and bounded-memory: ``_ZIP_BUILDER_SCRIPT`` runs INSIDE
+        the pod, writes the zip to its own stdout (pg_dump piped into a
+        zip entry, filestore walked directly off the pod's own
+        filestore mount), and Odoo pipes that into the SDK's multipart
+        uploader — so DB/filestore size is not a constraint. The result
+        restores via Odoo's database manager (same layout as Odoo's own
+        zip backup).
         """
-        instance._ensure_can_ssh()
-        container = instance._get_container_name()
-        db_host = instance._get_db_host()
-        db_port = str(instance.db_server_id.psql_port or 5432)
-
         import json
         manifest = json.dumps({
             'odoo_version': instance.odoo_version_id.name or '',
@@ -558,200 +553,34 @@ class SaasInstanceBackup(models.Model):
             'instance': instance.name or '',
         }, indent=2)
 
-        ts = fields.Datetime.now().strftime('%Y%m%d%H%M%S')
-        script_path = '/tmp/saas_zipbuild_%s_%s.py' % (db_name, ts)
-        env = {
-            'SAAS_C': container,
-            'SAAS_DB': db_name,
-            'SAAS_H': db_host,
-            'SAAS_P': db_port,
-            'SAAS_U': instance.sudo().db_user or '',
-            'SAAS_PGPASSWORD': instance.sudo().db_password or '',
-            'SAAS_MANIFEST': manifest,
-        }
-        env_prefix = ' '.join(
-            '%s=%s' % (k, shlex.quote(str(v))) for k, v in env.items()
-        )
-        with instance.docker_server_id._get_ssh_connection() as ssh:
-            ssh.write_file(script_path, _HOST_ZIP_BUILDER)
-            stdout, stderr = ssh.exec_command_streaming(
-                '%s python3 %s' % (env_prefix, shlex.quote(script_path)),
-                timeout=BACKUP_STREAM_READ_TIMEOUT,
-            )
-            reader = _CountingReader(stdout)
-            upload_error = None
-            try:
-                self._upload_stream_to_bucket(
-                    object_key, reader, content_type='application/zip',
-                )
-            except Exception as e:
-                upload_error = e
-            exit_code = stdout.channel.recv_exit_status()
-            err_tail = ''
-            try:
-                err_tail = stderr.read().decode('utf-8', 'replace')[-2000:]
-            except Exception:
-                pass
-            try:
-                ssh.execute('rm -f %s' % shlex.quote(script_path))
-            except Exception:
-                pass
-
-            if upload_error is not None or exit_code != 0:
-                try:
-                    self._delete_bucket_path(object_key)
-                except Exception:
-                    pass
-                if exit_code != 0:
-                    raise UserError(_(
-                        "The database backup (zip) failed:\n%s"
-                    ) % (err_tail or 'exit code %s' % exit_code))
-                raise UserError(_(
-                    "Uploading the backup failed:\n%s"
-                ) % upload_error)
-
-        return reader.bytes_read
-
-    # ------------------------------------------------------------------
-    # Phase 2 (/ROADMAP.md §5): dump a legacy (ssh_docker) instance's real
-    # data into the object-storage layout compute/operator's restore Job
-    # expects (<bucket>/<prefix>/<stamp>/{db.dump,filestore.tar.gz,
-    # manifest.json}), so DataService.migrate_to_kubernetes can point a
-    # fresh OdooInstance's spec.restore.source at it. These bridge the two
-    # previously-disconnected backup systems (restic-based legacy backups
-    # vs. the operator's pg_dump+tar convention) without reimplementing
-    # either — same pg_dump/upload plumbing as the methods above, just a
-    # different key layout and a bare (non-zip) filestore tarball.
-    # ------------------------------------------------------------------
-    def _stream_pg_dump_for_k8s_restore(self, instance, prefix, stamp, db_name=None):
-        """Same pg_dump invocation as _stream_pg_dump_to_bucket (``-Fc -Z3``
-        is pg_restore-compatible with the plain ``--format=custom`` the
-        operator's run-restore.sh expects — compression level doesn't
-        affect readability), targeting the k8s-restore key layout
-        ``<prefix>/<stamp>/db.dump`` instead of a backup record's own
-        ``bucket_path``. Returns the uploaded size in bytes.
-        """
-        object_key = '%s/%s/db.dump' % (prefix, stamp)
-        return self._stream_pg_dump_to_bucket(
-            instance, object_key, db_name or instance.subdomain)
-
-    def _stream_filestore_tar_for_k8s_restore(self, instance, prefix, stamp, db_name=None):
-        """Bare ``filestore.tar.gz`` matching compute/tools/backup-tool/
-        run-backup.sh's exact convention (``find . -mindepth 1 -print0 |
-        tar --null --no-recursion``, no top-level ``.`` entry) so
-        run-restore.sh's ``tar -x`` lands files at the right relative
-        path. Locates the container's real filestore path the same way
-        ``_HOST_ZIP_BUILDER``'s probe does. Returns the uploaded size in
-        bytes.
-        """
-        instance._ensure_can_ssh()
-        container = instance._get_container_name()
-        db_name = db_name or instance.subdomain
-        object_key = '%s/%s/filestore.tar.gz' % (prefix, stamp)
-
-        probe_cmd = (
-            'docker exec %(c)s sh -c \'if [ -d /var/lib/odoo/filestore/%(db)s ]; then '
-            'echo /var/lib/odoo/filestore/%(db)s; '
-            'elif [ -d /var/lib/odoo/.local/share/Odoo/filestore/%(db)s ]; then '
-            'echo /var/lib/odoo/.local/share/Odoo/filestore/%(db)s; fi\''
-        ) % {'c': shlex.quote(container), 'db': db_name}
-
-        with instance.docker_server_id._get_ssh_connection() as ssh:
-            rc, out, err = ssh.execute(probe_cmd, timeout=30)
-            fspath = (out or '').strip()
-            if rc != 0 or not fspath:
-                raise UserError(_(
-                    "Could not locate the filestore directory inside "
-                    "container %s for database %s."
-                ) % (container, db_name))
-
-            tar_cmd = (
-                "docker exec %(c)s sh -c 'cd %(fp)s && "
-                "find . -mindepth 1 -print0 | "
-                "tar --null --no-recursion -czf - -T -'"
-            ) % {'c': shlex.quote(container), 'fp': shlex.quote(fspath)}
-
-            stdout, stderr = ssh.exec_command_streaming(
-                tar_cmd, timeout=BACKUP_STREAM_READ_TIMEOUT,
-            )
-            reader = _CountingReader(stdout)
-            upload_error = None
-            try:
-                self._upload_stream_to_bucket(
-                    object_key, reader, content_type='application/gzip',
-                )
-            except Exception as e:
-                upload_error = e
-            exit_code = stdout.channel.recv_exit_status()
-            err_tail = ''
-            try:
-                err_tail = stderr.read().decode('utf-8', 'replace')[-2000:]
-            except Exception:
-                pass
-
-            if upload_error is not None or exit_code != 0:
-                try:
-                    self._delete_bucket_path(object_key)
-                except Exception:
-                    pass
-                if exit_code != 0:
-                    raise UserError(_(
-                        "The filestore archive failed:\n%s"
-                    ) % (err_tail or 'exit code %s' % exit_code))
-                raise UserError(_(
-                    "Uploading the filestore archive failed:\n%s"
-                ) % upload_error)
-
-        return reader.bytes_read
-
-    def _write_k8s_restore_manifest(self, prefix, stamp, instance_name, retention=0):
-        """Upload manifest.json matching run-backup.sh's exact shape.
-        Informational only — run-restore.sh hardcodes the db.dump/
-        filestore.tar.gz filenames rather than parsing this — but keeps
-        the object layout indistinguishable from a real scheduled backup
-        for any future tooling that does read it.
-        """
-        import json
-        object_key = '%s/%s/manifest.json' % (prefix, stamp)
-        body = json.dumps({
-            'instance': instance_name,
-            'timestamp': stamp,
-            'db_dump': 'db.dump',
-            'filestore_archive': 'filestore.tar.gz',
-            'retention': retention,
-        }).encode('utf-8')
-        self._upload_to_bucket(object_key, body)
-
-    @api.model
-    def dump_for_k8s_migration(self, instance, target_prefix):
-        """Dump ``instance``'s live DB + filestore into the object-storage
-        layout compute/operator's restore Job expects, under one ``stamp``.
-        On any failure, best-effort deletes whatever was already uploaded
-        for that stamp and re-raises — never leaves a partial/corrupt
-        restore source behind. Returns ``(bucket, target_prefix, stamp)``.
-
-        ``target_prefix`` should be the NEW (target) instance's subdomain,
-        chosen by the caller, so ``spec.restore.source.prefix`` trivially
-        matches what was written here.
-        """
-        cfg = self._get_backup_config()
-        stamp = fields.Datetime.now().strftime('%Y%m%dT%H%M%SZ')
-        uploaded_keys = []
+        script = _ZIP_BUILDER_SCRIPT % {'db': db_name, 'manifest': manifest}
+        command = "python3 - <<'SAAS_ZIP_EOF'\n%s\nSAAS_ZIP_EOF" % script
+        raw = instance._compute_driver().exec_stream_out(
+            instance._compute_handle(), command, timeout=BACKUP_STREAM_READ_TIMEOUT)
+        reader = _CountingReader(raw)
+        upload_error = None
         try:
-            self._stream_pg_dump_for_k8s_restore(instance, target_prefix, stamp)
-            uploaded_keys.append('%s/%s/db.dump' % (target_prefix, stamp))
-            self._stream_filestore_tar_for_k8s_restore(instance, target_prefix, stamp)
-            uploaded_keys.append('%s/%s/filestore.tar.gz' % (target_prefix, stamp))
-            self._write_k8s_restore_manifest(target_prefix, stamp, instance.subdomain)
-            uploaded_keys.append('%s/%s/manifest.json' % (target_prefix, stamp))
-        except Exception:
-            for key in uploaded_keys:
-                try:
-                    self._delete_bucket_path(key)
-                except Exception:
-                    pass
-            raise
-        return cfg['bucket'], target_prefix, stamp
+            self._upload_stream_to_bucket(
+                object_key, reader, content_type='application/zip')
+        except Exception as e:
+            upload_error = e
+        exit_code = raw.returncode
+        err_tail = (raw.stderr or '')[-2000:]
+
+        if upload_error is not None or exit_code != 0:
+            try:
+                self._delete_bucket_path(object_key)
+            except Exception:
+                pass
+            if exit_code != 0:
+                raise UserError(_(
+                    "The database backup (zip) failed:\n%s"
+                ) % (err_tail or 'exit code %s' % exit_code))
+            raise UserError(_(
+                "Uploading the backup failed:\n%s"
+            ) % upload_error)
+
+        return reader.bytes_read
 
     def _generate_presigned_url(self, expiry=None):
         """Return a presigned GET URL for this backup's bucket object.
@@ -963,6 +792,36 @@ class SaasInstanceBackup(models.Model):
         except Exception as e:
             _logger.warning("Failed to delete backup object %s: %s", bucket_path, e)
 
+    @api.model
+    def _delete_bucket_prefix(self, prefix):
+        """Delete every object under a bucket "directory" (best-effort).
+
+        Full-instance (``operator``-format) backups are TWO+ objects
+        under one stamp directory (``db.dump``, ``filestore.tar.gz``,
+        ``manifest.json``), unlike a per-DB backup's single object key
+        — this is the bulk equivalent of :meth:`_delete_bucket_path` for
+        that shape, used e.g. when pruning old snapshots on
+        cancellation.
+        """
+        if not prefix:
+            return
+        try:
+            cfg = self._get_backup_config()
+            if cfg['provider'] == 'gcs':
+                client, bucket_name = self._get_gcs_client()
+                bucket = client.bucket(bucket_name)
+                for blob in client.list_blobs(bucket_name, prefix=prefix + '/'):
+                    blob.delete()
+            else:
+                client, bucket = self._get_s3_client()
+                paginator = client.get_paginator('list_objects_v2')
+                for page in paginator.paginate(Bucket=bucket, Prefix=prefix + '/'):
+                    keys = [{'Key': o['Key']} for o in page.get('Contents', [])]
+                    if keys:
+                        client.delete_objects(Bucket=bucket, Delete={'Objects': keys})
+        except Exception as e:
+            _logger.warning("Failed to delete backup prefix %s: %s", prefix, e)
+
     def _move_to_cancelled_folder(self):
         """Move this backup's cloud object into the cancelled_backups/ prefix.
 
@@ -1004,1015 +863,352 @@ class SaasInstanceBackup(models.Model):
             return self.bucket_path
 
     # ------------------------------------------------------------------
-    # Backup creation — zip on server, upload directly to bucket
+    # Full-instance backup/restore — Kubernetes-native redesign (Phase 5,
+    # part B). The Go operator already runs its OWN cloud-agnostic
+    # CronJob (pg_dump + filestore tar to object storage, see
+    # compute/operator/internal/resources/backup.go and
+    # compute/tools/backup-tool/run-backup.sh) once
+    # ``saas.instance._sync_scheduled_backup`` has patched
+    # ``spec.backup`` onto the instance's OdooInstance CR — Odoo no
+    # longer drives the schedule or does the dump/tar work itself the
+    # way the old restic-over-SSH cron did. This section's job is just
+    # to mirror what the operator already wrote into the bucket into
+    # ``saas.instance.backup`` records for the portal/admin UI, and to
+    # restore from one back onto a live instance.
+    #
+    # Known limitation, inherited from the operator's own backup design
+    # (not something to work around here): ``spec.backup`` dumps only
+    # the instance's ONE primary database (``instance.subdomain``) plus
+    # the ENTIRE filestore volume. For a multi-database hosting
+    # instance, customer databases created via ``hosting_db_create``
+    # beyond the primary one are NOT individually pg_dump'd by this
+    # mechanism — only their filestore content (bundled in the same
+    # tar) is covered. Per-database coverage for those still exists via
+    # ``hosting_db_backup`` (on-demand, one DB at a time).
     # ------------------------------------------------------------------
-    def _create_and_upload_backup(self, instance, object_key, db_name=None):
-        """SSH to the docker server, dump DB + copy filestore + manifest, zip,
-        then upload directly from the server to the bucket via presigned URL.
 
-        ``db_name`` selects which database to dump. Defaults to the
-        record's own ``db_name`` (or ``instance.subdomain`` if blank
-        for service instances).
-
-        Returns the zip size in bytes.
-        """
-        instance._ensure_can_ssh()
-        docker_server = instance.docker_server_id
-        container_name = instance._get_container_name()
-        db_name = db_name or self.db_name or instance.subdomain
-        db_server = instance.db_server_id
-        db_host = instance._get_db_host()
-        db_port = db_server.psql_port or 5432
-        ts = fields.Datetime.now().strftime('%Y%m%d%H%M%S')
-        tmp_dir = '/tmp/saas_backup_%s_%s' % (db_name, ts)
-        zip_path = '%s.zip' % tmp_dir
-        script_path = '/tmp/saas_backup_script_%s_%s.sh' % (db_name, ts)
-
-        import json
-        manifest = json.dumps({
-            'odoo_version': instance.odoo_version_id.name or '',
-            'database': db_name,
-            'partner': instance.partner_id.name or '',
-            'timestamp': fields.Datetime.now().isoformat(),
-            'instance': instance.name or '',
-        }, indent=2)
-
-        # Generate presigned PUT URL for direct upload from server to bucket
+    def _list_backup_stamps(self, cfg, prefix):
+        """Return the set of run "stamps" (subdirectory names) that
+        exist directly under ``<bucket>/<prefix>/`` — one per backup
+        run, named ``run-backup.sh``'s own ``date -u +%Y%m%dT%H%M%SZ``
+        format. Pure bucket listing, no Kubernetes exec."""
+        stamps = set()
         try:
-            presigned_put_url = self._generate_presigned_put_url(object_key)
+            if cfg['provider'] == 'gcs':
+                client, bucket_name = self._get_gcs_client()
+                it = client.list_blobs(
+                    bucket_name, prefix=prefix + '/', delimiter='/')
+                list(it)  # force iteration so .prefixes gets populated
+                for p in (it.prefixes or []):
+                    stamp = p[len(prefix) + 1:].rstrip('/')
+                    if stamp:
+                        stamps.add(stamp)
+            else:
+                client, bucket = self._get_s3_client()
+                paginator = client.get_paginator('list_objects_v2')
+                for page in paginator.paginate(
+                        Bucket=bucket, Prefix=prefix + '/', Delimiter='/'):
+                    for cp in page.get('CommonPrefixes', []):
+                        stamp = cp['Prefix'][len(prefix) + 1:].rstrip('/')
+                        if stamp:
+                            stamps.add(stamp)
         except Exception:
-            presigned_put_url = None
-
-        # Use environment variables instead of embedding credentials in shell script
-        env_vars = {
-            'SAAS_TMP_DIR': tmp_dir,
-            'SAAS_ZIP_PATH': zip_path,
-            'SAAS_CONTAINER': container_name,
-            'SAAS_DB_NAME': db_name,
-            'SAAS_DB_HOST': db_host,
-            'SAAS_DB_PORT': str(db_port),
-            'SAAS_DB_USER': instance.db_user,
-            'SAAS_DB_PASS': instance.db_password,
-        }
-        if presigned_put_url:
-            env_vars['SAAS_UPLOAD_URL'] = presigned_put_url
-
-        env_prefix = ' '.join(
-            '%s=%s' % (k, shlex.quote(v)) for k, v in env_vars.items()
-        )
-
-        # Build the upload step based on whether presigned URL is available
-        if presigned_put_url:
-            upload_step = (
-                '# 5) Upload directly to cloud storage via presigned URL\n'
-                'if curl -f -X PUT -H "Content-Type: application/zip" '
-                '--data-binary "@$SAAS_ZIP_PATH" "$SAAS_UPLOAD_URL"; then\n'
-                '    UPLOAD_OK=0\n'
-                'else\n'
-                '    UPLOAD_OK=1\n'
-                'fi\n'
-            )
-        else:
-            upload_step = 'UPLOAD_OK=1  # No presigned URL, will download via SFTP\n'
-
-        script = r"""#!/bin/bash
-set -e
-
-mkdir -p "$SAAS_TMP_DIR/filestore"
-
-# 1) pg_dump via docker exec (pass PGPASSWORD into the container env)
-# Try inside container first (uses container's pg_dump + network access)
-docker exec -e PGPASSWORD="$SAAS_DB_PASS" "$SAAS_CONTAINER" pg_dump \
-    -h "$SAAS_DB_HOST" -p "$SAAS_DB_PORT" -U "$SAAS_DB_USER" \
-    -d "$SAAS_DB_NAME" --no-owner > "$SAAS_TMP_DIR/dump.sql" 2>/tmp/saas_pgdump_err_$$ || true
-
-# If container pg_dump failed or produced empty dump, try from host
-if [ ! -s "$SAAS_TMP_DIR/dump.sql" ]; then
-    echo "Container pg_dump failed or empty, trying from host..." >&2
-    # Try pg_dump directly from the host (if installed)
-    if command -v pg_dump >/dev/null 2>&1; then
-        PGPASSWORD="$SAAS_DB_PASS" pg_dump \
-            -h "$SAAS_DB_HOST" -p "$SAAS_DB_PORT" -U "$SAAS_DB_USER" \
-            -d "$SAAS_DB_NAME" --no-owner > "$SAAS_TMP_DIR/dump.sql" 2>&1
-    else
-        # Try via the DB server's psql if host has no pg_dump
-        echo "No pg_dump on host either. Backup will have empty DB dump." >&2
-    fi
-fi
-
-# Verify dump is not empty
-if [ ! -s "$SAAS_TMP_DIR/dump.sql" ]; then
-    echo "ERROR: pg_dump produced empty output." >&2
-    cat /tmp/saas_pgdump_err_$$ 2>/dev/null >&2 || true
-    rm -f /tmp/saas_pgdump_err_$$
-    exit 1
-fi
-rm -f /tmp/saas_pgdump_err_$$
-
-# 2) Copy filestore from inside the container using docker cp
-if docker exec "$SAAS_CONTAINER" test -d "/var/lib/odoo/filestore/$SAAS_DB_NAME" 2>/dev/null; then
-    docker cp "$SAAS_CONTAINER:/var/lib/odoo/filestore/$SAAS_DB_NAME/." "$SAAS_TMP_DIR/filestore/" 2>/dev/null || true
-elif docker exec "$SAAS_CONTAINER" test -d "/var/lib/odoo/.local/share/Odoo/filestore/$SAAS_DB_NAME" 2>/dev/null; then
-    docker cp "$SAAS_CONTAINER:/var/lib/odoo/.local/share/Odoo/filestore/$SAAS_DB_NAME/." "$SAAS_TMP_DIR/filestore/" 2>/dev/null || true
-fi
-
-# 3) Write manifest.json
-cat > "$SAAS_TMP_DIR/manifest.json" << 'MANIFEST_EOF'
-%s
-MANIFEST_EOF
-
-# 4) Zip via Python's stdlib so we don't depend on `zip` being
-# installed on the docker host. Walks $SAAS_TMP_DIR recursively and
-# packs everything under root-relative paths inside the archive.
-cd "$SAAS_TMP_DIR"
-python3 - "$SAAS_TMP_DIR" "$SAAS_ZIP_PATH" <<'PYZIP'
-import os, sys, zipfile
-src, dst = sys.argv[1], sys.argv[2]
-with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
-    for root, dirs, files in os.walk(src):
-        for f in files:
-            full = os.path.join(root, f)
-            zf.write(full, os.path.relpath(full, src))
-PYZIP
-
-# Cleanup temp dir (keep zip)
-rm -rf "$SAAS_TMP_DIR"
-
-%s
-
-# Output zip size for tracking
-stat -c %%s "$SAAS_ZIP_PATH" 2>/dev/null || stat -f %%z "$SAAS_ZIP_PATH" 2>/dev/null || echo 0
-
-# Remove zip from server if upload succeeded (so Python knows not to SFTP it)
-if [ "${UPLOAD_OK:-1}" = "0" ]; then
-    rm -f "$SAAS_ZIP_PATH"
-fi
-""" % (manifest, upload_step)
-
-        with docker_server._get_ssh_connection() as ssh:
-            # Upload script file to avoid shell quoting issues
-            ssh.write_file(script_path, script)
-            ssh.execute('chmod +x %s' % shlex.quote(script_path))
-
-            exit_code, stdout, stderr = ssh.execute(
-                '%s bash %s' % (env_prefix, shlex.quote(script_path)),
-                timeout=600,
-            )
-
-            # Remove script
-            ssh.execute('rm -f %s' % shlex.quote(script_path))
-
-            if exit_code != 0:
-                ssh.execute('rm -f %s' % shlex.quote(zip_path))
-                raise UserError(
-                    _("Backup failed on server %s:\n%s") % (docker_server.name, stderr or stdout)
-                )
-
-            # Parse size from stdout (last line)
-            size_bytes = 0
-            for line in stdout.strip().splitlines():
-                line = line.strip()
-                if line.isdigit():
-                    size_bytes = int(line)
-
-            # Check if the zip still exists on the server (means upload
-            # didn't happen or failed — need SFTP fallback)
-            # Use ``__`` (not ``_``) for the throwaways: ``_`` is the
-            # translation function imported at module top, and rebinding
-            # it in the local scope shadows it for the entire function —
-            # so the earlier ``_("Backup failed…")`` blows up with
-            # UnboundLocalError.
-            check_code, __out, __err = ssh.execute(
-                'test -f %s' % shlex.quote(zip_path)
-            )
-            if check_code == 0:
-                # Zip still on server — download via SFTP and upload from Odoo
-                try:
-                    zip_data = ssh.read_file_bytes(zip_path)
-                    size_bytes = len(zip_data)
-                finally:
-                    ssh.execute('rm -f %s' % shlex.quote(zip_path))
-                if not zip_data:
-                    raise UserError(_(
-                        "The backup came back empty. Please try again, "
-                        "or contact support if this keeps happening."
-                    ))
-                self._upload_to_bucket(object_key, zip_data)
-
-        return size_bytes
-
-    # ------------------------------------------------------------------
-    # Restic plumbing — daily snapshots are stored in a per-instance,
-    # password-encrypted, deduplicated repository in the same object
-    # store we already use for zip backups. We never embed credentials
-    # in shell args (they leak via `ps`); everything goes via env.
-    # ------------------------------------------------------------------
-    @api.model
-    def _restic_repository_url(self, instance):
-        """Build the ``RESTIC_REPOSITORY`` URL for an instance.
-
-        Layout:  restic/<partner>/<subdomain>  inside the configured
-        backup bucket. Provider-specific URL prefix.
-        """
-        cfg = self._get_backup_config()
-        partner = instance.partner_id
-        partner_folder = '%s_%s' % (
-            partner.id, self._sanitize_name(partner.name),
-        ) if partner else 'no_partner'
-        path = 'restic/%s/%s' % (partner_folder, instance.subdomain)
-
-        if cfg['provider'] == 'gcs':
-            return 'gs:%s:%s' % (cfg['bucket'], path)
-
-        # S3 / S3-compatible (AWS / DO Spaces / MinIO / etc.). restic
-        # accepts s3:<host>/<bucket>/<path>. For AWS-region setups
-        # we synthesize the regional endpoint; otherwise rely on the
-        # admin-provided endpoint.
-        endpoint = cfg.get('endpoint')
-        if not endpoint and cfg['provider'] == 'aws':
-            region = cfg.get('region') or 'us-east-1'
-            endpoint = 'https://s3.%s.amazonaws.com' % region
-        elif not endpoint and cfg['provider'] == 'digitalocean':
-            region = cfg.get('region') or 'nyc3'
-            endpoint = 'https://%s.digitaloceanspaces.com' % region
-        elif not endpoint and cfg['provider'] == 'hetzner':
-            region = cfg.get('region') or 'fsn1'
-            endpoint = 'https://%s.your-objectstorage.com' % region
-        endpoint = (endpoint or '').rstrip('/')
-        # strip scheme — restic expects s3:host/bucket/path
-        host = endpoint.split('://', 1)[-1] if endpoint else 's3.amazonaws.com'
-        return 's3:%s/%s/%s' % (host, cfg['bucket'], path)
-
-    @api.model
-    def _ensure_restic_password(self, instance):
-        """Lazy-generate the per-instance restic password.
-
-        Called once on the first backup. Stored on
-        ``saas.instance.restic_password`` with manager-only ACL.
-        """
-        if instance.sudo().restic_password:
-            return instance.sudo().restic_password
-        import secrets as _secrets
-        pwd = _secrets.token_urlsafe(48)
-        instance.sudo().restic_password = pwd
-        return pwd
-
-    @api.model
-    def _restic_env_vars(self, instance, gcs_credentials_path=None):
-        """Env vars to expose restic to its repository.
-
-        On GCS, the caller must first stage the service-account JSON
-        to a path on the docker host (``gcs_credentials_path``) and
-        pass it in — restic reads it via ``GOOGLE_APPLICATION_CREDENTIALS``.
-        """
-        cfg = self._get_backup_config()
-        env = {
-            'RESTIC_REPOSITORY': self._restic_repository_url(instance),
-            'RESTIC_PASSWORD': self._ensure_restic_password(instance),
-        }
-        if cfg['provider'] == 'gcs':
-            # Cloud Storage project id env is optional; restic
-            # picks up the project from the SA JSON. Keep it out.
-            if gcs_credentials_path:
-                env['GOOGLE_APPLICATION_CREDENTIALS'] = gcs_credentials_path
-        else:
-            env['AWS_ACCESS_KEY_ID'] = cfg.get('access_key') or ''
-            env['AWS_SECRET_ACCESS_KEY'] = cfg.get('secret_key') or ''
-            if cfg.get('region'):
-                env['AWS_DEFAULT_REGION'] = cfg['region']
-        return env
-
-    @api.model
-    def _stage_gcs_credentials(self, ssh, instance):
-        """Write the GCS service-account JSON to a temp file on the
-        docker host so restic can pick it up via env. Returns the path,
-        or ``None`` if not applicable. Caller MUST clean up via
-        ``_unstage_gcs_credentials``.
-        """
-        cfg = self._get_backup_config()
-        if cfg['provider'] != 'gcs':
-            return None
-        ICP = self.env['ir.config_parameter'].sudo()
-        sa_key = ICP.get_param('saas_backup.service_account_key', '')
-        if not sa_key:
-            raise UserError(_("GCS provider selected but no service-account JSON configured."))
-        path = '/tmp/saas_restic_gcs_%s_%d.json' % (
-            instance.subdomain, int(time.time()),
-        )
-        ssh.write_file(path, sa_key)
-        ssh.execute('chmod 600 %s' % shlex.quote(path))
-        return path
-
-    @api.model
-    def _unstage_gcs_credentials(self, ssh, path):
-        if path:
-            try:
-                ssh.execute('rm -f %s' % shlex.quote(path))
-            except Exception:
-                _logger.warning("Failed to clean up GCS creds at %s", path)
-
-    @api.model
-    def _ensure_restic_installed(self, ssh, docker_server_name=''):
-        """Verify restic is present on the docker host. Raises UserError
-        with an install hint if absent."""
-        exit_code, stdout, stderr = ssh.execute(
-            'command -v restic >/dev/null 2>&1 && restic version 2>&1 || echo MISSING'
-        )
-        if 'MISSING' in (stdout or '') or exit_code != 0:
-            raise UserError(_(
-                "restic is not installed on docker host %s. "
-                "Install it with `sudo apt-get install -y restic` "
-                "(Debian 12+/Ubuntu 22.04+) or grab the static binary "
-                "from https://github.com/restic/restic/releases and "
-                "place it on $PATH."
-            ) % (docker_server_name or 'this server'))
-
-    @api.model
-    def _restic_cmd(self, env_vars, args, stdin_pipeline=None):
-        """Build a shell command that runs ``restic <args>`` with
-        env_vars exported (NOT inline-quoted on the command line, so
-        passwords don't show up in `ps`).
-        """
-        # `env -` clears the environment then sets ours; we then run
-        # restic. Using env vars from a heredoc-style assignment is
-        # safer than embedding the password in the command line.
-        # Quote the whole "K=V" as one token, not just V — every current
-        # caller passes a hardcoded literal key, but quoting only the
-        # value leaves the key itself as a latent injection point for any
-        # future caller that builds one dynamically (same fix as
-        # ssh_docker_driver.py's service_exec()).
-        exports = ' '.join(
-            shlex.quote('%s=%s' % (k, v or ''))
-            for k, v in env_vars.items()
-        )
-        # `args` is NOT quoted here even though it's user/server-influenced
-        # in places (e.g. 'run=' + run_tag) — every current caller already
-        # shlex.quote()s the dynamic pieces it builds into this list
-        # itself (server-generated values only: timestamps, restic-issued
-        # hashes, already-regex-validated DB names — never raw customer
-        # input), and quoting again here would DOUBLE-quote whatever a
-        # caller already quoted, corrupting the actual value passed to
-        # restic. Centralizing that here would need auditing and updating
-        # every call site in lockstep — deliberately not attempted in this
-        # pass given how critical (and untouched-by-tests) this backup
-        # path is; see the security audit note this method's callers were
-        # checked against.
-        cmd = '%s restic %s' % (exports, ' '.join(args))
-        if stdin_pipeline:
-            cmd = '%s | %s' % (stdin_pipeline, cmd)
-        return cmd
-
-    # ------------------------------------------------------------------
-    # Full-instance backup (hosting daily) — bundle DBs + filestore +
-    # addons + config + docker-compose + pip into a single restore zip.
-    # ------------------------------------------------------------------
-    def _create_full_instance_backup(self, instance, object_key):
-        """Zip the entire instance directory + every DB dump, upload it.
-
-        Layout inside the zip:
-            manifest.json
-            dumps/<db>.sql           — one per database owned by the role
-            data/                    — the instance's data dir (filestore +
-                                       Odoo data); sessions/ pruned.
-            addons/                  — customer addons + cloned repos
-            config/                  — odoo.conf and friends
-            docker-compose.yml
-            requirements.txt
-            pip_install.sh           — if present
-
-        Returns the zip size in bytes. Raises UserError on failure.
-        """
-        instance._ensure_can_ssh()
-        docker_server = instance.docker_server_id
-        container_name = instance._get_container_name()
-        instance_path = instance._get_instance_path()
-        db_server = instance.db_server_id
-        db_host = instance._get_db_host()
-        db_port = db_server.psql_port or 5432
-        ts = fields.Datetime.now().strftime('%Y%m%d%H%M%S')
-        tmp_dir = '/tmp/saas_full_%s_%s' % (instance.subdomain, ts)
-        zip_path = '%s.zip' % tmp_dir
-        script_path = '/tmp/saas_full_script_%s_%s.sh' % (
-            instance.subdomain, ts,
-        )
-
-        # Enumerate the databases owned by this instance's role. We do
-        # this from the saas master (not the bash script) so a failure
-        # surfaces as a clean UserError before the SSH session even
-        # starts the dump.
-        try:
-            db_names = [r['name'] for r in instance.hosting_db_list()]
-        except Exception as e:
-            raise UserError(
-                _("Could not list databases on instance %s: %s")
-                % (instance.name, e)
-            )
-
-        import json
-        manifest = json.dumps({
-            'backup_type': 'full_instance',
-            'odoo_version': instance.odoo_version_id.name or '',
-            'docker_image': instance.odoo_version_id._get_docker_image()
-                if hasattr(instance.odoo_version_id, '_get_docker_image')
-                else '',
-            'subdomain': instance.subdomain,
-            'domain': instance.domain_id.name or '',
-            'partner': instance.partner_id.name or '',
-            'partner_id': instance.partner_id.id,
-            'timestamp': fields.Datetime.now().isoformat(),
-            'databases': db_names,
-            'instance': instance.name or '',
-            'pip_packages': instance.pip_packages or '',
-            'plan': instance.plan_id.name or '',
-            'workers': (instance.plan_id.workers or 0)
-                if instance.plan_id else 0,
-            'storage_limit': (instance.plan_id.storage_limit or 0)
-                if instance.plan_id else 0,
-        }, indent=2)
-
-        try:
-            presigned_put_url = self._generate_presigned_put_url(object_key)
-        except Exception:
-            presigned_put_url = None
-
-        env_vars = {
-            'SAAS_TMP_DIR': tmp_dir,
-            'SAAS_ZIP_PATH': zip_path,
-            'SAAS_INSTANCE_PATH': instance_path,
-            'SAAS_CONTAINER': container_name,
-            'SAAS_DB_HOST': db_host,
-            'SAAS_DB_PORT': str(db_port),
-            'SAAS_DB_USER': instance.db_user,
-            'SAAS_DB_PASS': instance.db_password,
-            # newline-separated, no shell injection because we read it
-            # back through `mapfile -t` (no word splitting / no eval).
-            'SAAS_DB_NAMES': '\n'.join(db_names),
-        }
-        if presigned_put_url:
-            env_vars['SAAS_UPLOAD_URL'] = presigned_put_url
-
-        env_prefix = ' '.join(
-            '%s=%s' % (k, shlex.quote(v)) for k, v in env_vars.items()
-        )
-
-        if presigned_put_url:
-            upload_step = (
-                'if curl -f -X PUT -H "Content-Type: application/zip" '
-                '--data-binary "@$SAAS_ZIP_PATH" "$SAAS_UPLOAD_URL"; then\n'
-                '    UPLOAD_OK=0\n'
-                'else\n'
-                '    UPLOAD_OK=1\n'
-                'fi\n'
-            )
-        else:
-            upload_step = 'UPLOAD_OK=1\n'
-
-        script = r"""#!/bin/bash
-set -e
-
-mkdir -p "$SAAS_TMP_DIR"
-mkdir -p "$SAAS_TMP_DIR/dumps"
-
-# 1) pg_dump every database owned by the instance role
-mapfile -t DBS <<< "$SAAS_DB_NAMES"
-for db in "${DBS[@]}"; do
-    [ -z "$db" ] && continue
-    echo "Dumping $db..." >&2
-    docker exec -e PGPASSWORD="$SAAS_DB_PASS" "$SAAS_CONTAINER" pg_dump \
-        -h "$SAAS_DB_HOST" -p "$SAAS_DB_PORT" -U "$SAAS_DB_USER" \
-        -d "$db" --no-owner > "$SAAS_TMP_DIR/dumps/$db.sql" 2>>/tmp/saas_pgdump_err_$$
-    if [ ! -s "$SAAS_TMP_DIR/dumps/$db.sql" ]; then
-        # container pg_dump failed; try from the host (if present)
-        if command -v pg_dump >/dev/null 2>&1; then
-            PGPASSWORD="$SAAS_DB_PASS" pg_dump \
-                -h "$SAAS_DB_HOST" -p "$SAAS_DB_PORT" -U "$SAAS_DB_USER" \
-                -d "$db" --no-owner > "$SAAS_TMP_DIR/dumps/$db.sql" 2>&1
-        fi
-    fi
-    if [ ! -s "$SAAS_TMP_DIR/dumps/$db.sql" ]; then
-        echo "ERROR: pg_dump produced empty file for $db" >&2
-        cat /tmp/saas_pgdump_err_$$ 2>/dev/null >&2 || true
-        rm -f /tmp/saas_pgdump_err_$$
-        exit 1
-    fi
-done
-rm -f /tmp/saas_pgdump_err_$$
-
-# 2) Copy instance directory contents — addons, config, docker-compose,
-#    requirements, pip script. Use a manifest exclude file so we skip
-#    transient noise (logs, lock files) but keep everything else.
-echo "Copying instance files..." >&2
-if [ -d "$SAAS_INSTANCE_PATH/addons" ]; then
-    cp -a "$SAAS_INSTANCE_PATH/addons" "$SAAS_TMP_DIR/addons"
-fi
-if [ -d "$SAAS_INSTANCE_PATH/config" ]; then
-    cp -a "$SAAS_INSTANCE_PATH/config" "$SAAS_TMP_DIR/config"
-fi
-for f in docker-compose.yml requirements.txt pip_install.sh; do
-    if [ -f "$SAAS_INSTANCE_PATH/$f" ]; then
-        cp -a "$SAAS_INSTANCE_PATH/$f" "$SAAS_TMP_DIR/$f"
-    fi
-done
-
-# 3) Filestore + data dir. Exclude session files — they're regenerated
-#    on next login and can be huge. Also exclude __pycache__/.
-if [ -d "$SAAS_INSTANCE_PATH/data" ]; then
-    echo "Copying data/filestore (skip sessions)..." >&2
-    mkdir -p "$SAAS_TMP_DIR/data"
-    # rsync if available, otherwise a tar pipe.
-    if command -v rsync >/dev/null 2>&1; then
-        rsync -a \
-            --exclude='sessions' \
-            --exclude='__pycache__' \
-            "$SAAS_INSTANCE_PATH/data/" "$SAAS_TMP_DIR/data/"
-    else
-        ( cd "$SAAS_INSTANCE_PATH" \
-          && tar --exclude='sessions' --exclude='__pycache__' -cf - data ) \
-        | ( cd "$SAAS_TMP_DIR" && tar -xf - )
-    fi
-fi
-
-# 4) Manifest
-cat > "$SAAS_TMP_DIR/manifest.json" << 'MANIFEST_EOF'
-%s
-MANIFEST_EOF
-
-# 5) Zip via Python's stdlib so we don't depend on `zip` being
-# installed on the docker host.
-echo "Zipping..." >&2
-python3 - "$SAAS_TMP_DIR" "$SAAS_ZIP_PATH" <<'PYZIP'
-import os, sys, zipfile
-src, dst = sys.argv[1], sys.argv[2]
-with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
-    for root, dirs, files in os.walk(src):
-        for f in files:
-            full = os.path.join(root, f)
-            zf.write(full, os.path.relpath(full, src))
-PYZIP
-
-# Cleanup workdir (keep zip)
-rm -rf "$SAAS_TMP_DIR"
-
-%s
-
-# Output zip size on stdout so the caller can record it.
-stat -c %%s "$SAAS_ZIP_PATH" 2>/dev/null \
-    || stat -f %%z "$SAAS_ZIP_PATH" 2>/dev/null \
-    || echo 0
-
-if [ "${UPLOAD_OK:-1}" = "0" ]; then
-    rm -f "$SAAS_ZIP_PATH"
-fi
-""" % (manifest, upload_step)
-
-        with docker_server._get_ssh_connection() as ssh:
-            ssh.write_file(script_path, script)
-            ssh.execute('chmod +x %s' % shlex.quote(script_path))
-
-            # Generous timeout — full-instance dumps can take many
-            # minutes on a 10 GB filestore.
-            exit_code, stdout, stderr = ssh.execute(
-                '%s bash %s' % (env_prefix, shlex.quote(script_path)),
-                timeout=3600,
-            )
-
-            ssh.execute('rm -f %s' % shlex.quote(script_path))
-
-            if exit_code != 0:
-                ssh.execute('rm -f %s' % shlex.quote(zip_path))
-                raise UserError(
-                    _("Full-instance backup failed on %s:\n%s")
-                    % (docker_server.name, stderr or stdout)
-                )
-
-            size_bytes = 0
-            for line in stdout.strip().splitlines():
-                line = line.strip()
-                if line.isdigit():
-                    size_bytes = int(line)
-
-            # SFTP fallback if presigned PUT didn't fly
-            # Use ``__`` (not ``_``) for the throwaways: ``_`` is the
-            # translation function imported at module top, and rebinding
-            # it in the local scope shadows it for the entire function —
-            # so the earlier ``_("Backup failed…")`` blows up with
-            # UnboundLocalError.
-            check_code, __out, __err = ssh.execute(
-                'test -f %s' % shlex.quote(zip_path)
-            )
-            if check_code == 0:
-                try:
-                    zip_data = ssh.read_file_bytes(zip_path)
-                    size_bytes = len(zip_data)
-                finally:
-                    ssh.execute('rm -f %s' % shlex.quote(zip_path))
-                if not zip_data:
-                    raise UserError(_(
-                        "The snapshot came back empty. Please try again, "
-                        "or contact support if this keeps happening."
-                    ))
-                self._upload_to_bucket(object_key, zip_data)
-
-        return size_bytes
-
-    def _perform_full_instance_backup(self, instance, keep_target_run_tag=None):
-        """Create a restic-based full-instance snapshot.
-
-        Each backup run produces N+1 restic snapshots (N = number of
-        databases on the instance, +1 for the filesystem) all tagged
-        ``run=<iso-ts>``. The local ``saas.instance.backup`` row holds
-        the run tag, the list of DB snapshot names, and total size
-        info from ``restic stats`` for display.
-
-        Retention is handled by ``restic forget --keep-last 7 --prune``
-        after a successful run — at most 7 snapshots per instance,
-        oldest dropped. The tracking-row side
-        (``_trim_hosting_snapshots``) enforces the same cap on
-        ``saas.instance.backup`` records.
-
-        ``keep_target_run_tag`` pins a specific run tag so neither the
-        restic ``forget`` nor the tracking-row trim drops it. The
-        restore flow passes the target backup's run tag so a pre-
-        restore safety snapshot taken at the cap can't accidentally
-        delete the snapshot we're about to restore from.
-        """
-        instance._ensure_can_ssh()
-        docker_server = instance.docker_server_id
-        container_name = instance._get_container_name()
-        instance_path = instance._get_instance_path()
-        db_server = instance.db_server_id
-        db_host = instance._get_db_host()
-        db_port = db_server.psql_port or 5432
-
-        now = fields.Datetime.now()
-        run_tag = now.strftime('%Y%m%dT%H%M%SZ')
-        backup_name = 'full_%s' % run_tag
-
-        # Enumerate databases up-front so a clean failure surfaces
-        # before we touch restic.
-        try:
-            db_names = [r['name'] for r in instance.hosting_db_list()]
-        except Exception:
-            raise UserError(
-                _("We couldn't get the list of databases for %s right "
-                  "now. Please try again in a moment.") % instance.name
-            )
-
-        backup = self.create({
-            'instance_id': instance.id,
-            'name': backup_name,
-            'is_full_instance': True,
-            'format': 'restic',
-            'restic_run_tag': run_tag,
-            'restic_db_names': ','.join(db_names),
-            'state': 'running',
-        })
-
-        gcs_path = None
-        try:
-            with docker_server._get_ssh_connection() as ssh:
-                self._ensure_restic_installed(ssh, docker_server.name)
-
-                gcs_path = self._stage_gcs_credentials(ssh, instance)
-                env_vars = self._restic_env_vars(instance, gcs_path)
-
-                # 1) Init repo (idempotent — restic init fails if it
-                # already exists; we swallow that specific case).
-                init_cmd = self._restic_cmd(
-                    env_vars, ['init', '--quiet'],
-                )
-                exit_code, stdout, stderr = ssh.execute(
-                    init_cmd, timeout=180,
-                )
-                already_exists = (
-                    'already initialized' in (stdout + stderr).lower()
-                    or 'config file already exists' in (stdout + stderr).lower()
-                )
-                if exit_code != 0 and not already_exists:
-                    raise UserError(_(
-                        "restic init failed:\n%s\n%s"
-                    ) % (stdout, stderr))
-
-                # 2) Per-DB pg_dump → restic backup --stdin
-                for db in db_names:
-                    pg_dump = (
-                        'docker exec -e PGPASSWORD=%s %s pg_dump '
-                        '-h %s -p %d -U %s -d %s --no-owner'
-                    ) % (
-                        shlex.quote(instance.db_password),
-                        shlex.quote(container_name),
-                        shlex.quote(db_host),
-                        db_port,
-                        shlex.quote(instance.db_user),
-                        shlex.quote(db),
-                    )
-                    backup_cmd = self._restic_cmd(
-                        env_vars,
-                        [
-                            'backup', '--stdin',
-                            '--stdin-filename', shlex.quote('%s.sql' % db),
-                            '--tag', 'db', '--tag', 'run=' + run_tag,
-                            '--tag', 'db=' + db,
-                            '--host', shlex.quote(instance.subdomain),
-                            '--quiet',
-                        ],
-                        stdin_pipeline='set -o pipefail; ' + pg_dump,
-                    )
-                    exit_code, stdout, stderr = ssh.execute(
-                        backup_cmd, timeout=3600,
-                    )
-                    if exit_code != 0:
-                        raise UserError(_(
-                            "restic backup of database '%s' failed:\n%s\n%s"
-                        ) % (db, stdout[-500:], stderr[-500:]))
-
-                # 3) Filesystem snapshot — data/addons/config/compose/
-                # requirements/pip script in a single restic run.
-                paths = []
-                for p in ('data', 'addons', 'config',
-                          'docker-compose.yml', 'requirements.txt',
-                          'pip_install.sh'):
-                    full = '%s/%s' % (instance_path, p)
-                    paths.append(shlex.quote(full))
-                fs_cmd = self._restic_cmd(
-                    env_vars,
-                    [
-                        'backup', *paths,
-                        '--tag', 'fs', '--tag', 'run=' + run_tag,
-                        '--host', shlex.quote(instance.subdomain),
-                        '--exclude', shlex.quote('**/sessions'),
-                        '--exclude', shlex.quote('**/__pycache__'),
-                        '--quiet',
-                    ],
-                )
-                # `restic backup` returns 3 for partial errors (e.g.
-                # transient permission denied on a file). 0 = clean.
-                exit_code, stdout, stderr = ssh.execute(
-                    fs_cmd, timeout=7200,
-                )
-                if exit_code not in (0, 3):
-                    raise UserError(_(
-                        "restic backup of filesystem failed:\n%s\n%s"
-                    ) % (stdout[-500:], stderr[-500:]))
-                if exit_code == 3:
-                    _logger.warning(
-                        "restic backup of fs for %s had partial errors; "
-                        "snapshot still created", instance.name,
-                    )
-
-                # 4) Retention: keep the 7 most recent runs.
-                # ``--keep-last`` (count-based) rather than
-                # ``--keep-daily`` (date-based) so pre-restore safety
-                # snapshots taken in quick succession can't push older
-                # daily ones out of the day-bucket and the customer's
-                # visible total stays at the documented maximum of 7.
-                # Group by host so we don't accidentally trim across
-                # instances if a repo gets reused. ``--keep-tag`` pins
-                # an explicit run tag (the restore target) so it's
-                # protected from this round of pruning regardless of
-                # its age.
-                #
-                # ``--prune`` runs with every nightly forget so space
-                # freed by retention is reclaimed from the bucket
-                # immediately.
-                forget_args = [
-                    'forget', '--prune',
-                    '--keep-last', '7', '--group-by', 'host,tags', '--quiet',
-                ]
-                if keep_target_run_tag:
-                    forget_args.extend(
-                        ['--keep-tag', 'run=' + keep_target_run_tag],
-                    )
-                forget_cmd = self._restic_cmd(env_vars, forget_args)
-                # Forget is best-effort. Failing here shouldn't fail
-                # the backup as a whole — surface but continue.
-                ec, fout, ferr = ssh.execute(forget_cmd, timeout=1800)
-                if ec != 0:
-                    _logger.warning(
-                        "restic forget for %s exit=%s out=%s err=%s",
-                        instance.name, ec, fout[-200:], ferr[-200:],
-                    )
-
-                # 5) Stats — read the repo size for display. Optional;
-                # if it fails we just skip size_mb.
-                size_mb = False
-                stats_cmd = self._restic_cmd(
-                    env_vars,
-                    ['stats', '--mode', 'raw-data', '--json',
-                     '--tag', 'run=' + run_tag],
-                )
-                ec, sout, _serr = ssh.execute(stats_cmd, timeout=120)
-                if ec == 0:
-                    try:
-                        import json as _json
-                        stats = _json.loads(sout.strip().splitlines()[-1])
-                        size_mb = round(
-                            stats.get('total_size', 0) / (1024 * 1024), 2,
-                        )
-                    except Exception:
-                        pass
-
-            backup.write({
-                'state': 'done',
-                'size_mb': size_mb or 0.0,
-            })
-            # Enforce the per-instance cap inline. The daily cleanup
-            # cron also enforces this, but pre-restore safety snapshots
-            # call this method directly (outside that cron), so without
-            # an inline trim a customer who restores a few times in a
-            # day can accumulate past ``HOSTING_MAX_SNAPSHOTS``. The
-            # restic-side ``forget --keep-last`` ran a moment ago, so
-            # restic and the tracking rows stay in sync.
-            self._trim_hosting_snapshots(
-                instance, keep_target_run_tag=keep_target_run_tag,
-            )
-        except Exception as e:
-            backup.write({
-                'state': 'failed',
-                'error_message': str(e),
-            })
-            raise
-        finally:
-            if gcs_path:
-                try:
-                    with docker_server._get_ssh_connection() as ssh2:
-                        self._unstage_gcs_credentials(ssh2, gcs_path)
-                except Exception:
-                    pass
-
-    def _trim_hosting_snapshots(self, instance, keep_target_run_tag=None):
-        """Drop the oldest ``done`` full-instance tracking rows on
-        ``instance`` so at most ``HOSTING_MAX_SNAPSHOTS`` remain.
-
-        ``keep_target_run_tag`` pins a specific run tag (the restore
-        target) so it's never deleted, even if it's the oldest row.
-        Without this, restoring from the oldest snapshot at the cap
-        would race the inline trim and lose the target.
-
-        Best-effort: a row that fails to unlink (e.g. transient bucket
-        error) is logged and skipped — the next call will retry.
-        """
-        if not instance.is_hosting:
-            return
-        backups = self.search([
+            _logger.exception(
+                "Failed to list backup stamps under prefix %s", prefix)
+        return stamps
+
+    def _record_full_instance_backup(self, instance, prefix, stamp):
+        """Create/update the ``saas.instance.backup`` row mirroring the
+        operator-written run at ``<prefix>/<stamp>/``. Returns the
+        record, or an empty recordset if the artifacts aren't fully
+        there yet (still uploading)."""
+        bucket_path = '%s/%s' % (prefix, stamp)
+        dump_size = self._bucket_object_size('%s/db.dump' % bucket_path)
+        fs_size = self._bucket_object_size('%s/filestore.tar.gz' % bucket_path)
+        if not dump_size and not fs_size:
+            return self.browse()
+        existing = self.search([
             ('instance_id', '=', instance.id),
-            ('state', '=', 'done'),
-            ('ephemeral', '=', False),
             ('is_full_instance', '=', True),
-        ], order='create_date desc')
-        if len(backups) <= self.HOSTING_MAX_SNAPSHOTS:
-            return
-        excess = backups[self.HOSTING_MAX_SNAPSHOTS:]
-        if keep_target_run_tag:
-            excess = excess.filtered(
-                lambda b: b.restic_run_tag != keep_target_run_tag
-            )
-            if not excess:
-                return
-        _logger.info(
-            "Trimming %d excess full-instance snapshot row(s) for %s "
-            "(keeping %d most recent%s).",
-            len(excess), instance.subdomain, self.HOSTING_MAX_SNAPSHOTS,
-            ' + restore target' if keep_target_run_tag else '',
-        )
-        for backup in excess:
-            try:
-                if backup.bucket_path:
-                    backup._delete_from_bucket()
-                backup.unlink()
-            except Exception as e:
-                _logger.warning(
-                    "Failed to trim snapshot row %s on %s: %s",
-                    backup.name, instance.subdomain, e,
-                )
+            ('bucket_path', '=', bucket_path),
+        ], limit=1)
+        vals = {
+            'instance_id': instance.id,
+            'name': stamp,
+            'db_name': False,
+            'bucket_path': bucket_path,
+            'size_mb': round((dump_size + fs_size) / (1024 * 1024), 2),
+            'state': 'done',
+            'is_full_instance': True,
+            'ephemeral': False,
+            'format': 'operator',
+        }
+        if existing:
+            existing.write(vals)
+            return existing
+        return self.create(vals)
 
-    # ------------------------------------------------------------------
-    # Cron entry point
-    # ------------------------------------------------------------------
     @api.model
-    def _cron_backup_all_instances(self):
-        """Create backups for all running instances and clean up old ones.
-
-        Both hosting and services snapshots are a paid, opt-in add-on:
-        skipped unless ``daily_backup_enabled`` and not
-        ``daily_backup_suspended``. Hosting takes a full-instance snapshot
-        (capped at ``HOSTING_MAX_SNAPSHOTS``); services take a per-DB zip
-        backup (capped at ``DEFAULT_MAX_BACKUPS``) — both via
-        ``_cleanup_old_backups``. Trial-plan instances are skipped.
+    def _cron_sync_scheduled_backups(self):
+        """Mirror the operator's own backup CronJob output into
+        ``saas.instance.backup`` records — pure bucket listing, no
+        Kubernetes exec at all. Replaces ``_cron_backup_all_instances``
+        (which used to DRIVE the backup itself via restic-over-SSH): the
+        operator now owns the actual nightly schedule/execution once
+        ``saas.instance._sync_scheduled_backup`` has enabled
+        ``spec.backup`` on the CR.
         """
         instances = self.env['saas.instance'].search([
-            ('state', '=', 'running'),
-            '|',
-            ('plan_id', '=', False),
-            ('plan_id.is_trial_plan', '=', False),
+            ('daily_backup_enabled', '=', True),
+            ('daily_backup_suspended', '=', False),
+            ('state', 'in', ('running', 'stopped', 'suspended')),
         ])
-        Job = self.env['saas.job']
-        enqueued = 0
+        if not instances:
+            return
+        try:
+            cfg = self._get_backup_config()
+        except UserError:
+            return
         for instance in instances:
-            # Both hosting + services snapshots are a paid, opt-in add-on:
-            # skip unless subscribed and not paused for an overdue invoice.
-            if not instance.daily_backup_enabled or instance.daily_backup_suspended:
+            # Defensive resync, not just listing: `_sync_scheduled_backup`
+            # is normally called once at the specific moments the flag
+            # changes (checkout, payment webhook, suspend/resume, deploy
+            # completion) — a direct field write bypassing those call
+            # sites (e.g. an admin editing the backend form directly), or
+            # a transient failure at one of those moments, would leave
+            # the CR's spec.backup silently out of sync otherwise. Riding
+            # along on this cron's own periodic sweep restores the
+            # self-healing property the old restic-driven cron had for
+            # free (it re-evaluated the flag from scratch every run). The
+            # CR patch is idempotent, so re-asserting it here even when
+            # nothing actually drifted is harmless.
+            try:
+                instance._sync_scheduled_backup()
+            except Exception:
+                _logger.exception(
+                    "Backup sync: failed to resync backup config for %s",
+                    instance.subdomain)
+            prefix = instance._backup_bucket_prefix()
+            try:
+                remote_stamps = self._list_backup_stamps(cfg, prefix)
+            except Exception:
+                _logger.exception(
+                    "Backup sync: failed to list bucket prefix %s", prefix)
                 continue
-            # PERF-001: enqueue one backup job per instance instead of running
-            # them serially in this cron thread. The queue's per-channel worker
-            # pool runs up to the concurrency cap in parallel, so the nightly
-            # window scales; lock_key='instance:<id>' serialises with any portal
-            # backup of the same instance (shared restic repo).
-            method = ('_run_daily_full_backup' if instance.is_hosting
-                      else '_run_daily_db_backup')
-            Job.enqueue(
-                instance, method, channel='backup',
-                lock_key='instance:%s' % instance.id, max_attempts=1,
-                idempotency_key='daily_backup:%s:%s' % (
-                    instance.id, fields.Date.today()))
-            enqueued += 1
-        _logger.info("Daily backup cron enqueued %d instance backup job(s).",
-                     enqueued)
+            for stamp in remote_stamps:
+                try:
+                    self._record_full_instance_backup(instance, prefix, stamp)
+                except Exception:
+                    _logger.exception(
+                        "Backup sync: failed to record stamp %s for %s",
+                        stamp, instance.subdomain)
+            # The operator's own CronJob already prunes by retention
+            # (BackupSpec.Retention) — this just reaps OUR tracking rows
+            # for runs it has already pruned remotely.
+            local = self.search([
+                ('instance_id', '=', instance.id),
+                ('is_full_instance', '=', True),
+                ('format', '=', 'operator'),
+            ])
+            for rec in local:
+                stamp = (rec.bucket_path or '').rsplit('/', 1)[-1]
+                if stamp and stamp not in remote_stamps:
+                    try:
+                        rec.unlink()
+                    except Exception:
+                        _logger.exception(
+                            "Backup sync: failed to reap stale record %s",
+                            rec.id)
+        # Ride along on the same schedule the old daily cron used —
+        # trims stale/excess on-demand backups (no longer full-instance
+        # ones; see that method's own docstring).
         self._cleanup_old_backups()
 
-    def _perform_full_instance_backup_in_new_cursor(self, instance_id):
-        """Run a full-instance backup in a separate cursor."""
-        new_cr = self.pool.cursor()
-        try:
-            new_env = api.Environment(new_cr, self.env.uid, self.env.context)
-            new_env['saas.instance.backup']._perform_full_instance_backup(
-                new_env['saas.instance'].browse(instance_id),
-            )
-            new_cr.commit()
-        except Exception:
-            new_cr.rollback()
-            raise
-        finally:
-            new_cr.close()
+    @api.model
+    def _create_full_instance_backup_sync(self, instance, wait_timeout=180):
+        """Best-effort, SYNCHRONOUS full-instance snapshot: trigger a
+        one-off Job cloned from the (enabled-if-needed) backup CronJob,
+        then poll the bucket until a new stamped run appears or
+        ``wait_timeout`` elapses.
 
-    def _perform_backup_in_new_cursor(self, instance_id, db_name=None):
-        """Run a single backup in a separate cursor to isolate transactions."""
-        new_cr = self.pool.cursor()
-        try:
-            new_env = api.Environment(new_cr, self.env.uid, self.env.context)
-            new_env['saas.instance.backup']._perform_backup(
-                new_env['saas.instance'].browse(instance_id),
-                db_name=db_name,
-            )
-            new_cr.commit()
-        except Exception:
-            new_cr.rollback()
-            raise
-        finally:
-            new_cr.close()
-
-    def _perform_backup(self, instance, db_name=None):
-        """Perform a single backup for an instance.
-
-        ``db_name`` is the database to snapshot. Defaults to
-        ``instance.subdomain`` (service instances). For hosting
-        instances the cron passes each enumerated DB name in turn.
+        Used by the pre-cancellation "final snapshot" courtesy capture,
+        which must complete (or fail) before teardown proceeds — unlike
+        the portal's own "Create Backup" button, which is fire-and-forget
+        and lets :meth:`_cron_sync_scheduled_backups` pick the result up
+        later. Raises on any failure; callers already treat this as
+        best-effort (same contract the old restic path had) and catch
+        accordingly.
         """
-        db_name = db_name or instance.subdomain
-        now_str = fields.Datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        backup_name = 'backup_%s' % now_str
-        partner = instance.partner_id
-        partner_folder = '%s_%s' % (
-            partner.id, self._sanitize_name(partner.name),
-        ) if partner else 'no_partner'
-        # For hosting, segregate per DB so multiple DBs per instance
-        # don't collide in the bucket. Service instances continue with
-        # the legacy layout (partner/db/backup.zip) since their db == sub.
-        if instance.is_hosting:
-            object_key = '%s/%s/%s/%s.zip' % (
-                partner_folder, instance.subdomain, db_name, backup_name,
-            )
-        else:
-            object_key = '%s/%s/%s.zip' % (
-                partner_folder, db_name, backup_name,
-            )
+        driver = instance._compute_driver()
+        handle = instance._compute_handle()
+        cfg = self._get_backup_config()
+        prefix = instance._backup_bucket_prefix()
+        before = self._list_backup_stamps(cfg, prefix)
+        driver.set_scheduled_backup(
+            handle, enabled=True, bucket=cfg['bucket'], prefix=prefix,
+            access_key=cfg['access_key'], secret_key=cfg['secret_key'],
+            endpoint=cfg['endpoint'] or '')
+        driver.trigger_backup_now(handle)
+        deadline = time.time() + wait_timeout
+        stamp = None
+        while time.time() < deadline:
+            time.sleep(5)
+            after = self._list_backup_stamps(cfg, prefix)
+            new = after - before
+            if new:
+                stamp = sorted(new)[-1]
+                break
+        if not stamp:
+            raise UserError(_("Timed out waiting for the snapshot to finish."))
+        backup = self._record_full_instance_backup(instance, prefix, stamp)
+        if not backup:
+            raise UserError(_(
+                "The snapshot job finished but its artifacts weren't "
+                "found in the bucket."
+            ))
+        return backup
 
-        backup = self.create({
-            'instance_id': instance.id,
-            'name': backup_name,
-            'db_name': db_name,
-            'bucket_path': object_key,
-            'state': 'running',
-        })
+    def _presigned_get_url(self, object_key, expiry=None):
+        """Presigned GET URL for an arbitrary object key (not
+        necessarily ``self.bucket_path`` — a full-instance run has TWO
+        artifacts under its stamp directory)."""
+        ttl = expiry or PRESIGNED_URL_EXPIRY
+        cfg = self._get_backup_config()
+        if cfg['provider'] == 'gcs':
+            client, bucket_name = self._get_gcs_client()
+            blob = client.bucket(bucket_name).blob(object_key)
+            return blob.generate_signed_url(
+                expiration=datetime.timedelta(seconds=ttl), method='GET')
+        client, bucket = self._get_s3_client()
+        return client.generate_presigned_url(
+            'get_object', Params={'Bucket': bucket, 'Key': object_key},
+            ExpiresIn=ttl)
 
+    def _do_restore_full_instance(self, instance_id):
+        """Background worker (job model = ``saas.instance.backup``,
+        ``self`` = the backup record being restored): restore this
+        full-instance backup's ``db.dump`` + ``filestore.tar.gz`` onto
+        the SAME, already-running instance.
+
+        Downloads both artifacts into the pod via presigned GET + curl
+        (same "curl on the target" pattern the per-DB restore uses —
+        see ``saas.instance._do_restore_backup``), then runs the EXACT
+        same ``pg_restore``/``tar`` invocation the operator's own
+        create-time restore tool uses
+        (compute/tools/backup-tool/run-restore.sh), via
+        ``driver.exec()`` against the live pod instead of a fresh
+        restore Job — ``spec.restore`` is create-time-only and this
+        instance already exists.
+        """
+        self.ensure_one()
+        instance = self.env['saas.instance'].browse(instance_id)
+        if not instance.exists():
+            raise UserError(_("Instance no longer exists."))
+        driver = instance._compute_driver()
+        handle = instance._compute_handle()
+        db_name = instance.subdomain
+
+        dump_url = self._presigned_get_url('%s/db.dump' % self.bucket_path)
+        fs_url = self._presigned_get_url('%s/filestore.tar.gz' % self.bucket_path)
+
+        instance._append_log("Full-instance restore: downloading artifacts...")
+        workdir = '/tmp/saas_full_restore_%s' % db_name
+        driver.exec(handle, 'rm -rf %s && mkdir -p %s' % (
+            shlex.quote(workdir), shlex.quote(workdir)))
+        for label, url, fname in (
+                ('db dump', dump_url, 'db.dump'),
+                ('filestore archive', fs_url, 'filestore.tar.gz')):
+            dest = '%s/%s' % (workdir, fname)
+            r = driver.exec(
+                handle, 'curl -fsSL -o %s %s' % (
+                    shlex.quote(dest), shlex.quote(url)),
+                timeout=1800)
+            if not r.ok:
+                raise UserError(_(
+                    "Failed to download %s:\n%s\n%s"
+                ) % (label, r.stdout, r.stderr))
+
+        instance._append_log("Releasing connections to '%s'..." % db_name)
+        safe_db = db_name.replace("'", "''")
         try:
-            size_bytes = backup._create_and_upload_backup(
-                instance, object_key, db_name=db_name,
+            instance._docker_exec_sql(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname='%s' AND pid <> pg_backend_pid()" % safe_db,
+                timeout=30,
             )
-            url = backup._generate_presigned_url()
-            now = fields.Datetime.now()
-            backup.write({
-                'state': 'done',
-                'size_mb': round(size_bytes / (1024 * 1024), 2),
-                'download_url': url,
-                'download_url_expiry': now + datetime.timedelta(seconds=PRESIGNED_URL_EXPIRY),
-            })
         except Exception as e:
-            backup.write({
-                'state': 'failed',
-                'error_message': str(e),
-            })
-            raise
+            instance._append_log(
+                "Note: connection release failed (%s); continuing." % e)
+
+        instance._append_log("Recreating database '%s'..." % db_name)
+        rc, out, err = instance._docker_exec_sql(
+            'DROP DATABASE IF EXISTS "%s" WITH (FORCE)' % db_name, timeout=120)
+        if rc != 0:
+            raise UserError(_("dropdb failed for %s:\n%s") % (db_name, err or out))
+        rc, out, err = instance._docker_exec_sql(
+            'CREATE DATABASE "%s"' % db_name, timeout=120)
+        if rc != 0:
+            raise UserError(_("createdb failed for %s:\n%s") % (db_name, err or out))
+
+        instance._append_log("Restoring database (pg_restore)...")
+        conn_prelude = (
+            "import configparser, os, subprocess, sys\n"
+            "cfg = configparser.ConfigParser()\n"
+            "cfg.read('/etc/odoo/odoo.conf')\n"
+            "o = cfg['options']\n"
+            "env = dict(os.environ)\n"
+            "env['PGPASSWORD'] = o.get('db_password', '')\n"
+            "conn = ['-h', o.get('db_host', 'localhost'), '-p', o.get('db_port', '5432'),\n"
+            "        '-U', o.get('db_user', 'odoo')]\n"
+        )
+        # Same flags run-restore.sh uses: --no-owner (the dump's
+        # original role has no reason to exist here), --single-
+        # transaction + --exit-on-error (a partial restore is worse
+        # than no restore — see that script's own comment).
+        script = (
+            conn_prelude
+            + "p = subprocess.run(['pg_restore'] + conn + ['-d', %s,\n"
+              "    '--no-owner', '--single-transaction', '--exit-on-error', %s],\n"
+              "    env=env, capture_output=True, text=True)\n"
+              "sys.stdout.write(p.stdout)\n"
+              "sys.stderr.write(p.stderr)\n"
+              "sys.exit(p.returncode)\n"
+        ) % (repr(db_name), repr('%s/db.dump' % workdir))
+        command = "python3 - <<'SAAS_PGRESTORE_EOF'\n%s\nSAAS_PGRESTORE_EOF" % script
+        r = driver.exec(handle, command, timeout=1800)
+        if not r.ok:
+            raise UserError(_(
+                "pg_restore failed:\n%s"
+            ) % (r.stderr or r.stdout)[-4000:])
+
+        instance._append_log("Extracting filestore archive...")
+        r = driver.exec(
+            handle,
+            'tar -C /var/lib/odoo -xzf %s' % shlex.quote(
+                '%s/filestore.tar.gz' % workdir),
+            timeout=600,
+        )
+        if not r.ok:
+            raise UserError(_(
+                "Filestore extraction failed:\n%s"
+            ) % (r.stderr or r.stdout))
+
+        driver.exec(handle, 'rm -rf %s' % shlex.quote(workdir))
+
+        instance.write({'state': 'running', 'pending_operation': False})
+        instance._append_log(
+            "Full-instance restore from '%s' completed successfully." % self.name)
+        instance._safe_refresh_usage()
+
+    def _on_restore_full_instance_error(self, exception, instance_id, prev_state):
+        """``on_error`` shim: this job's record is a
+        ``saas.instance.backup`` (not the instance), but a failure
+        still needs to restore the INSTANCE's ``state``/
+        ``pending_operation`` — ``saas.job``'s ``on_error`` always calls
+        back on the job's own record model."""
+        instance = self.env['saas.instance'].browse(instance_id)
+        if instance.exists():
+            instance._on_background_error(exception, prev_state)
 
     def _run_portal_backup(self):
         """Run backup for an already-created record (called from portal).
@@ -2056,20 +1252,20 @@ fi
         self.bucket_path = object_key
 
         try:
-            if self.ephemeral:
-                # On-demand: stream straight to the bucket — diskless,
-                # multipart, any size — in the customer's chosen format.
-                if self.format == 'dump':
-                    size_bytes = self._stream_pg_dump_to_bucket(
-                        instance, object_key, db_name,
-                    )
-                else:
-                    size_bytes = self._stream_odoo_zip_to_bucket(
-                        instance, object_key, db_name,
-                    )
+            # Both the on-demand and legacy/portal paths now go through
+            # the same in-pod streaming transports (see part A.8 of the
+            # ssh_docker-removal plan) — ``_create_and_upload_backup``,
+            # the old host-side "build zip, upload from server" mechanism,
+            # was deleted as a redundant duplicate of
+            # ``_stream_odoo_zip_to_bucket``, which already does the same
+            # job diskless.
+            if self.format == 'dump':
+                size_bytes = self._stream_pg_dump_to_bucket(
+                    instance, object_key, db_name,
+                )
             else:
-                size_bytes = self._create_and_upload_backup(
-                    instance, object_key, db_name=db_name,
+                size_bytes = self._stream_odoo_zip_to_bucket(
+                    instance, object_key, db_name,
                 )
             # Belt-and-braces: if the streamed byte count came back zero
             # for any reason, read the real object size from the bucket
@@ -2105,19 +1301,6 @@ fi
             except Exception:
                 pass
             raise
-
-    # Fixed retention for hosting full-instance snapshots, per product
-    # spec: keep the N most recent snapshots, drop older ones. Switched
-    # away from a day-based cutoff because pre-restore safety snapshots
-    # (taken on every restore) could push the customer's daily snapshot
-    # out of its bucket and we'd retain only the most recent restore-
-    # adjacent ones. Count-based retention is what the portal copy
-    # documents.
-    HOSTING_MAX_SNAPSHOTS = 7
-    # Legacy alias — some older callers still reference this name. The
-    # value is meaningless now (we don't cull by age anymore) but kept
-    # to avoid attribute-error surprises in field code.
-    HOSTING_RETENTION_DAYS = 7
 
     @api.model
     def _cron_cleanup_ephemeral_backups(self):
@@ -2175,8 +1358,11 @@ fi
 
         - Service instances: keep at most ``DEFAULT_MAX_BACKUPS`` per
           instance (fixed platform-wide retention).
-        - Hosting instances: keep at most ``HOSTING_MAX_SNAPSHOTS``
-          full-instance snapshots per instance, drop the oldest.
+        - Full-instance (``is_full_instance``) snapshots are no longer
+          trimmed here: the operator's own backup CronJob already
+          prunes by ``spec.backup.retention``, and
+          ``_cron_sync_scheduled_backups`` reaps our tracking rows to
+          match whatever it pruned — see that method's docstring.
         - Stale ``running`` backups older than 1 day are dropped.
         """
         # Clean up stale 'running' backups older than 1 day (stuck records)
@@ -2190,18 +1376,6 @@ fi
                 backup.unlink()
             except Exception as e:
                 _logger.error("Failed to cleanup stale backup %s: %s", backup.name, e)
-
-        # --- Hosting: keep the ``HOSTING_MAX_SNAPSHOTS`` most recent
-        # full-instance snapshots per instance, drop the rest. Backup
-        # creation calls ``_trim_hosting_snapshots`` inline so the cap
-        # is also enforced between cron runs; this sweep catches any
-        # rows the inline path missed (e.g. instances that haven't
-        # taken a new snapshot since the cap changed).
-        instances = self.env['saas.instance'].search([
-            ('is_hosting', '=', True),
-        ])
-        for instance in instances:
-            self._trim_hosting_snapshots(instance)
 
         # --- Service instances: keep at most DEFAULT_MAX_BACKUPS per instance.
         # Ephemeral excluded for the same reason as hosting above.

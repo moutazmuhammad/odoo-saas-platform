@@ -84,31 +84,11 @@ class TestAuditLogLifecycleWiring(TransactionCase):
             ('action', '=', action), ('model', '=', 'saas.instance'),
             ('res_id', '=', self.instance.id)], limit=1)
 
-    def test_restore_backup_writes_audit_log(self):
-        backup = self.env['saas.instance.backup'].sudo().create({
-            'instance_id': self.instance.id, 'name': 'nightly-1',
-            'db_name': self.instance.subdomain, 'state': 'done',
-            'bucket_path': 's3://bucket/nightly-1.zip', 'is_full_instance': False})
-        with patch.object(type(self.instance), '_ensure_can_ssh', lambda self: None), \
-                patch('odoo.addons.saas_core.models.saas_instance.run_in_background',
-                      lambda *a, **kw: None):
-            self.instance.action_restore_backup(backup.id)
-        entry = self._audit('instance_restore_backup')
-        self.assertTrue(entry, "action_restore_backup must write an audit log entry")
-        self.assertIn('nightly-1', entry.detail)
-
-    def test_restore_full_instance_writes_audit_log(self):
-        backup = self.env['saas.instance.backup'].sudo().create({
-            'instance_id': self.instance.id, 'name': 'full-1',
-            'db_name': self.instance.subdomain, 'state': 'done',
-            'bucket_path': 's3://bucket/full-1.tar', 'is_full_instance': True})
-        with patch.object(type(self.instance), '_ensure_can_ssh', lambda self: None), \
-                patch('odoo.addons.saas_core.models.saas_instance.run_in_background',
-                      lambda *a, **kw: None):
-            self.instance.action_restore_full_instance(backup.id)
-        entry = self._audit('instance_restore_full')
-        self.assertTrue(entry, "action_restore_full_instance must write an audit log entry")
-        self.assertIn('full-1', entry.detail)
+    # test_restore_backup_writes_audit_log and
+    # test_restore_full_instance_writes_audit_log were removed:
+    # action_restore_backup/action_restore_full_instance (the restic/SSH
+    # restore pipeline) were removed along with ssh_docker — see the
+    # removal plan's Phase 5 for the planned CR-based replacement.
 
     def test_plan_upgrade_writes_scale_audit_log(self):
         self.instance.write({'pending_plan_id': self.plan2.id})

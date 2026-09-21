@@ -1,5 +1,4 @@
 import json
-from contextlib import nullcontext
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
@@ -150,8 +149,7 @@ class TestPortalInstanceSecurity(_PortalTestBase):
         mock_enqueue = MagicMock(
             side_effect=lambda *a, **kw: self.env['saas.job'].browse())
         self.authenticate('portalowner@example.com', 'ownerpass123')
-        with patch.object(type(self.instance), '_ensure_can_ssh', lambda self: None), \
-                patch.object(type(self.env['saas.job']), 'enqueue', mock_enqueue):
+        with patch.object(type(self.env['saas.job']), 'enqueue', mock_enqueue):
             result = self._json_call('/my/instances/%d/restart' % self.instance.id)
         self.assertTrue((result or {}).get('success'))
         mock_enqueue.assert_called_once()
@@ -161,163 +159,22 @@ class TestPortalInstanceSecurity(_PortalTestBase):
     def test_stop_success_runs_in_background(self):
         mock_run = MagicMock()
         self.authenticate('portalowner@example.com', 'ownerpass123')
-        with patch.object(type(self.instance), '_ensure_can_ssh', lambda self: None), \
-                patch(
-                    'odoo.addons.saas_core.models.saas_instance.run_in_background',
-                    mock_run):
+        with patch(
+                'odoo.addons.saas_core.models.saas_instance.run_in_background',
+                mock_run):
             result = self._json_call('/my/instances/%d/stop' % self.instance.id)
         self.assertTrue((result or {}).get('success'))
         mock_run.assert_called_once()
         self.assertEqual(mock_run.call_args.args[1], '_do_stop')
         self.assertEqual(self.instance.sudo().state, 'provisioning')
 
-
-@tagged('post_install', '-at_install')
-class TestPortalDatabaseOps(_PortalTestBase):
-    """B.1.5 continued: /my/instances/<id>/databases/* form-post routes.
-
-    These are thin wrappers: real create/duplicate/drop/upgrade success
-    paths (SSH, saas.job.enqueue vs. run_in_background) are already
-    covered at the model layer in test_job_queue.py. Here the model
-    methods themselves are mocked out entirely so these tests exercise
-    only what's actually new at this layer: the ownership boundary, the
-    portal-specific form validation (confirm-name-matches, both-fields-
-    required), correct param pass-through, and redirect/notice wiring —
-    exactly the "thin HTTP smoke test" approach flagged as remaining
-    work in this plan's B.1.3 entry.
-    """
-
-    def _mock_method(self, name, return_value=None, side_effect=None):
-        mock = MagicMock(return_value=return_value, side_effect=side_effect)
-        return patch.object(type(self.instance), name, mock), mock
-
-    def test_db_create_denies_non_owner(self):
-        self.authenticate('portalintruder@example.com', 'intruderpass123')
-        resp = self._form_post(
-            '/my/instances/%d/databases/create' % self.instance.id,
-            {'name': 'newdb', 'login': 'admin', 'password': 'adminpass1'})
-        self.assertIn(resp.status_code, (301, 302, 303))
-        self.assertTrue(resp.headers['Location'].endswith('/my/instances'))
-
-    def test_db_create_success_redirects_with_notice(self):
-        op = MagicMock(db_name='portalinst_newdb')
-        p, mock = self._mock_method('hosting_db_create_async', return_value=op)
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        with p:
-            resp = self._form_post(
-                '/my/instances/%d/databases/create' % self.instance.id,
-                {'name': 'newdb', 'login': 'admin', 'password': 'adminpass1'})
-        self.assertIn(resp.status_code, (301, 302, 303))
-        location = resp.headers['Location']
-        self.assertIn('/databases?notice=', location)
-        mock.assert_called_once_with(
-            name='newdb', login='admin', password='adminpass1',
-            lang='en_US', country_code=None)
-
-    def test_db_create_propagates_model_rejection(self):
-        p, mock = self._mock_method(
-            'hosting_db_create_async',
-            side_effect=UserError("Database 'x' already exists."))
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        with p:
-            resp = self._form_post(
-                '/my/instances/%d/databases/create' % self.instance.id,
-                {'name': 'dup', 'login': 'admin', 'password': 'adminpass1'})
-        self.assertIn('/databases?error=', resp.headers['Location'])
-
-    def test_db_duplicate_success_redirects_with_notice(self):
-        op = MagicMock(db_name='portalinst_copy')
-        p, mock = self._mock_method('hosting_db_duplicate_async', return_value=op)
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        with p:
-            resp = self._form_post(
-                '/my/instances/%d/databases/duplicate' % self.instance.id,
-                {'source': 'prod', 'new_name': 'copy'})
-        self.assertIn('/databases?notice=', resp.headers['Location'])
-        mock.assert_called_once_with(source='prod', new_name='copy')
-
-    def test_db_drop_requires_exact_confirmation(self):
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        resp = self._form_post(
-            '/my/instances/%d/databases/drop' % self.instance.id,
-            {'name': 'proddb', 'confirm': 'proddb-typo'})
-        self.assertIn('/databases?error=', resp.headers['Location'])
-
-    def test_db_drop_success_redirects_with_notice(self):
-        op = MagicMock(db_name='portalinst_proddb')
-        p, mock = self._mock_method('hosting_db_drop_async', return_value=op)
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        with p:
-            resp = self._form_post(
-                '/my/instances/%d/databases/drop' % self.instance.id,
-                {'name': 'proddb', 'confirm': 'proddb'})
-        self.assertIn('/databases?notice=', resp.headers['Location'])
-        mock.assert_called_once_with(name='proddb')
-
-    def test_db_upgrade_module_requires_both_fields(self):
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        resp = self._form_post(
-            '/my/instances/%d/databases/upgrade-module' % self.instance.id,
-            {'name': '', 'module': 'sale'})
-        self.assertIn('/databases?error=', resp.headers['Location'])
-
-    def test_db_upgrade_module_success_redirects_with_notice(self):
-        op = MagicMock(db_name='portalinst_proddb', module_name='sale')
-        p, mock = self._mock_method(
-            'hosting_db_upgrade_module_async', return_value=op)
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        with p:
-            resp = self._form_post(
-                '/my/instances/%d/databases/upgrade-module' % self.instance.id,
-                {'name': 'proddb', 'module': 'sale'})
-        self.assertIn('/databases?notice=', resp.headers['Location'])
-        mock.assert_called_once_with(name='proddb', module='sale')
-
-    def test_reset_admin_password_requires_matching_confirmation(self):
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        resp = self._form_post(
-            '/my/instances/%d/databases/reset-admin-password' % self.instance.id,
-            {'name': 'proddb', 'new_password': 'newpass1',
-             'confirm_password': 'different1'})
-        self.assertIn('/databases?error=', resp.headers['Location'])
-
-    def test_reset_admin_password_success_redirects_with_notice(self):
-        p, mock = self._mock_method(
-            'hosting_db_reset_admin_password', return_value='admin')
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        with p:
-            resp = self._form_post(
-                '/my/instances/%d/databases/reset-admin-password' % self.instance.id,
-                {'name': 'proddb', 'new_password': 'newpass1',
-                 'confirm_password': 'newpass1'})
-        self.assertIn('/databases?notice=', resp.headers['Location'])
-        mock.assert_called_once_with(name='proddb', new_password='newpass1')
-
-    def test_db_op_dismiss_ignores_op_from_another_instance(self):
-        other = self.env['saas.instance'].sudo().create({
-            'subdomain': 'otherportalinst', 'domain_id': self.instance.domain_id.id,
-            'partner_id': self.owner.partner_id.id,
-            'saas_product_id': self.instance.saas_product_id.id,
-            'plan_id': self.instance.plan_id.id, 'billing_period': 'monthly',
-            'environment': 'production', 'region_id': False,
-            'state': 'running', 'is_hosting': True})
-        op = self.env['saas.instance.db.operation'].sudo().create({
-            'instance_id': other.id, 'db_name': 'otherdb', 'operation': 'create'})
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        resp = self._form_post(
-            '/my/instances/%d/databases/op/%d/dismiss'
-            % (self.instance.id, op.id))
-        self.assertIn(resp.status_code, (301, 302, 303))
-        self.assertTrue(op.exists(), "op belonging to a different instance must survive")
-
-    def test_db_op_dismiss_deletes_own_op(self):
-        op = self.env['saas.instance.db.operation'].sudo().create({
-            'instance_id': self.instance.id, 'db_name': 'proddb', 'operation': 'create'})
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        self._form_post(
-            '/my/instances/%d/databases/op/%d/dismiss'
-            % (self.instance.id, op.id))
-        self.assertFalse(op.exists())
+    # TestPortalDatabaseOps (the /my/instances/<id>/databases/* form-post
+    # routes: create/duplicate/drop/upgrade-module/reset-admin-password)
+    # was removed entirely: hosting_db_create_async/_duplicate_async/
+    # _drop_async/_upgrade_module_async/_reset_admin_password (the
+    # ssh_docker/docker-exec DB self-service family) were removed along
+    # with that backend — DB self-service is gone for now (a later phase
+    # reimplements it via driver.exec()).
 
 
 @tagged('post_install', '-at_install')
@@ -708,36 +565,20 @@ class TestPortalBackups(_PortalTestBase):
     """B.1.5 continued: /my/instances/<id>/{backups/ondemand,
     backup(s)/<id>/{discard,download,restore}}.
 
-    hosting_db_list() is mocked the same way test_job_queue.py's
-    _mock_hosting_db_list does (SSH_get_connection/_compute_driver),
-    since portal_backup_ondemand calls it for real to validate the
-    requested db_name. run_in_background() (a fresh local import inside
-    the route, from odoo.addons.saas_core.utils) is patched at its
-    source-module attribute so the route's own re-import each call
-    still picks up the patched symbol — same standing rule as every
-    other run_in_background()-based route in this plan.
-    action_restore_backup()/action_restore_full_instance() are mocked
-    entirely: both are async, SSH-heavy model methods out of scope for
-    a portal-layer test.
-    """
+    On-demand backup (/backups/ondemand) validated the requested db_name
+    via hosting_db_list() (ssh_docker/docker-exec) before creating the
+    backup — that whole family was removed along with ssh_docker, so
+    on-demand backup is gone for now (a later phase reimplements it via
+    the OdooInstance CR's spec.backup, see the removal plan's Phase 5).
+    Only the auth/state-guard tests (which reject before ever reaching
+    hosting_db_list) remain below; the "requires db_name"/"rejects
+    unknown db"/"blocked while running"/"success" tests and the
+    _mock_hosting_db_list helper were removed.
 
-    def _mock_hosting_db_list(self, existing_db_names=()):
-        server = self.env['saas.server'].sudo().create(
-            {'name': 'backup-fake-host', 'is_docker_host': True})
-        self.instance.sudo().docker_server_id = server.id
-        stdout_lines = ['---SAAS_DB_LIST_BEGIN---']
-        stdout_lines += ['%s|' % n for n in existing_db_names]
-        stdout_lines.append('---SAAS_DB_LIST_END---')
-        fake_driver = MagicMock()
-        fake_driver.service_exec.return_value = MagicMock(
-            rc=0, stdout='\n'.join(stdout_lines) + '\n', stderr='')
-        p1 = patch.object(type(server), '_get_ssh_connection',
-                          lambda self: nullcontext(MagicMock()))
-        p2 = patch.object(type(self.instance), '_compute_driver',
-                          return_value=fake_driver)
-        for p in (p1, p2):
-            p.start()
-            self.addCleanup(p.stop)
+    action_restore_backup()/action_restore_full_instance() are similarly
+    gone (see TestPortalBackups' restore tests further down) — both were
+    async, ssh_docker-heavy model methods.
+    """
 
     def test_ondemand_denies_non_owner(self):
         self.authenticate('portalintruder@example.com', 'intruderpass123')
@@ -761,57 +602,6 @@ class TestPortalBackups(_PortalTestBase):
             '/my/instances/%d/backups/ondemand' % self.instance.id,
             {'db_name': 'proddb'})
         self.assertIn('/databases?error=', resp.headers['Location'])
-
-    def test_ondemand_requires_db_name(self):
-        self._mock_hosting_db_list()
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        resp = self._form_post(
-            '/my/instances/%d/backups/ondemand' % self.instance.id, {})
-        self.assertIn('/databases?error=', resp.headers['Location'])
-
-    def test_ondemand_rejects_unknown_db(self):
-        self._mock_hosting_db_list(existing_db_names=['otherdb'])
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        resp = self._form_post(
-            '/my/instances/%d/backups/ondemand' % self.instance.id,
-            {'db_name': 'proddb'})
-        self.assertIn('/databases?error=', resp.headers['Location'])
-
-    def test_ondemand_blocked_while_one_is_running(self):
-        self._mock_hosting_db_list(existing_db_names=['proddb'])
-        self.env['saas.instance.backup'].sudo().create({
-            'instance_id': self.instance.id, 'db_name': 'proddb',
-            'name': 'ondemand_running', 'state': 'running', 'ephemeral': True})
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        resp = self._form_post(
-            '/my/instances/%d/backups/ondemand' % self.instance.id,
-            {'db_name': 'proddb'})
-        self.assertIn('/databases?error=', resp.headers['Location'])
-        self.assertIn(
-            'still in progress',
-            resp.headers['Location'].replace('%20', ' '))
-
-    def test_ondemand_success_replaces_done_backup_and_runs_in_background(self):
-        self._mock_hosting_db_list(existing_db_names=['proddb'])
-        old = self.env['saas.instance.backup'].sudo().create({
-            'instance_id': self.instance.id, 'db_name': 'proddb',
-            'name': 'ondemand_old', 'state': 'done', 'ephemeral': True})
-        mock_run = MagicMock()
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        with patch(
-                'odoo.addons.saas_core.utils.run_in_background', mock_run):
-            resp = self._form_post(
-                '/my/instances/%d/backups/ondemand' % self.instance.id,
-                {'db_name': 'proddb'})
-        self.assertIn('/databases?notice=', resp.headers['Location'])
-        self.assertEqual(old.state, 'failed')
-        mock_run.assert_called_once()
-        self.assertEqual(mock_run.call_args.args[1], '_run_portal_backup')
-        new_backup = self.env['saas.instance.backup'].sudo().search([
-            ('instance_id', '=', self.instance.id), ('db_name', '=', 'proddb'),
-            ('id', '!=', old.id)])
-        self.assertEqual(len(new_backup), 1)
-        self.assertEqual(new_backup.state, 'running')
 
     def test_discard_denies_non_owner(self):
         backup = self.env['saas.instance.backup'].sudo().create({
@@ -947,30 +737,25 @@ class TestPortalBackups(_PortalTestBase):
             {'return_to': 'backups', 'confirm': 'wrong-name'})
         self.assertIn('error=', resp.headers['Location'])
 
-    def test_restore_success_calls_model_method(self):
-        backup = self.env['saas.instance.backup'].sudo().create({
-            'instance_id': self.instance.id, 'db_name': 'proddb',
-            'name': 'ondemand_x', 'state': 'done', 'ephemeral': True})
-        mock_restore = MagicMock()
-        self.authenticate('portalowner@example.com', 'ownerpass123')
-        with patch.object(type(self.instance), 'action_restore_backup', mock_restore):
-            resp = self._form_post(
-                '/my/instances/%d/backup/%d/restore'
-                % (self.instance.id, backup.id))
-        self.assertIn('notice=', resp.headers['Location'])
-        mock_restore.assert_called_once_with(backup.id)
+    # test_restore_success_calls_model_method was removed:
+    # action_restore_backup/action_restore_full_instance (the restic/SSH
+    # restore pipeline) were removed along with ssh_docker — there is no
+    # real success path to test any more (a later phase reimplements
+    # restore via the OdooInstance CR's spec.restore, see the removal
+    # plan's Phase 5).
 
     def test_restore_failure_is_caught_and_reported(self):
+        """With the model-side restore method gone, hitting this route on
+        an otherwise-valid backup now always fails — and the portal route
+        still catches that (whatever the underlying exception) and
+        reports it as an error redirect rather than a 500."""
         backup = self.env['saas.instance.backup'].sudo().create({
             'instance_id': self.instance.id, 'db_name': 'proddb',
             'name': 'ondemand_x', 'state': 'done', 'ephemeral': True})
         self.authenticate('portalowner@example.com', 'ownerpass123')
-        with patch.object(
-                type(self.instance), 'action_restore_backup',
-                MagicMock(side_effect=Exception('boom'))):
-            resp = self._form_post(
-                '/my/instances/%d/backup/%d/restore'
-                % (self.instance.id, backup.id))
+        resp = self._form_post(
+            '/my/instances/%d/backup/%d/restore'
+            % (self.instance.id, backup.id))
         self.assertIn('error=', resp.headers['Location'])
 
 
@@ -1003,7 +788,11 @@ class TestPortalComputeTiers(_PortalTestBase):
         self.assertFalse(result['ok'])
         self.assertEqual(result['code'], 'not_found')
 
-    def test_change_rejects_ssh_docker_backend(self):
+    def test_change_rejects_when_no_kubernetes_backend_assigned(self):
+        # No docker_server_id assigned at all here (never an ssh_docker
+        # value now that Kubernetes is the only backend) — the guard in
+        # action_change_compute_tier still rejects an empty/non-Kubernetes
+        # backend the same way.
         tier = self._ha_tier()
         self.authenticate('portalowner@example.com', 'ownerpass123')
         result = self._json_call(
@@ -1087,11 +876,14 @@ class TestPortalRepoManagement(_PortalTestBase):
     boundary, which redirects to the bare '/my/instances' listing
     instead and so IS distinguishable).
 
-    action_redeploy()/action_restart() are async + SSH (_ensure_can_ssh
-    is not even relevant here: both routes swallow any exception from
-    them with a bare 'except Exception', so a raised UserError wouldn't
-    surface as a test failure anyway) — mocked entirely, out of scope
-    for this layer. run_in_background() (pull-repo, a fresh local
+    action_redeploy() (called by update-repo/remove-repo after writing
+    the repo row) was removed along with ssh_docker — the routes still
+    swallow whatever it now raises (AttributeError) with a bare 'except
+    Exception', exactly like they did for a redeploy failure before, so
+    the repo CRUD side effects below (which happen BEFORE that call) are
+    unaffected; only the "redeploy was called" assertions were removed
+    since there's nothing left to mock. action_restart() (still real)
+    is mocked as before. run_in_background() (pull-repo, a fresh local
     import inside the route body) is patched at its source module
     attribute, same standing rule as every other run_in_background()
     route in this plan.
@@ -1117,13 +909,11 @@ class TestPortalRepoManagement(_PortalTestBase):
         self.assertFalse(self.instance.sudo().repo_ids)
 
     def test_update_repo_creates_new_repo_and_redeploys(self):
-        mock_redeploy = MagicMock()
         self.authenticate('portalowner@example.com', 'ownerpass123')
-        with patch.object(type(self.instance), 'action_redeploy', mock_redeploy):
-            resp = self._form_post(
-                '/my/instances/%d/update-repo' % self.instance.id,
-                {'repo_url': 'https://github.com/acme/widgets.git',
-                 'repo_branch': 'main', 'git_token': 'ghp_secret'})
+        resp = self._form_post(
+            '/my/instances/%d/update-repo' % self.instance.id,
+            {'repo_url': 'https://github.com/acme/widgets.git',
+             'repo_branch': 'main', 'git_token': 'ghp_secret'})
         self.assertEqual(
             resp.headers['Location'], '/my/instances/%d' % self.instance.id)
         repo = self.instance.sudo().repo_ids
@@ -1131,22 +921,18 @@ class TestPortalRepoManagement(_PortalTestBase):
         self.assertEqual(repo.repo_url, 'https://github.com/acme/widgets.git')
         self.assertEqual(repo.branch, 'main')
         self.assertTrue(repo.webhook_enabled)
-        mock_redeploy.assert_called_once()
 
     def test_update_repo_updates_existing_repo(self):
         repo = self.env['saas.instance.repo'].sudo().create({
             'instance_id': self.instance.id,
             'repo_url': 'https://github.com/acme/old.git', 'branch': 'main'})
-        mock_redeploy = MagicMock()
         self.authenticate('portalowner@example.com', 'ownerpass123')
-        with patch.object(type(self.instance), 'action_redeploy', mock_redeploy):
-            self._form_post(
-                '/my/instances/%d/update-repo' % self.instance.id,
-                {'repo_url': 'https://github.com/acme/new.git',
-                 'repo_branch': 'develop'})
+        self._form_post(
+            '/my/instances/%d/update-repo' % self.instance.id,
+            {'repo_url': 'https://github.com/acme/new.git',
+             'repo_branch': 'develop'})
         self.assertEqual(repo.repo_url, 'https://github.com/acme/new.git')
         self.assertEqual(repo.branch, 'develop')
-        mock_redeploy.assert_called_once()
 
     def test_update_repo_with_empty_url_removes_existing_repo(self):
         repo = self.env['saas.instance.repo'].sudo().create({
@@ -1168,22 +954,19 @@ class TestPortalRepoManagement(_PortalTestBase):
         self.assertEqual(resp.headers['Location'], '/my/instances')
 
     def test_remove_repo_is_a_noop_with_no_repo(self):
-        mock_redeploy = MagicMock()
         self.authenticate('portalowner@example.com', 'ownerpass123')
-        with patch.object(type(self.instance), 'action_redeploy', mock_redeploy):
-            self._form_post('/my/instances/%d/remove-repo' % self.instance.id)
-        mock_redeploy.assert_not_called()
+        resp = self._form_post(
+            '/my/instances/%d/remove-repo' % self.instance.id)
+        self.assertEqual(
+            resp.headers['Location'], '/my/instances/%d' % self.instance.id)
 
     def test_remove_repo_deletes_and_redeploys(self):
         repo = self.env['saas.instance.repo'].sudo().create({
             'instance_id': self.instance.id,
             'repo_url': 'https://github.com/acme/widgets.git', 'branch': 'main'})
-        mock_redeploy = MagicMock()
         self.authenticate('portalowner@example.com', 'ownerpass123')
-        with patch.object(type(self.instance), 'action_redeploy', mock_redeploy):
-            self._form_post('/my/instances/%d/remove-repo' % self.instance.id)
+        self._form_post('/my/instances/%d/remove-repo' % self.instance.id)
         self.assertFalse(repo.exists())
-        mock_redeploy.assert_called_once()
 
     def test_pull_repo_denies_non_owner(self):
         self.authenticate('portalintruder@example.com', 'intruderpass123')

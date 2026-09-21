@@ -4,33 +4,10 @@ from odoo import api, fields, models, _
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
-    saas_default_instance_starting_port = fields.Integer(
-        string='Default Starting Port',
-        config_parameter='saas_master.default_instance_starting_port',
-        default=32000,
-        help='First port number in the range used for auto-assigning HTTP and '
-             'longpolling ports to new instances. Ports are allocated in pairs '
-             '(HTTP, longpolling) starting from this value.',
-    )
-
-    # ========== Compute backend ==========
-    # The backend a new instance provisions on. Kubernetes is the default —
-    # Docker Compose is kept only as a simpler, optional alternative for an
-    # operator who doesn't want to run a cluster. This is a platform-level
-    # infrastructure choice, deliberately independent of the customer-facing
-    # compute tiers (see saas.compute.tier — a Docker-Compose-backed
-    # instance just never offers tier selection).
-    saas_default_compute_driver = fields.Selection(
-        [('kubernetes', 'Kubernetes'), ('ssh_docker', 'Docker Compose')],
-        string='Default Compute Backend',
-        config_parameter='saas_master.default_compute_driver',
-        default='kubernetes',
-        help='Backend new instances provision on when nothing more specific '
-             'assigns one. Kubernetes is the modern default; Docker Compose '
-             'remains available as a simpler alternative for an operator '
-             'who has not set up a cluster. Existing instances are '
-             'unaffected by changing this.',
-    )
+    # saas_default_instance_starting_port was removed along with
+    # _auto_assign_ports (its only consumer) — there is no per-tenant
+    # host-port concept in Kubernetes (one shared ingress port serves
+    # every tenant on a region), so nothing reads this setting any more.
 
     # Compute tiers (Standard/HA/Scale/...) are managed as their own
     # records — SaaS > Configuration > Compute Tiers — not as settings

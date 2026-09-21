@@ -55,18 +55,16 @@ going-forward source of truth.
 │
 ├── frontend/        veltnex: the React/Vite/TypeScript SPA served by
 │                    control-plane/saas_website. Talks only to
-│                    /saas/api/v1/* — no direct infrastructure awareness,
-│                    which is exactly what keeps it unaffected by the
-│                    ongoing compute-layer migration (see ROADMAP.md §5).
+│                    /saas/api/v1/* — no direct infrastructure awareness.
 │
 ├── compute/         The Kubernetes operator (OdooInstance CRD + controller):
 │                    provisions/deletes/backs up/restores tenant instances.
 │                    The Compute microservice — the control plane talks to
 │                    it exclusively through the Kubernetes API (create/patch/
 │                    delete OdooInstance custom resources) via a stored,
-│                    encrypted-at-rest kubeconfig, never SSH.
-│                    See compute/docs/architecture.md (English) /
-│                    architecture.ar.md (Arabic).
+│                    encrypted-at-rest kubeconfig, never SSH — Kubernetes is
+│                    the platform's only compute backend. CRD reference:
+│                    compute/operator/api/v1alpha1/odooinstance_types.go.
 │
 ├── ROADMAP.md       The single source of truth (read this first).
 ├── SETUP-GUIDE.md   Full run-it-yourself walkthrough: control plane, a real
@@ -84,29 +82,28 @@ going-forward source of truth.
 - **Running it**: [`SETUP-GUIDE.md`](SETUP-GUIDE.md) — start-to-finish setup
   for the SaaS control plane, a client Kubernetes cluster, and linking them.
 - **Architecture references**: `control-plane/docs/architecture/` (control
-  plane's original spec + as-built deltas) and `compute/docs/architecture.md`
-  (English) / `architecture.ar.md` (Arabic) for the compute microservice's
-  full design.
+  plane's original spec + as-built deltas) and the compute microservice's
+  CRD/controller source itself (`compute/operator/api/v1alpha1/`,
+  `compute/operator/internal/controller/`) for its full design.
 
 ## Local development
 
-- **Control plane** (Odoo): `control-plane/scripts/devctl.sh` for a
-  throwaway/reset-friendly dev loop — see
-  [`control-plane/docs/LOCAL-TESTING.md`](control-plane/docs/LOCAL-TESTING.md)
-  for seeded demo accounts and every flow you can exercise locally (mock
-  provisioning — no real hosts/cluster needed to test billing/portal/admin).
-  For a persistent setup (systemd, survives logout, restarts on failure)
-  instead, see
-  [`control-plane/docs/LOCAL-RUNTIME-SYSTEMD.md`](control-plane/docs/LOCAL-RUNTIME-SYSTEMD.md) —
-  don't run both against the same ports/database at once.
+- **Control plane** (Odoo): normally runs as two `systemctl --user` services
+  (`saas-postgres`, `saas-control-plane`) — see
+  [`TEST-CLUSTER-SETUP.md`](TEST-CLUSTER-SETUP.md) §1 for seeded demo
+  accounts, every flow you can exercise locally (mock provisioning — no
+  real hosts/cluster needed to test billing/portal/admin), and this
+  runtime's layout. `control-plane/scripts/devctl.sh` also works standalone
+  (a throwaway/reset-friendly `nohup`-based dev loop) — **don't run both
+  against the same ports/database at once**.
 - **Frontend** (SPA): `cd frontend/veltnex && npm ci && npm run dev` (proxies
   API calls to a locally running Odoo on `:8018` — see `vite.config.ts`).
   `npm run build` writes straight into
   `control-plane/saas_website/static/spa/`.
 - **Compute** (operator): `cd compute/operator && make test` (unit tests +
   envtest); `make manifests generate fmt vet` after changing the CRD types;
-  see `compute/README.md` for a full local-cluster (microk8s) walkthrough, or
-  `SETUP-GUIDE.md` for wiring a running cluster into the control plane.
+  see `SETUP-GUIDE.md` for a full local-cluster (microk8s) walkthrough and
+  wiring a running cluster into the control plane.
 
 ## CI
 

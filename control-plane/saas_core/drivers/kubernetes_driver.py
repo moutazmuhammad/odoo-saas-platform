@@ -1,29 +1,22 @@
-"""KubernetesDriver — a real, API-backed ComputeDriver (see /ROADMAP.md
-§3.3/§5 Phase 1, "done"). Implements the SAME ``ComputeDriver`` interface as
-``SshDockerDriver``; the business logic in ``saas.instance`` is untouched —
-``_compute_driver()`` just returns this when a server's
-``compute_driver == 'kubernetes'``.
-
-This replaces an earlier stub that drove ``kubectl`` over the server's SSH
-transport against hand-built raw Deployment/Service YAML — explicitly never
-run against a live cluster (its own prior header comment said so). This
-version instead talks to the real Kubernetes API (the official
-``kubernetes`` PyPI client) and manages the Compute Service operator's
-``OdooInstance`` custom resource (``compute/operator``), the same resource
-a human would ``kubectl apply -f``, not a parallel primitive workload the
-operator has never seen.
+"""KubernetesDriver — a real, API-backed ComputeDriver, and the ONLY
+ComputeDriver implementation (ssh_docker was fully retired — see
+/ROADMAP.md §3.1/§5 Phase 2). Talks to the real Kubernetes API (the
+official ``kubernetes`` PyPI client) and manages the Compute Service
+operator's ``OdooInstance`` custom resource (``compute/operator``), the
+same resource a human would ``kubectl apply -f``.
 
 Mapping (ComputeDriver -> Kubernetes):
   create           -> create the OdooInstance CR (operator does the rest)
   destroy          -> delete the OdooInstance CR (the operator's finalizer
                        already tears down the whole tenant namespace —
-                       there is no lesser "stop but keep data" delete at
-                       this level, unlike SshDockerDriver's `compose down`)
+                       there is no lesser "stop but keep data" delete)
   start/stop       -> patch spec.suspended = false/true (already built,
                        see the operator's reconcileSuspended)
   restart          -> stop then start (ABC default; no native rolling-
                        restart trigger is exposed on the CR yet)
   exec             -> Kubernetes pods/exec subresource against the web pod
+                       (one-shot, non-interactive; see exec_interactive()
+                       for the long-lived TTY session a terminal needs)
   logs             -> Kubernetes pods/log subresource
   health           -> OdooInstance.status.phase + the web pod's own
                        container restart count (for crash-loop detection)
@@ -38,19 +31,16 @@ these from the cluster at runtime — keeping the two sides in sync by hand
 is a real, standing constraint on ever renaming either one.
 
 Scope note: ``create()`` IS called by real tenant provisioning —
-``saas.instance._do_deploy_locked`` branches on
-``docker_server_id.compute_driver`` and, for ``kubernetes``, calls this
-driver's ``create()`` directly (no legacy SSH/Docker-Compose steps at
-all); see ``_do_deploy_locked_kubernetes``. Which backend a NEW instance
-lands on is a platform-level setting
-(``saas_master.default_compute_driver``, default ``kubernetes``),
-independent of the per-instance compute tier (replica count, e.g.
-Standard/HA/Scale — see ``scale()`` below).
+``saas.instance._do_deploy_locked`` calls this driver's ``create()``
+directly; see ``_do_deploy_locked_kubernetes``.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import shlex
+import time
 from typing import Optional
 
 import yaml
@@ -60,6 +50,136 @@ from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream as k8s_stream
 
 from .base import ComputeDriver, ComputeSpec, ComputeHandle, ExecResult, HealthStatus
+
+# Kubernetes exec subresource WebSocket sub-channel indices (v4/v5
+# channel.k8s.io protocol) — STDIN=0/STDOUT=1/STDERR=2/ERROR=3/RESIZE=4.
+# Not exported as named constants by the `kubernetes` package's public
+# API; verified against the installed `kubernetes.stream.ws_client`
+# source (STDIN_CHANNEL/RESIZE_CHANNEL module-level ints).
+_RESIZE_CHANNEL = 4
+
+
+class K8sExecChannel:
+    """Adapts a Kubernetes exec WebSocket (``kubernetes.stream``'s
+    ``WSClient``, opened with ``tty=True, binary=True``) to look like a
+    paramiko ``Channel`` — just enough surface for
+    ``saas_core/controllers/ssh_terminal.py``'s pump/relay loop (built
+    originally for a real SSH channel) to drive it unchanged: ``recv_ready``/
+    ``recv``/``sendall``/``closed``/``get_transport().is_active()``/
+    ``resize_pty``/``close``/``fileno`` (the last is what makes this
+    ``select()``-able — verified ``websocket.WebSocket.fileno()``, which
+    ``WSClient.sock`` is an instance of, delegates to the real OS socket)."""
+
+    def __init__(self, ws_client):
+        self._ws = ws_client
+
+    def fileno(self):
+        return self._ws.sock.fileno()
+
+    def recv_ready(self):
+        self._ws.update(timeout=0)
+        return bool(self._ws.peek_stdout() or self._ws.peek_stderr())
+
+    def recv(self, n):
+        # `n` (buffer size) is advisory only, matching how the caller
+        # already treats paramiko's own `recv()` — a websocket frame is
+        # already a discrete unit, there's no partial-read chunking to do.
+        data = (self._ws.read_stdout(timeout=0) or b'') + \
+               (self._ws.read_stderr(timeout=0) or b'')
+        return data
+
+    def sendall(self, data):
+        self._ws.write_stdin(data)
+
+    def resize_pty(self, width=None, height=None, **kwargs):
+        if not self._ws.is_open():
+            return
+        self._ws.write_channel(
+            _RESIZE_CHANNEL,
+            json.dumps({'Width': width, 'Height': height}))
+
+    @property
+    def closed(self):
+        return not self._ws.is_open()
+
+    def get_transport(self):
+        return self
+
+    def is_active(self):
+        return self._ws.is_open()
+
+    def close(self):
+        self._ws.close()
+
+
+class K8sExecStdoutReader:
+    """File-like (``.read(n)``) wrapper around a non-interactive
+    Kubernetes exec WebSocket's stdout, for feeding a streaming
+    consumer — an S3/GCS upload SDK's ``upload_fileobj``/resumable-
+    upload call — without buffering the whole command's output in
+    memory. This is the Kubernetes-exec counterpart of piping an SSH
+    channel's stdout straight into the same uploader (see
+    ``saas_instance_backup.py``'s ``_upload_stream_to_bucket``, written
+    against exactly this ``.read(n)`` contract already).
+
+    Stderr is captured separately (never mixed into the byte stream —
+    unlike ``K8sExecChannel``, which deliberately interleaves them for
+    terminal display) and available via ``.stderr``/``.returncode``
+    once the stream is exhausted."""
+
+    # Per-``read()``-call idle timeout: how long to wait for at least
+    # one more byte before giving up, not a cap on the whole transfer —
+    # a large dump that keeps producing output, even slowly, never hits
+    # this; only a stall does.
+    _POLL_TIMEOUT = 5.0
+
+    def __init__(self, ws_client, timeout=3600):
+        self._ws = ws_client
+        self._idle_timeout = timeout
+        self._stderr_chunks = []
+        self.bytes_read = 0
+        self._eof = False
+
+    def read(self, size=-1):
+        if self._eof:
+            return b''
+        want = None if (size is None or size < 0) else size
+        chunks = []
+        got = 0
+        deadline = time.time() + self._idle_timeout
+        while True:
+            out = self._ws.read_stdout(timeout=self._POLL_TIMEOUT) or b''
+            if out:
+                chunks.append(out)
+                got += len(out)
+                deadline = time.time() + self._idle_timeout
+            err = self._ws.read_stderr(timeout=0) or b''
+            if err:
+                self._stderr_chunks.append(err)
+            if not self._ws.is_open():
+                self._eof = True
+                break
+            if want is not None and got >= want:
+                break
+            if not out and time.time() > deadline:
+                raise TimeoutError(
+                    'exec_stream_out: no output for %ss' % self._idle_timeout)
+        data = b''.join(chunks)
+        self.bytes_read += len(data)
+        return data
+
+    @property
+    def stderr(self):
+        return b''.join(self._stderr_chunks).decode('utf-8', 'replace')
+
+    @property
+    def returncode(self):
+        rc = self._ws.returncode
+        return 0 if rc is None else rc
+
+    def close(self):
+        self._ws.close()
+
 
 _logger = logging.getLogger(__name__)
 
@@ -72,6 +192,14 @@ _NAMESPACE_PREFIX = 'odoo-tenant-'
 # the literal string "odoo", regardless of the tenant's own name.
 _CONTAINER_NAME = 'odoo'
 _POD_LABEL_SELECTOR = 'app.kubernetes.io/name=odoo,app.kubernetes.io/instance=%s'
+# Mirrors internal/resources/naming.go's BackupCronJobName() — always the
+# literal string "odoo-backup", regardless of the tenant's own name.
+_BACKUP_CRONJOB_NAME = 'odoo-backup'
+# Name of the Secret holding this tenant's object-storage backup
+# credentials, referenced by spec.backup.destination.objectStorageSecretRef
+# (compute/operator/api/v1alpha1/odooinstance_types.go) — never inlined
+# into the CR itself.
+_BACKUP_SECRET_NAME = 'odoo-backup-object-storage'
 
 # OdooInstance.status.phase (OdooInstancePhase enum) -> the driver-agnostic
 # status vocabulary saas_instance.py's crash-loop/reconcile logic already
@@ -134,6 +262,9 @@ class KubernetesDriver(ComputeDriver):
     def _core_api(self):
         return k8s_client.CoreV1Api(self._client())
 
+    def _batch_api(self):
+        return k8s_client.BatchV1Api(self._client())
+
     @staticmethod
     def _cr_name(handle_or_spec) -> str:
         # Same normalization the old stub used (container_name is always
@@ -174,14 +305,48 @@ class KubernetesDriver(ComputeDriver):
 
     # -- lifecycle ------------------------------------------------------------
     def create(self, spec: ComputeSpec) -> ComputeHandle:
+        """Create the OdooInstance CR. Idempotent against a retried call
+        for the SAME instance (see the 409 branch below) — this matters
+        because the durable job queue can and does retry ``create()``:
+        Odoo's own cron-thread watchdog can kill/reload the whole server
+        mid-poll on a slow deploy (image pull + CNPG/managed-Postgres
+        bring-up + init Job legitimately take minutes, easily exceeding
+        the default ``limit_time_real_cron`` ~120s — see
+        `TEST-CLUSTER-SETUP.md` §10 for the config fix), orphaning the
+        `saas.job` row at `state='running'` with no error recorded; the
+        next pickup of that job re-runs `_do_deploy_locked_kubernetes`
+        from the top, calling `create()` again against a CR that was
+        already successfully created the first time. Without this,
+        every such retry fails outright with a 409 "already exists"
+        instead of resuming — this was hit repeatedly during real
+        testing against a live cluster this project maintains.
+        """
         name = self._cr_name(spec)
         body = self._build_odoo_instance(name, spec)
         try:
             self._custom_api().create_cluster_custom_object(
                 _GROUP, _VERSION, _PLURAL, body)
         except ApiException as e:
-            raise RuntimeError(
-                'creating OdooInstance %s failed: %s' % (name, e)) from e
+            if e.status == 409:
+                # Verify by actually reading the CR back rather than just
+                # trusting the 409's wording — the same status code also
+                # covers a genuine name collision with an unrelated
+                # object, which should still fail loudly.
+                existing = self._get_cr(name)
+                if existing is None:
+                    raise RuntimeError(
+                        'creating OdooInstance %s failed: reported as '
+                        'already existing, but a follow-up read found '
+                        'nothing (raced with a delete?): %s' % (name, e)
+                    ) from e
+                _logger.warning(
+                    "KubernetesDriver.create(%s): CR already exists — "
+                    "treating as an idempotent retry, not a failure "
+                    "(existing phase: %s).", name,
+                    ((existing.get('status') or {}).get('phase')) or 'unknown')
+            else:
+                raise RuntimeError(
+                    'creating OdooInstance %s failed: %s' % (name, e)) from e
         return ComputeHandle(
             server_id=self.server.id, container_name=spec.container_name,
             instance_path=self._namespace_for(spec), host='',
@@ -221,6 +386,14 @@ class KubernetesDriver(ComputeDriver):
             repository, tag = spec.image, odoo_version
         replicas = int(spec.env.get('replicas') or 1)
 
+        tls_enabled = bool(spec.env.get('tls_enabled', False))
+        tls = {'enabled': tls_enabled}
+        if tls_enabled and spec.env.get('tls_issuer_name'):
+            tls['issuerRef'] = {
+                'name': spec.env['tls_issuer_name'],
+                'kind': spec.env.get('tls_issuer_kind') or 'ClusterIssuer',
+            }
+
         filestore = {'size': spec.env.get('filestore_size') or '5Gi'}
         if replicas > 1:
             # Required companion of replicas > 1 — see FilestoreSpec's own
@@ -242,7 +415,7 @@ class KubernetesDriver(ComputeDriver):
                 'image': {'repository': repository, 'tag': tag},
                 'domain': {
                     'hostname': domain,
-                    'tls': {'enabled': bool(spec.env.get('tls_enabled', False))},
+                    'tls': tls,
                 },
                 'storage': {'filestore': filestore},
                 'replicas': replicas,
@@ -259,13 +432,18 @@ class KubernetesDriver(ComputeDriver):
             },
         }
 
-        # Phase 2 (/ROADMAP.md §5): DataService.migrate_to_kubernetes hands
-        # a restore source through spec.env['restore'] rather than a new
-        # ComputeSpec field, for the same reason domain/tls/resources do
-        # (see the docstring above). Mirrors RestoreSourceSpec exactly
+        # A caller provisioning a brand-new instance FROM an existing
+        # backup (not the in-place full-instance restore
+        # `saas.instance.backup._do_restore_full_instance` uses for an
+        # ALREADY-running instance — see that method) hands the source
+        # through spec.env['restore'] rather than a new ComputeSpec field,
+        # for the same reason domain/tls/resources do (see the docstring
+        # above). Mirrors RestoreSourceSpec exactly
         # (compute/operator/api/v1alpha1/odooinstance_types.go) — restore
         # is immutable once set on the CR, so this must be present at
-        # create() time; there is no later "attach a restore" call.
+        # create() time; there is no later "attach a restore" call. No
+        # current caller uses this path (kept as the documented mechanism
+        # for whenever "provision fresh from a backup" is needed).
         restore_cfg = spec.env.get('restore')
         if restore_cfg:
             source = {
@@ -307,6 +485,103 @@ class KubernetesDriver(ComputeDriver):
                 'patching OdooInstance %s suspended=%s failed: %s'
                 % (name, suspended, e)) from e
 
+    def set_scheduled_backup(self, handle: ComputeHandle, *, enabled: bool,
+                             schedule: str = '0 2 * * *', retention: int = 7,
+                             bucket: Optional[str] = None,
+                             prefix: Optional[str] = None,
+                             access_key: Optional[str] = None,
+                             secret_key: Optional[str] = None,
+                             endpoint: Optional[str] = None) -> None:
+        """Enable/configure/disable this instance's scheduled backup by
+        patching ``spec.backup`` on its OdooInstance CR — the operator's
+        own CronJob-based, cloud-agnostic pg_dump+filestore-tar mechanism
+        (compute/operator/internal/resources/backup.go,
+        internal/controller/backup.go's ``reconcileBackup``), continuously
+        reconciled (NOT immutable-at-creation like ``spec.restore``), so
+        this can toggle/reconfigure a live, already-running instance at
+        any time. No new Kubernetes-side work needed — this is control-
+        plane wiring onto an already-built mechanism.
+
+        When enabling with object-storage credentials, first upserts a
+        Secret the generated CronJob reads via
+        ``spec.backup.destination.objectStorageSecretRef`` (endpoint/
+        access-key/secret-key keys — credentials are never inlined into
+        the CR itself, matching how the region's own kubeconfig is never
+        pasted into a CR either)."""
+        namespace = handle.instance_path or self._namespace_for(handle)
+        name = self._cr_name(handle)
+        backup_spec = {'enabled': bool(enabled)}
+        if enabled:
+            backup_spec['schedule'] = schedule
+            backup_spec['retention'] = int(retention)
+            if bucket:
+                core = self._core_api()
+                secret_body = k8s_client.V1Secret(
+                    metadata=k8s_client.V1ObjectMeta(name=_BACKUP_SECRET_NAME),
+                    string_data={
+                        'endpoint': endpoint or '',
+                        'access-key': access_key or '',
+                        'secret-key': secret_key or '',
+                    },
+                )
+                try:
+                    core.replace_namespaced_secret(
+                        _BACKUP_SECRET_NAME, namespace, secret_body)
+                except ApiException as e:
+                    if e.status == 404:
+                        core.create_namespaced_secret(namespace, secret_body)
+                    else:
+                        raise RuntimeError(
+                            'upserting backup credentials Secret for %s '
+                            'failed: %s' % (name, e)) from e
+                backup_spec['destination'] = {
+                    'type': 'ObjectStorage',
+                    'bucket': bucket,
+                    'prefix': prefix or '',
+                    'objectStorageSecretRef': {'name': _BACKUP_SECRET_NAME},
+                }
+        try:
+            self._custom_api().patch_cluster_custom_object(
+                _GROUP, _VERSION, _PLURAL, name, {'spec': {'backup': backup_spec}})
+        except ApiException as e:
+            raise RuntimeError(
+                'patching OdooInstance %s backup config failed: %s'
+                % (name, e)) from e
+
+    def trigger_backup_now(self, handle: ComputeHandle) -> str:
+        """Create a one-off Job cloned from the operator-managed backup
+        CronJob's own template — the Kubernetes-native equivalent of
+        ``kubectl create job --from=cronjob/odoo-backup``, for an
+        on-demand "back up now" action outside the schedule. Requires
+        ``spec.backup.enabled`` already (the CronJob only exists once
+        the operator has reconciled it — see ``set_scheduled_backup``).
+        Returns the created Job's name."""
+        namespace = handle.instance_path or self._namespace_for(handle)
+        batch = self._batch_api()
+        try:
+            cron = batch.read_namespaced_cron_job(_BACKUP_CRONJOB_NAME, namespace)
+        except ApiException as e:
+            if e.status == 404:
+                raise RuntimeError(
+                    'No scheduled backup is configured for this instance '
+                    'yet — enable it first.') from e
+            raise RuntimeError('reading backup CronJob failed: %s' % e) from e
+        job_name = '%s-manual-%d' % (_BACKUP_CRONJOB_NAME, int(time.time()))
+        job = k8s_client.V1Job(
+            metadata=k8s_client.V1ObjectMeta(
+                name=job_name,
+                labels=(cron.spec.job_template.metadata.labels
+                        if cron.spec.job_template.metadata else None),
+            ),
+            spec=cron.spec.job_template.spec,
+        )
+        try:
+            batch.create_namespaced_job(namespace, job)
+        except ApiException as e:
+            raise RuntimeError(
+                'creating manual backup Job failed: %s' % e) from e
+        return job_name
+
     def scale(self, handle: ComputeHandle, replicas: int) -> None:
         """Patch this instance's pod replica count in place — the
         underlying primitive behind the compute-tier feature
@@ -346,9 +621,33 @@ class KubernetesDriver(ComputeDriver):
         # a silent shortcut standing in for something broken).
         self.restart_default(handle)
 
+    def _resolve_pod(self, handle: ComputeHandle):
+        """Return (namespace, pod) for handle's workload, or (namespace,
+        None) if no pod exists yet."""
+        namespace = handle.instance_path or self._namespace_for(handle)
+        cr_name = self._cr_name(handle)
+        return namespace, self._first_pod(namespace, cr_name)
+
+    @staticmethod
+    def _shell_command(command: str, env: Optional[dict] = None) -> list:
+        """Build the ``['/bin/sh', '-c', ...]`` argv the exec subresource
+        expects, with ``env`` exported as a POSIX prefix assignment
+        (``K=V K2=V2 command``) — the pods/exec subresource has no
+        per-call env parameter the way `docker exec -e` does, so this is
+        the portable equivalent. Each value is shell-quoted; values never
+        appear in the command line unquoted (avoids the injection class
+        `docker compose exec -e`'s own callers were already careful
+        about — see the deleted ``SshDockerDriver.service_exec``)."""
+        if not env:
+            return ['/bin/sh', '-c', command]
+        prefix = ' '.join(
+            '%s=%s' % (k, shlex.quote(str(v))) for k, v in env.items())
+        return ['/bin/sh', '-c', '%s %s' % (prefix, command)]
+
     # -- introspection / interaction ------------------------------------------
     def exec(self, handle: ComputeHandle, command: str,
-             *, user: Optional[str] = None, timeout: Optional[int] = None) -> ExecResult:
+             *, user: Optional[str] = None, env: Optional[dict] = None,
+             timeout: Optional[int] = None) -> ExecResult:
         if user:
             # Kubernetes' pods/exec subresource has no per-call user
             # override the way `docker exec -u` does — surfacing this
@@ -358,16 +657,14 @@ class KubernetesDriver(ComputeDriver):
                 "KubernetesDriver.exec: user=%r requested but not supported "
                 "against a real Kubernetes pod — running as the container's "
                 "own default user instead.", user)
-        namespace = handle.instance_path or self._namespace_for(handle)
-        cr_name = self._cr_name(handle)
-        pod = self._first_pod(namespace, cr_name)
+        namespace, pod = self._resolve_pod(handle)
         if pod is None:
-            return ExecResult(rc=127, stdout='', stderr='no pod found for %s' % cr_name)
+            return ExecResult(rc=127, stdout='', stderr='no pod found for %s' % self._cr_name(handle))
         try:
             resp = k8s_stream(
                 self._core_api().connect_get_namespaced_pod_exec,
                 pod.metadata.name, namespace, container=_CONTAINER_NAME,
-                command=['/bin/sh', '-c', command],
+                command=self._shell_command(command, env),
                 stderr=True, stdin=False, stdout=True, tty=False,
                 _preload_content=False)
             resp.run_forever(timeout=timeout or 60)
@@ -385,6 +682,68 @@ class KubernetesDriver(ComputeDriver):
             return ExecResult(rc=0 if rc is None else rc, stdout=stdout, stderr=stderr)
         except ApiException as e:
             return ExecResult(rc=1, stdout='', stderr=str(e))
+
+    def exec_stream_out(self, handle: ComputeHandle, command: str, *,
+                        env: Optional[dict] = None,
+                        timeout: Optional[int] = None) -> 'K8sExecStdoutReader':
+        """Run ``command`` (e.g. ``pg_dump``) and return a file-like
+        object (``.read(n)``) that progressively yields its stdout as the
+        process produces it — bounded memory end to end, the Kubernetes
+        equivalent of piping an SSH channel's stdout straight into an
+        upload SDK's ``upload_fileobj``/resumable-upload call (see
+        ``saas_instance_backup.py``'s ``_upload_stream_to_bucket``, which
+        this is designed to feed directly, unchanged). Not part of the
+        shared ``ComputeDriver`` ABC — same reasoning as
+        ``exec_interactive()``: a genuinely new capability the ssh_docker
+        backend never had a counterpart for.
+
+        Non-goal: bidirectional/stdin streaming (e.g. piping data INTO a
+        `pg_restore` process) — every current restore path instead runs
+        `curl` *inside* the pod to pull from a presigned URL (matching
+        how the deleted SSH-based restore worked: `curl` on the target,
+        not a Python-side push), so a stdin-streaming primitive has no
+        caller yet. Add one only when an actual caller needs it."""
+        namespace, pod = self._resolve_pod(handle)
+        if pod is None:
+            raise RuntimeError('no pod found for %s' % self._cr_name(handle))
+        ws = k8s_stream(
+            self._core_api().connect_get_namespaced_pod_exec,
+            pod.metadata.name, namespace, container=_CONTAINER_NAME,
+            command=self._shell_command(command, env),
+            stderr=True, stdin=False, stdout=True, tty=False,
+            binary=True, _preload_content=False)
+        return K8sExecStdoutReader(ws, timeout=timeout or 3600)
+
+    def exec_interactive(self, handle: ComputeHandle, *,
+                         command: Optional[list] = None,
+                         cols: int = 120, rows: int = 32) -> 'K8sExecChannel':
+        """Open a long-lived, interactive TTY exec session against the
+        workload's pod — the Kubernetes-native replacement for SSHing into
+        a Docker host and running ``docker exec -it``. Returns a
+        :class:`K8sExecChannel` wrapping the raw WebSocket stream with the
+        same shape a paramiko ``Channel`` exposes (``recv_ready``/``recv``/
+        ``sendall``/``closed``/``get_transport``/``resize_pty``/``close``/
+        ``fileno``), so callers built around paramiko's interface (see
+        ``saas_core/controllers/ssh_terminal.py``) don't need their own
+        pump/relay logic rewritten for this backend.
+
+        Not part of the shared ``ComputeDriver`` ABC (like ``scale()`` —
+        this is Kubernetes-specific: there is no equivalent "attach an
+        interactive shell" primitive on the abstract interface, since the
+        original ssh_docker backend had no counterpart other than the
+        deleted raw-SSH terminal)."""
+        namespace, pod = self._resolve_pod(handle)
+        if pod is None:
+            raise RuntimeError('no pod found for %s' % self._cr_name(handle))
+        ws = k8s_stream(
+            self._core_api().connect_get_namespaced_pod_exec,
+            pod.metadata.name, namespace, container=_CONTAINER_NAME,
+            command=command or ['/bin/bash', '-l'],
+            stderr=True, stdin=True, stdout=True, tty=True,
+            binary=True, _preload_content=False)
+        channel = K8sExecChannel(ws)
+        channel.resize_pty(cols, rows)
+        return channel
 
     def logs(self, handle: ComputeHandle, *, tail: Optional[int] = None) -> str:
         namespace = handle.instance_path or self._namespace_for(handle)

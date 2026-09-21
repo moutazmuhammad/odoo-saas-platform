@@ -7,9 +7,7 @@ from . import saas_plan
 from . import res_groups
 from . import res_partner
 from . import res_config_settings
-from . import saas_ssh_key_pair
 from . import saas_server
-from . import saas_docker_container
 from . import saas_odoo_version
 from . import saas_domain
 from . import saas_instance_backup

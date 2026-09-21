@@ -1,17 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
+    <!-- The Kubernetes operator's own CronJob now DRIVES the actual
+         nightly backup (pg_dump + filestore tar), once
+         saas.instance._sync_scheduled_backup has patched spec.backup
+         onto an instance's OdooInstance CR — this cron no longer does
+         any backup work itself, just mirrors what landed in the bucket
+         into saas.instance.backup records (pure S3/GCS listing, no
+         Kubernetes exec) and reaps stale on-demand/stuck rows. Cheap
+         enough to run far more often than the old once-daily restic
+         cron. -->
     <record id="ir_cron_saas_backup" model="ir.cron">
-        <field name="name">SaaS: Auto Backup Instances</field>
+        <field name="name">SaaS: Sync Scheduled Backups</field>
         <field name="model_id" ref="model_saas_instance_backup"/>
         <field name="state">code</field>
-        <field name="code">model._cron_backup_all_instances()</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
-        <!-- Fire at 03:00 UTC daily. Move this in
-             Settings → Technical → Scheduled Actions if your business
-             hours sit in a non-UTC timezone. -->
-        <field name="nextcall" eval="(DateTime.now().replace(hour=3, minute=0, second=0, microsecond=0) + relativedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')"/>
+        <field name="code">model._cron_sync_scheduled_backups()</field>
+        <field name="interval_number">30</field>
+        <field name="interval_type">minutes</field>
         <field name="active">True</field>
     </record>
 

@@ -11,6 +11,7 @@ found during the 2026-07 bug-hunt (see docs / commit history):
   #4  Cancelled instances counted toward the max-instances quota, so
       cancelling to free a slot didn't help (dead-end).
 """
+import base64
 import json
 
 from odoo.exceptions import ValidationError
@@ -115,12 +116,16 @@ class TestOrderControllerFixes(HttpCase):
             'cpu_limit': 1.0, 'ram_limit': '1g',
             'currency_id': self.env.company.currency_id.id,
             'saas_product_ids': [(6, 0, [self.product.id])]})
-        # Region WITH capacity: one co-located proxy + docker + db host.
+        # Region WITH capacity: a kubeconfig + one reachable Kubernetes
+        # cluster registration (has_capacity() requires both).
+        kc = self.env['saas.kubeconfig'].sudo().create({
+            'name': 'ord-kubeconfig',
+            'kubeconfig_file': base64.b64encode(
+                b'apiVersion: v1\nkind: Config\n').decode()})
         self.region = self.env['saas.region'].sudo().create({
-            'name': 'ORD Region', 'code': 'ord-reg'})
+            'name': 'ORD Region', 'code': 'ord-reg', 'kubeconfig_id': kc.id})
         self.env['saas.server'].sudo().create({
-            'name': 'ord-host', 'is_proxy_server': True,
-            'is_docker_host': True, 'is_db_server': True,
+            'name': 'ord-host', 'compute_driver': 'kubernetes',
             'region_id': self.region.id, 'health_state': 'ok'})
         self.domain = self.env['saas.based.domain'].sudo().create({
             'name': 'ord.example.com', 'region_id': self.region.id})

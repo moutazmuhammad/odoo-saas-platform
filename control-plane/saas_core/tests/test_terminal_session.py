@@ -8,13 +8,11 @@ from odoo.tools import mute_logger
 @tagged('post_install', '-at_install')
 class TestSaasTerminalSession(TransactionCase):
     """saas.terminal.session is pure runtime metadata (no methods): which
-    worker process owns an in-flight SSH terminal session, so other workers
+    worker process owns an in-flight terminal session, so other workers
     can forward keystrokes via PostgreSQL LISTEN/NOTIFY instead of losing the
-    RPC (see controllers/ssh_terminal.py). Coverage here is necessarily thin
-    — there is no business logic beyond the fields and the sid uniqueness
-    constraint — but it's the regression baseline the plan wants in place
-    before the SSH transport is migrated to Kubernetes pods/exec (Phase
-    D.4.3)."""
+    RPC (see controllers/ssh_terminal.py — now backed by Kubernetes
+    pods/exec, not SSH). Coverage here is necessarily thin — there is no
+    business logic beyond the fields and the sid uniqueness constraint."""
 
     def _create(self, **overrides):
         vals = {

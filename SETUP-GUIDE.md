@@ -35,9 +35,12 @@ enqueue jobs that fail against a mock host, but billing, checkout, the
 portal, and the admin UI are all fully exercisable. This is the fastest way
 to get oriented before touching real infrastructure.
 
-Full instructions, seeded accounts, and every flow you can test:
-**[`control-plane/docs/LOCAL-TESTING.md`](control-plane/docs/LOCAL-TESTING.md)**.
-Short version:
+Seeded accounts and every flow you can test: **[`TEST-CLUSTER-SETUP.md`](TEST-CLUSTER-SETUP.md)**
+§1 (this repo's dev environment normally runs as two `systemctl --user`
+services, not the `nohup`-based flow below — check
+`systemctl --user status saas-postgres.service saas-control-plane.service`
+before assuming nothing is running yet). If you genuinely need the
+ad-hoc/no-systemd flow instead:
 
 ```bash
 # sibling layout: ../odoo18 (Odoo 18 source), ../odoo18-venv, ../saas-pg, ../saas-odoo
@@ -47,11 +50,9 @@ control-plane/scripts/devctl.sh status
 control-plane/scripts/devctl.sh down
 ```
 
-Want this to survive logouts and restart on failure instead of `nohup`-based
-dev mode? See
-[`control-plane/docs/LOCAL-RUNTIME-SYSTEMD.md`](control-plane/docs/LOCAL-RUNTIME-SYSTEMD.md)
-(two `systemctl --user` services). **Don't run both `devctl.sh` and the
-systemd services against the same ports/database at once.**
+**Don't run both `devctl.sh up`/`down` and the systemd services against the
+same ports/database at once** — `devctl.sh down` will stop the systemd-managed
+Postgres out from under a live Odoo process (see `TEST-CLUSTER-SETUP.md` §1).
 
 Log in at `http://127.0.0.1:8069/web` (`admin` / `admin` on a freshly seeded
 DB) and open the **SaaS Manager** app — that's the admin backend the rest of
@@ -80,12 +81,19 @@ microk8s enable gateway-api
 # — or, if you'd rather use classic Ingress instead of Gateway API:
 microk8s enable ingress
 
+"alias kubectl='microk8s kubectl'" >> ~/.bashrc
+source ~/.bashrc
+
 microk8s kubectl get nodes     # sanity check
 ```
 
 ### 2.2 Build and push the operator image
 
 ```bash
+
+sudo apt update && sudo apt install -y docker.io
+sudo usermod -aG docker $USER && newgrp docker
+
 cd compute/operator
 make docker-build IMG=registry.example.com/odoo-saas/operator:v0.1.0
 make docker-push  IMG=registry.example.com/odoo-saas/operator:v0.1.0
@@ -117,10 +125,11 @@ microk8s kubectl delete odooinstance customer-acme   # tear it back down
 ```
 
 If that reaches `Ready` with a real URL, the cluster side is done. Full
-detail (CRD fields, reconciliation flow, networking/database/backup design,
-every trade-off): **[`compute/docs/architecture.md`](compute/docs/architecture.md)**
-(also available in Arabic: `architecture.ar.md`); day-to-day operator
-commands: **[`compute/README.md`](compute/README.md)**.
+detail (CRD fields, reconciliation flow, networking/database/backup design)
+now lives directly in the source, not a separate doc: the CRD schema is
+`compute/operator/api/v1alpha1/odooinstance_types.go` (every field has a
+doc comment), reconciliation logic is `compute/operator/internal/controller/`,
+and generated resources are `compute/operator/internal/resources/`.
 
 ### 2.5 Get the cluster's kubeconfig
 
@@ -188,16 +197,6 @@ Check progress the same way:
 microk8s kubectl get odooinstance -A -w
 ```
 
-### 3.4 Moving an existing Compose-based tenant onto Kubernetes
-
-If a tenant already exists on a Docker Compose host and you want to migrate
-it onto the cluster instead of provisioning fresh, that's
-`DataService.migrate_to_kubernetes` (`control-plane/saas_core/dataservice/service.py`) —
-callable from the instance record once its target region has a working,
-`kubeconfig_loaded` kubeconfig (the same precondition step 3.1 satisfies).
-This direction (Compose → Kubernetes) is built and live-verified; the
-reverse is not.
-
 ---
 
 ## Troubleshooting
@@ -212,18 +211,18 @@ reverse is not.
   `compute/charts/odoo-operator`'s generated RBAC.
 - **PVC stuck `Pending`** — expected until a pod actually consumes it if
   your StorageClass uses `WaitForFirstConsumer` (microk8s's `hostpath-storage`
-  does); see `compute/docs/architecture.md` §4 ("A gating deadlock this
-  design avoids").
-- **Everything else operator/cluster-side** — `compute/docs/architecture.md`
-  §19 has a full failure/recovery table.
+  does).
+- **Everything else operator/cluster-side** — check the reconciler logs
+  (`microk8s kubectl -n odoo-system logs deploy/odoo-operator`) and the
+  CR's own `status.conditions` (`microk8s kubectl describe odooinstance <name>`)
+  first; each condition's `message` names exactly what it's waiting on.
 - **Everything else control-plane-side (mock provisioning, seed data,
-  crons)** — see `control-plane/docs/LOCAL-TESTING.md`'s Caveats section.
+  crons)** — see `TEST-CLUSTER-SETUP.md`.
 
 ## Where this fits in the bigger picture
 
 This guide covers **today's** manual, admin-UI-driven way of connecting one
-region to one cluster. `ROADMAP.md` §5 covers where this is headed
-(automating cluster registration, multi-cluster/multi-region scale-out, and
-eventually retiring the Docker Compose backend once Kubernetes carries
-production traffic — see `ROADMAP.md`'s current-state confidence tags for
-exactly how far along that migration is).
+region to one cluster. Kubernetes is the platform's only compute backend
+(ssh_docker/Docker Compose was fully removed); `ROADMAP.md` §5 covers
+what's still ahead (automating cluster registration, multi-cluster/multi-
+region scale-out).

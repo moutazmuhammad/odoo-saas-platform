@@ -1,9 +1,9 @@
 """ComputeDriver — the stable seam between the Control Plane and a compute backend.
 
-Business logic must depend only on this interface, never on Docker/SSH directly.
-Two implementations exist: ``SshDockerDriver`` (Docker over SSH, legacy, carries
-production traffic today) and ``KubernetesDriver`` (real K8s API, live-verified,
-not yet cut over — see /ROADMAP.md §3.1/§5 Phase 2).
+Business logic must depend only on this interface, never on a specific backend
+directly. ``KubernetesDriver`` (real K8s API) is the only implementation —
+the earlier Docker-over-SSH driver was removed once ssh_docker was retired
+as a compute backend (see /ROADMAP.md §3.1/§5 Phase 2).
 
 Design rules:
 - The interface is Odoo-free: ``ComputeSpec`` / ``ComputeHandle`` are plain
@@ -40,9 +40,8 @@ class ComputeSpec:
 class ComputeHandle:
     """Opaque reference to an existing tenant's compute, returned by create().
 
-    Enough for a driver to locate and act on the workload. For SshDockerDriver
-    that is (server, instance_path, container_name); a KubernetesDriver would
-    map the same fields onto namespace/deployment.
+    Enough for a driver to locate and act on the workload. KubernetesDriver
+    maps these fields onto namespace/deployment.
     """
     server_id: int               # saas.server record id (where it runs)
     container_name: str
@@ -74,8 +73,9 @@ class ComputeDriver(abc.ABC):
     """Lifecycle + introspection for a single tenant's compute workload.
 
     Implementations are stateless services constructed per operation; they take
-    the target server (and its SSH connection factory) as needed. All methods
-    operate on one workload identified by ``spec``/``handle``.
+    the target server (and whatever connection/credentials it needs) as
+    needed. All methods operate on one workload identified by
+    ``spec``/``handle``.
     """
 
     # --- lifecycle ---------------------------------------------------------
@@ -102,8 +102,12 @@ class ComputeDriver(abc.ABC):
     # --- introspection / interaction --------------------------------------
     @abc.abstractmethod
     def exec(self, handle: ComputeHandle, command: str,
-             *, user: Optional[str] = None, timeout: Optional[int] = None) -> ExecResult:
-        """Run a command inside the workload's container."""
+             *, user: Optional[str] = None, env: Optional[dict] = None,
+             timeout: Optional[int] = None) -> ExecResult:
+        """Run a command inside the workload's container. ``env`` is
+        exported for that one call only (backend-appropriate mechanism —
+        e.g. a shell prefix assignment for Kubernetes exec, which has no
+        native per-call env parameter)."""
 
     @abc.abstractmethod
     def logs(self, handle: ComputeHandle, *, tail: Optional[int] = None) -> str:

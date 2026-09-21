@@ -3,11 +3,9 @@ from odoo.exceptions import ValidationError
 
 
 class SaasRegion(models.Model):
-    """A hosting region. Server cost varies by region, so each region
-    carries a ``price_multiplier`` applied to the compute+storage portion
-    of a quote (see ``saas.pricing.engine``). A region groups servers of
-    all roles (proxy / docker / db); an instance's three servers must all
-    sit in the same region (co-location — enforced in allocation, S7b).
+    """A hosting region — one Kubernetes cluster. Server cost varies by
+    region, so each region carries a ``price_multiplier`` applied to the
+    compute+storage portion of a quote (see ``saas.pricing.engine``).
     """
     _name = 'saas.region'
     _description = 'SaaS Region'
@@ -61,6 +59,21 @@ class SaasRegion(models.Model):
              "see compute/operator/internal/controller/network.go), so this "
              "is a manually-configured, ops-owned value, the same way "
              "``kubeconfig`` is.",
+    )
+    native_ingress_tls = fields.Boolean(
+        string='Native Kubernetes Ingress TLS',
+        help='When enabled, a Kubernetes-backed instance in this region '
+             'skips the external Nginx/Certbot-over-SSH step entirely — '
+             "TLS is terminated by the cluster's own Ingress controller, "
+             "with cert-manager (via tls_cluster_issuer) issuing the "
+             "certificate. ingress_host/ingress_port are not needed for "
+             "this path (no external reverse proxy is involved).",
+    )
+    tls_cluster_issuer = fields.Char(
+        string='TLS ClusterIssuer',
+        help='Name of the cert-manager ClusterIssuer this region\'s '
+             'cluster should use when native_ingress_tls is enabled '
+             '(e.g. "letsencrypt-test-client").',
     )
     ingress_port = fields.Integer(
         string='Ingress Port',
@@ -122,35 +135,34 @@ class SaasRegion(models.Model):
         return self._cheapest_available() or regions[:1]
 
     def has_capacity(self):
-        """True when this region can actually host an instance: it must
-        have a proxy, a Docker host AND a DB server in-region (the three
-        co-located servers an instance needs). A region with no servers
-        is empty and must not be offered to customers.
+        """True when this region can actually host an instance: it needs a
+        kubeconfig configured (so its servers' cluster is actually
+        reachable-in-principle) AND at least one registered, not-known-
+        unreachable Kubernetes cluster (``saas.server``) in-region. A
+        region with neither is empty and must not be offered to customers.
 
         Servers with no region count as the default region (see
         ``saas.server._region_match_domain``), so the default region is
-        served by an un-regioned fleet too."""
+        served by an un-regioned fleet too. Uses the cached ``health_state``
+        (refreshed by the health cron and at allocation time) rather than a
+        live probe, so this stays cheap to call on every checkout page
+        render — if the cluster has gone down since the last check, the
+        region reports no capacity and the order is refused at checkout
+        with a clear message, far better than creating a project that
+        strands in "pending provision"."""
         self.ensure_one()
+        if not self.kubeconfig_id:
+            return False
         Server = self.env['saas.server'].sudo()
         dom = Server._region_match_domain(self)
-        # A Docker host that's known-unreachable can't host an instance, so it
-        # doesn't count as capacity: if every docker host in-region is down the
-        # region reports no capacity and the order is refused at checkout with a
-        # clear message — far better than creating a project that strands in
-        # "pending provision".
-        return bool(
-            Server.search_count([('is_proxy_server', '=', True)] + dom)
-            and Server.search_count(
-                [('is_docker_host', '=', True),
-                 ('health_state', '!=', 'unreachable')] + dom)
-            and Server.search_count([('is_db_server', '=', True)] + dom)
-        )
+        return bool(Server.search_count(
+            [('health_state', '!=', 'unreachable')] + dom))
 
     @api.model
     def _available_regions(self):
-        """Active regions that can actually host an instance (have proxy +
-        docker + db). Empty regions are excluded — they must not be shown
-        to or selectable by customers."""
+        """Active regions that can actually host an instance (a kubeconfig
+        and at least one reachable cluster). Empty regions are excluded —
+        they must not be shown to or selectable by customers."""
         return self.sudo().search(
             [('active', '=', True)], order='sequence, id',
         ).filtered(lambda r: r.has_capacity())

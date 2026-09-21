@@ -18,11 +18,11 @@ class SaasBasedDomain(models.Model):
         'saas.server',
         string='Proxy Server',
         tracking=True,
-        domain="[('is_proxy_server', '=', True)]",
-        help='Reverse proxy server that handles SSL termination and routes '
-             'traffic for this domain. The wildcard DNS record (*.domain) '
-             'should point to this server. When set, Nginx configs are '
-             'deployed here instead of on each Docker server.',
+        help='Legacy ssh_docker concept (an external reverse-proxy host for '
+             'SSL termination) — not used for Kubernetes deploys, which '
+             'terminate TLS natively via the cluster\'s own Ingress + '
+             'cert-manager (see saas.region.native_ingress_tls). Left in '
+             'place for now; not required to be set.',
     )
     region_id = fields.Many2one(
         'saas.region',

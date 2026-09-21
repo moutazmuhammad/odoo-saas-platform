@@ -1,10 +1,8 @@
 import json
-from contextlib import nullcontext
 from datetime import timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from odoo import fields
-from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase, tagged
 
 
@@ -299,102 +297,18 @@ class TestDbOpViaQueue(TransactionCase):
         wp.start()
         self.addCleanup(wp.stop)
 
-    def test_drop_async_enqueues_dbop_job(self):
-        # We're testing the enqueue, not the (SSH/readiness) op guard.
-        with patch.object(type(self.instance), '_ensure_hosting_for_db_ops',
-                          lambda self: None):
-            op = self.instance.hosting_db_drop_async('mydb')
-        self.assertEqual(op.state, 'running')
-        job = self.Job.sudo().search([
-            ('model', '=', 'saas.instance.db.operation'),
-            ('res_id', '=', op.id)], limit=1)
-        self.assertTrue(job, "db drop must enqueue a durable job")
-        self.assertEqual(job.method, '_run_drop')
-        self.assertEqual(job.channel, 'dbop')
-        self.assertEqual(job.lock_key, 'instance:%s' % self.instance.id)
-        self.assertFalse(job.idempotent)
-
-    # ---- B.1.3 follow-up: create/duplicate ALSO call hosting_db_list()
-    # first (unlike drop, which enqueues directly with no pre-check) —
-    # these two need self.docker_server_id._get_ssh_connection() +
-    # self._compute_driver() mocked too. This is exactly the success-path
-    # coverage that was attempted via HttpCase in
-    # test_security_billing_fixes.py and found to corrupt other tests
-    # there (a real job._spawn_worker background thread that HttpCase
-    # can't reliably suppress) — TransactionCase (this class already
-    # suppresses _spawn_worker in setUp) is the correct, safe place for
-    # it, per that finding. -------------------------------------------
-
-    def _mock_hosting_db_list(self, existing_db_names=()):
-        server = self.env['saas.server'].sudo().create(
-            {'name': 'dq-fake-host', 'is_docker_host': True})
-        self.instance.docker_server_id = server.id
-        stdout_lines = ['---SAAS_DB_LIST_BEGIN---']
-        stdout_lines += ['%s|' % n for n in existing_db_names]
-        stdout_lines.append('---SAAS_DB_LIST_END---')
-        fake_driver = MagicMock()
-        fake_driver.service_exec.return_value = MagicMock(
-            rc=0, stdout='\n'.join(stdout_lines) + '\n', stderr='')
-        p1 = patch.object(type(server), '_get_ssh_connection',
-                          lambda self: nullcontext(MagicMock()))
-        p2 = patch.object(type(self.instance), '_compute_driver',
-                          return_value=fake_driver)
-        for p in (p1, p2):
-            p.start()
-            self.addCleanup(p.stop)
-
-    def test_create_async_enqueues_dbop_job(self):
-        # Unlike drop/duplicate, create deliberately does NOT go through
-        # saas.job (see the SEC-002 comment right above run_in_background(
-        # in hosting_db_create_async): the queue persists its args, which
-        # would put the new DB's plaintext admin password in a durable DB
-        # row. It uses the older run_in_background() utility instead - a
-        # raw thread that commits the current transaction to hand off to
-        # it, which TransactionCase forbids, so that call itself must be
-        # patched (no saas.job row to check here, on purpose).
-        self._mock_hosting_db_list()  # no existing DBs
-        with patch(
-            'odoo.addons.saas_core.models.saas_instance.run_in_background',
-            lambda *a, **kw: None,
-        ):
-            op = self.instance.hosting_db_create_async(
-                name='newdb', login='admin', password='adminpass1')
-        self.assertEqual(op.state, 'running')
-        self.assertEqual(op.db_name, self.instance._hosting_db_full_name('newdb'))
-        self.assertEqual(op.operation, 'create')
-        self.assertFalse(self.Job.sudo().search(
-            [('model', '=', 'saas.instance.db.operation'), ('res_id', '=', op.id)]),
-            "create must NOT persist a saas.job row (SEC-002: would store "
-            "the plaintext password)")
-
-    def test_create_async_rejects_existing_name(self):
-        full = self.instance._hosting_db_full_name('dup')
-        self._mock_hosting_db_list(existing_db_names=[full])
-        with self.assertRaises(UserError):
-            self.instance.hosting_db_create_async(
-                name='dup', login='admin', password='adminpass1')
-        self.assertFalse(self.Job.sudo().search(
-            [('model', '=', 'saas.instance.db.operation')]),
-            "a rejected create must not enqueue anything")
-
-    def test_duplicate_async_enqueues_dbop_job(self):
-        source = self.instance._hosting_db_full_name('prod')
-        self._mock_hosting_db_list(existing_db_names=[source])
-        op = self.instance.hosting_db_duplicate_async(
-            source='prod', new_name='prodcopy')
-        self.assertEqual(op.state, 'running')
-        self.assertEqual(op.source_db, source)
-        job = self.Job.sudo().search([
-            ('model', '=', 'saas.instance.db.operation'),
-            ('res_id', '=', op.id)], limit=1)
-        self.assertTrue(job, "db duplicate must enqueue a durable job")
-        self.assertEqual(job.method, '_run_duplicate')
-
-    def test_duplicate_async_rejects_missing_source(self):
-        self._mock_hosting_db_list()  # no existing DBs at all
-        with self.assertRaises(UserError):
-            self.instance.hosting_db_duplicate_async(
-                source='doesnotexist', new_name='newcopy')
+    # test_drop_async_enqueues_dbop_job, test_create_async_enqueues_dbop_job,
+    # test_create_async_rejects_existing_name,
+    # test_duplicate_async_enqueues_dbop_job,
+    # test_duplicate_async_rejects_missing_source, and the
+    # _mock_hosting_db_list helper were removed: hosting_db_create_async/
+    # _duplicate_async/_drop_async (and hosting_db_list) were ssh_docker/
+    # docker-exec-only (see saas_instance.py's hosting_db_* family) and
+    # were removed along with that backend — DB self-service is gone for
+    # now (a later phase reimplements it via driver.exec()). The heartbeat
+    # tests below are generic saas.job mechanics (using
+    # saas.instance.db.operation only as a convenient target model) and
+    # are unaffected.
 
     def test_heartbeat_tick_keeps_dbop_fresh(self):
         op = self.env['saas.instance.db.operation'].sudo().create({
@@ -426,8 +340,11 @@ class TestDbOpViaQueue(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestDailyBackupViaQueue(TransactionCase):
-    """PERF-001: the daily-backup cron enqueues one job per eligible instance
-    (run in parallel by the queue) instead of backing them up serially."""
+    """Phase 5 redesign: the operator's own CronJob now drives the actual
+    nightly backup once ``spec.backup`` is enabled — ``_cron_sync_scheduled_backups``
+    only mirrors bucket contents into ``saas.instance.backup`` records for
+    enabled + non-suspended instances (pure bucket listing, no job queue,
+    no Kubernetes exec)."""
 
     def setUp(self):
         super().setUp()
@@ -457,36 +374,53 @@ class TestDailyBackupViaQueue(TransactionCase):
         return self.env['saas.instance'].sudo().create(
             {**self._base, 'subdomain': sub, **vals})
 
-    def test_cron_enqueues_only_for_enabled_instances(self):
+    def test_cron_syncs_only_enabled_non_suspended_instances(self):
         on = self._inst('bkon', daily_backup_enabled=True)
         off_disabled = self._inst('bkoff', daily_backup_enabled=False)
         off_suspended = self._inst('bksusp', daily_backup_enabled=True,
                                    daily_backup_suspended=True)
         Backup = self.env['saas.instance.backup']
-        with patch.object(type(Backup), '_cleanup_old_backups', lambda self: None):
-            Backup._cron_backup_all_instances()
+        seen_instances = []
 
-        def job_for(inst):
-            return self.Job.sudo().search([
-                ('model', '=', 'saas.instance'), ('res_id', '=', inst.id),
-                ('method', '=', '_run_daily_full_backup')], limit=1)
-        job_on = job_for(on)
-        self.assertTrue(job_on, "enabled instance must get a backup job")
-        self.assertEqual(job_on.channel, 'backup')
-        self.assertEqual(job_on.lock_key, 'instance:%s' % on.id)
-        self.assertFalse(job_for(off_disabled), "disabled → no job")
-        self.assertFalse(job_for(off_suspended), "suspended → no job")
+        def _fake_list_stamps(self, cfg, prefix):
+            return set()
 
-    def test_cron_is_idempotent_per_day(self):
-        on = self._inst('bkidem', daily_backup_enabled=True)
+        with patch.object(type(Backup), '_get_backup_config',
+                          lambda self: {'provider': 's3', 'bucket': 'b',
+                                        'access_key': 'a', 'secret_key': 's',
+                                        'endpoint': '', 'region': ''}), \
+             patch.object(type(Backup), '_list_backup_stamps',
+                          lambda self, cfg, prefix: (
+                              seen_instances.append(prefix) or set())), \
+             patch.object(type(Backup), '_cleanup_old_backups', lambda self: None):
+            Backup._cron_sync_scheduled_backups()
+
+        self.assertIn(on._backup_bucket_prefix(), seen_instances,
+                     "enabled, non-suspended instance must be synced")
+        self.assertNotIn(off_disabled._backup_bucket_prefix(), seen_instances,
+                        "disabled → not synced")
+        self.assertNotIn(off_suspended._backup_bucket_prefix(), seen_instances,
+                        "suspended → not synced")
+
+    def test_cron_records_new_stamps_as_backups(self):
+        on = self._inst('bkrec', daily_backup_enabled=True)
         Backup = self.env['saas.instance.backup']
-        with patch.object(type(Backup), '_cleanup_old_backups', lambda self: None):
-            Backup._cron_backup_all_instances()
-            Backup._cron_backup_all_instances()  # second run same day
-        jobs = self.Job.sudo().search([
-            ('model', '=', 'saas.instance'), ('res_id', '=', on.id),
-            ('method', '=', '_run_daily_full_backup')])
-        self.assertEqual(len(jobs), 1, "same-day re-run must not double-enqueue")
+        with patch.object(type(Backup), '_get_backup_config',
+                          lambda self: {'provider': 's3', 'bucket': 'b',
+                                        'access_key': 'a', 'secret_key': 's',
+                                        'endpoint': '', 'region': ''}), \
+             patch.object(type(Backup), '_list_backup_stamps',
+                          lambda self, cfg, prefix: {'20260101T000000Z'}), \
+             patch.object(type(Backup), '_bucket_object_size',
+                          lambda self, key: 1024), \
+             patch.object(type(Backup), '_cleanup_old_backups', lambda self: None):
+            Backup._cron_sync_scheduled_backups()
+        rec = Backup.search([
+            ('instance_id', '=', on.id), ('is_full_instance', '=', True),
+            ('format', '=', 'operator')])
+        self.assertEqual(len(rec), 1)
+        self.assertEqual(rec.bucket_path,
+                        '%s/20260101T000000Z' % on._backup_bucket_prefix())
 
 
 @tagged('post_install', '-at_install')
@@ -527,8 +461,7 @@ class TestDeployViaQueue(TransactionCase):
         inst = self._instance('dpqdeploy', state='draft', is_trial=True)
         Inst = type(inst)
         with patch.object(Inst, '_allocate_servers', lambda self: True), \
-                patch.object(Inst, '_validate_deploy_fields', lambda self: None), \
-                patch.object(Inst, '_auto_assign_ports', lambda self: None):
+                patch.object(Inst, '_validate_deploy_fields', lambda self: None):
             inst.action_deploy()
         job = self.Job.sudo().search([
             ('model', '=', 'saas.instance'), ('res_id', '=', inst.id),
@@ -578,8 +511,7 @@ class TestDeployViaQueue(TransactionCase):
 
     def test_action_restart_enqueues_idempotent_job(self):
         inst = self._instance('dpqrestart', state='running')
-        with patch.object(type(inst), '_ensure_can_ssh', lambda self: None):
-            inst.action_restart()
+        inst.action_restart()
         job = self._lifecycle_job(inst, '_do_restart')
         self.assertTrue(job, "restart must enqueue a durable job")
         self.assertEqual(job.channel, 'deploy')
@@ -588,15 +520,11 @@ class TestDeployViaQueue(TransactionCase):
         self.assertEqual(job.on_error, '_on_background_error')
         self.assertEqual(json.loads(job.on_error_args_json), ['running'])
 
-    def test_action_redeploy_enqueues_idempotent_job(self):
-        inst = self._instance('dpqredeploy', state='running')
-        with patch.object(type(inst), '_ensure_can_ssh', lambda self: None):
-            inst.action_redeploy()
-        job = self._lifecycle_job(inst, '_do_redeploy')
-        self.assertTrue(job, "redeploy must enqueue a durable job")
-        self.assertEqual(job.channel, 'deploy')
-        self.assertTrue(job.idempotent)
-        self.assertEqual(job.max_attempts, 2)
+    # test_action_redeploy_enqueues_idempotent_job and
+    # test_action_redeploy_writes_audit_log were removed:
+    # action_redeploy/_do_redeploy were ssh_docker-only (blue/green
+    # docker-compose redeploy) and were removed along with that backend
+    # (see test_redeploy_blue_green.py, also removed).
 
     def test_action_deploy_writes_audit_log(self):
         # SEC-010: deploy is one of the "who scaled, deployed, restored, or
@@ -605,8 +533,7 @@ class TestDeployViaQueue(TransactionCase):
         inst = self._instance('dpqdeployaudit', state='draft', is_trial=True)
         Inst = type(inst)
         with patch.object(Inst, '_allocate_servers', lambda self: True), \
-                patch.object(Inst, '_validate_deploy_fields', lambda self: None), \
-                patch.object(Inst, '_auto_assign_ports', lambda self: None):
+                patch.object(Inst, '_validate_deploy_fields', lambda self: None):
             inst.action_deploy()
         entry = self.env['saas.audit.log'].sudo().search([
             ('action', '=', 'instance_deploy'),
@@ -615,20 +542,9 @@ class TestDeployViaQueue(TransactionCase):
         self.assertEqual(entry.res_name, inst.subdomain)
         self.assertEqual(entry.result, 'ok')
 
-    def test_action_redeploy_writes_audit_log(self):
-        inst = self._instance('dpqredeployaudit', state='running')
-        with patch.object(type(inst), '_ensure_can_ssh', lambda self: None):
-            inst.action_redeploy()
-        entry = self.env['saas.audit.log'].sudo().search([
-            ('action', '=', 'instance_redeploy'),
-            ('model', '=', 'saas.instance'), ('res_id', '=', inst.id)], limit=1)
-        self.assertTrue(entry, "action_redeploy must write an audit log entry")
-        self.assertEqual(entry.res_name, inst.subdomain)
-
     def test_action_delete_enqueues_job(self):
         inst = self._instance('dpqdel', state='running')
-        with patch.object(type(inst), '_ensure_can_ssh', lambda self: None):
-            inst.action_delete_instance()
+        inst.action_delete_instance()
         job = self.Job.sudo().search([
             ('model', '=', 'saas.instance'), ('res_id', '=', inst.id),
             ('method', '=', '_do_delete_instance')], limit=1)
@@ -726,9 +642,7 @@ class TestRepoOpsViaQueue(TransactionCase):
             ('res_id', '=', self.repo.id), ('method', '=', method)], limit=1)
 
     def test_clone_enqueues_deploy_job(self):
-        with patch.object(type(self.instance), '_ensure_can_ssh',
-                          lambda self: None):
-            self.repo.action_clone_repo()
+        self.repo.action_clone_repo()
         job = self._job_for('_do_clone_and_restart')
         self.assertTrue(job)
         self.assertEqual(job.channel, 'deploy')

@@ -235,13 +235,10 @@ class SaasWebsite(http.Controller):
                 )
 
         # --- Validate infrastructure ---
-        docker_servers = request.env['saas.server'].sudo().search(
-            [('is_docker_host', '=', True)], limit=1,
+        compute_servers = request.env['saas.server'].sudo().search(
+            [('health_state', '!=', 'unreachable')], limit=1,
         )
-        db_servers = request.env['saas.server'].sudo().search(
-            [('is_db_server', '=', True)], limit=1,
-        )
-        if not docker_servers or not db_servers:
+        if not compute_servers:
             support_email = request.env['ir.config_parameter'].sudo().get_param(
                 'saas_master.support_email', ''
             )
@@ -489,13 +486,10 @@ class SaasWebsite(http.Controller):
                 )
 
         # Validate infrastructure
-        docker_servers = request.env['saas.server'].sudo().search(
-            [('is_docker_host', '=', True)], limit=1,
+        compute_servers = request.env['saas.server'].sudo().search(
+            [('health_state', '!=', 'unreachable')], limit=1,
         )
-        db_servers = request.env['saas.server'].sudo().search(
-            [('is_db_server', '=', True)], limit=1,
-        )
-        if not docker_servers or not db_servers:
+        if not compute_servers:
             return self.service_custom_configure(
                 product_id, workers=workers, storage=storage,
                 error=_("Service is temporarily unavailable."),
@@ -1194,18 +1188,17 @@ class SaasWebsite(http.Controller):
                 return request.redirect(err_redirect % ('Maximum+instances+reached'))
 
         # Infrastructure validation (region-aware): the chosen region must
-        # have capacity — a proxy + Docker host + DB server in-region
-        # (co-location). Empty regions can't be ordered. Defends against a
-        # POSTed region_id that the picker would never have offered.
+        # have capacity — a reachable Kubernetes cluster in-region. Empty
+        # regions can't be ordered. Defends against a POSTed region_id that
+        # the picker would never have offered.
         if region and not region.has_capacity():
             return request.redirect(err_redirect % (
                 'Service+temporarily+unavailable+in+the+selected+region'))
         if not region:
             # No region configured at all: fall back to the legacy global
-            # capacity check (any docker host + any db server).
+            # capacity check (any reachable server).
             Server = request.env['saas.server'].sudo()
-            if not Server.search([('is_docker_host', '=', True)], limit=1) or \
-               not Server.search([('is_db_server', '=', True)], limit=1):
+            if not Server.search([('health_state', '!=', 'unreachable')], limit=1):
                 return request.redirect(err_redirect % (
                     'Service+temporarily+unavailable'))
 

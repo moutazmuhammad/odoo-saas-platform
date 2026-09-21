@@ -107,6 +107,16 @@ class AccountMove(models.Model):
                 'daily_backup_last_invoice_date': today,
                 'daily_backup_next_invoice_date': next_invoice,
             })
+            # Actually turn on the operator's own backup CronJob for this
+            # instance now that the add-on is paid — best-effort, logged
+            # on failure rather than raised (the payment webhook must not
+            # be blocked by a Kubernetes hiccup).
+            try:
+                instance._sync_scheduled_backup()
+            except Exception:
+                _logger.exception(
+                    "Failed to enable scheduled backup for %s after "
+                    "add-on payment", instance.subdomain)
             instance._append_log(
                 "Daily backups enabled — add-on payment received. "
                 "Aligned to the plan renewal; next invoice: %s." % next_invoice

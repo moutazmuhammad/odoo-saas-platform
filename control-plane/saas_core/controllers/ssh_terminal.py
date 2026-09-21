@@ -1,9 +1,19 @@
-"""SSH terminal controller — multi-worker safe.
+"""Terminal controller — multi-worker safe.
+
+Opens an interactive shell inside a tenant's own Kubernetes pod (via
+``KubernetesDriver.exec_interactive()`` — a real ``kubectl exec``-style
+WebSocket session, wrapped to look like a paramiko ``Channel``; see
+``K8sExecChannel`` in ``drivers/kubernetes_driver.py``). There is no
+platform "host" to shell into any more (ssh_docker retired it) — both the
+manager-side terminal and the customer's own instance shell now exec
+straight into the pod, differing only in authorization (staff-only
+``group_saas_pod_shell`` vs. the caller owning the instance).
 
 Sessions are owned by exactly one Odoo worker (the one that opened the
-paramiko channel). All other workers reach the channel via PostgreSQL
-``LISTEN``/``NOTIFY``, so input POSTs and SSE GETs can be served by any
-worker the load balancer happens to pick.
+channel). All other workers reach it via PostgreSQL ``LISTEN``/``NOTIFY``,
+so input POSTs and SSE GETs can be served by any worker the load balancer
+happens to pick — this relay layer is fully transport-agnostic and needed
+no changes for the SSH -> Kubernetes-exec switch.
 
 Channels per session (UUID stripped of dashes -> short identifier):
   * ``saas_term_in_<sid>``    — input bytes, any worker -> owner pump
@@ -19,7 +29,6 @@ import logging
 import os
 import re
 import select
-import shlex
 import threading
 import time
 import uuid
@@ -42,22 +51,23 @@ _worker_pid = os.getpid()
 
 SESSION_IDLE_TIMEOUT = 600           # cleanup cutoff
 SSE_STREAM_TIMEOUT = 300             # 5 min per SSE; browser auto-reconnects
-SSH_KEEPALIVE_INTERVAL = 15
 SSE_HEARTBEAT_INTERVAL = 10
 MAX_CONCURRENT_SESSIONS = 32         # per worker
 # base64(N) ~= 4N/3, NOTIFY payload caps at 8000 bytes — stay well under.
 NOTIFY_CHUNK_BYTES = 4096
-# How long /create blocks waiting for the SSH banner before returning it
-# inline. Beyond this, banner is read by the pump (and may be lost if
-# SSE hasn't subscribed yet — acceptable for a tiny initial slice).
+# How long /create blocks waiting for the shell's initial banner/prompt
+# before returning it inline. Beyond this, banner is read by the pump
+# (and may be lost if SSE hasn't subscribed yet — acceptable for a tiny
+# initial slice).
 INITIAL_BANNER_WAIT = 0.5
 
 # SEC-005: a dedicated, narrower group than group_saas_manager — this
-# gates the HOST shell (raw SSH into the platform's own Docker/DB
-# machines), not the customer instance shell below (_get_owned_session/
-# _authorize_instance_shell), which is authorized by instance ownership
-# and unaffected by this group entirely.
-TERMINAL_GROUP = 'saas_core.group_saas_host_shell'
+# gates staff exec access into ANY tenant's pod (the Kubernetes
+# equivalent of the old raw-SSH platform-host shell — there is no
+# platform "host" any more, only tenant pods), not the customer instance
+# shell below (_get_owned_session/_authorize_instance_shell), which is
+# authorized by instance ownership and unaffected by this group entirely.
+TERMINAL_GROUP = 'saas_core.group_saas_pod_shell'
 _SID_RE = re.compile(
     r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
 )
@@ -120,7 +130,11 @@ def _notify(conn, channel, payload):
 
 
 # ─── Owner-side pump ─────────────────────────────────────────────────
-# One thread per owned session. Bridges the paramiko Channel and PG.
+# One thread per owned session. Bridges the exec channel and PG. Written
+# against paramiko's Channel interface originally; ``channel`` is now
+# always a K8sExecChannel (see drivers/kubernetes_driver.py), which
+# implements the same recv_ready/recv/sendall/closed/get_transport/
+# resize_pty/fileno surface, so this loop needed no changes.
 
 class _SessionPump(threading.Thread):
 
@@ -132,6 +146,11 @@ class _SessionPump(threading.Thread):
         self.sid = sid
         self.dbname = dbname
         self.channel = channel
+        # Legacy param name/slot from the SSH era — always None now
+        # (K8sExecChannel.close() alone tears down the whole connection,
+        # there's no separate "ssh_conn" to disconnect). Kept as a
+        # constructor arg rather than removed to avoid touching every
+        # call site for a slot that's harmlessly None everywhere.
         self.ssh_conn = ssh_conn
         self.server_name = server_name
         self._stop = threading.Event()
@@ -172,7 +191,7 @@ class _SessionPump(threading.Thread):
             except (OSError, ValueError):
                 return 'select failed'
 
-            # SSH -> PG (output)
+            # pod -> PG (output)
             if channel in ready:
                 try:
                     while channel.recv_ready():
@@ -187,7 +206,7 @@ class _SessionPump(threading.Thread):
                 except Exception:
                     return 'connection lost'
 
-            # PG -> SSH (input) or close signal
+            # PG -> pod (input) or close signal
             if conn in ready:
                 try:
                     conn.poll()
@@ -219,7 +238,7 @@ class _SessionPump(threading.Thread):
             except Exception:
                 pass
 
-        # Close the SSH side.
+        # Close the exec channel.
         try:
             self.channel.close()
         except Exception:
@@ -300,30 +319,33 @@ class SshTerminalController(http.Controller):
         methods=['POST'],
     )
     def create_session(self, server_model, server_id, **kwargs):
-        """Open an interactive SSH shell on the requested server.
+        """Open an interactive shell inside the requested instance's pod.
 
-        Authorization: requires ``saas_core.group_saas_host_shell`` (SEC-005
-        — a narrower grant than plain SaaS Manager, since this is a host
-        shell, not a customer container). Hiding the UI button is not
+        Authorization: requires ``saas_core.group_saas_pod_shell`` (SEC-005
+        — a narrower grant than plain SaaS Manager, since this reaches
+        into a live tenant's own container). Hiding the UI button is not
         enough — every endpoint enforces this server-side via
         ``has_group()``.
         """
         if not request.env.user.has_group(TERMINAL_GROUP):
             _logger.warning(
-                "Host terminal access denied for uid=%s",
+                "Pod terminal access denied for uid=%s",
                 request.env.uid,
             )
             raise Forbidden(
-                "Host Shell privileges required to open a host terminal."
+                "Pod Shell privileges required to open a terminal."
             )
 
-        if server_model not in ('saas.server',):
-            raise Forbidden("Invalid server model")
+        if server_model not in ('saas.instance',):
+            raise Forbidden("Invalid model")
 
-        server = request.env[server_model].browse(int(server_id))
-        if not server.exists():
-            raise NotFound("Server not found")
-        server.check_access('read')
+        instance = request.env[server_model].browse(int(server_id))
+        if not instance.exists():
+            raise NotFound("Instance not found")
+        instance.check_access('read')
+        instance = instance.sudo()
+        if not instance.docker_server_id:
+            raise Forbidden("This instance isn't fully set up yet.")
 
         _cleanup_stale_sessions(request.env)
 
@@ -337,24 +359,14 @@ class SshTerminalController(http.Controller):
                     "Maximum concurrent terminal sessions reached."
                 )
 
-        ssh_conn = server._get_ssh_connection()
-        ssh_conn._connect()
-
         try:
-            transport = ssh_conn._client.get_transport()
-            transport.set_keepalive(SSH_KEEPALIVE_INTERVAL)
-            channel = transport.open_session()
-            channel.get_pty(
-                term='xterm-256color', width=120, height=40,
-            )
-            channel.invoke_shell()
-            channel.settimeout(0)
+            channel = instance._compute_driver().exec_interactive(
+                instance._compute_handle(), cols=120, rows=40)
         except Exception as e:
             _logger.error(
-                "Failed to open SSH shell to %s: %s",
-                server.name, e,
+                "Failed to open pod terminal for %s: %s",
+                instance.subdomain, e,
             )
-            ssh_conn._disconnect()
             raise
 
         sid = str(uuid.uuid4())
@@ -370,8 +382,8 @@ class SshTerminalController(http.Controller):
             'sid': sid,
             'uid': request.env.uid,
             'server_model': server_model,
-            'server_id': server.id,
-            'server_name': server.name,
+            'server_id': instance.id,
+            'server_name': instance.subdomain,
             'owner_pid': os.getpid(),
             'last_activity': fields.Datetime.now(),
         })
@@ -380,8 +392,8 @@ class SshTerminalController(http.Controller):
             sid=sid,
             dbname=request.env.cr.dbname,
             channel=channel,
-            ssh_conn=ssh_conn,
-            server_name=server.name,
+            ssh_conn=None,
+            server_name=instance.subdomain,
         )
         with _local_sessions_lock:
             _local_sessions[sid] = pump
@@ -389,7 +401,7 @@ class SshTerminalController(http.Controller):
 
         _logger.info(
             "Terminal session %s created for %s by uid %s (pid %s)",
-            sid, server.name, request.env.uid, os.getpid(),
+            sid, instance.subdomain, request.env.uid, os.getpid(),
         )
 
         return {
@@ -636,10 +648,9 @@ class SshTerminalController(http.Controller):
 
     # ==================================================================
     #  Customer instance shell (Odoo.sh-style) — opens a shell *inside*
-    #  the customer's own container via ``docker exec``. Authorized by
-    #  instance ownership (record rules / access token) + session
-    #  ownership, NOT the manager group. The host shell is never
-    #  exposed — we exec straight into the container.
+    #  the customer's own pod via the Kubernetes exec subresource.
+    #  Authorized by instance ownership (record rules / access token) +
+    #  session ownership, NOT the manager group.
     # ==================================================================
     def _get_owned_session(self, session_id):
         """Routing record for a session the *current user* owns.
@@ -698,34 +709,18 @@ class SshTerminalController(http.Controller):
                 )
 
         container = inst._get_container_name()
-        ssh_conn = inst.docker_server_id._get_ssh_connection()
-        ssh_conn._connect()
         try:
-            transport = ssh_conn._client.get_transport()
-            transport.set_keepalive(SSH_KEEPALIVE_INTERVAL)
-            channel = transport.open_session()
-            try:
-                cols_i = max(20, min(int(cols or 120), 500))
-                rows_i = max(5, min(int(rows or 32), 200))
-            except (TypeError, ValueError):
-                cols_i, rows_i = 120, 32
-            channel.get_pty(
-                term='xterm-256color', width=cols_i, height=rows_i,
-            )
-            # Exec straight into the customer's container — the docker
-            # host shell is never exposed. ``-it`` works because we
-            # allocated a PTY above; the image's default user (``odoo``)
-            # is honoured by ``docker exec``.
-            docker_cmd = (
-                'docker exec -it %s /bin/bash -l' % shlex.quote(container)
-            )
-            channel.exec_command(docker_cmd)
-            channel.settimeout(0)
+            cols_i = max(20, min(int(cols or 120), 500))
+            rows_i = max(5, min(int(rows or 32), 200))
+        except (TypeError, ValueError):
+            cols_i, rows_i = 120, 32
+        try:
+            channel = inst._compute_driver().exec_interactive(
+                inst._compute_handle(), cols=cols_i, rows=rows_i)
         except Exception as e:
             _logger.error(
                 "Failed to open instance shell to %s: %s", container, e,
             )
-            ssh_conn._disconnect()
             raise
 
         sid = str(uuid.uuid4())
@@ -745,7 +740,7 @@ class SshTerminalController(http.Controller):
             sid=sid,
             dbname=request.env.cr.dbname,
             channel=channel,
-            ssh_conn=ssh_conn,
+            ssh_conn=None,
             server_name=container,
         )
         with _local_sessions_lock:

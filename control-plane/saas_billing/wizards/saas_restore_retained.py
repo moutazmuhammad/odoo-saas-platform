@@ -4,7 +4,7 @@ from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 
 from ..models.saas_instance import ORIGIN_DATA_RESTORATION
-from ..utils import run_in_background
+from odoo.addons.saas_core.utils import run_in_background
 
 _logger = logging.getLogger(__name__)
 
@@ -219,7 +219,7 @@ class SaasRestoreRetainedWizard(models.TransientModel):
     def _delete_retained_from_cloud(self, source):
         """Delete the retained backup file from cloud storage."""
         try:
-            self.env['saas.instance.backup']._delete_bucket_path(
+            self.env['saas.instance.backup'].delete_bucket_path(
                 source.retained_backup_path
             )
             source.retained_backup_path = False

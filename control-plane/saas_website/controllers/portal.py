@@ -864,7 +864,7 @@ class SaasPortal(CustomerPortal):
             ))
             # Send notification before clearing pending plan so template can access it
             instance_sudo._send_notification(
-                'saas_core.mail_template_saas_payment_cancelled',
+                'saas_billing.mail_template_saas_payment_cancelled',
             )
             instance_sudo.write({
                 'pending_plan_id': False,
@@ -913,7 +913,7 @@ class SaasPortal(CustomerPortal):
             )
             # Notify support team to follow up with the client
             instance_sudo._send_notification(
-                'saas_core.mail_template_saas_payment_cancelled',
+                'saas_billing.mail_template_saas_payment_cancelled',
             )
             return request.redirect('/my/instances')
 

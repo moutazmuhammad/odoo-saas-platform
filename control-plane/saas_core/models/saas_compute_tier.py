@@ -72,8 +72,10 @@ class SaasComputeTier(models.Model):
                 ) % rec.name)
 
     @api.model
-    def _get_default(self):
-        """The compute tier assigned when an instance doesn't pick one."""
+    def get_default(self):
+        """The compute tier assigned when an instance doesn't pick one.
+
+        Public: also called from saas_billing (reactivation resets the tier)."""
         return self.sudo().search(
             [('active', '=', True), ('is_default', '=', True)], limit=1,
         )

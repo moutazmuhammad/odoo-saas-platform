@@ -518,7 +518,7 @@ class SaasInstanceBackup(models.Model):
         if upload_error is not None or exit_code != 0:
             # Don't leave a truncated/corrupt object behind.
             try:
-                self._delete_bucket_path(object_key)
+                self.delete_bucket_path(object_key)
             except Exception:
                 pass
             if exit_code != 0:
@@ -569,7 +569,7 @@ class SaasInstanceBackup(models.Model):
 
         if upload_error is not None or exit_code != 0:
             try:
-                self._delete_bucket_path(object_key)
+                self.delete_bucket_path(object_key)
             except Exception:
                 pass
             if exit_code != 0:
@@ -633,7 +633,7 @@ class SaasInstanceBackup(models.Model):
     def _delete_from_bucket(self):
         self.ensure_one()
         if self.bucket_path:
-            self._delete_bucket_path(self.bucket_path)
+            self.delete_bucket_path(self.bucket_path)
 
     @api.model
     def apply_bucket_cors(self, origins=None):
@@ -769,13 +769,15 @@ class SaasInstanceBackup(models.Model):
             return None
 
     @api.model
-    def _delete_bucket_path(self, bucket_path):
+    def delete_bucket_path(self, bucket_path):
         """Delete an arbitrary object key from the configured backup bucket.
 
         Use this when you have a bucket path but no `saas.instance.backup`
         record (e.g. retained backup paths after the source instance has
         been wiped). Replaces the previous `Backup.new(...)._delete_from_bucket()`
         anti-pattern.
+
+        Public: also called from saas_billing's retained-restore wizard.
         """
         if not bucket_path:
             return
@@ -799,7 +801,7 @@ class SaasInstanceBackup(models.Model):
         Full-instance (``operator``-format) backups are TWO+ objects
         under one stamp directory (``db.dump``, ``filestore.tar.gz``,
         ``manifest.json``), unlike a per-DB backup's single object key
-        — this is the bulk equivalent of :meth:`_delete_bucket_path` for
+        — this is the bulk equivalent of :meth:`delete_bucket_path` for
         that shape, used e.g. when pruning old snapshots on
         cancellation.
         """
@@ -1407,10 +1409,12 @@ class SaasInstanceBackup(models.Model):
                 except Exception as e:
                     _logger.error("Failed to cleanup backup %s: %s", backup.name, e)
 
-    def _cleanup_excess_for_instance(self, instance):
+    def cleanup_excess_for_instance(self, instance):
         """Remove excess backups for a single instance against the fixed
         retention limit (DEFAULT_MAX_BACKUPS), without waiting for the
         daily cron.
+
+        Public: also called from saas_billing.
         """
         max_backups = DEFAULT_MAX_BACKUPS
         backups = self.search([

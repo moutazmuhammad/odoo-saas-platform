@@ -12,7 +12,7 @@ class SaasAuditLog(models.Model):
     Records who did what, to which target, and the outcome — for sensitive
     platform actions (instance lifecycle, destructive DB ops, secret access).
     Write-once: rows can be created and read but never updated or deleted, so
-    the trail is tamper-evident even for managers. Use :meth:`_saas_audit`
+    the trail is tamper-evident even for managers. Use :meth:`saas_audit`
     (best-effort, never raises into the caller) to record an event.
     """
     _name = 'saas.audit.log'
@@ -42,10 +42,12 @@ class SaasAuditLog(models.Model):
         raise UserError(_("Audit log entries are immutable and cannot be deleted."))
 
     @api.model
-    def _saas_audit(self, action, *, result='ok', model=None, res_id=None,
+    def saas_audit(self, action, *, result='ok', model=None, res_id=None,
                     res_name=None, detail=None):
         """Record one audit event. Best-effort: failures here are logged but
-        never propagate, so auditing can't break the audited operation."""
+        never propagate, so auditing can't break the audited operation.
+
+        Public: also called from saas_billing."""
         try:
             user = self.env.user
             self.sudo().create({

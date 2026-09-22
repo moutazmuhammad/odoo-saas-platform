@@ -15,3 +15,4 @@ access_saas_payment_provider_config_user,saas.payment.provider.config user,model
 access_saas_payment_provider_config_manager,saas.payment.provider.config manager,model_saas_payment_provider_config,saas_core.group_saas_manager,1,1,1,1
 access_saas_payment_attempt_user,saas.payment.attempt user,model_saas_payment_attempt,saas_core.group_saas_user,1,0,0,0
 access_saas_payment_attempt_manager,saas.payment.attempt manager,model_saas_payment_attempt,saas_core.group_saas_manager,1,1,1,1
+access_saas_restore_retained_wizard_manager,saas.restore.retained.wizard manager,model_saas_restore_retained_wizard,saas_core.group_saas_manager,1,1,1,1

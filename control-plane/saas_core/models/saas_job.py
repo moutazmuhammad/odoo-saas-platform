@@ -405,7 +405,7 @@ class SaasJob(models.Model):
                 'job %s (%s.%s) failed after %d attempts'
                 % (self.id, self.model, self.method, self.attempts),
                 level='error', detail=(message or '')[:500])
-            self.env['saas.audit.log']._saas_audit(
+            self.env['saas.audit.log'].saas_audit(
                 'job_failed', result='error', model=self.model,
                 res_id=self.res_id, res_name=self.method,
                 detail=(message or '')[:500])

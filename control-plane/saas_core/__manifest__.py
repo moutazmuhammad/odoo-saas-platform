@@ -1,6 +1,6 @@
 {
     'name': 'SaaS Instance Manager',
-    'version': '18.0.50.0.0',
+    'version': '18.0.51.0.0',
     'category': 'SaaS',
     'summary': 'Provision and manage multi-tenant Odoo instances with Docker containers',
     'description': """
@@ -23,13 +23,9 @@ Key capabilities:
 """,
     'author': 'SaaS Platform',
     'license': 'LGPL-3',
-    'depends': [
-        'base', 'mail', 'sale', 'account', 'portal', 'phone_validation',
-        # 'payment' + 'account_payment' for saved-card auto-renewal:
-        # saas.instance.payment_token_id -> payment.token, and renewal
-        # crons create payment.transaction records to charge that token.
-        'payment', 'account_payment',
-    ],
+    # No sale/account/payment dependency: everything commercial (orders,
+    # invoices, saved cards, auto-renew) lives in saas_billing.
+    'depends': ['base', 'mail', 'portal', 'phone_validation'],
     'external_dependencies': {
         'python': ['paramiko', 'jinja2', 'boto3', 'google-cloud-storage', 'kubernetes'],
     },
@@ -45,14 +41,12 @@ Key capabilities:
         'data/saas_usage_refresh_cron.xml',
         'data/saas_trial_expiry_cron.xml',
         'data/saas_recurring_billing_cron.xml',
-        'data/saas_margin_alert_cron.xml',
         'data/saas_metrics_cron.xml',
         'data/saas_pending_provision_cron.xml',
         'data/saas_job_cron.xml',
         'data/saas_region_data.xml',
         'data/saas_compute_tier_data.xml',
         'wizards/saas_config_viewer_views.xml',
-        'wizards/saas_restore_retained_views.xml',
         'views/saas_product_views.xml',
         'views/saas_plan_views.xml',
         'views/saas_instance_views.xml',
@@ -60,7 +54,6 @@ Key capabilities:
         'views/saas_region_views.xml',
         'views/saas_compute_tier_views.xml',
         'views/saas_server_views.xml',
-        'views/saas_margin_views.xml',
         'views/saas_domain_views.xml',
         'views/saas_odoo_version_views.xml',
         'views/res_partner_views.xml',

@@ -11,7 +11,7 @@ class TestAuditLog(TransactionCase):
 
     def test_helper_records_actor_action_target(self):
         Log = self.env['saas.audit.log']
-        Log._saas_audit('unit_action', model='saas.instance', res_id=42,
+        Log.saas_audit('unit_action', model='saas.instance', res_id=42,
                         res_name='probe', detail='hello')
         rec = Log.search([('action', '=', 'unit_action')], limit=1)
         self.assertTrue(rec, "the event must be recorded")
@@ -24,14 +24,14 @@ class TestAuditLog(TransactionCase):
 
     def test_entries_are_immutable_no_write(self):
         Log = self.env['saas.audit.log']
-        Log._saas_audit('immutable_w')
+        Log.saas_audit('immutable_w')
         rec = Log.search([('action', '=', 'immutable_w')], limit=1)
         with self.assertRaises(UserError):
             rec.write({'detail': 'tampered'})
 
     def test_entries_are_immutable_no_unlink(self):
         Log = self.env['saas.audit.log']
-        Log._saas_audit('immutable_u')
+        Log.saas_audit('immutable_u')
         rec = Log.search([('action', '=', 'immutable_u')], limit=1)
         with self.assertRaises(UserError):
             rec.unlink()
@@ -39,7 +39,7 @@ class TestAuditLog(TransactionCase):
     def test_helper_never_raises_into_caller(self):
         # Oversized/odd input must not propagate — auditing can't break the
         # audited operation.
-        self.env['saas.audit.log']._saas_audit('big', detail='x' * 10000)
+        self.env['saas.audit.log'].saas_audit('big', detail='x' * 10000)
         rec = self.env['saas.audit.log'].search([('action', '=', 'big')], limit=1)
         self.assertTrue(rec)
         self.assertLessEqual(len(rec.detail or ''), 4000, "detail is capped")
@@ -103,7 +103,7 @@ class TestAuditLogLifecycleWiring(TransactionCase):
     def test_scheduled_downgrade_writes_scale_audit_log(self):
         # The downgrade-apply block lives inline at the top of
         # _generate_renewal_invoice (applied before that cycle's invoice is
-        # built) — the write()/_append_log()/_saas_audit() sequence this
+        # built) — the write()/_append_log()/saas_audit() sequence this
         # test cares about all happen before the method goes on to build a
         # real sale order/invoice, which needs billing fixtures well beyond
         # this test's scope. Let that tail fail if it must (e.g. missing

@@ -21,7 +21,6 @@ access_saas_product_feature_manager,saas.product.feature manager,model_saas_prod
 access_saas_instance_repo_user,saas.instance.repo user,model_saas_instance_repo,saas_core.group_saas_user,1,0,0,0
 access_saas_instance_repo_manager,saas.instance.repo manager,model_saas_instance_repo,saas_core.group_saas_manager,1,1,1,1
 access_saas_config_viewer_manager,saas.config.viewer manager,model_saas_config_viewer,saas_core.group_saas_manager,1,1,1,1
-access_saas_restore_retained_wizard_manager,saas.restore.retained.wizard manager,model_saas_restore_retained_wizard,saas_core.group_saas_manager,1,1,1,1
 access_saas_instance_package_user,saas.instance.package user,model_saas_instance_package,saas_core.group_saas_user,1,0,0,0
 access_saas_instance_package_manager,saas.instance.package manager,model_saas_instance_package,saas_core.group_saas_manager,1,1,1,1
 access_saas_terminal_session_manager,saas.terminal.session manager,model_saas_terminal_session,saas_core.group_saas_manager,1,1,1,1

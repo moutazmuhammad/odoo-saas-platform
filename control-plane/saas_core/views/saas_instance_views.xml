@@ -21,7 +21,6 @@
                 <field name="compute_driver" optional="show"/>
                 <field name="db_server_id" optional="show"/>
                 <field name="is_overcommitted" optional="hide"/>
-                <field name="sale_order_id" optional="hide"/>
                 <field name="state" widget="badge"
                        decoration-success="state == 'running'"
                        decoration-danger="state in ('cancelled', 'cancelled_by_client', 'failed')"
@@ -41,24 +40,8 @@
         <field name="arch" type="xml">
             <form string="SaaS Instance">
                 <header>
-                    <!-- ===== Billing Flow ===== -->
-
-                    <!-- Confirm & Bill: draft with a plan assigned (not trial).
-                         Creates SO, confirms, invoices. Deploys automatically
-                         once payment is received (or immediately if zero-amount). -->
-                    <button name="action_confirm_and_bill"
-                            string="Confirm &amp; Bill"
-                            type="object" class="btn-primary"
-                            icon="fa-check"
-                            invisible="state != 'draft' or not plan_id or is_trial"/>
-
-                    <!-- Mark as Paid: manual fallback (wire transfers, trials) -->
-                    <button name="action_mark_as_paid"
-                            string="Mark as Paid"
-                            type="object" class="btn-secondary"
-                            icon="fa-money"
-                            invisible="state != 'pending_payment'"
-                            groups="saas_core.group_saas_manager"/>
+                    <!-- Billing flow buttons (Confirm & Bill, Mark as Paid)
+                         are added here by saas_billing. -->
 
                     <!-- ===== Deployment ===== -->
 
@@ -122,33 +105,6 @@
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
-                        <button name="action_view_sale_order"
-                                type="object"
-                                class="oe_stat_button"
-                                icon="fa-shopping-cart"
-                                invisible="not sale_order_id">
-                            <field name="sale_order_count" widget="statinfo"
-                                   string="Sale Order"/>
-                        </button>
-                        <button name="action_view_invoices"
-                                type="object"
-                                class="oe_stat_button"
-                                icon="fa-pencil-square-o"
-                                invisible="invoice_count == 0">
-                            <field name="invoice_count" widget="statinfo"
-                                   string="Invoices"/>
-                        </button>
-                        <button name="%(saas_core.action_restore_retained_wizard)d"
-                                type="action"
-                                class="oe_stat_button"
-                                icon="fa-database"
-                                invisible="not retained_backup_path"
-                                groups="saas_core.group_saas_manager">
-                            <div class="o_field_widget o_stat_info">
-                                <span class="o_stat_value text-warning">Backup</span>
-                                <span class="o_stat_text">Restore</span>
-                            </div>
-                        </button>
                     </div>
                     <group>
                         <!-- Left Column -->
@@ -157,18 +113,13 @@
                             <field name="domain_id" options="{'no_open': True}"/>
                             <field name="saas_product_id" string="Service"/>
                             <field name="plan_id" domain="['|', ('saas_product_ids', '=', False), ('saas_product_ids', 'in', saas_product_id)]"/>
-                            <!-- support_plan_id is added back here by
-                                 saas_billing/views/saas_instance_views.xml
-                                 (its comodel lives there now). -->
+                            <!-- support_plan_id, next_invoice_date and the
+                                 pending plan change are added by
+                                 saas_billing/views/saas_instance_views.xml. -->
                             <field name="partner_id"/>
                             <field name="url" widget="url"/>
                             <field name="is_trial" widget="boolean_toggle" readonly="1"/>
-                            <field name="next_invoice_date" readonly="1"/>
                             <field name="odoo_version_id" readonly="id"/>
-                            <field name="pending_plan_id" readonly="1"
-                                   invisible="not pending_plan_id"/>
-                            <field name="pending_change_invoice_id" readonly="1"
-                                   invisible="not pending_change_invoice_id"/>
                         </group>
                         <!-- Right Column -->
                         <group>
@@ -199,8 +150,6 @@
                     </group>
                     <group string="Kubernetes Configuration" invisible="compute_driver != 'kubernetes'">
                         <field name="compute_tier_id" options="{'no_create_edit': True}"/>
-                        <field name="pending_compute_tier_id" readonly="1"
-                               invisible="not pending_compute_tier_id"/>
                     </group>
 
                     <!-- Resource Usage -->
@@ -225,7 +174,7 @@
                         </group>
                     </group>
 
-                    <group string="Reconciliation &amp; margin"
+                    <group string="Reconciliation &amp; margin" name="reconciliation_margin"
                            groups="saas_core.group_saas_manager"
                            invisible="state not in ('running','stopped','suspended')">
                         <group string="Reconciler (desired → actual)">
@@ -233,13 +182,6 @@
                             <field name="actual_state"/>
                             <field name="last_reconcile"/>
                             <field name="deploy_image"/>
-                        </group>
-                        <group string="Margin / month">
-                            <field name="monthly_revenue"/>
-                            <field name="monthly_cost"/>
-                            <field name="monthly_margin"/>
-                            <field name="is_profitable"/>
-                            <field name="margin_currency_id" column_invisible="1"/>
                         </group>
                     </group>
 
@@ -381,13 +323,6 @@
                             </group>
                             <group string="Retained Backup">
                                 <field name="retained_backup_path" readonly="1"/>
-                                <button name="%(saas_core.action_restore_retained_wizard)d"
-                                        string="Restore to Instance &amp; Invoice"
-                                        type="action"
-                                        class="btn-primary"
-                                        icon="fa-upload"
-                                        groups="saas_core.group_saas_manager"
-                                        invisible="not retained_backup_path"/>
                                 <div invisible="retained_backup_path"
                                      class="text-muted">
                                     No retained backup available. The backup may have failed during deletion.

@@ -1,17 +1,108 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- Adds support_plan_id back into saas_core's instance form, right
-         after plan_id — pulled out of that view because its comodel
-         (saas.support.plan) lives in this addon, which loads after
-         saas_core, so the base view can't reference it directly. -->
+    <!-- The commercial half of saas_core's instance list/form: sale order
+         and invoice links, the billing flow buttons, the pending plan /
+         compute-tier changes, the margin summary and the paid retained-
+         backup restore. Pulled out of the base views because the fields
+         and methods they use are declared in this addon, which loads
+         after saas_core. -->
+    <record id="saas_instance_view_list_billing" model="ir.ui.view">
+        <field name="name">saas.instance.list.billing</field>
+        <field name="model">saas.instance</field>
+        <field name="inherit_id" ref="saas_core.saas_instance_view_list"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='is_overcommitted']" position="after">
+                <field name="sale_order_id" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
     <record id="saas_instance_view_form_billing" model="ir.ui.view">
         <field name="name">saas.instance.form.billing</field>
         <field name="model">saas.instance</field>
         <field name="inherit_id" ref="saas_core.saas_instance_view_form"/>
         <field name="arch" type="xml">
+            <xpath expr="//header/button[@name='action_deploy']" position="before">
+                <!-- Confirm & Bill: draft with a plan assigned (not trial).
+                     Creates SO, confirms, invoices. Deploys automatically
+                     once payment is received (or immediately if zero-amount). -->
+                <button name="action_confirm_and_bill"
+                        string="Confirm &amp; Bill"
+                        type="object" class="btn-primary"
+                        icon="fa-check"
+                        invisible="state != 'draft' or not plan_id or is_trial"/>
+
+                <!-- Mark as Paid: manual fallback (wire transfers, trials) -->
+                <button name="action_mark_as_paid"
+                        string="Mark as Paid"
+                        type="object" class="btn-secondary"
+                        icon="fa-money"
+                        invisible="state != 'pending_payment'"
+                        groups="saas_core.group_saas_manager"/>
+            </xpath>
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_view_sale_order"
+                        type="object"
+                        class="oe_stat_button"
+                        icon="fa-shopping-cart"
+                        invisible="not sale_order_id">
+                    <field name="sale_order_count" widget="statinfo"
+                           string="Sale Order"/>
+                </button>
+                <button name="action_view_invoices"
+                        type="object"
+                        class="oe_stat_button"
+                        icon="fa-pencil-square-o"
+                        invisible="invoice_count == 0">
+                    <field name="invoice_count" widget="statinfo"
+                           string="Invoices"/>
+                </button>
+                <button name="%(action_restore_retained_wizard)d"
+                        type="action"
+                        class="oe_stat_button"
+                        icon="fa-database"
+                        invisible="not retained_backup_path"
+                        groups="saas_core.group_saas_manager">
+                    <div class="o_field_widget o_stat_info">
+                        <span class="o_stat_value text-warning">Backup</span>
+                        <span class="o_stat_text">Restore</span>
+                    </div>
+                </button>
+            </xpath>
             <xpath expr="//field[@name='plan_id']" position="after">
                 <field name="support_plan_id" options="{'no_create_edit': True}"/>
+            </xpath>
+            <xpath expr="//field[@name='is_trial']" position="after">
+                <field name="next_invoice_date" readonly="1"/>
+            </xpath>
+            <xpath expr="//field[@name='odoo_version_id']" position="after">
+                <field name="pending_plan_id" readonly="1"
+                       invisible="not pending_plan_id"/>
+                <field name="pending_change_invoice_id" readonly="1"
+                       invisible="not pending_change_invoice_id"/>
+            </xpath>
+            <xpath expr="//field[@name='compute_tier_id']" position="after">
+                <field name="pending_compute_tier_id" readonly="1"
+                       invisible="not pending_compute_tier_id"/>
+            </xpath>
+            <xpath expr="//group[@name='reconciliation_margin']" position="inside">
+                <group string="Margin / month">
+                    <field name="monthly_revenue"/>
+                    <field name="monthly_cost"/>
+                    <field name="monthly_margin"/>
+                    <field name="is_profitable"/>
+                    <field name="margin_currency_id" column_invisible="1"/>
+                </group>
+            </xpath>
+            <xpath expr="//field[@name='retained_backup_path']" position="after">
+                <button name="%(action_restore_retained_wizard)d"
+                        string="Restore to Instance &amp; Invoice"
+                        type="action"
+                        class="btn-primary"
+                        icon="fa-upload"
+                        groups="saas_core.group_saas_manager"
+                        invisible="not retained_backup_path"/>
             </xpath>
         </field>
     </record>

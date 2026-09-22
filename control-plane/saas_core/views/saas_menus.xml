@@ -8,16 +8,6 @@
               web_icon="saas_core,static/description/icon.png"
               groups="base.group_user"/>
 
-    <!-- Dashboard: "can I make money on this?" answered in one click
-         (billing/pricing architecture redesign, Part 6) — the promoted
-         Profitability view (list/pivot/graph, group-by deployment
-         backend), first item in the app on purpose. -->
-    <menuitem id="saas_master_menu_dashboard"
-              name="Dashboard"
-              parent="saas_master_menu_root"
-              action="action_saas_tenant_margins"
-              sequence="5"/>
-
     <!-- Instances -->
     <menuitem id="saas_master_menu_instances"
               name="Instances"

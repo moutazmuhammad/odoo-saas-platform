@@ -33,14 +33,19 @@
               parent="saas_master_menu_billing"
               action="saas_support_plan_action"
               sequence="9"/>
-    <!-- Tenant Margins/Profitability: the action stays defined in
-         saas_core (views/saas_margin_views.xml, still saas.instance-
-         scoped) and is ALSO the promoted Dashboard menu item at the app
-         root — kept here too so it's reachable from Billing directly. -->
+    <!-- Profitability (views/saas_margin_views.xml): the promoted
+         Dashboard item at the app root ("can I make money on this?" in
+         one click, first item in the app on purpose), and also reachable
+         from Billing directly. -->
+    <menuitem id="saas_master_menu_dashboard"
+              name="Dashboard"
+              parent="saas_core.saas_master_menu_root"
+              action="action_saas_tenant_margins"
+              sequence="5"/>
     <menuitem id="saas_master_menu_margins"
               name="Profitability"
               parent="saas_master_menu_billing"
-              action="saas_core.action_saas_tenant_margins"
+              action="action_saas_tenant_margins"
               sequence="35"/>
     <menuitem id="saas_master_menu_wallets"
               name="Customer Wallets"

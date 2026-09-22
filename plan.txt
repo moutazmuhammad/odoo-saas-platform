@@ -15,38 +15,51 @@
      moving on. Never done against a real production DB (none exists yet, but
      the same discipline applies to saas_dev/saas_test as if it did).
 
-     - [ ] Step 0 — scaffold saas_billing: new addon skeleton
+     - [x] Step 0 — scaffold saas_billing: new addon skeleton
        (__manifest__.py depends on saas_core; models/, security/,
        data/, views/, migrations/ dirs), empty but installable.
-     - [ ] Step 1 — wholesale-relocated models (no saas.instance/saas.plan
+     - [x] Step 1 — wholesale-relocated models (no saas.instance/saas.plan
        touched yet): saas.payment.*, saas.wallet.*,
        saas.support.plan, saas.addon (+ their data/views/security
        rows) move to saas_billing. Migration script re-parents their
        ir_model_data. saas_core's manifest drops sale/account/
        payment/account_payment deps if nothing else in core still
        needs them (check first).
-     - [ ] Step 2 — pricing engine: saas.pricing (AbstractModel, no
+     - [x] Step 2 — pricing engine: saas.pricing (AbstractModel, no
        table) moves to saas_billing — pure file move + dependency
        update, no data migration.
-     - [ ] Step 3 — settings/partner split: res.config.settings billing
+     - [x] Step 3 — settings/partner split: res.config.settings billing
        fields (~30) and res.partner wallet/trial fields move to
        saas_billing's own extension files.
-     - [ ] Step 4 — saas.plan commercial half: saas_billing adds
+     - [x] Step 4 — saas.plan commercial half: saas_billing adds
        price/yearly_price/discount_amount/manual_price/
        saas_product_ids/tier-display fields + the auto-price
        formula/constraints via _inherit; saas_core keeps the
        resource-limit shape. Field-level ir_model_data re-parenting for
        the fields that move.
-     - [ ] Step 5 — saas.instance billing half (biggest, last): billing
+     - [x] Step 5 — saas.instance billing half (biggest, last): billing
        fields/methods listed in the proposal move via _inherit;
        account.move/res.partner inherits follow. Full regression +
        live portal checkout/renewal/upgrade verification required before
        calling this done.
-     - [ ] Step 6 — boundary enforcement + margin visibility: the
+     - [x] Step 6 — boundary enforcement + margin visibility: the
        AST cross-addon-private-call lint (§4), and the margin-%
        display / cost_price fields (§2).
 
-     Current status: about to start Step 0.
+     Current status (2026-09-23): all steps done. Step 5 notes:
+     - plan_id stays declared in saas_core (its comodel saas.plan is core;
+       provisioning reads it), contrary to the original proposal text.
+     - Also moved: the per-tenant margin fields/compute/cron/views/menu,
+       the retained-backup restore wizard, and the payment_due /
+       payment_cancelled / renewal_reminder mail templates.
+     - saas_core no longer depends on sale/account/payment/account_payment.
+     - Core reaches billing only via no-op hooks (_void_unpaid_invoices_
+       refund_credit, _has_overdue_invoices_past_grace, _teardown_billing_
+       vals, _env_child_extra_vals, _on_trial_expired, _status_dict_
+       billing_extra, _do_scale_compute_tier/_activate_pending_environment
+       overrides).
+     - Upgrades: saas_billing/migrations/18.0.2.0.0/pre-migrate.py
+       re-parents the moved xmlids (verified on a copy of saas_dev).
 
      ---
 

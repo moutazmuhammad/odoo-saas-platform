@@ -38,14 +38,15 @@ func OdooInitJob(instance *saasv1alpha1.OdooInstance) *batchv1.Job {
 		"--stop-after-init",
 	}
 	return odooOneShotJob(instance, OdooInitJobName(instance), "init", "init-db",
-		OdooConfigMapName(instance), args, corev1.RestartPolicyOnFailure, ptr.To(int32(3)), nil)
+		OdooConfigMapName(instance), nil, args, corev1.RestartPolicyOnFailure, ptr.To(int32(3)), nil)
 }
 
 // odooOneShotJob is the pod shape shared by the database-init and module
 // update Jobs: render odoo.conf from configMapName in an init container,
-// then run Odoo once with args against the tenant database and filestore.
+// then run Odoo once with args (and command, when set, instead of the
+// image's entrypoint) against the tenant database and filestore.
 func odooOneShotJob(instance *saasv1alpha1.OdooInstance, name, component, containerName, configMapName string,
-	args []string, restartPolicy corev1.RestartPolicy, backoffLimit *int32, activeDeadlineSeconds *int64) *batchv1.Job {
+	command, args []string, restartPolicy corev1.RestartPolicy, backoffLimit *int32, activeDeadlineSeconds *int64) *batchv1.Job {
 	labels := WithComponent(instance, component)
 	image := instance.Spec.Image.Repository + ":" + instance.Spec.Image.Tag
 
@@ -93,6 +94,7 @@ func odooOneShotJob(instance *saasv1alpha1.OdooInstance, name, component, contai
 							Name:            containerName,
 							Image:           image,
 							ImagePullPolicy: instance.Spec.Image.PullPolicy,
+							Command:         command,
 							Args:            args,
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "etc-odoo", MountPath: "/etc/odoo", ReadOnly: true},

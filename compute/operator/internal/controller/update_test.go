@@ -127,8 +127,9 @@ func TestReconcile_UpdateHoldsOldImageUntilUpdateJobSucceeds(t *testing.T) {
 	var job batchv1.Job
 	_ = k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: jobName}, &job)
 	c := job.Spec.Template.Spec.Containers[0]
-	if c.Image != "registry.example.com/odoo:18.0-build1" || !hasArg(c.Args, "my_module,other") {
-		t.Fatalf("unexpected update Job container: image=%s args=%v", c.Image, c.Args)
+	if c.Image != "registry.example.com/odoo:18.0-build1" || !hasArg(c.Args, "odoo") ||
+		len(c.Env) != 1 || c.Env[0].Value != "my_module,other" {
+		t.Fatalf("unexpected update Job container: image=%s args=%v env=%v", c.Image, c.Args, c.Env)
 	}
 	if cond := findCondition(held, saasv1alpha1.ConditionUpdateReady); cond == nil || cond.Reason != ReasonUpdateRunning {
 		t.Fatalf("expected UpdateReady reason %s, got %+v", ReasonUpdateRunning, cond)

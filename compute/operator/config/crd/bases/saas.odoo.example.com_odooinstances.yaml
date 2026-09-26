@@ -248,6 +248,14 @@ spec:
                     - "17"
                     type: string
                 type: object
+              databaseFilter:
+                description: |-
+                  DatabaseFilter overrides odoo.conf's dbfilter (a regular expression
+                  on database names). Default: only the instance's own database
+                  (^<db>$). A hosting instance that lets its customer create several
+                  databases sets e.g. ^acme_.+$ so Odoo serves those.
+                maxLength: 256
+                type: string
               domain:
                 description: Domain configures external access and TLS.
                 properties:
@@ -611,6 +619,16 @@ spec:
                   If it fails, the previous image keeps serving and the UpdateReady
                   condition reports why. See UpdateSpec.
                 properties:
+                  databases:
+                    description: |-
+                      Databases to upgrade in addition to the instance's own database
+                      (e.g. a hosting instance's customer databases). Every database must
+                      upgrade successfully before the pods are rolled.
+                    items:
+                      pattern: ^[A-Za-z0-9_.-]+$
+                      type: string
+                    maxItems: 100
+                    type: array
                   modules:
                     description: |-
                       Modules to upgrade with `-u`. Empty means no upgrade is needed and

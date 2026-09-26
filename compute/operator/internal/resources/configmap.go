@@ -40,12 +40,17 @@ without_demo = all
 data_dir = /var/lib/odoo
 `
 
-// odooConf renders the odoo.conf template for instance: the fixed settings
-// plus, when spec.addonsPaths is set, an addons_path line. Odoo always adds
+// odooConf renders the odoo.conf template for instance: the fixed settings,
+// spec.databaseFilter in place of the default dbfilter when set, plus, when
+// spec.addonsPaths is set, an addons_path line. Odoo always adds
 // its own built-in addons directory on top of addons_path, so only the
 // extra (tenant) directories are listed.
 func odooConf(instance *saasv1alpha1.OdooInstance) string {
 	conf := odooConfTemplate
+	if instance.Spec.DatabaseFilter != "" {
+		conf = strings.Replace(conf, "dbfilter = ^__DB_NAME__$",
+			"dbfilter = "+instance.Spec.DatabaseFilter, 1)
+	}
 	if len(instance.Spec.AddonsPaths) > 0 {
 		conf += "addons_path = " + strings.Join(instance.Spec.AddonsPaths, ",") + "\n"
 	}

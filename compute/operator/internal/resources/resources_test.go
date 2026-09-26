@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -345,4 +346,68 @@ func containsArg(args []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestOdooConf_DefaultDatabaseFilterIsOwnDatabase(t *testing.T) {
+	conf := odooConf(testInstance())
+	if !strings.Contains(conf, "dbfilter = ^__DB_NAME__$\n") {
+		t.Errorf("default dbfilter missing:\n%s", conf)
+	}
+}
+
+func TestOdooConf_DatabaseFilterOverride(t *testing.T) {
+	instance := testInstance()
+	instance.Spec.DatabaseFilter = "^acme_.+$"
+	conf := odooConf(instance)
+	if !strings.Contains(conf, "dbfilter = ^acme_.+$\n") || strings.Contains(conf, "^__DB_NAME__$") {
+		t.Errorf("dbfilter override not applied:\n%s", conf)
+	}
+	if !strings.Contains(conf, "db_name = __DB_NAME__\n") {
+		t.Errorf("db_name must stay the instance's own database:\n%s", conf)
+	}
+}
+
+func TestOdooDeployment_DatabaseFilterChangeRollsPods(t *testing.T) {
+	instance := testInstance()
+	if ann := OdooDeployment(instance, RoleWeb).Spec.Template.Annotations; ann != nil {
+		t.Errorf("no filter: pod template annotations = %v, want none", ann)
+	}
+	instance.Spec.DatabaseFilter = "^acme_.+$"
+	ann := OdooDeployment(instance, RoleWeb).Spec.Template.Annotations
+	if ann[AnnotationDatabaseFilter] != "^acme_.+$" {
+		t.Errorf("pod template annotations = %v, want the database filter", ann)
+	}
+}
+
+func TestOdooUpdateJob_UpgradesOwnAndExtraDatabasesOneByOne(t *testing.T) {
+	instance := testInstance()
+	instance.Spec.Update = &saasv1alpha1.UpdateSpec{
+		Token: "build-1", Modules: []string{"sale", "stock"},
+		Databases: []string{"acme_prod", "odoo", "acme_test", "acme_prod"},
+	}
+	c := OdooUpdateJob(instance).Spec.Template.Spec.Containers[0]
+	if len(c.Command) != 4 || c.Command[0] != "sh" || !strings.Contains(c.Command[2], `-d "$db" -u "$SAAS_MODULES"`) {
+		t.Errorf("update Job command = %v, want a per-database loop", c.Command)
+	}
+	if strings.Join(c.Args, ",") != "odoo,acme_prod,acme_test" {
+		t.Errorf("update Job args = %v, want [odoo acme_prod acme_test]", c.Args)
+	}
+	if len(c.Env) != 1 || c.Env[0].Name != "SAAS_MODULES" || c.Env[0].Value != "sale,stock" {
+		t.Errorf("update Job env = %v, want SAAS_MODULES=sale,stock", c.Env)
+	}
+}
+
+func TestOdooUpdateJob_DefaultsToOwnDatabase(t *testing.T) {
+	instance := testInstance()
+	instance.Spec.Update = &saasv1alpha1.UpdateSpec{Token: "build-1", Modules: []string{"sale"}}
+	args := OdooUpdateJob(instance).Spec.Template.Spec.Containers[0].Args
+	if strings.Join(args, ",") != "odoo" {
+		t.Errorf("update Job args = %v, want [odoo]", args)
+	}
+}
+
+func TestOdooInitJob_KeepsImageEntrypoint(t *testing.T) {
+	if cmd := OdooInitJob(testInstance()).Spec.Template.Spec.Containers[0].Command; cmd != nil {
+		t.Errorf("init Job command = %v, want the image entrypoint", cmd)
+	}
 }

@@ -333,13 +333,25 @@ const (
 // with while an update is pending (see LiveAddonsPaths).
 const AnnotationAddonsPaths = "saas.odoo.example.com/addons-paths"
 
-// podTemplateAnnotations is nil without addons paths, so instances that
-// don't use them keep an unchanged pod template (no spurious rollout).
+// AnnotationDatabaseFilter records spec.databaseFilter on the pod template
+// so changing it rolls the pods onto the new odoo.conf.
+const AnnotationDatabaseFilter = "saas.odoo.example.com/database-filter"
+
+// podTemplateAnnotations is nil without addons paths or a database filter,
+// so instances that don't use them keep an unchanged pod template (no
+// spurious rollout).
 func podTemplateAnnotations(instance *saasv1alpha1.OdooInstance) map[string]string {
-	if len(instance.Spec.AddonsPaths) == 0 {
-		return nil
+	var ann map[string]string
+	if len(instance.Spec.AddonsPaths) > 0 {
+		ann = map[string]string{AnnotationAddonsPaths: strings.Join(instance.Spec.AddonsPaths, ",")}
 	}
-	return map[string]string{AnnotationAddonsPaths: strings.Join(instance.Spec.AddonsPaths, ",")}
+	if instance.Spec.DatabaseFilter != "" {
+		if ann == nil {
+			ann = map[string]string{}
+		}
+		ann[AnnotationDatabaseFilter] = instance.Spec.DatabaseFilter
+	}
+	return ann
 }
 
 // LiveAddonsPaths is the inverse of podTemplateAnnotations for a live

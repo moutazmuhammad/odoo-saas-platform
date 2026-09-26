@@ -472,6 +472,14 @@ type OdooInstanceSpec struct {
 	// +kubebuilder:validation:items:Pattern=`^/[A-Za-z0-9._/-]*$`
 	AddonsPaths []string `json:"addonsPaths,omitempty"`
 
+	// DatabaseFilter overrides odoo.conf's dbfilter (a regular expression
+	// on database names). Default: only the instance's own database
+	// (^<db>$). A hosting instance that lets its customer create several
+	// databases sets e.g. ^acme_.+$ so Odoo serves those.
+	// +optional
+	// +kubebuilder:validation:MaxLength=256
+	DatabaseFilter string `json:"databaseFilter,omitempty"`
+
 	// Update requests a module upgrade (`odoo -u`) against the new Image
 	// before any pod is switched to it. Each distinct Token is applied
 	// exactly once: the controller runs an update Job with the new
@@ -554,6 +562,14 @@ type UpdateSpec struct {
 	// +kubebuilder:validation:MaxItems=500
 	// +kubebuilder:validation:items:Pattern=`^[a-z0-9_]+$`
 	Modules []string `json:"modules,omitempty"`
+
+	// Databases to upgrade in addition to the instance's own database
+	// (e.g. a hosting instance's customer databases). Every database must
+	// upgrade successfully before the pods are rolled.
+	// +optional
+	// +kubebuilder:validation:MaxItems=100
+	// +kubebuilder:validation:items:Pattern=`^[A-Za-z0-9_.-]+$`
+	Databases []string `json:"databases,omitempty"`
 }
 
 // AddonSpec records one addon expected to be present in Image.

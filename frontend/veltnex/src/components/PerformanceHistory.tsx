@@ -67,9 +67,10 @@ export function PerformanceHistory({
     interval: HISTORY_REFRESH_MS[range] ?? 60000, immediate: true,
   });
 
-  // Live poll every 5s — keeps the instance watched + drives the live readout.
+  // Live poll every 5s (Prometheus, cached server-side) — drives the live readout.
   const loadLive = React.useCallback(async () => {
-    setLive(await api.instanceMetrics(instanceId, accessToken));
+    const m = await api.instanceMetrics(instanceId, accessToken);
+    setLive(m.available ? m : null);
   }, [instanceId, accessToken]);
   usePolling(loadLive, { interval: 5000, immediate: true });
 

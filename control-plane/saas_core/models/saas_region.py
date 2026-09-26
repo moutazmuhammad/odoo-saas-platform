@@ -126,6 +126,22 @@ class SaasRegion(models.Model):
         groups='saas_core.group_saas_manager',
         help='Image the build Job clones repositories with.')
 
+    # ---------- Monitoring (Prometheus) ----------
+    # Tenant CPU/RAM usage and the customer metrics dashboard read this
+    # cluster's Prometheus through the Kubernetes API service proxy, using
+    # the region kubeconfig — Prometheus is never exposed outside the
+    # cluster. Install: compute/charts/monitoring/prometheus-values.yaml.
+    prometheus_namespace = fields.Char(
+        string='Prometheus Namespace', default='monitoring',
+        groups='saas_core.group_saas_manager',
+        help='Namespace of the Prometheus server Service. Empty = no '
+             'Prometheus in this region (CPU/RAM usage and history are '
+             'unavailable; storage is still measured).')
+    prometheus_service = fields.Char(
+        string='Prometheus Service', default='prometheus-server:80',
+        groups='saas_core.group_saas_manager',
+        help='Prometheus server Service as "<name>:<port>".')
+
     _sql_constraints = [
         ('code_uniq', 'unique(code)', 'Region code must be unique.'),
     ]

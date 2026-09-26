@@ -9,11 +9,9 @@ from odoo.tests.common import TransactionCase, tagged
 class TestOperationalCrons(TransactionCase):
     """B.3 group 2: the operational crons on saas.instance — daily-backup
     add-on pause/resume, webhook re-registration dispatch, the container-
-    health back-compat shim, and the live-metrics/history-metrics sampling
-    dispatch. The underlying per-instance mechanics (reconciliation,
-    webhook signing, metric series/retention) are already covered
-    elsewhere (test_reconcile.py, test_webhook_security.py,
-    test_metrics.py) — these tests focus on the batch/dispatch layer that
+    health back-compat shim. The underlying per-instance mechanics
+    (reconciliation, webhook signing) are already covered elsewhere
+    (test_reconcile.py, test_webhook_security.py) — these tests focus on the batch/dispatch layer that
     wasn't exercised anywhere before."""
 
     def setUp(self):
@@ -180,80 +178,3 @@ class TestOperationalCrons(TransactionCase):
             result = self.Instance._cron_check_container_health()
         self.assertEqual(calls, [True])
         self.assertEqual(result, 'ok')
-
-    # ---------------- _cron_sample_live_metrics / _cron_record_metrics ----------------
-
-    def test_sample_live_metrics_groups_by_host_and_stops_when_unwatched(self):
-        server_a = self.env['saas.server'].sudo().create({'name': 'metrics-host-a'})
-        server_b = self.env['saas.server'].sudo().create({'name': 'metrics-host-b'})
-        now = fields.Datetime.now()
-        watched1 = self._inst('lm1', docker_server_id=server_a.id,
-                               metrics_watch_until=now + timedelta(seconds=30))
-        watched2 = self._inst('lm2', docker_server_id=server_a.id,
-                               metrics_watch_until=now + timedelta(seconds=30))
-        other_host = self._inst('lm3', docker_server_id=server_b.id,
-                                 metrics_watch_until=now + timedelta(seconds=30))
-        self._inst('lm4', docker_server_id=False,
-                   metrics_watch_until=now + timedelta(seconds=30))
-        calls = []
-
-        def fake_sample(insts, server):
-            calls.append((server.id, tuple(sorted(insts.ids))))
-            # Clear the watch so the sampler's own "while watched" loop
-            # exits after this single pass instead of looping for up to
-            # LIVE_METRICS_SAMPLER_MAX_RUN (50s) real seconds.
-            insts.write({'metrics_watch_until': now - timedelta(minutes=1)})
-
-        with patch.object(type(self.Instance), '_sample_live_metrics_for_host',
-                           fake_sample), \
-                patch('odoo.addons.saas_core.models.saas_instance.time.sleep',
-                      lambda s: None):
-            self.Instance._cron_sample_live_metrics()
-
-        by_host = dict(calls)
-        self.assertEqual(set(by_host[server_a.id]),
-                          {watched1.id, watched2.id})
-        self.assertEqual(by_host[server_b.id], (other_host.id,))
-        self.assertEqual(len(calls), 2, "one batched call per host, not per instance")
-
-    def test_sample_live_metrics_noop_when_nobody_watching(self):
-        calls = []
-        with patch.object(type(self.Instance), '_sample_live_metrics_for_host',
-                           lambda insts, server: calls.append(True)), \
-                patch('odoo.addons.saas_core.models.saas_instance.time.sleep',
-                      lambda s: None):
-            self.Instance._cron_sample_live_metrics()
-        self.assertEqual(calls, [])
-
-    def test_record_metrics_groups_by_host_and_writes_one_row_per_instance(self):
-        server = self.env['saas.server'].sudo().create({'name': 'rec-host'})
-        inst1 = self._inst('rec1', docker_server_id=server.id)
-        inst2 = self._inst('rec2', docker_server_id=server.id)
-        self._inst('rec3', docker_server_id=False)  # excluded: no docker host
-        calls = []
-        with patch.object(type(self.Instance), '_sample_live_metrics_for_host',
-                           lambda insts, srv: calls.append(tuple(sorted(insts.ids)))):
-            n = self.Instance._cron_record_metrics()
-        self.assertEqual(calls, [(inst1.id, inst2.id)])
-        self.assertEqual(n, 2)
-        rows = self.env['saas.instance.metric'].sudo().search(
-            [('instance_id', 'in', [inst1.id, inst2.id])])
-        self.assertEqual(len(rows), 2)
-
-    def test_record_metrics_host_failure_does_not_abort_other_hosts(self):
-        bad_server = self.env['saas.server'].sudo().create({'name': 'rec-bad'})
-        good_server = self.env['saas.server'].sudo().create({'name': 'rec-good'})
-        self._inst('recbad', docker_server_id=bad_server.id)
-        good_inst = self._inst('recgood', docker_server_id=good_server.id)
-
-        def fake_sample(insts, server):
-            if server.id == bad_server.id:
-                raise ValueError('boom')
-
-        with patch.object(type(self.Instance), '_sample_live_metrics_for_host',
-                           fake_sample):
-            n = self.Instance._cron_record_metrics()
-        self.assertEqual(n, 1)
-        rows = self.env['saas.instance.metric'].sudo().search(
-            [('instance_id', '=', good_inst.id)])
-        self.assertEqual(len(rows), 1)

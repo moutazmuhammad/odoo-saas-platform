@@ -1,6 +1,6 @@
 {
     'name': 'SaaS Instance Manager',
-    'version': '18.0.52.0.0',
+    'version': '18.0.53.0.0',
     'category': 'SaaS',
     'summary': 'Provision and manage multi-tenant Odoo instances with Docker containers',
     'description': """
@@ -41,7 +41,6 @@ Key capabilities:
         'data/saas_usage_refresh_cron.xml',
         'data/saas_trial_expiry_cron.xml',
         'data/saas_recurring_billing_cron.xml',
-        'data/saas_metrics_cron.xml',
         'data/saas_pending_provision_cron.xml',
         'data/saas_job_cron.xml',
         'data/saas_region_data.xml',

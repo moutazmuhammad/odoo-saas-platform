@@ -467,6 +467,7 @@ export interface MetricsHistory {
   hours: number;
   bucket_seconds: number;
   retention_days: number;
+  available: boolean;
   plan: { cpu_limit: number; ram_limit: string; storage_limit_gb: number };
   samples: MetricSample[];
 }
@@ -605,7 +606,7 @@ export const api = {
     rpc<ApiInstance>(`/saas/api/v1/instances/${id}`, accessToken ? { access_token: accessToken } : {}),
   instanceStatus: (id: number) => rpc<StatusData>(`/saas/api/v1/instances/${id}/status`),
   instanceMetrics: (id: number, accessToken?: string) =>
-    rpc<{ cpu: number; ram: number; at: string }>(
+    rpc<{ cpu: number; ram: number; at: string; available: boolean }>(
       `/saas/api/v1/instances/${id}/metrics`,
       accessToken ? { access_token: accessToken } : {},
     ),

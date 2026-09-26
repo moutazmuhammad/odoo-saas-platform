@@ -486,6 +486,84 @@ class TestKubernetesDriver(TransactionCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.stdout, 'ok\n')
 
+    # -------- usage metrics (Prometheus + in-pod storage) -----------------
+    def _prom_driver(self, *responses):
+        """Driver whose Prometheus proxy calls return ``responses`` in order
+        (each a vector/matrix ``result``)."""
+        import json
+        driver, server = _make_driver()
+        region = server.region_id.sudo.return_value
+        region.prometheus_namespace = 'monitoring'
+        region.prometheus_service = 'prometheus-server:80'
+        replies = []
+        for result in responses:
+            reply = MagicMock()
+            reply.data = json.dumps({'status': 'success', 'data': {'result': result}})
+            replies.append(reply)
+        driver._api_client.call_api.side_effect = replies
+        return driver
+
+    def test_prometheus_goes_through_the_api_service_proxy(self):
+        driver = self._prom_driver([])
+        driver.prometheus_query('up')
+        args, kwargs = driver._api_client.call_api.call_args
+        self.assertIn('/services/{service}/proxy/api/v1/query', args[0])
+        self.assertEqual(kwargs['path_params'], {
+            'namespace': 'monitoring', 'service': 'prometheus-server:80'})
+        self.assertIn(('query', 'up'), kwargs['query_params'])
+
+    def test_prometheus_unconfigured_raises_unavailable(self):
+        from odoo.addons.saas_core.drivers.kubernetes_driver import PrometheusUnavailable
+        driver, server = _make_driver()
+        server.region_id.sudo.return_value.prometheus_namespace = ''
+        with self.assertRaises(PrometheusUnavailable):
+            driver.prometheus_query('up')
+        driver._api_client.call_api.assert_not_called()
+
+    def test_prometheus_api_error_raises_unavailable(self):
+        from odoo.addons.saas_core.drivers.kubernetes_driver import PrometheusUnavailable
+        driver = self._prom_driver()
+        driver._api_client.call_api.side_effect = ApiException(status=503)
+        with self.assertRaises(PrometheusUnavailable):
+            driver.prometheus_query('up')
+
+    def test_usage_by_tenant_maps_namespaces_to_cr_names(self):
+        driver = self._prom_driver(
+            [{'metric': {'namespace': 'odoo-tenant-odoo-acme'}, 'value': [1, '0.25']},
+             {'metric': {'namespace': 'kube-system'}, 'value': [1, '9']}],
+            [{'metric': {'namespace': 'odoo-tenant-odoo-acme'}, 'value': [1, '1048576']}],
+        )
+        self.assertEqual(driver.usage_by_tenant(), {
+            'odoo-acme': {'cpu_cores': 0.25, 'mem_bytes': 1048576.0}})
+        cpu_query = dict(driver._api_client.call_api.call_args_list[0][1]
+                         ['query_params'])['query']
+        # Web pods of the Odoo container only — not cron/Job pods.
+        self.assertIn('container="odoo"', cpu_query)
+        self.assertIn('pod!~"odoo-(cron|init|update|restore)-.+"', cpu_query)
+
+    def test_usage_by_tenant_scoped_to_one_handle(self):
+        driver = self._prom_driver([], [])
+        driver.usage_by_tenant(_handle())
+        cpu_query = dict(driver._api_client.call_api.call_args_list[0][1]
+                         ['query_params'])['query']
+        self.assertIn('namespace=~"odoo-tenant-odoo-acme"', cpu_query)
+
+    def test_measure_storage_parses_exec_output(self):
+        from odoo.addons.saas_core.drivers.base import ExecResult
+        driver, _server = _make_driver()
+        driver.exec = MagicMock(return_value=ExecResult(
+            rc=0, stdout='filestore_bytes=123\ndb_bytes=456\n', stderr=''))
+        self.assertEqual(driver.measure_storage(_handle()),
+                         {'filestore_bytes': 123, 'db_bytes': 456})
+
+    def test_measure_storage_raises_on_failure(self):
+        from odoo.addons.saas_core.drivers.base import ExecResult
+        driver, _server = _make_driver()
+        driver.exec = MagicMock(return_value=ExecResult(
+            rc=1, stdout='filestore_bytes=123\n', stderr='psql: connection refused'))
+        with self.assertRaises(RuntimeError):
+            driver.measure_storage(_handle())
+
     # -------- the SEAM: _compute_driver() resolves to KubernetesDriver -----
     def test_compute_driver_selected_by_server_type(self):
         # Kubernetes is the only compute backend left (ssh_docker removed);

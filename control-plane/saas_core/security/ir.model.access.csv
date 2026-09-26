@@ -33,8 +33,6 @@ access_saas_build_user,saas.build user,model_saas_build,saas_core.group_saas_use
 access_saas_build_manager,saas.build manager,model_saas_build,saas_core.group_saas_manager,1,1,1,1
 access_saas_instance_container_user,saas.instance.container user,model_saas_instance_container,saas_core.group_saas_user,1,0,0,0
 access_saas_instance_container_manager,saas.instance.container manager,model_saas_instance_container,saas_core.group_saas_manager,1,1,1,1
-access_saas_instance_metric_user,saas.instance.metric user,model_saas_instance_metric,saas_core.group_saas_user,1,0,0,0
-access_saas_instance_metric_manager,saas.instance.metric manager,model_saas_instance_metric,saas_core.group_saas_manager,1,1,1,1
 access_saas_rate_limit_manager,saas.rate.limit manager,model_saas_rate_limit,saas_core.group_saas_manager,1,1,1,1
 access_saas_audit_log_manager,saas.audit.log manager,model_saas_audit_log,saas_core.group_saas_manager,1,0,0,0
 access_saas_job_manager,saas.job manager,model_saas_job,saas_core.group_saas_manager,1,1,0,0

@@ -11,19 +11,4 @@
         <field name="active">True</field>
     </record>
 
-    <!-- Live metrics sampler. Runs every minute; each run loops ~50s
-         sampling only instances a customer is currently watching (one
-         docker-stats call per host), then exits. A pg advisory lock keeps
-         a single sampler across all workers. Decouples measurement from
-         viewing so cost scales with watchers, not the fleet. -->
-    <record id="ir_cron_saas_sample_live_metrics" model="ir.cron">
-        <field name="name">SaaS: Sample Live Metrics (watched instances)</field>
-        <field name="model_id" ref="model_saas_instance"/>
-        <field name="state">code</field>
-        <field name="code">model._cron_sample_live_metrics()</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">minutes</field>
-        <field name="active">True</field>
-    </record>
-
 </odoo>

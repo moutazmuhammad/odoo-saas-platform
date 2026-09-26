@@ -744,21 +744,19 @@ class SaasApi(http.Controller):
     @http.route('/saas/api/v1/instances/<int:instance_id>/metrics',
                 type='json', auth='public')
     def instance_metrics(self, instance_id, access_token=None):
-        """Cheap, real-time-ish CPU/RAM read for the dashboard.
-
-        Returns the cached live sample (no SSH, no worker held) and marks
-        the instance as "watched" so the background sampler measures it.
-        Poll this every few seconds while viewing an instance."""
+        """Live CPU/RAM (% of plan) for the dashboard, read from the
+        region's Prometheus (cached a few seconds per instance, so polling
+        every few seconds from many tabs costs one query)."""
         try:
             instance = self._instance(instance_id, access_token)
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
-        instance.sudo()._touch_metrics_watch()
+        live = instance.sudo()._get_live_metrics()
         return ok({
-            'cpu': round(instance.cpu_usage_pct or 0.0),
-            'ram': round(instance.ram_usage_pct or 0.0),
-            'at': fields.Datetime.to_string(instance.usage_last_updated)
-                  if instance.usage_last_updated else '',
+            'cpu': round(live['cpu']),
+            'ram': round(live['ram']),
+            'at': live['at'],
+            'available': live['available'],
         })
 
     @http.route('/saas/api/v1/instances/<int:instance_id>/metrics/history',
@@ -766,8 +764,9 @@ class SaasApi(http.Controller):
     def instance_metrics_history(self, instance_id, access_token=None, range=None):
         """Odoo.sh-style performance HISTORY for the customer's own instance:
         a downsampled CPU/RAM/storage time-series over the requested window
-        (default 24h, up to the 14-day retention). Tenant-isolated via
-        ``self._instance`` (only the authenticated owner's instance resolves)."""
+        (default 24h, up to 14 days), queried from the region's Prometheus.
+        Tenant-isolated via ``self._instance`` (only the authenticated
+        owner's instance resolves)."""
         try:
             instance = self._instance(instance_id, access_token)
         except (AccessError, MissingError):

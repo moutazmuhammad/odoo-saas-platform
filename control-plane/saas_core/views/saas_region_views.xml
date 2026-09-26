@@ -75,6 +75,10 @@
                         <field name="builder_image"/>
                         <field name="git_image"/>
                     </group>
+                    <group string="Monitoring (Prometheus)">
+                        <field name="prometheus_namespace" placeholder="e.g. monitoring"/>
+                        <field name="prometheus_service" placeholder="e.g. prometheus-server:80"/>
+                    </group>
                     <field name="server_ids" string="Compute" readonly="1">
                         <list>
                             <field name="name"/>

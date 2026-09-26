@@ -1,0 +1,44 @@
+# Values for the vendored prometheus-community/prometheus chart
+# (compute/charts/vendor/prometheus). Lightweight per-cluster metrics:
+# Prometheus server + kube-state-metrics; tenant CPU/RAM come from each
+# node's kubelet (cAdvisor), PVC usage from kubelet volume stats where the
+# CSI driver reports them.
+#
+# The control plane reads it through the Kubernetes API service proxy with
+# the region's kubeconfig, so the server is never exposed outside the
+# cluster. Region > Monitoring must match the namespace/service below.
+#
+#   helm upgrade --install prometheus compute/charts/vendor/prometheus \
+#     -n monitoring --create-namespace \
+#     -f compute/charts/monitoring/prometheus-values.yaml
+
+server:
+  fullnameOverride: prometheus-server
+  global:
+    scrape_interval: 30s
+    evaluation_interval: 30s
+  retention: 15d
+  retentionSize: 6GB
+  persistentVolume:
+    size: 8Gi
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+
+# The live dashboard polls every few seconds; sample tenant containers
+# more often than the rest.
+scrapeConfigs:
+  kubernetes-nodes-cadvisor:
+    scrape_interval: 15s
+
+alertmanager:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false
+prometheus-node-exporter:
+  enabled: false
+kube-state-metrics:
+  enabled: true
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
+    limits: {memory: 128Mi}

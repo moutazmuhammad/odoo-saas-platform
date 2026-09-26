@@ -106,9 +106,8 @@ export default function InstanceDetail() {
     { interval: _fast ? 4000 : 10000, enabled: _pollStatus }
   );
 
-  // Near-real-time CPU/RAM by polling the cheap cached endpoint (which
-  // also marks the instance "watched" so the backend sampler measures
-  // it). No SSH per viewer — measurement is decoupled from viewing.
+  // Near-real-time CPU/RAM from the region's Prometheus (the endpoint
+  // caches each reading a few seconds, so viewers don't add load).
   const running = instance?.state === "running";
   React.useEffect(() => {
     if (!running) setLive(null);
@@ -117,6 +116,7 @@ export default function InstanceDetail() {
   usePolling(
     async () => {
       const m = await api.instanceMetrics(instanceId, _liveToken);
+      if (!m.available) return setLive(null);
       setLive({ cpu: m.cpu, ram: m.ram });
       setCpuHist((h) => [...h.slice(-39), m.cpu]);
       setRamHist((h) => [...h.slice(-39), m.ram]);

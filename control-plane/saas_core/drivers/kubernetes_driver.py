@@ -185,6 +185,39 @@ class K8sExecStdoutReader:
 
 _logger = logging.getLogger(__name__)
 
+
+class PrometheusUnavailable(RuntimeError):
+    """The region has no reachable Prometheus (not configured, not
+    installed, or the query failed). Callers degrade: CPU/RAM usage and
+    history are simply unavailable."""
+
+
+_PROMETHEUS_TIMEOUT = 10        # secs per Prometheus HTTP call
+_PROMETHEUS_RATE_WINDOW = '1m'  # >= 4x the cAdvisor scrape interval (15s)
+
+# Run inside the web pod: filestore size + every database the tenant's
+# role owns (odoo.conf is rendered at pod start with the real credentials;
+# the image ships python3 + psycopg2).
+_MEASURE_STORAGE_CMD = r'''
+set -e
+echo "filestore_bytes=$(du -sb /var/lib/odoo | cut -f1)"
+python3 - <<'PY'
+import configparser, psycopg2
+c = configparser.ConfigParser()
+c.read('/etc/odoo/odoo.conf')
+o = c['options']
+conn = psycopg2.connect(
+    host=o.get('db_host'), port=int(o.get('db_port') or 5432),
+    user=o.get('db_user'), password=o.get('db_password'),
+    dbname=o.get('db_name'), connect_timeout=10)
+cur = conn.cursor()
+cur.execute("""SELECT coalesce(sum(pg_database_size(d.datname)), 0)
+               FROM pg_database d JOIN pg_roles r ON r.oid = d.datdba
+               WHERE r.rolname = current_user""")
+print('db_bytes=%d' % cur.fetchone()[0])
+PY
+'''
+
 # Mirrors compute/operator/api/v1alpha1/constants.go + groupversion_info.go.
 _GROUP = 'saas.odoo.example.com'
 _VERSION = 'v1alpha1'
@@ -699,6 +732,119 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 raise RuntimeError(
                     'rolling restart of %s/%s failed: %s'
                     % (namespace, dep.metadata.name, e)) from e
+
+    # -- usage metrics (Prometheus + in-pod storage measurement) --------------
+    def _prometheus_get(self, path, params):
+        """GET ``/api/v1/<path>`` on the region's Prometheus through the
+        Kubernetes API service proxy (the region kubeconfig is the only
+        credential; Prometheus stays cluster-internal). Returns the
+        response's ``data`` member. Raises ``PrometheusUnavailable`` when
+        the region has no Prometheus configured or it can't be reached."""
+        region = self.server.region_id
+        namespace = (region.sudo().prometheus_namespace or '').strip() if region else ''
+        service = (region.sudo().prometheus_service or '').strip() if region else ''
+        if not namespace or not service:
+            raise PrometheusUnavailable(
+                'no Prometheus configured for region %s'
+                % (region.name if region else 'none'))
+        try:
+            resp = self._client().call_api(
+                '/api/v1/namespaces/{namespace}/services/{service}/proxy/api/v1/' + path,
+                'GET', path_params={'namespace': namespace, 'service': service},
+                query_params=list(params.items()), auth_settings=['BearerToken'],
+                _preload_content=False, _request_timeout=_PROMETHEUS_TIMEOUT)
+            body = json.loads(resp.data)
+        except (ApiException, ValueError) as e:
+            raise PrometheusUnavailable('Prometheus query failed: %s' % e) from e
+        except Exception as e:  # connection errors/timeouts (urllib3)
+            raise PrometheusUnavailable('Prometheus unreachable: %s' % e) from e
+        if body.get('status') != 'success':
+            raise PrometheusUnavailable(
+                'Prometheus error: %s' % (body.get('error') or body))
+        return body['data']
+
+    def prometheus_query(self, promql: str) -> list:
+        """Instant query; the ``result`` vector."""
+        return self._prometheus_get('query', {'query': promql})['result']
+
+    def prometheus_query_range(self, promql: str, start: float, end: float,
+                               step: int) -> list:
+        """Range query (unix-second bounds); the ``result`` matrix."""
+        return self._prometheus_get('query_range', {
+            'query': promql, 'start': '%.3f' % start, 'end': '%.3f' % end,
+            'step': str(int(step))})['result']
+
+    @staticmethod
+    def _odoo_container_selector(namespace_regex: str) -> str:
+        # cAdvisor series of the serving Odoo containers only: web pods
+        # (Deployment "odoo") — not the cron Deployment or the init/update/
+        # restore Job pods, which share the container name.
+        return ('namespace=~"%s",container="%s",pod=~"odoo-.+",'
+                'pod!~"odoo-(cron|init|update|restore)-.+"'
+                % (namespace_regex, _CONTAINER_NAME))
+
+    def _usage_promql(self, namespace_regex):
+        sel = self._odoo_container_selector(namespace_regex)
+        # Per-pod average, so a tenant with N replicas (or a rollout's surge
+        # pod) is compared against the per-pod plan limit.
+        cpu = ('avg by (namespace) (rate(container_cpu_usage_seconds_total{%s}[%s]))'
+               % (sel, _PROMETHEUS_RATE_WINDOW))
+        mem = 'avg by (namespace) (container_memory_working_set_bytes{%s})' % sel
+        return cpu, mem
+
+    def usage_by_tenant(self, handle: Optional[ComputeHandle] = None) -> dict:
+        """Current CPU (cores) and RAM (working-set bytes) per pod for
+        every tenant on this cluster — or only ``handle``'s — in two
+        queries: ``{cr_name: {'cpu_cores': float, 'mem_bytes': float}}``.
+        Tenants without running web pods are absent."""
+        # Namespace names are [a-z0-9-] only: safe as a literal regex.
+        ns_re = (handle.instance_path or self._namespace_for(handle)) if handle \
+            else _NAMESPACE_PREFIX + '.+'
+        cpu_q, mem_q = self._usage_promql(ns_re)
+        out = {}
+        for key, promql in (('cpu_cores', cpu_q), ('mem_bytes', mem_q)):
+            for row in self.prometheus_query(promql):
+                ns = row['metric'].get('namespace', '')
+                if not ns.startswith(_NAMESPACE_PREFIX):
+                    continue
+                cr_name = ns[len(_NAMESPACE_PREFIX):]
+                out.setdefault(cr_name, {})[key] = float(row['value'][1])
+        return out
+
+    def usage_history(self, handle: ComputeHandle, start: float, end: float,
+                      step: int) -> dict:
+        """Time series for one tenant: ``{'cpu_cores': [(ts, v)],
+        'mem_bytes': [...], 'volume_bytes': [...]}``. ``volume_bytes``
+        (the tenant's PVCs, from kubelet volume stats) is empty when the
+        storage driver doesn't report them (e.g. hostpath)."""
+        namespace = handle.instance_path or self._namespace_for(handle)
+        cpu_q, mem_q = self._usage_promql(namespace)
+        vol_q = 'sum(kubelet_volume_stats_used_bytes{namespace="%s"})' % namespace
+        out = {}
+        for key, promql in (('cpu_cores', cpu_q), ('mem_bytes', mem_q),
+                            ('volume_bytes', vol_q)):
+            series = self.prometheus_query_range(promql, start, end, step)
+            out[key] = [(float(t), float(v)) for t, v in
+                        (series[0]['values'] if series else [])]
+        return out
+
+    def measure_storage(self, handle: ComputeHandle) -> dict:
+        """Filestore and database size, measured inside the web pod:
+        ``{'filestore_bytes': int, 'db_bytes': int}``. The database figure
+        sums every database the tenant's role owns (hosting instances can
+        have several). Raises ``RuntimeError`` when it can't be measured."""
+        res = self.exec(handle, _MEASURE_STORAGE_CMD, timeout=120)
+        values = {}
+        for line in (res.stdout or '').splitlines():
+            key, _sep, val = line.partition('=')
+            if key in ('filestore_bytes', 'db_bytes') and val.strip().isdigit():
+                values[key] = int(val.strip())
+        if res.rc != 0 or len(values) != 2:
+            raise RuntimeError(
+                'storage measurement failed for %s (rc=%s): %s' % (
+                    self._cr_name(handle), res.rc,
+                    (res.stderr or res.stdout or '').strip()[-500:]))
+        return values
 
     def _resolve_pod(self, handle: ComputeHandle):
         """Return (namespace, pod) for handle's workload, or (namespace,

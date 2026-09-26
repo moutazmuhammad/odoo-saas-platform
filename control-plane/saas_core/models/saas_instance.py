@@ -52,19 +52,17 @@ DB_USER_RE = re.compile(r'^[a-z_][a-z0-9_]*$')
 
 
 # ----------------------------------------------------------------------
-# Live metrics sampling — measurement is decoupled from viewing so it
-# scales with the number of *watched instances*, not the number of
-# viewers. The portal polls a cheap cached endpoint (which marks the
-# instance "watched"); a single advisory-locked sampler measures watched
-# instances every few seconds, ONE ssh/`docker stats` per host.
+# Usage metrics come from each region's Prometheus (CPU/RAM) and an
+# in-pod measurement (storage). The dashboard's live poll is cached per
+# instance so many viewers cost one query; history is queried from
+# Prometheus directly (its retention covers METRIC_RETENTION_DAYS).
 # ----------------------------------------------------------------------
-LIVE_METRICS_WATCH_TTL = 25          # secs a poll keeps an instance "watched"
-LIVE_METRICS_SAMPLE_INTERVAL = 5     # secs between sampler ticks
-LIVE_METRICS_SAMPLER_MAX_RUN = 50    # secs a single cron run loops before exiting
-LIVE_METRICS_SEED_STALE = 10         # secs of staleness before a poll seeds a sample
-_LIVE_METRICS_LOCK_KEY = 738291014   # pg advisory lock id (single sampler cluster-wide)
-_LIVE_SAMPLE_SEED_AT = {}            # instance_id -> monotonic ts of last seed spawn
-_LIVE_SAMPLE_SEED_GUARD = threading.Lock()
+LIVE_METRICS_CACHE_TTL = 5           # secs a live CPU/RAM reading is reused
+METRIC_RETENTION_DAYS = 14           # longest history window offered
+_USAGE_REFRESH_BATCH = 100           # tenants per usage-refresh cron run
+_USAGE_MAX_STORAGE_FAILURES = 3      # consecutive failures before skipping a server
+_LIVE_METRICS_CACHE = {}             # instance_id -> (monotonic ts, payload)
+_LIVE_METRICS_GUARD = threading.Lock()
 
 # Host-side flock file used to serialise nginx vhost mutations on a proxy.
 # Every write/reload/remove on a given proxy host grabs this lock so
@@ -693,15 +691,6 @@ class SaasInstance(models.Model):
         string='Usage Last Updated',
         readonly=True,
         help='Last time resource usage statistics were refreshed.',
-    )
-    metrics_watch_until = fields.Datetime(
-        string='Live Metrics Watched Until',
-        readonly=True,
-        copy=False,
-        help='Bumped each time the portal polls live metrics for this '
-             'instance. The live-metrics sampler only measures instances '
-             'watched within this window, so cost scales with viewers '
-             'present, not with the whole fleet.',
     )
 
     # ========== Operations ==========
@@ -3716,60 +3705,6 @@ class SaasInstance(models.Model):
         else:
             return '%.2f GB' % (size_bytes / 1024.0 ** 3)
 
-    def action_refresh_usage(self):
-        """Fetch CPU, RAM, disk, and database size for this instance.
-
-        TODO(k8s-metrics-replacement): the only implementation of this was
-        ssh_docker's ``_refresh_usage_with_ssh`` (docker stats + psql over
-        SSH), now removed along with that backend. There is no Kubernetes-
-        native usage measurement yet (metrics.k8s.io / a cloud-agnostic
-        metrics-server, cloud-agnostically) — until that lands, this is a
-        no-op. Not this run's job to replace (see removal plan Phase 5).
-        """
-        return True
-
-    def _safe_refresh_usage(self):
-        """Refresh resource usage, silently ignoring errors.
-
-        TODO(k8s-metrics-replacement): no-op for the same reason as
-        ``action_refresh_usage`` — kept as a no-op (not raising) since
-        call sites treat a failure here as non-fatal by design.
-        """
-        return
-
-    def _strict_refresh_usage(self):
-        """Refresh usage, raising if it cannot be measured.
-
-        Use this from places (downgrade gate, billing) where acting on
-        stale or zero data could let a customer move to a plan that
-        cannot accommodate them.
-
-        TODO(k8s-metrics-replacement): there is currently no Kubernetes-
-        native way to measure usage (see ``action_refresh_usage``) — so,
-        matching the "refuse rather than guess" philosophy this method
-        exists for, it deliberately RAISES until a real implementation
-        lands (Phase 5), instead of silently skipping the measurement and
-        letting a downgrade through on stale/zero data.
-        """
-        self.ensure_one()
-        raise UserError(_(
-            "Current usage cannot be measured yet for Kubernetes-backed "
-            "instances (this platform's usage-refresh mechanism was tied "
-            "to the now-removed Docker-over-SSH backend and has not been "
-            "re-implemented for Kubernetes yet)."
-        ))
-
-    @api.model
-    def _cron_refresh_usage(self):
-        """Cron: refresh resource usage for all running instances.
-
-        TODO(k8s-metrics-replacement): no-op for the same reason as
-        ``action_refresh_usage`` — the ssh_docker batched-refresh
-        implementation this cron used is gone and has no Kubernetes
-        equivalent yet.
-        """
-        return
-
     # Pending-provision retry tuning.
     _PENDING_MAX_WAIT_HOURS = 24
     _PENDING_BACKOFF_BASE_MIN = 5
@@ -4108,206 +4043,216 @@ class SaasInstance(models.Model):
         return int(size_mb * 1024 * 1024)
 
     # ------------------------------------------------------------------
-    # Live metrics: cheap-poll heartbeat + decoupled, batched sampler
+    # Usage metrics: CPU/RAM from the region's Prometheus, storage
+    # measured inside the web pod (see KubernetesDriver.usage_by_tenant /
+    # measure_storage / usage_history)
     # ------------------------------------------------------------------
-    def _touch_metrics_watch(self):
-        """Mark this instance as actively watched (called from the cheap
-        poll endpoint) and, if the cached sample is stale, kick a one-off
-        background measurement so the first paint is live without waiting
-        for the next sampler tick."""
-        self.ensure_one()
-        now = fields.Datetime.now()
-        # Extend the watch window, but only write when it would actually
-        # change meaningfully — dedups writes across many concurrent
-        # viewers polling the same instance.
-        cur = self.metrics_watch_until
-        if not cur or cur < now + datetime.timedelta(
-            seconds=LIVE_METRICS_WATCH_TTL - 10,
-        ):
-            self.sudo().metrics_watch_until = now + datetime.timedelta(
-                seconds=LIVE_METRICS_WATCH_TTL,
-            )
-        if self.state != 'running' or not self.docker_server_id:
-            return
-        last = self.usage_last_updated
-        stale = (not last) or (now - last).total_seconds() > LIVE_METRICS_SEED_STALE
-        if stale:
-            self._maybe_seed_live_sample()
+    def _usage_targets(self):
+        """The records usage can be measured for: running, on Kubernetes."""
+        return self.filtered(
+            lambda r: r.state == 'running'
+            and r.docker_server_id.compute_driver == 'kubernetes')
 
-    def _maybe_seed_live_sample(self):
-        """Spawn at most one background sample per instance per ~8s (per
-        worker process) to cover the sampler's cold-start gap."""
+    def _plan_limits(self):
+        """(cpu cores, RAM bytes, storage bytes) the plan allows per pod /
+        in total; 0 = no limit set."""
         self.ensure_one()
-        with _LIVE_SAMPLE_SEED_GUARD:
-            mono = time.monotonic()
-            if mono - _LIVE_SAMPLE_SEED_AT.get(self.id, 0.0) < 8:
-                return
-            _LIVE_SAMPLE_SEED_AT[self.id] = mono
-        run_in_background(
-            self.sudo(), '_sample_live_metrics_once',
-            thread_name='saas_live_seed_%s' % self.id,
+        plan = self.plan_id
+        return (
+            (plan.cpu_limit or 0.0) if plan else 0.0,
+            self._parse_ram_string(plan.ram_limit) if plan else 0,
+            (self.effective_storage_limit_gb or 0.0) * 1024 ** 3,
         )
 
-    def _sample_live_metrics_once(self):
-        """Background one-shot live sample for a single instance."""
-        self.ensure_one()
-        if not self.docker_server_id:
-            return
-        try:
-            self._sample_live_metrics_for_host(self.docker_server_id.sudo())
-            self.env.cr.commit()
-        except Exception:
-            _logger.warning(
-                "One-shot live metrics sample failed for %s", self.subdomain,
-            )
+    @staticmethod
+    def _pct(value, limit):
+        return round(value / limit * 100.0, 1) if limit else 0.0
 
-    def _sample_live_metrics_for_host(self, server):
-        """Measure CPU/RAM for ALL instances in ``self`` (which must share
-        ``server``) in a SINGLE batched call, and write the plan-relative
-        percentages onto each record.
+    def _cpu_ram_vals(self, cpu_cores, mem_bytes):
+        cpu_limit, ram_limit, _storage = self._plan_limits()
+        cpu_pct = self._pct(cpu_cores, cpu_limit)
+        ram_pct = self._pct(mem_bytes, ram_limit)
+        ram = self._format_bytes(mem_bytes)
+        return {
+            'cpu_usage': '%.1f%%' % cpu_pct,
+            'cpu_usage_pct': cpu_pct,
+            'ram_usage': ('%s / %s' % (ram, self._format_bytes(ram_limit))
+                          if ram_limit else ram),
+            'ram_percent': '%.1f%%' % ram_pct,
+            'ram_usage_pct': ram_pct,
+        }
 
-        TODO(k8s-metrics-replacement): this was a single ``docker stats``
-        call over SSH covering every watched container on the host in one
-        round-trip (the ssh_docker cost-scaling core). That driver is gone
-        and ``KubernetesDriver`` has no equivalent batched-stats call yet
-        (a real replacement would read the metrics.k8s.io API / a
-        metrics-server, cloud-agnostically) — until that lands, this is a
-        no-op: live CPU/RAM sampling simply doesn't update, rather than
-        crashing on the deleted ssh_docker_driver import. Not this run's
-        job to replace (see removal plan Phase 5).
-        """
-        return
+    def _storage_vals(self, filestore_bytes, db_bytes):
+        total = filestore_bytes + db_bytes
+        return {
+            'disk_usage': self._format_bytes(filestore_bytes),
+            'db_size': self._format_bytes(db_bytes),
+            'total_storage': self._format_bytes(total),
+            'total_storage_bytes': float(total),
+            'storage_usage_pct': self._pct(total, self._plan_limits()[2]),
+        }
 
-    @api.model
-    def _cron_sample_live_metrics(self):
-        """Continuously sample watched instances for ~50s, then exit (the
-        1-minute cron re-enters). A Postgres advisory lock guarantees a
-        single sampler across all workers/processes. Exits immediately
-        when nobody is watching, so idle cost is ~zero."""
-        self.env.cr.execute(
-            "SELECT pg_try_advisory_lock(%s)", [_LIVE_METRICS_LOCK_KEY],
-        )
-        if not self.env.cr.fetchone()[0]:
-            return  # another sampler already running
-        try:
-            start = time.monotonic()
-            while time.monotonic() - start < LIVE_METRICS_SAMPLER_MAX_RUN:
-                now = fields.Datetime.now()
-                watched = self.search([
-                    ('state', '=', 'running'),
-                    ('metrics_watch_until', '>', now),
-                    ('docker_server_id', '!=', False),
-                ])
-                if not watched:
-                    break
-                by_host = {}
-                for inst in watched:
-                    by_host.setdefault(inst.docker_server_id, self.browse())
-                    by_host[inst.docker_server_id] |= inst
-                for server, insts in by_host.items():
-                    try:
-                        insts._sample_live_metrics_for_host(server.sudo())
-                    except Exception:
-                        _logger.warning(
-                            "Live metrics sampling failed on host %s",
-                            server.id,
-                        )
-                # Commit each tick so the cheap poll endpoint (separate
-                # transaction) sees fresh values immediately.
-                self.env.cr.commit()
-                time.sleep(LIVE_METRICS_SAMPLE_INTERVAL)
-        finally:
-            self.env.cr.execute(
-                "SELECT pg_advisory_unlock(%s)", [_LIVE_METRICS_LOCK_KEY],
-            )
-
-    # ===== Per-customer metrics history (Odoo.sh-style, 14-day retention) =====
-    @api.model
-    def _cron_record_metrics(self):
-        """Persist a performance sample for every running tenant (CPU/RAM/storage)
-        into ``saas.instance.metric`` for the customer dashboard.
-
-        Cheap + cost-scaling: ONE `docker stats` per host (reuses
-        ``_sample_live_metrics_for_host``, which refreshes cpu/ram via the
-        ComputeDriver), regardless of how many people are looking. Runs on a
-        steady 5-minute cron so history exists even when nobody is watching live.
-        Storage uses the latest value from the 10-min usage refresh (slow-moving).
-        """
-        instances = self.search([
-            ('state', '=', 'running'), ('docker_server_id', '!=', False)])
-        if not instances:
-            return 0
-        by_host = {}
-        for inst in instances:
-            by_host.setdefault(inst.docker_server_id, self.browse())
-            by_host[inst.docker_server_id] |= inst
-        now = fields.Datetime.now()
-        Metric = self.env['saas.instance.metric'].sudo()
-        rows = []
-        for server, insts in by_host.items():
+    def _refresh_usage(self, strict=False):
+        """Measure and store usage for the running Kubernetes records in
+        ``self``: CPU/RAM for every tenant of a server in one Prometheus
+        round-trip (best effort — a region may have no Prometheus), storage
+        per tenant inside its web pod. ``strict`` re-raises a failed storage
+        measurement instead of logging it; each record is committed by the
+        caller."""
+        from ..drivers.kubernetes_driver import PrometheusUnavailable
+        by_server = {}
+        for inst in self._usage_targets():
+            by_server.setdefault(inst.docker_server_id, self.browse())
+            by_server[inst.docker_server_id] |= inst
+        for insts in by_server.values():
+            driver = insts[0]._compute_driver()
             try:
-                insts._sample_live_metrics_for_host(server.sudo())
-            except Exception:
-                _logger.warning("metrics: host-batch sample failed on %s", server.id)
-                continue
+                usage = driver.usage_by_tenant()
+            except PrometheusUnavailable as e:
+                _logger.info("usage: CPU/RAM unavailable for %s: %s",
+                             insts[0].docker_server_id.name, e)
+                usage = None
+            failures = 0
             for inst in insts:
-                rows.append({
-                    'instance_id': inst.id, 'ts': now,
-                    'cpu_pct': inst.cpu_usage_pct or 0.0,
-                    'ram_pct': inst.ram_usage_pct or 0.0,
-                    'storage_mb': round((inst.total_storage_bytes or 0.0) / (1024 ** 2), 2),
-                    'storage_pct': inst.storage_usage_pct or 0.0,
-                })
-        if rows:
-            Metric.create(rows)
-            self.env.cr.commit()
-        return len(rows)
+                handle = inst._compute_handle()
+                vals = {'usage_last_updated': fields.Datetime.now()}
+                if usage is not None:
+                    u = usage.get(driver._cr_name(handle), {})
+                    vals.update(inst._cpu_ram_vals(
+                        u.get('cpu_cores', 0.0), u.get('mem_bytes', 0.0)))
+                if failures < _USAGE_MAX_STORAGE_FAILURES:
+                    try:
+                        vals.update(inst._storage_vals(**driver.measure_storage(handle)))
+                        failures = 0
+                    except Exception as e:
+                        if strict:
+                            raise
+                        failures += 1
+                        _logger.warning("usage: storage measurement failed for %s: %s",
+                                        inst.subdomain, e)
+                        if failures == _USAGE_MAX_STORAGE_FAILURES:
+                            # Likely the cluster itself is unreachable: don't
+                            # pay a timeout per remaining tenant this run.
+                            _logger.warning(
+                                "usage: skipping storage for the rest of %s this run",
+                                inst.docker_server_id.name)
+                inst.write(vals)
+
+    def action_refresh_usage(self):
+        """Fetch CPU, RAM, filestore and database size for these instances."""
+        self._refresh_usage()
+        return True
+
+    def _safe_refresh_usage(self):
+        """Refresh resource usage, silently ignoring errors."""
+        try:
+            self._refresh_usage()
+        except Exception:
+            _logger.warning("usage refresh failed for %s", self.mapped('subdomain'),
+                            exc_info=True)
+
+    def _strict_refresh_usage(self):
+        """Refresh usage, raising if storage cannot be measured.
+
+        Use this from places (downgrade gate, billing) where acting on
+        stale or zero data could let a customer move to a plan that
+        cannot accommodate them. CPU/RAM stay best effort: nothing gates
+        on them."""
+        self.ensure_one()
+        if not self._usage_targets():
+            raise UserError(_(
+                "Usage can only be measured while the instance is running."))
+        self._refresh_usage(strict=True)
 
     @api.model
-    def _cron_prune_metrics(self):
-        """Enforce the retention window: drop samples older than 14 days."""
-        from .saas_instance_metric import METRIC_RETENTION_DAYS
-        self.env.cr.execute(
-            "DELETE FROM saas_instance_metric WHERE ts < (now() at time zone 'UTC') "
-            "- (%s || ' days')::interval", [METRIC_RETENTION_DAYS])
-        return self.env.cr.rowcount
+    def _cron_refresh_usage(self):
+        """Cron: refresh stored usage for running instances, least recently
+        measured first (storage is one pod exec per tenant, so a run is
+        bounded; the rest follow on the next run)."""
+        instances = self.search([
+            ('state', '=', 'running'),
+            ('docker_server_id.compute_driver', '=', 'kubernetes'),
+        ], order='usage_last_updated asc nulls first, id',
+            limit=_USAGE_REFRESH_BATCH)
+        instances._refresh_usage()
+        return len(instances)
+
+    def _get_live_metrics(self):
+        """Current CPU/RAM (% of plan) for the dashboard's live poll: one
+        instant Prometheus query for this tenant, cached a few seconds per
+        instance so any number of viewers costs one query. Nothing is
+        written. ``{'cpu', 'ram', 'at', 'available'}``."""
+        self.ensure_one()
+        mono = time.monotonic()
+        with _LIVE_METRICS_GUARD:
+            hit = _LIVE_METRICS_CACHE.get(self.id)
+            if hit and mono - hit[0] < LIVE_METRICS_CACHE_TTL:
+                return hit[1]
+        payload = {'cpu': 0.0, 'ram': 0.0, 'at': '', 'available': False}
+        if self._usage_targets():
+            try:
+                driver = self._compute_driver()
+                handle = self._compute_handle()
+                u = driver.usage_by_tenant(handle).get(driver._cr_name(handle), {})
+                vals = self._cpu_ram_vals(
+                    u.get('cpu_cores', 0.0), u.get('mem_bytes', 0.0))
+                payload = {
+                    'cpu': vals['cpu_usage_pct'], 'ram': vals['ram_usage_pct'],
+                    'at': fields.Datetime.to_string(fields.Datetime.now()),
+                    'available': True,
+                }
+            except Exception as e:
+                _logger.info("live metrics unavailable for %s: %s", self.subdomain, e)
+        with _LIVE_METRICS_GUARD:
+            _LIVE_METRICS_CACHE[self.id] = (mono, payload)
+        return payload
 
     def _get_metric_series(self, hours=24, max_points=240):
-        """Return a downsampled metric series for THIS instance over the last
-        ``hours`` hours, averaged into ≤ ``max_points`` time buckets (so a 14-day
-        payload stays small). Shape: {'samples':[{t,cpu,ram,storage,storage_pct}], …}.
-        Tenant isolation is the caller's job (only call for an owned instance)."""
+        """CPU/RAM (% of plan) and storage history for THIS instance over
+        the last ``hours`` hours, from Prometheus, at ≤ ``max_points``
+        points. Storage comes from kubelet PVC stats when the cluster's
+        storage driver reports them, otherwise it's the last measured value
+        (flat). Shape: {'samples': [{t, cpu, ram, storage_mb,
+        storage_pct}], ...}. Tenant isolation is the caller's job (only call
+        for an owned instance)."""
         self.ensure_one()
-        from .saas_instance_metric import METRIC_RETENTION_DAYS
         hours = max(1, min(int(hours or 24), METRIC_RETENTION_DAYS * 24))
-        bucket_s = max(60, int(hours * 3600 / max(1, max_points)))
-        self.env.cr.execute(
-            """
-            SELECT to_timestamp(floor(extract(epoch from ts) / %(b)s) * %(b)s) AT TIME ZONE 'UTC' AS bucket,
-                   round(avg(cpu_pct)::numeric, 1)     AS cpu,
-                   round(avg(ram_pct)::numeric, 1)     AS ram,
-                   round(avg(storage_mb)::numeric, 2)  AS storage_mb,
-                   round(avg(storage_pct)::numeric, 1) AS storage_pct
-            FROM saas_instance_metric
-            WHERE instance_id = %(iid)s
-              AND ts >= (now() at time zone 'UTC') - (%(h)s || ' hours')::interval
-            GROUP BY bucket ORDER BY bucket
-            """,
-            {'b': bucket_s, 'iid': self.id, 'h': hours},
-        )
-        samples = [{
-            't': row[0].isoformat() + 'Z',
-            'cpu': float(row[1] or 0.0),
-            'ram': float(row[2] or 0.0),
-            'storage_mb': float(row[3] or 0.0),
-            'storage_pct': float(row[4] or 0.0),
-        } for row in self.env.cr.fetchall()]
+        step = max(15, int(hours * 3600 / max(1, max_points)))
+        cpu_limit, ram_limit, storage_limit = self._plan_limits()
+        samples = []
+        available = False
+        if self.docker_server_id.compute_driver == 'kubernetes':
+            end = time.time()
+            try:
+                series = self._compute_driver().usage_history(
+                    self._compute_handle(), end - hours * 3600, end, step)
+                available = True
+            except Exception as e:
+                _logger.info("metrics history unavailable for %s: %s",
+                             self.subdomain, e)
+                series = {}
+            cpu = dict(series.get('cpu_cores') or [])
+            ram = dict(series.get('mem_bytes') or [])
+            vol = dict(series.get('volume_bytes') or [])
+            flat_storage = self.total_storage_bytes or 0.0
+            for ts in sorted(set(cpu) | set(ram)):
+                stored = vol.get(ts, flat_storage)
+                samples.append({
+                    't': datetime.datetime.fromtimestamp(
+                        ts, datetime.timezone.utc).replace(tzinfo=None)
+                        .isoformat() + 'Z',
+                    'cpu': self._pct(cpu.get(ts, 0.0), cpu_limit),
+                    'ram': self._pct(ram.get(ts, 0.0), ram_limit),
+                    'storage_mb': round(stored / 1024 ** 2, 2),
+                    'storage_pct': self._pct(stored, storage_limit),
+                })
         plan = self.plan_id
         return {
             'instance': self.subdomain,
             'hours': hours,
-            'bucket_seconds': bucket_s,
+            'bucket_seconds': step,
             'retention_days': METRIC_RETENTION_DAYS,
+            'available': available,
             'plan': {
                 'cpu_limit': plan.cpu_limit if plan else 0,
                 'ram_limit': plan.ram_limit if plan else '',
@@ -4315,28 +4260,6 @@ class SaasInstance(models.Model):
             },
             'samples': samples,
         }
-
-    @staticmethod
-    def _parse_mem_value(mem_str):
-        """Parse docker stats memory value like '152.4MiB' or '1.5GiB' into bytes."""
-        if not mem_str:
-            return 0
-        mem_str = mem_str.strip().lower()
-        multipliers = {
-            'kib': 1024, 'mib': 1024**2, 'gib': 1024**3, 'tib': 1024**4,
-            'kb': 1000, 'mb': 1000**2, 'gb': 1000**3, 'tb': 1000**4,
-            'b': 1,
-        }
-        for suffix, mult in sorted(multipliers.items(), key=lambda x: -len(x[0])):
-            if mem_str.endswith(suffix):
-                try:
-                    return float(mem_str[:-len(suffix)]) * mult
-                except (ValueError, TypeError):
-                    return 0
-        try:
-            return float(mem_str)
-        except (ValueError, TypeError):
-            return 0
 
     # ========== Deploy Flow ==========
 

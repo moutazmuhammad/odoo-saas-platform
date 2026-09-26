@@ -324,20 +324,7 @@ make_instance('failed-demo', initech, 'failed',
 print('instances created')
 
 # ----------------------------------------------------------------- history
-# Metrics (last 24h, hourly) + a couple of backups for the live Acme prod box.
-if not E['saas.instance.metric'].sudo().search_count(
-        [('instance_id', '=', acme_prod.id)]):
-    metrics = []
-    for h in range(24, 0, -1):
-        ts = now - timedelta(hours=h)
-        cpu = 20 + (h % 7) * 6
-        ram = 35 + (h % 5) * 7
-        stor = 4200 + (24 - h) * 55
-        metrics.append({
-            'instance_id': acme_prod.id, 'ts': ts,
-            'cpu_pct': cpu, 'ram_pct': ram,
-            'storage_mb': stor, 'storage_pct': stor / (40 * 1024) * 100})
-    E['saas.instance.metric'].sudo().create(metrics)
+# A couple of backups for the live Acme prod box.
 
 for i in range(3):
     name = 'acme-erp-daily-%d' % i

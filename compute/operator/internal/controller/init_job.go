@@ -38,18 +38,21 @@ type schemaGateResult struct {
 func (r *OdooInstanceReconciler) reconcileInitJob(ctx context.Context, instance *saasv1alpha1.OdooInstance) (schemaGateResult, error) {
 	ns := resources.TenantNamespace(instance)
 
-	job := resources.OdooInitJob(instance)
-	setOwner(instance, job)
-	if err := r.apply(ctx, job); err != nil {
-		return schemaGateResult{}, fmt.Errorf("applying database-init Job: %w", err)
-	}
-
+	// Only ever create the Job, never re-apply an existing one: a Job's pod
+	// template is immutable, and it embeds spec.image, so re-applying it
+	// after an image change would fail every reconcile from then on (and
+	// with it the rollout of the new image to the web Deployment).
 	var live batchv1.Job
 	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: resources.OdooInitJobName(instance)}, &live); err != nil {
-		if apierrors.IsNotFound(err) {
-			return schemaGateResult{reason: "InitJobPending", message: "database-init Job not yet observed"}, nil
+		if !apierrors.IsNotFound(err) {
+			return schemaGateResult{}, err
 		}
-		return schemaGateResult{}, err
+		job := resources.OdooInitJob(instance)
+		setOwner(instance, job)
+		if err := r.apply(ctx, job); err != nil {
+			return schemaGateResult{}, fmt.Errorf("applying database-init Job: %w", err)
+		}
+		return schemaGateResult{reason: "InitJobPending", message: "database-init Job created"}, nil
 	}
 
 	if live.Status.Succeeded > 0 {

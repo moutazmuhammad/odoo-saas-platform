@@ -88,6 +88,16 @@ spec:
                   - name
                   type: object
                 type: array
+              addonsPaths:
+                description: |-
+                  AddonsPaths are extra addons directories baked into Image (e.g. a
+                  tenant's own repositories), rendered into odoo.conf's addons_path
+                  after Odoo's built-in addons. Every entry must exist in Image.
+                items:
+                  pattern: ^/[A-Za-z0-9._/-]*$
+                  type: string
+                maxItems: 32
+                type: array
               autoscaling:
                 description: Autoscaling is reserved for future use; see AutoscalingSpec.
                 properties:
@@ -591,6 +601,36 @@ spec:
                       config/samples for platform-recommended defaults.
                     type: object
                 type: object
+              update:
+                description: |-
+                  Update requests a module upgrade (`odoo -u`) against the new Image
+                  before any pod is switched to it. Each distinct Token is applied
+                  exactly once: the controller runs an update Job with the new
+                  Image/AddonsPaths while the existing pods keep serving the previous
+                  ones, and only rolls the Deployment forward once that Job succeeds.
+                  If it fails, the previous image keeps serving and the UpdateReady
+                  condition reports why. See UpdateSpec.
+                properties:
+                  modules:
+                    description: |-
+                      Modules to upgrade with `-u`. Empty means no upgrade is needed and
+                      the new image is rolled out directly (still gated on Token).
+                    items:
+                      pattern: ^[a-z0-9_]+$
+                      type: string
+                    maxItems: 500
+                    type: array
+                  token:
+                    description: |-
+                      Token identifies this update (e.g. the control plane's build id). A
+                      new Token triggers a new update run; re-submitting an already-applied
+                      Token is a no-op.
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                required:
+                - token
+                type: object
               version:
                 description: |-
                   Version is the Odoo major version for this instance, e.g. "17.0",
@@ -663,6 +703,11 @@ spec:
                   AdminCredentialsSecretName names the Secret (in TenantNamespace)
                   holding the generated Odoo master/admin credentials. Never the
                   credentials themselves.
+                type: string
+              appliedUpdateToken:
+                description: |-
+                  AppliedUpdateToken is the spec.update.token most recently applied
+                  (its update Job succeeded and the workload was rolled forward).
                 type: string
               conditions:
                 description: |-

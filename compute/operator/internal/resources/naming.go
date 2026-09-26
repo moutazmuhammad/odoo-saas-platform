@@ -37,6 +37,12 @@ func OdooConfigMapName(instance *saasv1alpha1.OdooInstance) string {
 	return "odoo-config"
 }
 
+// OdooUpdateConfigMapName is the ConfigMap the update Job renders its
+// odoo.conf from (see OdooUpdateConfigMap).
+func OdooUpdateConfigMapName(instance *saasv1alpha1.OdooInstance) string {
+	return "odoo-config-update"
+}
+
 // OdooServiceAccountName is the name of the ServiceAccount the Odoo pod
 // runs as.
 func OdooServiceAccountName(instance *saasv1alpha1.OdooInstance) string {

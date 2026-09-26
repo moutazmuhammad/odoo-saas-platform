@@ -30,9 +30,6 @@ func OdooInitJobName(instance *saasv1alpha1.OdooInstance) string {
 // `KeyError: 'ir.http'` 500s a partially-initialized pod would otherwise
 // serve during the gap between pod start and schema creation.
 func OdooInitJob(instance *saasv1alpha1.OdooInstance) *batchv1.Job {
-	labels := WithComponent(instance, "init")
-	image := instance.Spec.Image.Repository + ":" + instance.Spec.Image.Tag
-
 	args := []string{
 		"-c", "/etc/odoo/odoo.conf",
 		"-d", OdooDatabaseName(instance),
@@ -40,20 +37,32 @@ func OdooInitJob(instance *saasv1alpha1.OdooInstance) *batchv1.Job {
 		"--without-demo=all",
 		"--stop-after-init",
 	}
+	return odooOneShotJob(instance, OdooInitJobName(instance), "init", "init-db",
+		OdooConfigMapName(instance), args, corev1.RestartPolicyOnFailure, ptr.To(int32(3)), nil)
+}
+
+// odooOneShotJob is the pod shape shared by the database-init and module
+// update Jobs: render odoo.conf from configMapName in an init container,
+// then run Odoo once with args against the tenant database and filestore.
+func odooOneShotJob(instance *saasv1alpha1.OdooInstance, name, component, containerName, configMapName string,
+	args []string, restartPolicy corev1.RestartPolicy, backoffLimit *int32, activeDeadlineSeconds *int64) *batchv1.Job {
+	labels := WithComponent(instance, component)
+	image := instance.Spec.Image.Repository + ":" + instance.Spec.Image.Tag
 
 	return &batchv1.Job{
 		TypeMeta: metav1.TypeMeta{APIVersion: "batch/v1", Kind: "Job"},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      OdooInitJobName(instance),
+			Name:      name,
 			Namespace: TenantNamespace(instance),
 			Labels:    labels,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: ptr.To(int32(3)),
+			BackoffLimit:          backoffLimit,
+			ActiveDeadlineSeconds: activeDeadlineSeconds,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
-					RestartPolicy:                 corev1.RestartPolicyOnFailure,
+					RestartPolicy:                 restartPolicy,
 					ServiceAccountName:            OdooServiceAccountName(instance),
 					AutomountServiceAccountToken:  ptr.To(false),
 					TerminationGracePeriodSeconds: ptr.To(int64(60)),
@@ -81,7 +90,7 @@ func OdooInitJob(instance *saasv1alpha1.OdooInstance) *batchv1.Job {
 					},
 					Containers: []corev1.Container{
 						{
-							Name:            "init-db",
+							Name:            containerName,
 							Image:           image,
 							ImagePullPolicy: instance.Spec.Image.PullPolicy,
 							Args:            args,
@@ -98,7 +107,7 @@ func OdooInitJob(instance *saasv1alpha1.OdooInstance) *batchv1.Job {
 							Name: "config-template",
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{Name: OdooConfigMapName(instance)},
+									LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
 								},
 							},
 						},

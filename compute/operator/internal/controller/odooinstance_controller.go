@@ -11,6 +11,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -182,7 +183,15 @@ func (r *OdooInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.handleReconcileError(ctx, &instance, "SecretReconcileFailed", err)
 	}
 
-	if err := r.reconcileConfig(ctx, &instance); err != nil {
+	// serving is what the live pods are rendered from: the instance itself,
+	// or — while a spec.update is pending — a copy pinned to the image the
+	// pods already run (see servingInstance). Status is always written to
+	// instance.
+	serving, held, err := r.servingInstance(ctx, &instance)
+	if err != nil {
+		return r.handleReconcileError(ctx, &instance, "UpdateReconcileFailed", err)
+	}
+	if err := r.reconcileConfig(ctx, serving); err != nil {
 		return r.handleReconcileError(ctx, &instance, "ConfigReconcileFailed", err)
 	}
 
@@ -232,10 +241,34 @@ func (r *OdooInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 		switch {
 		case gateResult.succeeded:
-			if err := r.reconcileWorkload(ctx, &instance); err != nil {
+			if held {
+				upd, err := r.reconcileUpdateJob(ctx, &instance)
+				if err != nil {
+					return r.handleReconcileError(ctx, &instance, "UpdateReconcileFailed", err)
+				}
+				switch {
+				case upd.succeeded:
+					instance.Status.AppliedUpdateToken = instance.Spec.Update.Token
+					setCondition(&instance, saasv1alpha1.ConditionUpdateReady, metav1.ConditionTrue, ReasonUpdateApplied, upd.message)
+					r.Recorder.Eventf(&instance, corev1.EventTypeNormal, ReasonUpdateApplied, "%s; rolling out the new image", upd.message)
+					serving, held = &instance, false
+					if err := r.reconcileConfig(ctx, serving); err != nil {
+						return r.handleReconcileError(ctx, &instance, "ConfigReconcileFailed", err)
+					}
+				case upd.failed:
+					setCondition(&instance, saasv1alpha1.ConditionUpdateReady, metav1.ConditionFalse, ReasonUpdateFailed,
+						upd.message+"; the previous image keeps serving")
+					r.Recorder.Eventf(&instance, corev1.EventTypeWarning, ReasonUpdateFailed, "%s", upd.message)
+				default:
+					setCondition(&instance, saasv1alpha1.ConditionUpdateReady, metav1.ConditionFalse, ReasonUpdateRunning, upd.message)
+				}
+			} else if instance.Spec.Update != nil && instance.Spec.Update.Token == instance.Status.AppliedUpdateToken {
+				setCondition(&instance, saasv1alpha1.ConditionUpdateReady, metav1.ConditionTrue, ReasonUpdateApplied, "update applied")
+			}
+			if err := r.reconcileWorkload(ctx, serving); err != nil {
 				return r.handleReconcileError(ctx, &instance, "WorkloadReconcileFailed", err)
 			}
-			workloadReady, readyReplicas, totalReplicas, observedImage, err = r.workloadStatus(ctx, &instance)
+			workloadReady, readyReplicas, totalReplicas, observedImage, err = r.workloadStatus(ctx, serving)
 			if err != nil {
 				return r.handleReconcileError(ctx, &instance, "WorkloadStatusFailed", err)
 			}
@@ -288,7 +321,11 @@ func (r *OdooInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		setCondition(&instance, saasv1alpha1.ConditionReady, metav1.ConditionFalse, ReasonWorkloadNotReady, "one or more dependencies are not yet ready")
 	}
 
-	return r.updateStatusAndReturn(ctx, &instance, ctrl.Result{RequeueAfter: 2 * time.Minute}, nil)
+	requeue := 2 * time.Minute
+	if held {
+		requeue = 15 * time.Second
+	}
+	return r.updateStatusAndReturn(ctx, &instance, ctrl.Result{RequeueAfter: requeue}, nil)
 }
 
 func (r *OdooInstanceReconciler) reconcileDelete(ctx context.Context, instance *saasv1alpha1.OdooInstance) (ctrl.Result, error) {
@@ -377,5 +414,6 @@ func (r *OdooInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
+		Owns(&batchv1.Job{}).
 		Complete(r)
 }

@@ -2,6 +2,8 @@ package resources
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -96,7 +98,8 @@ func OdooDeployment(instance *saasv1alpha1.OdooInstance, role OdooRole) *appsv1.
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
+					Labels:      labels,
+					Annotations: podTemplateAnnotations(instance),
 				},
 				Spec: podSpec,
 			},
@@ -178,6 +181,16 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 				LivenessProbe:   probe,
 				ReadinessProbe:  probe,
 				StartupProbe:    odooStartupProbe(exposesHTTP),
+				// Zero-downtime rollouts: keep serving for a few seconds after
+				// the pod is marked terminating, so Service endpoints and the
+				// ingress controller stop routing to it before Odoo receives
+				// SIGTERM. Without this, a rolling update (resize, restart,
+				// image bump) drops the requests that land in that window.
+				Lifecycle: &corev1.Lifecycle{
+					PreStop: &corev1.LifecycleHandler{
+						Exec: &corev1.ExecAction{Command: []string{"sleep", strconv.Itoa(preStopDelaySeconds)}},
+					},
+				},
 				VolumeMounts: []corev1.VolumeMount{
 					{Name: "etc-odoo", MountPath: "/etc/odoo", ReadOnly: true},
 					{Name: "filestore", MountPath: "/var/lib/odoo"},
@@ -314,6 +327,35 @@ const (
 // that responds on /web/login faster/cheaper; changing the probe path
 // itself would require a new API field (deliberately not added yet, to
 // avoid over-engineering the v1alpha1 surface).
+// AnnotationAddonsPaths records spec.addonsPaths on the pod template: a
+// change rolls the pods (odoo.conf is only read at pod start), and the
+// controller reads it back to know which addons paths the live pods run
+// with while an update is pending (see LiveAddonsPaths).
+const AnnotationAddonsPaths = "saas.odoo.example.com/addons-paths"
+
+// podTemplateAnnotations is nil without addons paths, so instances that
+// don't use them keep an unchanged pod template (no spurious rollout).
+func podTemplateAnnotations(instance *saasv1alpha1.OdooInstance) map[string]string {
+	if len(instance.Spec.AddonsPaths) == 0 {
+		return nil
+	}
+	return map[string]string{AnnotationAddonsPaths: strings.Join(instance.Spec.AddonsPaths, ",")}
+}
+
+// LiveAddonsPaths is the inverse of podTemplateAnnotations for a live
+// Deployment's pod template annotations.
+func LiveAddonsPaths(annotations map[string]string) []string {
+	v := annotations[AnnotationAddonsPaths]
+	if v == "" {
+		return nil
+	}
+	return strings.Split(v, ",")
+}
+
+// preStopDelaySeconds must stay well below TerminationGracePeriodSeconds
+// (60) so Odoo still gets time to shut down cleanly after the delay.
+const preStopDelaySeconds = 15
+
 func odooProbe(exposesHTTP bool) *corev1.Probe {
 	if !exposesHTTP {
 		return &corev1.Probe{

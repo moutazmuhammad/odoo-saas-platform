@@ -143,6 +143,23 @@ func TestOdooDeployment_WebRole_RunsCronWhenSingleReplica(t *testing.T) {
 	}
 }
 
+func TestOdooDeployment_ZeroDowntimeRollout(t *testing.T) {
+	dep := OdooDeployment(testInstance(), RoleWeb)
+
+	ru := dep.Spec.Strategy.RollingUpdate
+	if ru == nil || ru.MaxUnavailable.IntValue() != 0 || ru.MaxSurge.IntValue() != 1 {
+		t.Fatalf("want RollingUpdate maxUnavailable=0 maxSurge=1, got %+v", dep.Spec.Strategy)
+	}
+	c := dep.Spec.Template.Spec.Containers[0]
+	if c.Lifecycle == nil || c.Lifecycle.PreStop == nil || c.Lifecycle.PreStop.Exec == nil {
+		t.Fatal("odoo container has no preStop delay; in-flight requests drop during rollouts")
+	}
+	grace := *dep.Spec.Template.Spec.TerminationGracePeriodSeconds
+	if int64(preStopDelaySeconds) >= grace {
+		t.Errorf("preStop delay %ds must be below the %ds grace period", preStopDelaySeconds, grace)
+	}
+}
+
 func TestOdooDeployment_WebRole_DisablesCronWhenMultiReplica(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Replicas = ptr.To(int32(3))

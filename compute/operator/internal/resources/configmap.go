@@ -40,18 +40,41 @@ without_demo = all
 data_dir = /var/lib/odoo
 `
 
+// odooConf renders the odoo.conf template for instance: the fixed settings
+// plus, when spec.addonsPaths is set, an addons_path line. Odoo always adds
+// its own built-in addons directory on top of addons_path, so only the
+// extra (tenant) directories are listed.
+func odooConf(instance *saasv1alpha1.OdooInstance) string {
+	conf := odooConfTemplate
+	if len(instance.Spec.AddonsPaths) > 0 {
+		conf += "addons_path = " + strings.Join(instance.Spec.AddonsPaths, ",") + "\n"
+	}
+	return conf
+}
+
 // OdooConfigMap builds the ConfigMap holding the odoo.conf template
-// (non-secret settings only).
+// (non-secret settings only) the Odoo pods start from.
 func OdooConfigMap(instance *saasv1alpha1.OdooInstance) *corev1.ConfigMap {
+	return odooConfigMap(instance, OdooConfigMapName(instance))
+}
+
+// OdooUpdateConfigMap is the same config rendered for the pending
+// spec.update's update Job, kept separate so the running pods (which may
+// still be on the previous image and addons paths) never read it.
+func OdooUpdateConfigMap(instance *saasv1alpha1.OdooInstance) *corev1.ConfigMap {
+	return odooConfigMap(instance, OdooUpdateConfigMapName(instance))
+}
+
+func odooConfigMap(instance *saasv1alpha1.OdooInstance, name string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      OdooConfigMapName(instance),
+			Name:      name,
 			Namespace: TenantNamespace(instance),
 			Labels:    CommonLabels(instance),
 		},
 		Data: map[string]string{
-			"odoo.conf.tmpl": odooConfTemplate,
+			"odoo.conf.tmpl": odooConf(instance),
 		},
 	}
 }

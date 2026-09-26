@@ -464,6 +464,24 @@ type OdooInstanceSpec struct {
 	// +optional
 	Addons []AddonSpec `json:"addons,omitempty"`
 
+	// AddonsPaths are extra addons directories baked into Image (e.g. a
+	// tenant's own repositories), rendered into odoo.conf's addons_path
+	// after Odoo's built-in addons. Every entry must exist in Image.
+	// +optional
+	// +kubebuilder:validation:MaxItems=32
+	// +kubebuilder:validation:items:Pattern=`^/[A-Za-z0-9._/-]*$`
+	AddonsPaths []string `json:"addonsPaths,omitempty"`
+
+	// Update requests a module upgrade (`odoo -u`) against the new Image
+	// before any pod is switched to it. Each distinct Token is applied
+	// exactly once: the controller runs an update Job with the new
+	// Image/AddonsPaths while the existing pods keep serving the previous
+	// ones, and only rolls the Deployment forward once that Job succeeds.
+	// If it fails, the previous image keeps serving and the UpdateReady
+	// condition reports why. See UpdateSpec.
+	// +optional
+	Update *UpdateSpec `json:"update,omitempty"`
+
 	// Workers configures Odoo's internal process model.
 	// +kubebuilder:default={"count":2,"maxCronThreads":1}
 	Workers WorkersSpec `json:"workers,omitempty"`
@@ -521,6 +539,23 @@ type OdooInstanceSpec struct {
 	Suspended bool `json:"suspended,omitempty"`
 }
 
+// UpdateSpec is a one-shot module-upgrade request tied to an image change.
+type UpdateSpec struct {
+	// Token identifies this update (e.g. the control plane's build id). A
+	// new Token triggers a new update run; re-submitting an already-applied
+	// Token is a no-op.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
+	Token string `json:"token"`
+
+	// Modules to upgrade with `-u`. Empty means no upgrade is needed and
+	// the new image is rolled out directly (still gated on Token).
+	// +optional
+	// +kubebuilder:validation:MaxItems=500
+	// +kubebuilder:validation:items:Pattern=`^[a-z0-9_]+$`
+	Modules []string `json:"modules,omitempty"`
+}
+
 // AddonSpec records one addon expected to be present in Image.
 type AddonSpec struct {
 	// Name is the Odoo addon/module technical name, e.g. "sale", "account".
@@ -564,6 +599,11 @@ const (
 	ConditionRouteReady = "RouteReady"
 	// ConditionWorkloadReady reflects readiness of the Odoo Deployment(s).
 	ConditionWorkloadReady = "WorkloadReady"
+	// ConditionUpdateReady reflects the most recent spec.update: True once
+	// applied, False while its update Job runs or after it failed (the
+	// previous image keeps serving in both cases). Only set when
+	// spec.update has been used.
+	ConditionUpdateReady = "UpdateReady"
 	// ConditionRestoreReady reflects completion of a one-time
 	// restore-from-backup operation. Only ever set when spec.restore is
 	// configured; a fresh, non-restored instance never carries this
@@ -623,6 +663,11 @@ type OdooInstanceStatus struct {
 	// lag Spec.Image during a controlled rollout.
 	// +optional
 	ObservedImage string `json:"observedImage,omitempty"`
+
+	// AppliedUpdateToken is the spec.update.token most recently applied
+	// (its update Job succeeded and the workload was rolled forward).
+	// +optional
+	AppliedUpdateToken string `json:"appliedUpdateToken,omitempty"`
 
 	// Replicas is the total number of non-terminated Odoo pods targeted by
 	// this instance's Deployment.

@@ -106,6 +106,14 @@ class SaasInstance(models.Model):
         ondelete='set null',
         help='Unpaid restoration fee invoice. Instance is suspended until paid.',
     )
+    restoration_backup_id = fields.Many2one(
+        'saas.instance.backup',
+        string='Snapshot to Restore',
+        readonly=True,
+        ondelete='set null',
+        help='Retained snapshot restored onto this instance once the '
+             'restoration invoice is paid.',
+    )
 
     sale_order_count = fields.Integer(
         string='Sale Orders',
@@ -674,12 +682,8 @@ class SaasInstance(models.Model):
         as a whole month (minimum 1). No retained snapshot → 0.
         """
         self.ensure_one()
-        retained = self.env['saas.instance.backup'].sudo().search([
-            ('instance_id', '=', self.id),
-            ('is_full_instance', '=', True),
-            ('state', '=', 'done'),
-        ], order='create_date desc', limit=1)
-        if not retained and not self.retained_backup_path:
+        retained = self.retained_snapshot()
+        if not retained:
             return 0.0
         per_gb = self.env['saas.pricing.engine'].snapshot_price_per_gb()
         if per_gb <= 0:
@@ -3062,7 +3066,7 @@ class SaasInstance(models.Model):
 
         Reuses the same record — resets state to draft, assigns the new
         plan, clears old infrastructure fields, then runs the billing /
-        deploy flow.  The retained_backup_path is preserved so the admin
+        deploy flow.  The retained snapshot is preserved so the admin
         can still restore data if the client requests it.
         """
         self.ensure_one()
@@ -3135,7 +3139,7 @@ class SaasInstance(models.Model):
             'payment_token_id': False,
             'auto_renew_subscription': True,
             'auto_renew_daily_backup': True,
-            # retained_backup_path is intentionally NOT cleared
+            # the retained snapshot (a backup row) is intentionally kept
             # Reset restore banner so client sees the option again
             'restore_banner_dismissed': False,
             'restoration_invoice_id': False,

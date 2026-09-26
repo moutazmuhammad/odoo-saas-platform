@@ -412,24 +412,17 @@ class SaasInstance(models.Model):
              'downgrade (fewer replicas) applies immediately with no '
              'refund for the current period.',
     )
-    # ---------- Cancellation cleanup retry flags ----------
-    # Set by ``_do_delete_instance`` when the corresponding cleanup
-    # step (PG drop / nginx remove) raised. ``action_reactivate``
-    # checks these and retries before clearing the infrastructure
-    # FKs, so a stale role / vhost can't block the new deploy.
-    pg_cleanup_pending = fields.Boolean(
-        string='PG Cleanup Pending',
+    # ---------- Cancellation cleanup retry flag ----------
+    # Set by ``_do_delete_instance`` when deleting the tenant from its
+    # cluster failed (e.g. cluster unreachable). Retried hourly by
+    # ``_cron_retry_infra_cleanup`` and before ``action_reactivate``.
+    infra_cleanup_pending = fields.Boolean(
+        string='Cluster Cleanup Pending',
         copy=False,
         default=False,
-        help='True if the PostgreSQL drop failed during the last '
-             'cancellation. Cleared once the retry succeeds.',
-    )
-    nginx_cleanup_pending = fields.Boolean(
-        string='Nginx Cleanup Pending',
-        copy=False,
-        default=False,
-        help='True if the Nginx vhost removal failed during the last '
-             'cancellation. Cleared once the retry succeeds.',
+        help='True if removing this instance from its Kubernetes cluster '
+             'failed during the last cancellation. Cleared once a retry '
+             'succeeds.',
     )
 
     # ========== Free Trial ==========
@@ -777,14 +770,29 @@ class SaasInstance(models.Model):
         readonly=True,
         help='Details about why and when the instance was cancelled.',
     )
-    retained_backup_path = fields.Char(
-        string='Retained Backup',
-        readonly=True,
+    retained_snapshot_id = fields.Many2one(
+        'saas.instance.backup', string='Retained Snapshot',
+        compute='_compute_retained_snapshot_id',
         groups='saas_core.group_saas_manager',
-        help='Cloud storage path of the most recent backup kept after '
-             'instance deletion. Can be used to restore client data if '
-             'they return. Not visible to the client.',
-    )
+        help='The full-instance snapshot kept after cancellation (the most '
+             'recent completed one). Can be restored onto this instance '
+             'after reactivation, or onto another instance of the same '
+             'customer. Not visible to the client.')
+
+    def _compute_retained_snapshot_id(self):
+        for rec in self:
+            rec.retained_snapshot_id = rec.retained_snapshot()
+
+    def retained_snapshot(self):
+        """The most recent completed full-instance snapshot — after a
+        cancellation, the single one ``_do_delete_instance`` retained.
+        Used by saas_billing (restore wizard, fee) and saas_website."""
+        self.ensure_one()
+        return self.env['saas.instance.backup'].sudo().search([
+            ('instance_id', '=', self.id),
+            ('is_full_instance', '=', True),
+            ('state', '=', 'done'),
+        ], order='create_date desc', limit=1)
     company_id = fields.Many2one(
         'res.company',
         string='Company',
@@ -2098,6 +2106,23 @@ class SaasInstance(models.Model):
         r = self._compute_driver().exec(self._compute_handle(), command, timeout=timeout)
         return (r.rc, r.stdout, r.stderr)
 
+    def _served_db_name(self):
+        """The database this instance's Odoo serves: ``db_name`` from
+        odoo.conf inside the pod. The operator picks it (a fixed name per
+        tenant namespace), so it is NOT the subdomain."""
+        self.ensure_one()
+        r = self._compute_driver().exec(
+            self._compute_handle(),
+            "python3 -c \"import configparser; c = configparser.ConfigParser(); "
+            "c.read('/etc/odoo/odoo.conf'); print(c['options'].get('db_name', ''))\"",
+            timeout=30)
+        name = (r.stdout or '').strip()
+        if r.rc != 0 or not name:
+            raise UserError(_(
+                "Couldn't read the database name from the instance: %s")
+                % (r.stderr or r.stdout or '').strip()[-300:])
+        return name
+
     def _docker_exec_psql_file(self, path, db, timeout=600):
         """Run ``psql -f <path>`` inside the pod against ``db`` — same
         connection resolution as :meth:`_docker_exec_sql`, used where the
@@ -3318,10 +3343,9 @@ class SaasInstance(models.Model):
         instance" backup is restorable the same way.
         """
         self.ensure_one()
-        if self.state not in ('running', 'stopped'):
-            raise UserError(
-                _("Instance must be Running or Stopped to restore.")
-            )
+        if self.state != 'running':
+            raise UserError(_(
+                "Instance must be Running to restore (start it first)."))
         if not self.daily_backup_enabled:
             raise UserError(_(
                 "Restore is part of the Daily Snapshots feature. "
@@ -3340,6 +3364,19 @@ class SaasInstance(models.Model):
                 "This backup is per-database. Use the per-DB restore button."
             ))
 
+        return self.queue_full_instance_restore(backup)
+
+    def queue_full_instance_restore(self, backup):
+        """Queue restoring full-instance ``backup`` onto this running
+        instance (its own snapshot, or — from saas_billing's retained-
+        snapshot restore — another instance's of the same customer).
+        Callers do the entitlement checks; this takes the instance lock,
+        flips the state and enqueues the job."""
+        self.ensure_one()
+        if self.state != 'running':
+            raise UserError(_("The instance must be running to restore a snapshot."))
+        if not backup.exists() or backup.state != 'done' or not backup.is_full_instance:
+            raise UserError(_("Only completed full-instance snapshots can be restored."))
         self.env.cr.execute(
             "SELECT id FROM saas_instance WHERE id = %s FOR UPDATE",
             (self.id,),
@@ -4671,113 +4708,6 @@ class SaasInstance(models.Model):
                 )
             rec.state = 'draft'
 
-    def _drop_postgresql(self):
-        """Drop ALL databases owned by this instance's role + the role.
-
-        Service instances historically had exactly one DB (= subdomain),
-        but hosting instances let the customer create N databases all
-        owned by ``db_user``. Listing by owner catches both shapes —
-        legacy service single-DB and modern hosting multi-DB — so a
-        cancelled instance never leaks a database behind.
-        """
-        self.ensure_one()
-        psql_server = self.db_server_id
-        if not psql_server:
-            return
-
-        db_user = self.db_user
-        if db_user and not DB_USER_RE.match(db_user):
-            _logger.error(
-                "Refusing to drop role with invalid identifier %r", db_user,
-            )
-            db_user = None
-        if not db_user:
-            return  # nothing else we can do safely
-
-        # Per-DB name regex used as a defense-in-depth filter when we
-        # iterate the list of owned DBs. Allows a leading underscore
-        # so the per-instance Odoo template (``__odoo_template_<sub>``)
-        # is included — otherwise it'd leak on cancel.
-        owned_name_re = re.compile(r'^[_a-z][a-z0-9_-]{0,62}$')
-        safe_user = db_user.replace("'", "''")
-
-        with psql_server._get_ssh_connection() as ssh:
-            # 1. Enumerate every database currently owned by our role.
-            #    Filtering by owner means we won't accidentally drop a
-            #    catalog DB (template0, postgres) which is owned by a
-            #    different role. We DO include the per-instance Odoo
-            #    template (datistemplate=true, owned by our role) so
-            #    a cancelled instance doesn't leak templates either.
-            list_sql = (
-                "SELECT datname, datistemplate FROM pg_database "
-                "WHERE datdba = (SELECT oid FROM pg_roles WHERE rolname='%s') "
-                "ORDER BY datname"
-            ) % safe_user
-            list_cmd = "sudo -u postgres psql -tA -F '|' -c %s" % shlex.quote(list_sql)
-            exit_code, stdout, stderr = ssh.execute(list_cmd)
-            if exit_code != 0:
-                _logger.warning(
-                    "Failed to list databases owned by %s: %s",
-                    db_user, stderr or stdout,
-                )
-                owned = []
-            else:
-                owned = []
-                for line in stdout.splitlines():
-                    line = line.strip()
-                    if not line:
-                        continue
-                    parts = line.split('|', 1)
-                    name = parts[0].strip()
-                    is_template = (
-                        parts[1].strip() == 't' if len(parts) > 1 else False
-                    )
-                    owned.append((name, is_template))
-
-            # 2. Drop each owned DB. ``--force`` terminates any open
-            #    sessions first; ``--if-exists`` swallows a race.
-            #    Templates need datistemplate=false first or dropdb
-            #    refuses.
-            for db_name, is_template in owned:
-                if not owned_name_re.match(db_name):
-                    _logger.warning(
-                        "Skipping drop of suspicious-looking db name %r",
-                        db_name,
-                    )
-                    continue
-                if is_template:
-                    flag_cmd = (
-                        "sudo -u postgres psql -c "
-                        "\"UPDATE pg_database SET datistemplate=false "
-                        "WHERE datname='%s'\""
-                    ) % db_name.replace("'", "''")
-                    ssh.execute(flag_cmd)
-                drop_cmd = (
-                    'sudo -u postgres dropdb --force --if-exists %s'
-                    % shlex.quote(db_name)
-                )
-                ec, out, err = ssh.execute(drop_cmd)
-                if ec != 0:
-                    _logger.warning(
-                        "Failed to drop database %s: %s",
-                        db_name, err or out,
-                    )
-                else:
-                    self._append_log("Dropped database '%s'." % db_name)
-
-            # 3. Drop the role last (after all its DBs are gone).
-            drop_role_cmd = (
-                "sudo -u postgres psql -tc "
-                "\"SELECT 1 FROM pg_roles WHERE rolname='%s'\" "
-                "| grep -q 1 "
-                "&& sudo -u postgres dropuser %s"
-            ) % (safe_user, shlex.quote(db_user))
-            ec, out, err = ssh.execute(drop_role_cmd)
-            if ec != 0:
-                _logger.warning(
-                    "Failed to drop role %s: %s", db_user, err or out,
-                )
-
     def action_delete_instance(self):
         """Remove container, volumes, network, database, db user, and instance folder (async)."""
         for rec in self:
@@ -4826,14 +4756,6 @@ class SaasInstance(models.Model):
         """
         self.ensure_one()
         server = self.docker_server_id
-        # TODO(k8s-teardown-replacement): _get_instance_path() was
-        # ssh_docker's host-filesystem path (server.docker_base_path,
-        # removed with that backend) and is only used below inside the
-        # SSH teardown block, which already fails at
-        # _get_ssh_connection() and is caught — this never has a real
-        # value to compute for Kubernetes, so skip it rather than crash
-        # the whole delete/cancel flow before it even gets there.
-        instance_path = ''
         Backup = self.env['saas.instance.backup'].sudo()
 
         # 0. Settle the money FIRST, then commit it, so the customer's wallet
@@ -4928,89 +4850,29 @@ class SaasInstance(models.Model):
                     % (repo.name, e)
                 )
 
-        # 3. Tear down infrastructure (tolerant of partial state). The money
-        # has already been settled and committed above, so a teardown failure
-        # (e.g. the host is unreachable) must NEVER abort the cancellation and
-        # bounce the instance back to life — that's what would strand credit.
-        # We flag any leftover infra for the reactivate flow / ops to reap and
-        # carry on to finalise the cancel.
-        try:
-            with server._get_ssh_connection() as ssh:
-                # Stop + purge container/network/volumes if they exist (best-effort)
-                try:
-                    self._compute_driver(connection=ssh).destroy(
-                        self._compute_handle(), purge=True)
-                except Exception as e:
-                    self._append_log(
-                        "docker compose down: %s (may not exist yet)" % e
-                    )
-
-                # Remove instance directory if it exists
-                exit_code, stdout, stderr = ssh.execute(
-                    'sudo rm -rf %s' % shlex.quote(instance_path),
-                )
-                if exit_code != 0:
-                    self._append_log(
-                        "WARNING: Failed to remove directory: %s" % stderr
-                    )
-                    _logger.warning(
-                        "Failed to remove instance dir %s: %s",
-                        instance_path, stderr,
-                    )
-
-                # Remove Nginx config and SSL certificate (if configured).
-                # Track failures so the reactivate flow retries — leaving
-                # a vhost behind is harmless on a stopped container, but
-                # it'd cause a conflict if the customer reactivates with
-                # a different topology.
-                try:
-                    proxy_server = self.domain_id.proxy_server_id
-                    if proxy_server and proxy_server != self.docker_server_id:
-                        with proxy_server._get_ssh_connection() as proxy_ssh:
-                            self._remove_nginx(proxy_ssh)
-                    else:
-                        self._remove_nginx(ssh)
-                except Exception:
-                    _logger.exception(
-                        "Nginx cleanup failed during cancellation of %s",
-                        self.subdomain,
-                    )
-                    self.nginx_cleanup_pending = True
-                    self._append_log(
-                        "Couldn't fully remove the web proxy config — "
-                        "we'll retry automatically the next time you "
-                        "reactivate."
-                    )
-        except Exception:
-            _logger.exception(
-                "Could not reach the host to tear down infrastructure during "
-                "cancellation of %s — finalising the cancel anyway; leftover "
-                "container/files/proxy flagged for cleanup.", self.subdomain,
-            )
-            self.nginx_cleanup_pending = True
-            self.pg_cleanup_pending = True
-            self._append_log(
-                "Couldn't reach the server to fully tear down infrastructure. "
-                "Your subscription is cancelled and billing has stopped — any "
-                "leftover resources will be reaped automatically."
-            )
-
-        # Drop database and role (safe if they don't exist). On
-        # failure we set a flag the reactivate flow will retry — and
-        # we don't lose visibility, because the operator log gets
-        # the traceback via ``_logger.exception``.
-        try:
-            self._drop_postgresql()
-        except Exception:
-            _logger.exception(
-                "PostgreSQL cleanup failed during cancellation of %s",
-                self.subdomain,
-            )
-            self.pg_cleanup_pending = True
-            self._append_log(
-                "Couldn't fully clean up the database tier yet — "
-                "we'll retry automatically the next time you reactivate."
-            )
+        # 3. Remove the tenant from its cluster: deleting the OdooInstance
+        # CR makes the operator's finalizer delete the whole tenant
+        # namespace (pods, database, filestore, ingress, certificate). The
+        # money has already been settled and committed above, so a failure
+        # here (e.g. the cluster is unreachable) must NEVER abort the
+        # cancellation and bounce the instance back to life — flag it for
+        # the hourly retry and carry on.
+        if server:
+            try:
+                self._compute_driver().destroy(self._compute_handle())
+                self._append_log(
+                    "Removing the instance from the cluster (application, "
+                    "database and files).")
+            except Exception:
+                _logger.exception(
+                    "Could not delete %s from its cluster during cancellation "
+                    "— finalising the cancel anyway; flagged for retry.",
+                    self.subdomain)
+                self.infra_cleanup_pending = True
+                self._append_log(
+                    "Couldn't reach the cluster to remove the instance yet. "
+                    "Your subscription is cancelled and billing has stopped "
+                    "— the removal will be retried automatically.")
 
         # 4. Prune old full-instance snapshot data. Two cases:
         #    a) We have a fresh retained snapshot → keep ONLY it; every
@@ -5093,23 +4955,6 @@ class SaasInstance(models.Model):
                     "Failed to unlink backup row %s on cancel of %s",
                     backup.id, self.subdomain,
                 )
-
-        # Old-style legacy zip stored in ``retained_backup_path`` (Char
-        # field) from a prior cancellation — drop it now since the new
-        # retention model uses a saas.instance.backup row.
-        if self.retained_backup_path:
-            try:
-                stale = Backup.new({
-                    'instance_id': self.id,
-                    'bucket_path': self.retained_backup_path,
-                })
-                stale._delete_from_bucket()
-            except Exception:
-                _logger.warning(
-                    "Failed to delete legacy retained backup %s for %s",
-                    self.retained_backup_path, self.subdomain,
-                )
-            self.retained_backup_path = False
 
         # Reset repo statuses — infrastructure no longer exists
         for repo in self.repo_ids:
@@ -5874,56 +5719,55 @@ class SaasInstance(models.Model):
         self.action_restart()
 
     def _retry_pending_cleanup(self):
-        """Retry cancellation cleanup steps that previously failed.
+        """Make sure a cancelled instance is fully gone from its cluster.
 
-        Called from ``action_reactivate`` before we clear the old
-        infrastructure FKs — without this retry, a transient SSH /
-        Postgres failure during the original cancellation would
-        leave stale resources on disk and the next deploy would
-        either inherit them silently (privacy concern) or fail
-        because of name clashes.
-
-        Idempotent: ``_drop_postgresql`` is no-op if the role / DB
-        doesn't exist, and ``_remove_nginx`` skips when the vhost
-        is gone. Either retry can fail again — the flags stay set
-        and we'll try once more on the next reactivation attempt.
+        Called from ``action_reactivate`` before the old infrastructure
+        FKs are cleared: re-sends the CR delete if the original
+        cancellation couldn't, and refuses (UserError) while the old
+        OdooInstance still exists — its finalizer may still be removing
+        the namespace, and re-creating a CR with the same name then would
+        adopt the dying one instead of provisioning a fresh tenant.
         """
         self.ensure_one()
-        if self.pg_cleanup_pending and self.db_server_id:
-            try:
-                self._drop_postgresql()
-                self.pg_cleanup_pending = False
+        if not self.docker_server_id:
+            return
+        driver = self._compute_driver()
+        handle = self._compute_handle()
+        try:
+            if self.infra_cleanup_pending:
+                driver.destroy(handle)
+                self.infra_cleanup_pending = False
                 self._append_log(
-                    "Cleaned up old database resources from the "
-                    "previous cancellation."
-                )
-            except Exception:
-                _logger.exception(
-                    "Retry PG cleanup still failing for %s",
-                    self.subdomain,
-                )
-                self._append_log(
-                    "Some database resources from the previous "
-                    "cancellation couldn't be cleaned up yet — "
-                    "we'll keep retrying."
-                )
-        if self.nginx_cleanup_pending and self.docker_server_id:
-            try:
-                proxy_server = self.domain_id.proxy_server_id
-                if proxy_server and proxy_server != self.docker_server_id:
-                    with proxy_server._get_ssh_connection() as proxy_ssh:
-                        self._remove_nginx(proxy_ssh)
-                else:
-                    with self.docker_server_id._get_ssh_connection() as ssh:
-                        self._remove_nginx(ssh)
-                self.nginx_cleanup_pending = False
-                self._append_log(
-                    "Cleaned up old web proxy config from the "
-                    "previous cancellation."
-                )
-            except Exception:
-                _logger.exception(
-                    "Retry nginx cleanup still failing for %s",
-                    self.subdomain,
-                )
+                    "Removed the previous instance from the cluster.")
+            gone = not driver.exists(handle)
+        except Exception as e:
+            _logger.exception("Cluster cleanup retry failed for %s", self.subdomain)
+            raise UserError(_(
+                "The previous instance couldn't be removed from its cluster "
+                "yet, so it can't be reactivated right now. Please try again "
+                "in a few minutes.\n\nDetails: %s") % e)
+        if not gone:
+            raise UserError(_(
+                "The previous instance is still being removed from its "
+                "cluster. Please try again in a minute."))
 
+    @api.model
+    def _cron_retry_infra_cleanup(self):
+        """Cron: re-send the cluster delete for cancelled instances whose
+        cancellation couldn't reach the cluster."""
+        pending = self.search([
+            ('infra_cleanup_pending', '=', True),
+            ('docker_server_id', '!=', False),
+            ('state', 'in', ('cancelled', 'cancelled_by_client')),
+        ], limit=self._CRON_BATCH_SIZE)
+        for inst in pending:
+            try:
+                inst._compute_driver().destroy(inst._compute_handle())
+                inst.infra_cleanup_pending = False
+                inst._append_log("Removed the instance from the cluster (retry).")
+                self.env.cr.commit()
+            except Exception as e:
+                self.env.cr.rollback()
+                _logger.warning("Cluster cleanup retry failed for %s: %s",
+                                inst.subdomain, e)
+        return len(pending)

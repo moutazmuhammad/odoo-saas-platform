@@ -1,6 +1,6 @@
 import logging
 
-from odoo import fields, models, _
+from odoo import api, fields, models, _
 
 from odoo.addons.saas_core.utils import run_in_background
 
@@ -229,22 +229,7 @@ class AccountMove(models.Model):
             len(restoration_instances),
             restoration_instances.mapped('subdomain'),
         )
-        for instance in restoration_instances:
-            _logger.info(
-                "SaaS instance %s: restoration fee paid (invoice %s), triggering restore.",
-                instance.subdomain,
-                instance.restoration_invoice_id.name,
-            )
-            instance._append_log("Restoration fee paid. Starting data restore...")
-            instance.message_post(body=_(
-                "Restoration fee paid. Data restore triggered automatically."
-            ))
-            run_in_background(
-                instance, '_do_paid_restore',
-                error_method='_on_background_error',
-                error_args=('running',),
-                thread_name='saas_restore_%s' % instance.subdomain,
-            )
+        self._saas_start_paid_restorations(restoration_instances)
 
         sale_orders = self.env['sale.order'].search([
             ('invoice_ids', 'in', paid_invoices.ids),
@@ -328,6 +313,39 @@ class AccountMove(models.Model):
                 error_args=(),
                 thread_name='saas_planchange_%s' % instance.subdomain,
             )
+
+    @api.model
+    def _saas_start_paid_restorations(self, instances):
+        """Queue the retained-snapshot restore of each instance whose
+        restoration invoice was just paid."""
+        for instance in instances:
+            _logger.info(
+                "SaaS instance %s: restoration fee paid (invoice %s), triggering restore.",
+                instance.subdomain,
+                instance.restoration_invoice_id.name,
+            )
+            backup = instance.restoration_backup_id
+            instance.write({'restoration_invoice_id': False,
+                            'restoration_backup_id': False})
+            try:
+                instance.queue_full_instance_restore(backup)
+                instance.message_post(body=_(
+                    "Restoration fee paid. Data restore started automatically."
+                ))
+            except Exception as e:
+                # Paid but can't start (instance not running, snapshot
+                # gone, ...): keep the payment, surface it for an admin.
+                _logger.exception(
+                    "Restoration paid for %s but the restore couldn't start",
+                    instance.subdomain)
+                instance._append_log(
+                    "Restoration fee paid, but the restore couldn't start: %s"
+                    % e)
+                instance.message_post(body=_(
+                    "Restoration fee paid, but the restore couldn't start "
+                    "automatically (%s). An administrator needs to run it "
+                    "from the Restore Retained Backup wizard."
+                ) % e)
 
     def _saas_check_payment_reversal(self):
         """Suspend running SaaS instances when a payment is reversed.

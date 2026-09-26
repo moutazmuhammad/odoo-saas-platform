@@ -366,6 +366,17 @@ class TestPortalDataRestoreRequests(_PortalTestBase):
     never actually leaves the process) since it's the one meaningfully
     new behaviour at this layer (the "email delivery failed" branch)."""
 
+    def _retained_snapshot(self):
+        """The full-instance snapshot a cancellation retains."""
+        return self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id,
+            'name': '20260101T000000Z',
+            'is_full_instance': True,
+            'format': 'operator',
+            'bucket_path': 'backups/x/20260101T000000Z',
+            'state': 'done',
+        })
+
     def test_request_restore_denies_non_owner(self):
         self.authenticate('portalintruder@example.com', 'intruderpass123')
         result = self._json_call(
@@ -379,7 +390,7 @@ class TestPortalDataRestoreRequests(_PortalTestBase):
         self.assertIn('No backup available', (result or {}).get('error', ''))
 
     def test_request_restore_rejects_missing_support_email(self):
-        self.instance.sudo().write({'retained_backup_path': '/backups/x.tar.gz'})
+        self._retained_snapshot()
         self.env['ir.config_parameter'].sudo().set_param(
             'saas_master.support_email', '')
         self.authenticate('portalowner@example.com', 'ownerpass123')
@@ -388,7 +399,7 @@ class TestPortalDataRestoreRequests(_PortalTestBase):
         self.assertIn('Support email is not configured', (result or {}).get('error', ''))
 
     def test_request_restore_success_sends_mail_and_logs(self):
-        self.instance.sudo().write({'retained_backup_path': '/backups/x.tar.gz'})
+        self._retained_snapshot()
         self.env['ir.config_parameter'].sudo().set_param(
             'saas_master.support_email', 'support@example.com')
         self.authenticate('portalowner@example.com', 'ownerpass123')
@@ -402,7 +413,7 @@ class TestPortalDataRestoreRequests(_PortalTestBase):
         self.assertTrue(mail, "a real mail.mail record must be created")
 
     def test_request_restore_surfaces_delivery_failure(self):
-        self.instance.sudo().write({'retained_backup_path': '/backups/x.tar.gz'})
+        self._retained_snapshot()
         self.env['ir.config_parameter'].sudo().set_param(
             'saas_master.support_email', 'support@example.com')
         self.authenticate('portalowner@example.com', 'ownerpass123')
@@ -435,16 +446,14 @@ class TestPortalDataRestoreRequests(_PortalTestBase):
         self.assertTrue((result or {}).get('error'))
 
     def test_decline_restore_clears_restore_state(self):
-        self.instance.sudo().write({
-            'retained_backup_path': '/backups/x.tar.gz',
-            'restore_banner_dismissed': False,
-        })
+        self._retained_snapshot()
+        self.instance.sudo().write({'restore_banner_dismissed': False})
         self.authenticate('portalowner@example.com', 'ownerpass123')
         result = self._json_call(
             '/my/instances/%d/decline-restore' % self.instance.id)
         self.assertTrue((result or {}).get('success'))
         self.instance.invalidate_recordset()
-        self.assertFalse(self.instance.sudo().retained_backup_path)
+        self.assertFalse(self.instance.sudo().restoration_backup_id)
         self.assertTrue(self.instance.sudo().restore_banner_dismissed)
 
 

@@ -533,6 +533,11 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 raise RuntimeError(
                     'deleting OdooInstance %s failed: %s' % (name, e)) from e
 
+    def exists(self, handle: ComputeHandle) -> bool:
+        """Whether the OdooInstance CR still exists — including while its
+        finalizer is still tearing the tenant down after ``destroy()``."""
+        return self._get_cr(self._cr_name(handle)) is not None
+
     def _patch_suspended(self, handle: ComputeHandle, suspended: bool) -> None:
         name = self._cr_name(handle)
         try:
@@ -982,6 +987,28 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             if e.status == 404:
                 return ''
             raise RuntimeError('reading logs for %s failed: %s' % (pod.metadata.name, e)) from e
+
+    def open_log_stream(self, handle: ComputeHandle, *, tail: int = 100):
+        """Follow the web pod's Odoo log (``kubectl logs -f --tail``).
+        Returns the raw streaming HTTP response — iterate
+        ``resp.stream(n)`` for byte chunks, ``resp.release_conn()`` when
+        done — or None when the tenant has no pod. Opening the stream
+        needs the ORM (kubeconfig); reading it doesn't, so a controller
+        can open it inside the request and read it from a generator."""
+        namespace = handle.instance_path or self._namespace_for(handle)
+        pod = self._first_pod(namespace, self._cr_name(handle))
+        if pod is None:
+            return None
+        try:
+            return self._core_api().read_namespaced_pod_log(
+                pod.metadata.name, namespace, container=_CONTAINER_NAME,
+                follow=True, tail_lines=int(tail), _preload_content=False)
+        except ApiException as e:
+            if e.status == 404:
+                return None
+            raise RuntimeError(
+                'opening the log stream for %s failed: %s'
+                % (pod.metadata.name, e)) from e
 
     def endpoint(self, handle: ComputeHandle) -> tuple[str, int]:
         """Return where an external reverse proxy should connect to reach

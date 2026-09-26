@@ -1987,13 +1987,8 @@ class SaasApi(http.Controller):
         and pays a one-time data-restoration fee."""
         if instance.state not in ('cancelled', 'cancelled_by_client'):
             return {'is_cancelled': False}
-        Backup = request.env['saas.instance.backup'].sudo()
-        retained = Backup.search([
-            ('instance_id', '=', instance.id),
-            ('is_full_instance', '=', True),
-            ('state', '=', 'done'),
-        ], order='create_date desc', limit=1)
-        has_retained = bool(retained) or bool(instance.retained_backup_path)
+        retained = instance.sudo().retained_snapshot()
+        has_retained = bool(retained)
         # Computed: months retained after deletion × ceil(snapshot GB)
         # × the per-GB monthly rate.
         fee = instance._get_retained_snapshot_fee()

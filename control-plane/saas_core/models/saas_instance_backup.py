@@ -1090,7 +1090,10 @@ class SaasInstanceBackup(models.Model):
         """Background worker (job model = ``saas.instance.backup``,
         ``self`` = the backup record being restored): restore this
         full-instance backup's ``db.dump`` + ``filestore.tar.gz`` onto
-        the SAME, already-running instance.
+        the already-running instance ``instance_id`` — normally the
+        backup's own, or another instance of the same customer when
+        restoring a retained snapshot (saas_billing). The target's served
+        database (odoo.conf ``db_name``) is the one recreated.
 
         Downloads both artifacts into the pod via presigned GET + curl
         (same "curl on the target" pattern the per-DB restore uses —
@@ -1108,7 +1111,7 @@ class SaasInstanceBackup(models.Model):
             raise UserError(_("Instance no longer exists."))
         driver = instance._compute_driver()
         handle = instance._compute_handle()
-        db_name = instance.subdomain
+        db_name = instance._served_db_name()
 
         dump_url = self._presigned_get_url('%s/db.dump' % self.bucket_path)
         fs_url = self._presigned_get_url('%s/filestore.tar.gz' % self.bucket_path)

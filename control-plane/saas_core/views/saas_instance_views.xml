@@ -311,12 +311,12 @@
                                    nolabel="1"/>
                         </page>
                         <page string="Cancellation &amp; Recovery"
-                              invisible="state not in ('cancelled', 'cancelled_by_client') and not retained_backup_path">
+                              invisible="state not in ('cancelled', 'cancelled_by_client') and not retained_snapshot_id">
                             <div class="alert alert-info mb-3"
-                                 invisible="not retained_backup_path or state not in ('cancelled', 'cancelled_by_client')">
+                                 invisible="not retained_snapshot_id or state not in ('cancelled', 'cancelled_by_client')">
                                 <strong>Data Recovery Workflow:</strong>
                                 <ol class="mb-0 mt-2">
-                                    <li>Client reactivates the instance from the portal (creates a fresh instance with a new plan)</li>
+                                    <li>Client reactivates the instance from the portal (it is redeployed with a new plan)</li>
                                     <li>Once the instance is running, click <b>Restore to Instance &amp; Invoice</b> below to restore the old data and charge the client</li>
                                 </ol>
                             </div>
@@ -326,8 +326,8 @@
                                        nolabel="1"/>
                             </group>
                             <group string="Retained Backup">
-                                <field name="retained_backup_path" readonly="1"/>
-                                <div invisible="retained_backup_path"
+                                <field name="retained_snapshot_id" readonly="1"/>
+                                <div invisible="retained_snapshot_id"
                                      class="text-muted">
                                     No retained backup available. The backup may have failed during deletion.
                                 </div>

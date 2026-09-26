@@ -171,6 +171,8 @@ class TestFullInstanceBackup(TransactionCase):
         with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
              patch.object(type(backup), '_presigned_get_url',
                           return_value='https://example.com/x'), \
+             patch.object(type(self.instance), '_served_db_name',
+                          return_value='odoo'), \
              patch.object(type(self.instance), '_docker_exec_sql',
                           return_value=(0, '', '')) as m_sql:
             backup._do_restore_full_instance(self.instance.id)
@@ -187,5 +189,10 @@ class TestFullInstanceBackup(TransactionCase):
         driver.stop.assert_not_called()
         self.assertTrue(any('pg_terminate_backend' in c.args[0]
                             for c in m_sql.call_args_list))
+        # The served database (odoo.conf db_name) is recreated — the
+        # operator names it, not the subdomain.
+        sqls = [c.args[0] for c in m_sql.call_args_list]
+        self.assertIn('DROP DATABASE IF EXISTS "odoo" WITH (FORCE)', sqls)
+        self.assertIn("'-d', 'odoo'", pg_restore_cmd)
         self.assertEqual(self.instance.state, 'running')
         self.assertFalse(self.instance.pending_operation)

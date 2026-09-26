@@ -4,7 +4,6 @@ from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 
 from ..models.saas_instance import ORIGIN_DATA_RESTORATION
-from odoo.addons.saas_core.utils import run_in_background
 
 _logger = logging.getLogger(__name__)
 
@@ -18,13 +17,12 @@ class SaasRestoreRetainedWizard(models.TransientModel):
         string='Source Instance',
         required=True,
         readonly=True,
-        domain="[('retained_backup_path', '!=', False)]",
-        help='Instance that holds the retained backup path. '
+        help='Instance that holds the retained snapshot. '
              'Can be cancelled or already reactivated.',
     )
-    retained_backup_path = fields.Char(
-        related='source_instance_id.retained_backup_path',
-        string='Backup Path',
+    retained_snapshot_id = fields.Many2one(
+        related='source_instance_id.retained_snapshot_id',
+        string='Retained Snapshot',
         readonly=True,
     )
     partner_id = fields.Many2one(
@@ -37,10 +35,10 @@ class SaasRestoreRetainedWizard(models.TransientModel):
         string='Target Instance',
         required=True,
         domain="[('partner_id', '=', partner_id), "
-               "('state', 'in', ('running', 'stopped'))]",
-        help='The running or stopped instance where the backup will be '
-             'restored. Must belong to the same customer. '
-             'Can be the same instance after reactivation.',
+               "('state', '=', 'running')]",
+        help='The running instance the snapshot will be restored onto '
+             '(its database and files are replaced). Must belong to the '
+             'same customer. Can be the same instance after reactivation.',
     )
     restoration_fee = fields.Float(
         string='Restoration Fee',
@@ -50,13 +48,6 @@ class SaasRestoreRetainedWizard(models.TransientModel):
              'will be created and sent; the restore happens '
              'automatically when it is paid. Set to 0 for free restore.',
     )
-    delete_retained_after = fields.Boolean(
-        string='Delete backup from cloud after restore',
-        default=False,
-        help='If checked, the retained backup file will be deleted from '
-             'cloud storage after a successful restoration.',
-    )
-
     @api.model
     def default_get(self, fields_list):
         res = super().default_get(fields_list)
@@ -77,14 +68,14 @@ class SaasRestoreRetainedWizard(models.TransientModel):
         source = self.source_instance_id
         target = self.target_instance_id
 
-        if not source.retained_backup_path:
+        if not source.retained_snapshot():
             raise UserError(_(
-                "No retained backup found for instance '%s'."
+                "No retained snapshot found for instance '%s'."
             ) % source.name)
 
-        if target.state not in ('running', 'stopped'):
+        if target.state != 'running':
             raise UserError(_(
-                "Target instance must be running or stopped (current: %s)."
+                "Target instance must be running (current: %s)."
             ) % target.state)
 
         if target.partner_id != source.partner_id:
@@ -111,7 +102,7 @@ class SaasRestoreRetainedWizard(models.TransientModel):
         # Store the pending restoration on the target instance
         target.write({
             'restoration_invoice_id': invoice.id,
-            'retained_backup_path': source.retained_backup_path,
+            'restoration_backup_id': source.retained_snapshot().id,
         })
 
         target._append_log(
@@ -139,39 +130,16 @@ class SaasRestoreRetainedWizard(models.TransientModel):
         }
 
     def action_restore_now_free(self):
-        """Queue an immediate, free restore in the background.
-
-        The actual SSH/psql work runs asynchronously so that the user's
-        HTTP request returns immediately. State is set to 'provisioning'
-        synchronously so the UI reflects the in-progress restore.
-        """
+        """Queue an immediate, free restore of the retained snapshot onto
+        the target (the durable job queue runs it; the target shows
+        'provisioning' until it's done)."""
         self._validate()
         source = self.source_instance_id
         target = self.target_instance_id
-
-        target._ensure_can_ssh()
-        prev_state = target.state
-        target.write({
-            'state': 'provisioning',
-            'pre_provisioning_state': prev_state,
-        })
-        target._append_log(
-            "Retained backup restore queued by admin %s (free)."
-            % self.env.user.name
-        )
+        target.queue_full_instance_restore(source.retained_snapshot())
         target.message_post(body=_(
-            "Retained backup restore queued by %s (no charge). "
-            "You will be notified when it completes."
+            "Retained snapshot restore queued by %s (no charge)."
         ) % self.env.user.name)
-
-        run_in_background(
-            target,
-            '_do_retained_restore',
-            method_args=(source.id, prev_state, bool(self.delete_retained_after)),
-            error_method='_on_background_error',
-            error_args=(prev_state,),
-        )
-
         return {
             'type': 'ir.actions.act_window',
             'res_model': 'saas.instance',
@@ -179,9 +147,6 @@ class SaasRestoreRetainedWizard(models.TransientModel):
             'view_mode': 'form',
             'target': 'current',
         }
-
-    # _pre_restore_setup is now on saas.instance model — called as
-    # target._pre_restore_setup() from both the wizard and the auto flow.
 
     def _create_restoration_invoice(self, source, target):
         """Create and post an invoice for the data restoration service."""
@@ -215,17 +180,3 @@ class SaasRestoreRetainedWizard(models.TransientModel):
             invoice.name, partner.name, self.restoration_fee,
         )
         return invoice
-
-    def _delete_retained_from_cloud(self, source):
-        """Delete the retained backup file from cloud storage."""
-        try:
-            self.env['saas.instance.backup'].delete_bucket_path(
-                source.retained_backup_path
-            )
-            source.retained_backup_path = False
-            source._append_log("Retained backup deleted from cloud storage.")
-        except Exception:
-            _logger.exception(
-                "Failed to delete retained backup from cloud for %s",
-                source.name,
-            )

@@ -10,7 +10,7 @@
                     <group string="Source (Cancelled Instance)">
                         <field name="source_instance_id"/>
                         <field name="partner_id"/>
-                        <field name="retained_backup_path"/>
+                        <field name="retained_snapshot_id"/>
                     </group>
                     <group string="Restore To">
                         <field name="target_instance_id"/>
@@ -18,7 +18,6 @@
                 </group>
                 <group string="Billing">
                     <field name="restoration_fee"/>
-                    <field name="delete_retained_after"/>
                 </group>
                 <footer>
                     <button string="Send Invoice (restore after payment)"

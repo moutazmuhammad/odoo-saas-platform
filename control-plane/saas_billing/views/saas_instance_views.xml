@@ -62,7 +62,7 @@
                         type="action"
                         class="oe_stat_button"
                         icon="fa-database"
-                        invisible="not retained_backup_path"
+                        invisible="not retained_snapshot_id"
                         groups="saas_core.group_saas_manager">
                     <div class="o_field_widget o_stat_info">
                         <span class="o_stat_value text-warning">Backup</span>
@@ -95,14 +95,14 @@
                     <field name="margin_currency_id" column_invisible="1"/>
                 </group>
             </xpath>
-            <xpath expr="//field[@name='retained_backup_path']" position="after">
+            <xpath expr="//field[@name='retained_snapshot_id']" position="after">
                 <button name="%(action_restore_retained_wizard)d"
                         string="Restore to Instance &amp; Invoice"
                         type="action"
                         class="btn-primary"
                         icon="fa-upload"
                         groups="saas_core.group_saas_manager"
-                        invisible="not retained_backup_path"/>
+                        invisible="not retained_snapshot_id"/>
             </xpath>
         </field>
     </record>

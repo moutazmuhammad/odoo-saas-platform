@@ -1,0 +1,204 @@
+RUN GUIDE — Odoo SaaS platform, from zero to a running tenant
+==============================================================
+
+What runs where
+---------------
+  control-plane/   Odoo 18 addons: saas_core (instances, compute, jobs),
+                   saas_billing (plans, invoices, wallet), saas_website
+                   (portal + JSON API). One Odoo server + one job worker.
+  frontend/veltnex React SPA (customer portal); built into
+                   control-plane/saas_website/static/spa/.
+  compute/         Kubernetes side: the odoo-operator (Go), its Helm chart,
+                   the backup-tool image, Prometheus values, examples.
+
+Each tenant is an OdooInstance custom resource; the operator turns it into
+a namespace with Postgres, Odoo, ingress + TLS, backups. The control plane
+talks to each cluster ("region") only through its kubeconfig.
+
+Paths below use the dev layout: BASE=~/odoo-saas-runtime next to the repo
+checkout (devctl.sh reads SAAS_DEV_BASE; every path is overridable).
+
+
+1. Prerequisites (dev machine)
+------------------------------
+  - Linux, Python 3.12, PostgreSQL 14 binaries (/usr/lib/postgresql/14/bin)
+  - Odoo build deps: libpq-dev libldap2-dev libsasl2-dev libxml2-dev
+    libxslt1-dev libjpeg-dev zlib1g-dev
+  - Node 20 (frontend), Go (version in compute/operator/go.mod), Docker,
+    helm, kubectl
+
+
+2. Control plane (local)
+------------------------
+  export SAAS_DEV_BASE=~/odoo-saas-runtime
+  mkdir -p $SAAS_DEV_BASE/saas-odoo/{data,log} $SAAS_DEV_BASE/saas-pg
+
+  # Odoo 18 source + venv
+  git clone --depth 1 --branch 18.0 https://github.com/odoo/odoo.git $SAAS_DEV_BASE/odoo18
+  python3.12 -m venv $SAAS_DEV_BASE/odoo18-venv
+  $SAAS_DEV_BASE/odoo18-venv/bin/pip install -r $SAAS_DEV_BASE/odoo18/requirements.txt
+  $SAAS_DEV_BASE/odoo18-venv/bin/pip install -r control-plane/requirements.txt coverage
+
+  # Userspace PostgreSQL on :5455 with an "odoo" superuser
+  /usr/lib/postgresql/14/bin/initdb -D $SAAS_DEV_BASE/saas-pg/data -U odoo -W
+
+  # $SAAS_DEV_BASE/saas-odoo/odoo.conf
+  [options]
+  admin_passwd = <master password>
+  db_host = 127.0.0.1
+  db_port = 5455
+  db_user = odoo
+  db_password = <postgres password>
+  db_filter = ^saas_dev$
+  addons_path = <BASE>/odoo18/addons,<repo>/control-plane
+  data_dir = <BASE>/saas-odoo/data
+  logfile = <BASE>/saas-odoo/log/odoo.log
+  http_port = 8069
+  limit_time_real_cron = 120
+  limit_time_real = 1800        # live-log streams run up to 300s (see plan)
+
+  # Create + seed the database (installs saas_core, saas_billing,
+  # saas_website, payment_demo; seed users use password demo1234).
+  # Needs Postgres up and Odoo down: stop saas-control-plane and
+  # saas-job-worker first if they run as services.
+  control-plane/scripts/devctl.sh reset
+
+  Run it — either devctl (nohup) or, as on this machine, systemd --user
+  services (never mix the two: `devctl.sh down` stops Postgres under them):
+    saas-postgres.service       pg_ctl -D <BASE>/saas-pg/data ... -p 5455 start
+    saas-control-plane.service  odoo-bin -c <BASE>/saas-odoo/odoo.conf -d saas_dev
+    saas-job-worker.service     control-plane/scripts/devctl.sh worker
+  (unit files: ~/.config/systemd/user/; the worker unit sets
+   SAAS_DEV_BASE and TimeoutStopSec=900 so running jobs can finish.)
+
+  systemctl --user enable --now saas-postgres saas-control-plane saas-job-worker
+
+  The job worker (odoo-bin saas-jobs) runs deploys/restores/backups outside
+  Odoo's time limits. Without it jobs still run, but inside the server and
+  under its limits. After ANY Python change restart BOTH the server and the
+  worker; after model/view/data changes also upgrade:
+    systemctl --user stop saas-control-plane saas-job-worker
+    cd <BASE>/odoo18 && <BASE>/odoo18-venv/bin/python odoo-bin -c <conf> -d saas_dev \
+      -u saas_core,saas_billing,saas_website --stop-after-init
+    systemctl --user start saas-control-plane saas-job-worker
+
+  Backend: http://127.0.0.1:8069/web — log in as admin, then give admin the
+  groups "SaaS / Manager" (+ host shell if needed); they are not implied by
+  Settings access and are lost on every reset. (Groups show on the user
+  form only in developer mode.)
+  Portal SPA: http://127.0.0.1:8069/  — seed customers e.g.
+  acme@example.com / demo1234.
+
+
+3. Frontend (only when changing the SPA)
+----------------------------------------
+  cd frontend/veltnex && npm ci
+  npm run build     # typecheck + build into control-plane/saas_website/static/spa
+  npm test          # vitest
+  (npm run dev serves it standalone; vite.config.ts proxies /saas and /web
+   to the Odoo server — adjust its port to 8069.)
+
+
+4. A Kubernetes cluster for tenants
+-----------------------------------
+Any conformant cluster works. Test setup used: single-node microk8s
+(164.90.236.33) with addons dns, helm3, hostpath-storage, ingress,
+cert-manager.
+
+  a) Ingress reachable on 80/443. microk8s/Traefik without a cloud LB:
+       kubectl -n ingress patch svc traefik --type=merge \
+         -p '{"spec":{"externalIPs":["<node-ip>"]}}'
+       kubectl -n ingress patch svc traefik --subresource=status --type=merge \
+         -p '{"status":{"loadBalancer":{"ingress":[{"ip":"<node-ip>"}]}}}'
+     (Do NOT use MetalLB with the node's own IP: breaks SSH via ARP.)
+
+  b) TLS: a cert-manager ClusterIssuer (Let's Encrypt HTTP-01 on the
+     ingress class), e.g. named letsencrypt-test-client.
+
+  c) DNS: a wildcard record *.<domain> -> ingress IP
+     (or <ip-with-dashes>.nip.io for zero setup).
+
+  d) Operator (CRDs first; Helm does not upgrade CRDs):
+       kubectl apply --server-side --force-conflicts \
+         -f compute/charts/odoo-operator/crds/
+       helm upgrade --install odoo-operator compute/charts/odoo-operator \
+         -n odoo-system --create-namespace \
+         -f compute/examples/test-cluster/operator-values.yaml
+     Images (public on Docker Hub for now):
+       docker.io/moutazmuhammad/odoo-saas-operator:0.1.5
+       docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.0 (compiled-in default)
+     Without Gateway API, keep networking.provider=ingress (the values file).
+
+  e) Metrics (CPU/RAM usage, customer dashboard):
+       helm upgrade --install prometheus compute/charts/vendor/prometheus \
+         -n monitoring --create-namespace \
+         -f compute/charts/monitoring/prometheus-values.yaml
+
+  f) Image registry for customer Git repos (tenant image builds). Any OCI
+     registry; for a test cluster:
+       kubectl -n container-registry create secret generic registry-auth \
+         --from-literal=htpasswd="$(htpasswd -nbB <user> <password>)"
+       kubectl apply -f compute/examples/test-registry/registry.yaml
+     Push host registry.container-registry.svc.cluster.local:5000, nodes
+     pull localhost:32000, plain HTTP.
+
+  Rebuilding images (after operator/backup-tool changes):
+    cd compute/operator && make docker-build IMG=docker.io/moutazmuhammad/odoo-saas-operator:<tag>
+    docker push docker.io/moutazmuhammad/odoo-saas-operator:<tag>
+    docker build -t docker.io/moutazmuhammad/odoo-saas-backup-tool:<tag> compute/tools/backup-tool
+    then bump image.tag in the chart values / the defaults in
+    internal/resources/backup.go + restore.go.
+
+
+5. Register the cluster in the control plane (backend, SaaS menu)
+-----------------------------------------------------------------
+  1. Kubeconfig: create a record, upload the cluster's kubeconfig file.
+  2. Region: name/code, kubeconfig, ingress host (+port 80),
+     "Native Ingress TLS" on + the ClusterIssuer name; Monitoring:
+     namespace "monitoring", service "prometheus-server:80" (defaults);
+     Tenant Image Builds: registry host / push host / user / password /
+     plain-HTTP when using the test registry.
+  3. Server: compute driver Kubernetes, region, node IP.
+  4. Based domain: the wildcard domain, proxy server = that server.
+  5. Odoo versions (seeded 17.0/18.0 -> image odoo:<version>), plans and
+     products (seeded) as needed.
+
+
+6. Deploy and check a tenant
+----------------------------
+  Customer path: portal -> sign up -> choose product/plan -> pay (dev:
+  payment_demo) -> the instance deploys. Admin path: create a
+  saas.instance (subdomain, domain, region, version, compute tier,
+  partner, plan) in state "paid" and press Deploy.
+
+  Verify independently of the control plane:
+    kubectl get odooinstances -A                  # PHASE Ready
+    curl -I https://<sub>.<domain>/web/login       # 200
+  Portal: live CPU/RAM + history, logs, databases (hosting), backups,
+  builds (Git repos), plan changes.
+
+
+7. Tests and lints
+------------------
+  SAAS_DEV_BASE=~/odoo-saas-runtime control-plane/scripts/devctl.sh test
+      # fresh saas_test DB, all three addons, prints "N failed ... of M tests"
+  python3 control-plane/scripts/lint_addon_boundaries.py
+  python3 control-plane/scripts/lint_csrf_routes.py
+  cd compute/operator && KUBEBUILDER_ASSETS=<envtest assets> go test ./...
+      # (make test downloads envtest itself)
+  cd frontend/veltnex && npm test && npm run build
+  CI (.github/workflows/ci.yml) runs the same on every PR.
+
+
+8. Everyday troubleshooting
+---------------------------
+  - Logs: <BASE>/saas-odoo/log/odoo.log (server and worker share it).
+  - Queued work: table saas_job (no menu yet), e.g.
+      psql -h 127.0.0.1 -p 5455 -U odoo saas_dev -c "select id, model,
+        res_id, method, state, attempts from saas_job order by id desc limit 20"
+  - Nothing runs? systemctl --user status saas-job-worker; without it the
+    server executes jobs itself.
+  - Tenant stuck: kubectl describe odooinstance <name>; conditions say
+    why (image pull, database, route/TLS, update job).
+  - Mutating tests: never trust rollback in an odoo-bin shell on saas_dev
+    (billing crons commit). pg_dump first or use a copy DB.

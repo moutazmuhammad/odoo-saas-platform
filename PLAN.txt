@@ -1,0 +1,124 @@
+PLAN — remaining work to production
+===================================
+Written 2026-09-26. Replaces plan-next.txt (items 1-5 there are done).
+Standing rules for every step:
+  - Zero customer downtime in any customer-triggered flow (rolling updates).
+    Verify live by polling the tenant URL every 0.5s during the change.
+  - Test mutating flows on a DB copy or after pg_dump; never trust rollback
+    in an odoo-bin shell on saas_dev (billing crons commit).
+  - Fresh-install tests miss upgrade issues: also upgrade a copy of real data.
+  - Live-test on the test cluster (164.90.236.33, Region "Test Client
+    Cluster" on saas_dev); restart saas-control-plane AND saas-job-worker
+    after Python changes.
+
+Done so far (commits on main): billing split into saas_billing; k8s-only
+(ssh_docker removed); pod resize + rolling restart; per-push image builds
+with the operator update gate; Prometheus usage metrics + dashboard;
+teardown/logs/retained restore on k8s; hosting multi-DB serving + upgrades;
+dedicated saas-jobs worker; operator/backup-tool on Docker Hub.
+
+
+PHASE 1 — Safety net (do first)
+-------------------------------
+1.1 CI up to date (.github/workflows/ci.yml)
+    - odoo-tests: install and test saas_billing too (-i and --test-tags
+      /saas_core,/saas_billing,/saas_website), coverage for all three.
+    - Add the addon-boundary lint + its unit test next to the CSRF lint.
+    - Check the compute job still passes with envtest; trivy scans the
+      Docker Hub images' Dockerfiles.
+    Done when: a PR run is green and a deliberately broken test turns it red.
+
+1.2 Upgrade-with-data test
+    - CI job: install the previous release tag of the addons, load a seed
+      dataset (seed_dev.py), then check out the PR and run -u on all three
+      addons; fail on any error/warning-level migration issue.
+    - Covers store=True cross-addon computes and xmlid re-parenting, which
+      fresh installs never exercise.
+    Done when: it catches a known-bad migration in a throwaway branch.
+
+1.3 Full clean E2E on the test cluster (scripted where possible)
+    sign up -> pay (payment_demo) -> deploy -> Git repo push -> build +
+    upgrade -> plan upgrade/downgrade -> renew -> backup/restore -> cancel
+    -> reactivate. Record findings, fix each (the last five sessions each
+    found 1-3 real bugs this way).
+
+
+PHASE 2 — Correctness gaps found along the way
+----------------------------------------------
+2.1 Move the remaining in-process background work onto the job queue
+    (run_in_background threads die with the server): _do_delete_instance
+    via action_cancel, _do_deploy_after_payment (account_move payment
+    hook), _do_stop, _do_suspend, _do_webhook_pull_and_restart,
+    _run_portal_backup, and hosting DB create _run_create (keep its
+    secrets out of args_json: an encrypted field on the db.operation,
+    cleared after use).
+2.2 Heartbeat vs target writes: jobs whose target carries last_heartbeat
+    (saas.instance.db.operation) can still hit a serialization failure
+    when the job writes that record. Give liveness its own mechanism
+    (session advisory lock per running job, reaper checks it) and drop the
+    heartbeat UPDATEs.
+2.3 Live-log streams run up to 300s; cap them below limit_time_real (e.g.
+    60s, the SPA reconnects on "done") so production can use normal HTTP
+    limits.
+2.4 Operator backups dump only the "odoo" database: add the hosting
+    customer databases to the backup Job (and to restore), or document
+    per-DB backups as the supported path.
+2.5 Configure backup storage (S3/GCS) on saas_dev and live-test: final
+    snapshot on cancel, retained-snapshot restore (free + invoiced),
+    full-instance restore onto the served "odoo" DB.
+2.6 Dead code: scripts/rt_register.py, db_server_id/proxy_server_id and
+    paramiko/SSH helpers in saas_core/utils.py and the SSH key model if no
+    caller remains (terminal uses the k8s exec channel), leftover
+    docker-era comments. Remove with a migration where fields go.
+2.7 Usage-refresh cron: one pod exec per tenant for storage; measure at
+    ~100 tenants and batch or parallelise if a run exceeds a few minutes.
+
+
+PHASE 3 — Production platform
+-----------------------------
+3.1 Payment provider: configure the real provider (Stripe/other) in the
+    production DB, test checkout, renewal (saved token), failed payment ->
+    dunning -> suspension, refund, end to end. Remove payment_demo from
+    production installs.
+3.2 Production Odoo config for the control plane: workers>0 (prefork),
+    proxy_mode, limit_time_real 120-300, limit_time_real_cron default,
+    list_db off, strong admin_passwd, SMTP.
+3.3 Run the control plane as containers: an Odoo image with the three
+    addons + a Deployment/Service for the web server + a second Deployment
+    for `odoo-bin saas-jobs` (same image, SAAS_JOB_THREADS), cron on the
+    web tier only. Health checks, resource limits.
+3.4 Control-plane database: managed Postgres or CloudNativePG, automated
+    backups + PITR, restore drill documented.
+3.5 Monitoring/alerting: control plane (HTTP errors, job failures, queue
+    depth, worker alive), clusters (Prometheus alerts: node pressure,
+    tenant pods crashlooping, cert expiry, backup Job failures).
+3.6 Private registry (replacing public Docker Hub): chart
+    imagePullSecrets for the operator, and the operator copying a pull
+    secret into every tenant namespace for backup/restore Jobs (not built
+    yet). Retag, update defaults in backup.go/restore.go and chart values.
+3.7 Multi-node clusters: a rolling update with an RWO filestore volume
+    can hang when the surge pod lands on another node. Test on a 2-node
+    cluster; fix with pod affinity to the current node or require RWX for
+    rollouts. Also test cert-manager + ingress on a real cloud LB.
+3.8 Secrets: rotate the real production SSH password (USER ONLY — never
+    simulate); rotate the test cluster root password and Docker Hub
+    password that were shared in chat; review .gitleaksignore.
+
+
+PHASE 4 — Documentation and handover
+------------------------------------
+4.1 Keep RUN-GUIDE.txt current (dev setup, cluster setup, registration).
+4.2 Operations runbook: upgrade the control plane, upgrade the operator +
+    CRDs, add a region, rotate credentials, restore a tenant, restore the
+    control-plane DB, incident checklist.
+4.3 Architecture overview: control plane <-> cluster contract (the
+    OdooInstance CRD fields the control plane sets), job queue, billing
+    boundaries.
+
+
+Suggested order
+---------------
+1.1 -> 1.2 -> 1.3 (fix what it finds) -> 2.1 + 2.2 -> 2.3 -> 2.5 -> 2.4
+-> 3.2 + 3.3 + 3.4 -> 3.1 -> 3.5 -> 3.6 -> 3.7 -> 2.6/2.7 -> 3.8 -> 4.x
+Needs input from the user: 3.1 (provider account/keys), 3.6 (registry),
+3.7 (second node / cloud), 3.8 (password rotation), 2.5 (bucket).

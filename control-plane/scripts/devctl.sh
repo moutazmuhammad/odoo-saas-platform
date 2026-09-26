@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Local dev control for the SaaS control-plane (Odoo 18 + userspace PostgreSQL).
-# Usage: scripts/devctl.sh {up|down|status|logs|otp|seed|shell|reset|test|crons-off|crons-on|cron}
+# Usage: scripts/devctl.sh {up|down|status|logs|otp|seed|shell|worker|reset|test|crons-off|crons-on|cron}
 #
 # Paths are auto-derived from the repo location and overridable via env vars,
 # so this works on any checkout without editing. Layout expected (siblings of
@@ -85,6 +85,11 @@ case "${1:-}" in
     echo "--- coverage ---"
     "$VENV/bin/python" -m coverage report --data-file="$REPO/.coverage" | tail -20 ;;
   shell)  cd "$ODOO"; "$VENV/bin/python" odoo-bin shell -c "$CONF" -d "$DB" --no-http ;;
+  worker) # the durable-job worker, in the foreground (see saas_core/cli/saas_jobs.py).
+          # Without it jobs still run in-process, under Odoo's time limits.
+    cd "$ODOO"
+    addons=$(sed -n 's/^addons_path *= *//p' "$CONF")
+    exec "$VENV/bin/python" odoo-bin --addons-path="$addons" saas-jobs -c "$CONF" -d "$DB" ;;
   crons-off)  # seed-only stability: disable all SaaS: crons (server must be down
               # so we don't fight a running cron worker's row lock).
     odoo_down; sleep 1; pg_up

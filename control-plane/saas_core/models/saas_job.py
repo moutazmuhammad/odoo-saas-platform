@@ -1,8 +1,13 @@
 """Durable job queue.
 
-A DB-backed queue: ``enqueue`` persists a job row; ``_cron_run_jobs`` claims due
-jobs with ``FOR UPDATE SKIP LOCKED`` and runs them; ``_cron_reap_jobs`` requeues
+A DB-backed queue: ``enqueue`` persists a job row; ``_cron_reap_jobs`` requeues
 (idempotent) or fails (non-idempotent) jobs whose worker died (stale heartbeat).
+
+Jobs are executed by the dedicated worker process (``odoo-bin saas-jobs``, see
+``saas_core/cli/saas_jobs.py``), outside Odoo's cron/HTTP time limits — a
+deploy, restore or backup legitimately runs for minutes. While no worker is
+alive (see ``_dedicated_worker_alive``), the old in-process executors take
+over: an immediate thread per enqueue plus ``_cron_run_jobs`` as a backstop.
 Retries use exponential back-off; a per-resource advisory ``lock_key``
 serialises same-resource jobs; ``idempotency_key`` dedupes enqueues.
 
@@ -38,6 +43,11 @@ class SaasJob(models.Model):
     _HEARTBEAT_STALE_MIN = 15
     # How often the in-flight worker stamps the heartbeat (job + target).
     _HEARTBEAT_TICK_SEC = 30
+    # Session-level advisory lock every dedicated worker process holds
+    # (shared) for its whole life; a dead worker's connection drops it.
+    _WORKER_LOCK_KEY = 7482910561
+    # NOTIFY channel that wakes the dedicated worker when a job is enqueued.
+    _NOTIFY_CHANNEL = 'saas_job_queue'
     # Retry back-off: BASE * 2**(attempts-1) minutes, capped, + jitter.
     _BACKOFF_BASE_MIN = 1
     _BACKOFF_CAP_MIN = 60
@@ -113,9 +123,38 @@ class SaasJob(models.Model):
             'on_error': on_error or False,
             'on_error_args_json': json.dumps(list(on_error_args)),
         })
+        # Delivered on commit: wakes a dedicated worker right away.
+        self.env.cr.execute('NOTIFY %s' % self._NOTIFY_CHANNEL)
         if run_now and not eta:
             job._spawn_worker()
         return job
+
+    @api.model
+    def _dedicated_worker_alive(self):
+        """True while at least one ``saas-jobs`` worker process runs: it
+        holds ``_WORKER_LOCK_KEY`` shared, so an exclusive try fails."""
+        self.env.cr.execute(
+            "SELECT pg_try_advisory_lock(%s)", (self._WORKER_LOCK_KEY,))
+        if self.env.cr.fetchone()[0]:
+            self.env.cr.execute(
+                "SELECT pg_advisory_unlock(%s)", (self._WORKER_LOCK_KEY,))
+            return False
+        return True
+
+    @api.model
+    def _worker_run_next(self):
+        """Dedicated worker step: claim and run one due job. Returns whether
+        a job was run (False = queue empty, the worker waits)."""
+        job = self._claim_next_any()
+        if not job:
+            return False
+        try:
+            job._execute()
+        except Exception:
+            # _execute handles its own failures; this guards the worker.
+            _logger.exception("saas.job %s executor crashed", job.id)
+            self.env.cr.rollback()
+        return True
 
     @api.model
     def _channel_concurrency(self):
@@ -141,6 +180,8 @@ class SaasJob(models.Model):
         recovered by the cron/reaper rather than lost. Bounded per channel so a
         burst of enqueues can't spawn unbounded threads."""
         self.ensure_one()
+        if self._dedicated_worker_alive():
+            return  # the worker process picks it up (woken by NOTIFY)
         if not self._should_spawn_now(self.channel):
             _logger.info(
                 "saas.job %s: channel '%s' at concurrency cap; left pending "
@@ -263,7 +304,12 @@ class SaasJob(models.Model):
         ``_HEARTBEAT_STALE_MIN`` the reaper would treat the not-yet-started
         jobs as dead — requeuing (double run) or terminally failing them
         (spurious on_error/alert) even though this loop would still execute
-        them. Claiming one at a time removes that window entirely."""
+        them. Claiming one at a time removes that window entirely.
+
+        No-op while a dedicated worker runs: long jobs must not execute inside
+        a cron worker, which Odoo kills after ``limit_time_real_cron``."""
+        if self._dedicated_worker_alive():
+            return
         for _i in range(self._RUN_BATCH):
             job = self._claim_next_any()
             if not job:
@@ -299,29 +345,39 @@ class SaasJob(models.Model):
             target=self._heartbeat_loop, args=(self.id, self.env.cr.dbname, stop),
             name='saas_job_hb_%s' % self.id, daemon=True)
         beater.start()
+        error = None
+        result = None
         try:
             args = json.loads(self.args_json or '[]')
             result = getattr(record, self.method)(*args)
-            payload = False
-            try:
-                payload = json.dumps(result)
-            except (TypeError, ValueError):
-                payload = False  # non-JSON result (e.g. recordset) — not stored
-            self.write({
-                'state': 'done', 'finished_at': fields.Datetime.now(),
-                'result_json': payload, 'error': False,
-            })
-            self.env.cr.commit()
+            self.env.cr.commit()  # the job's own work
         except Exception as e:
             self.env.cr.rollback()
             _logger.exception("saas.job %s (%s.%s) failed", self.id, self.model, self.method)
-            # on_error runs ONLY on terminal failure (in _finish_failed), not on
-            # every intermediate retry — so a target that owns retries via
-            # max_attempts (e.g. deploy) isn't marked failed/alerted mid-retry.
-            self._reschedule_or_fail(str(e))
+            error = e
         finally:
             stop.set()
             beater.join(timeout=5)
+        # The outcome is recorded only now, in a fresh transaction after the
+        # heartbeat thread stopped: a heartbeat committed while the job ran
+        # would otherwise make this UPDATE of the job row fail with a
+        # serialization error — the work done, the job recorded as failed.
+        self.invalidate_recordset()
+        if error is not None:
+            # on_error runs ONLY on terminal failure (in _finish_failed), not on
+            # every intermediate retry — so a target that owns retries via
+            # max_attempts (e.g. deploy) isn't marked failed/alerted mid-retry.
+            self._reschedule_or_fail(str(error))
+            return
+        try:
+            payload = json.dumps(result)
+        except (TypeError, ValueError):
+            payload = False  # non-JSON result (e.g. recordset) — not stored
+        self.write({
+            'state': 'done', 'finished_at': fields.Datetime.now(),
+            'result_json': payload, 'error': False,
+        })
+        self.env.cr.commit()
 
     def _heartbeat_loop(self, job_id, dbname, stop):
         """Stamp the job's heartbeat (and a heartbeat-bearing target's) every

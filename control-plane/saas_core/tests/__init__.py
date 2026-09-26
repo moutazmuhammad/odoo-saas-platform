@@ -38,3 +38,4 @@ from . import test_hosting_db_ops
 from . import test_full_instance_backup
 from . import test_image_builds
 from . import test_teardown
+from . import test_job_worker

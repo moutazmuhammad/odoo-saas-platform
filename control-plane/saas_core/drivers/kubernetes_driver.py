@@ -483,6 +483,9 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             },
         }
 
+        if spec.env.get('database_filter'):
+            body['spec']['databaseFilter'] = spec.env['database_filter']
+
         if spec.env.get('workers') is not None:
             # Explicit, including 0 (dev mode) — see WorkersSpec.Count.
             body['spec']['workers'] = {
@@ -532,6 +535,19 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             if e.status != 404:
                 raise RuntimeError(
                     'deleting OdooInstance %s failed: %s' % (name, e)) from e
+
+    def set_database_filter(self, handle: ComputeHandle, database_filter: str) -> None:
+        """Set which databases the instance's Odoo serves (odoo.conf
+        dbfilter; empty = only its own). A change rolls the pods (zero
+        downtime); setting the current value is a no-op."""
+        name = self._cr_name(handle)
+        try:
+            self._custom_api().patch_cluster_custom_object(
+                _GROUP, _VERSION, _PLURAL, name,
+                {'spec': {'databaseFilter': database_filter or None}})
+        except ApiException as e:
+            raise RuntimeError(
+                'setting the database filter of %s failed: %s' % (name, e)) from e
 
     def exists(self, handle: ComputeHandle) -> bool:
         """Whether the OdooInstance CR still exists — including while its

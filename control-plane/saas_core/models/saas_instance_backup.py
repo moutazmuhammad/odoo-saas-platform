@@ -1239,7 +1239,9 @@ class SaasInstanceBackup(models.Model):
         partner_folder = '%s_%s' % (
             partner.id, self._sanitize_name(partner.name),
         ) if partner else 'no_partner'
-        db_name = self.db_name or instance.subdomain
+        # No db_name = the instance's own (served) database, which the
+        # operator names — not the subdomain.
+        db_name = self.db_name or instance._served_db_name()
 
         if self.ephemeral:
             # ``self.name`` already carries the .zip/.dump extension.

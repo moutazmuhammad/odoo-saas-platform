@@ -9,6 +9,7 @@ import shlex
 import string
 import threading
 import time
+import uuid
 from jinja2 import Environment, FileSystemLoader
 
 from odoo import api, fields, models, _
@@ -1869,6 +1870,25 @@ class SaasInstance(models.Model):
     # per-instance template DB starts with an underscore).
     _DB_IDENT_RE = re.compile(r'^[_a-z][a-z0-9_-]{0,62}$')
 
+    def _k8s_database_filter(self):
+        """odoo.conf dbfilter for this instance: a hosting instance serves
+        its customer databases (``<sub>_<name>``, see _hosting_db_prefix);
+        others serve only their own database (empty = operator default)."""
+        self.ensure_one()
+        prefix = self._hosting_db_prefix()
+        # The prefix is [a-z0-9-] + '_' (SUBDOMAIN_RE): no regex metacharacters.
+        return '^%s.+$' % prefix if self.is_hosting and prefix else ''
+
+    def _ensure_hosting_db_filter(self):
+        """Make the pods serve the customer databases — for instances
+        deployed before the filter existed. Idempotent: an unchanged value
+        doesn't roll the pods."""
+        self.ensure_one()
+        database_filter = self._k8s_database_filter()
+        if database_filter:
+            self._compute_driver().set_database_filter(
+                self._compute_handle(), database_filter)
+
     def _hosting_db_prefix(self):
         """Prefix every customer-created DB with the instance subdomain.
 
@@ -2325,19 +2345,6 @@ class SaasInstance(models.Model):
             raise UserError(_(
                 "The SQL console returned an unreadable result."))
 
-    def _hosting_xmlrpc_db_proxy(self):
-        """Return an XML-RPC proxy for this instance's ``db`` service."""
-        import xmlrpc.client
-        import ssl
-
-        if not self.url:
-            raise UserError(_("Instance has no URL yet — is it deployed?"))
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        url = '%s/xmlrpc/2/db' % self.url.rstrip('/')
-        return xmlrpc.client.ServerProxy(url, context=ctx, allow_none=True)
-
     def hosting_db_create(self, name, login, password, lang='en_US',
                           country_code=None):
         """Create a customer database by cloning the per-instance template.
@@ -2396,6 +2403,7 @@ class SaasInstance(models.Model):
                 "failed; rolled back:\n%s"
             ) % (name, e))
 
+        self._ensure_hosting_db_filter()
         self._append_log("Database '%s' ready." % name)
         return name
 
@@ -2452,19 +2460,45 @@ class SaasInstance(models.Model):
         if new_name in existing:
             raise UserError(_("Target database '%s' already exists.") % new_name)
 
-        import xmlrpc.client
-        proxy = self._hosting_xmlrpc_db_proxy()
-        master_pwd = self.sudo().admin_password
+        self._append_log("Duplicating '%s' to '%s'..." % (source, new_name))
+        # Postgres copies only a database nobody is connected to: end the
+        # source's sessions right before the copy (Odoo's own duplicate
+        # does the same; its users reconnect on their next request).
+        # Retried because a new session can slip in between.
+        safe_source = source.replace("'", "''")
+        for attempt in range(3):
+            self._docker_exec_sql(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname='%s' AND pid <> pg_backend_pid()" % safe_source,
+                timeout=30)
+            try:
+                self._pg_clone_db(source, new_name)
+                break
+            except UserError:
+                if attempt == 2:
+                    raise
         try:
-            proxy.duplicate_database(master_pwd, source, new_name)
-        except xmlrpc.client.Fault as e:
-            msg = (e.faultString or '').strip() or str(e)
-            raise UserError(_("We couldn't duplicate the database: %s") % msg)
-        except Exception:
+            self._hosting_clone_filestore(source, new_name)
+            # A copy is a different database: give it its own identity,
+            # as Odoo's duplicate does (ir.config_parameter init).
+            rc, out, err = self._docker_exec_sql(
+                "UPDATE ir_config_parameter SET value = CASE key "
+                "WHEN 'database.uuid' THEN '%s' ELSE '%s' END "
+                "WHERE key IN ('database.uuid', 'database.secret')"
+                % (uuid.uuid4(), uuid.uuid4()), db=new_name, timeout=60)
+            if rc != 0:
+                raise UserError(err or out)
+        except Exception as e:
+            try:
+                self._hosting_drop_filestore(new_name)
+            except Exception:
+                pass
+            self._pg_drop_db(new_name)
             raise UserError(_(
-                "We couldn't reach your instance just now. Please make "
-                "sure it's running and try again."
-            ))
+                "Database '%s' was copied but finishing the copy failed; "
+                "rolled back:\n%s") % (new_name, e))
+        self._ensure_hosting_db_filter()
+        self._append_log("Database '%s' ready." % new_name)
         return new_name
 
     def hosting_db_duplicate_async(self, source, new_name):
@@ -3163,7 +3197,9 @@ class SaasInstance(models.Model):
         """
         self.ensure_one()
         backup = self.env['saas.instance.backup'].browse(backup_id)
-        db_name = backup.db_name or self.subdomain
+        # A backup without db_name is of the instance's own (served)
+        # database — named by the operator, not after the subdomain.
+        db_name = backup.db_name or self._served_db_name()
         name_re = (
             re.compile(r'^[a-z][a-z0-9_-]{0,62}$')
             if self.is_hosting else SUBDOMAIN_RE
@@ -4470,6 +4506,7 @@ class SaasInstance(models.Model):
             'tls_enabled': True,
             'tls_issuer_name': region.tls_cluster_issuer,
             'tls_issuer_kind': 'ClusterIssuer',
+            'database_filter': self._k8s_database_filter(),
             **self._k8s_plan_resources(),
         }
         spec = ComputeSpec(

@@ -48,6 +48,10 @@ class TestHostingDbOps(TransactionCase):
             'billing_period': 'monthly', 'environment': 'production',
             'region_id': False, 'state': 'running', 'is_hosting': True,
         })
+        # Setting the pods' database filter talks to the cluster.
+        p = patch.object(type(self.instance), '_ensure_hosting_db_filter')
+        self.m_filter = p.start()
+        self.addCleanup(p.stop)
 
     def _driver(self, **overrides):
         driver = MagicMock()
@@ -131,6 +135,7 @@ class TestHostingDbOps(TransactionCase):
             name = self.instance.hosting_db_create(
                 'prod', 'admin', 'S3cret!', lang='en_US', country_code='US')
         self.assertEqual(name, 'dbopsinst_prod')
+        self.m_filter.assert_called_once()
         m_tpl.assert_called_once()
         m_clone.assert_called_once_with('__odoo_template_dbopsinst', 'dbopsinst_prod')
         m_fs.assert_called_once_with('__odoo_template_dbopsinst', 'dbopsinst_prod')
@@ -276,3 +281,46 @@ class TestHostingDbOps(TransactionCase):
         first_call_sql = m_sql.call_args_list[0].args[0]
         self.assertIn('pg_terminate_backend', first_call_sql)
         self.assertEqual(self.instance.state, 'running')
+
+    # -- serving customer databases ------------------------------------------
+
+    def test_database_filter_serves_customer_databases(self):
+        self.assertEqual(self.instance._k8s_database_filter(), '^dbopsinst_.+$')
+        self.instance.is_hosting = False
+        self.assertEqual(self.instance._k8s_database_filter(), '')
+
+    # -- duplicate (in-pod, no XML-RPC: list_db is off) ------------------------
+
+    def _duplicate(self, clone_side_effect=None, fs_side_effect=None):
+        Instance = type(self.instance)
+        with patch.object(Instance, 'hosting_db_list',
+                          return_value=[{'name': 'dbopsinst_prod', 'admin_login': ''}]), \
+             patch.object(Instance, '_docker_exec_sql', return_value=(0, '', '')) as m_sql, \
+             patch.object(Instance, '_pg_clone_db', side_effect=clone_side_effect) as m_clone, \
+             patch.object(Instance, '_hosting_clone_filestore',
+                          side_effect=fs_side_effect) as m_fs, \
+             patch.object(Instance, '_hosting_drop_filestore'), \
+             patch.object(Instance, '_pg_drop_db') as m_drop:
+            result = self.instance.hosting_db_duplicate('prod', 'copy')
+        return result, m_sql, m_clone, m_fs, m_drop
+
+    def test_hosting_db_duplicate_copies_db_and_filestore(self):
+        name, m_sql, m_clone, m_fs, _drop = self._duplicate()
+        self.assertEqual(name, 'dbopsinst_copy')
+        self.assertIn('pg_terminate_backend', m_sql.call_args_list[0].args[0])
+        m_clone.assert_called_once_with('dbopsinst_prod', 'dbopsinst_copy')
+        m_fs.assert_called_once_with('dbopsinst_prod', 'dbopsinst_copy')
+        uuid_call = m_sql.call_args_list[-1]
+        self.assertIn('database.uuid', uuid_call.args[0])
+        self.assertEqual(uuid_call.kwargs['db'], 'dbopsinst_copy')
+        self.m_filter.assert_called_once()
+
+    def test_hosting_db_duplicate_retries_when_source_busy(self):
+        busy = UserError('source database "dbopsinst_prod" is being accessed by other users')
+        name, _sql, m_clone, _fs, _drop = self._duplicate(clone_side_effect=[busy, None])
+        self.assertEqual(name, 'dbopsinst_copy')
+        self.assertEqual(m_clone.call_count, 2)
+
+    def test_hosting_db_duplicate_rolls_back_on_filestore_failure(self):
+        with self.assertRaises(UserError):
+            self._duplicate(fs_side_effect=RuntimeError('disk full'))

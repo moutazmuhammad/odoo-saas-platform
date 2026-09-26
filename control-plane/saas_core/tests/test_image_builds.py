@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase, tagged
 
+from .test_kubernetes_driver import _handle
+
 
 @tagged('post_install', '-at_install')
 class TestImageBuildPipeline(TransactionCase):
@@ -42,8 +44,11 @@ class TestImageBuildPipeline(TransactionCase):
         self.driver = MagicMock()
         self.driver.cleanup_build.return_value = None
         Instance = type(self.instance)
+        self.customer_dbs = [{'name': 'bldinst_prod', 'admin_login': 'admin'},
+                             {'name': 'bldinst_test', 'admin_login': 'admin'}]
         for p in (patch.object(Instance, '_compute_driver', return_value=self.driver),
                   patch.object(Instance, '_compute_handle', return_value='HANDLE'),
+                  patch.object(Instance, 'hosting_db_list', lambda rec: self.customer_dbs),
                   patch.object(type(self.env['saas.job']), '_spawn_worker', lambda s: None)):
             p.start()
             self.addCleanup(p.stop)
@@ -117,6 +122,22 @@ class TestImageBuildPipeline(TransactionCase):
         self.assertEqual((kw['repository'], kw['tag'], kw['addons_paths'], kw['modules']),
                          ('odoo', '18.0', [], []))
         self.assertIsNone(kw['registry_username'])
+
+    def test_deploy_upgrades_hosting_customer_databases(self):
+        build = self._build(image_ref='localhost:32000/acme/tenant-bldinst:18.0-b1')
+        self.instance._deploy_build(
+            build, self.driver, repository='localhost:32000/acme/tenant-bldinst',
+            tag='18.0-b1', addons_paths=[], module_versions={}, modules=['my_mod'])
+        kw = self.driver.deploy_image.call_args.kwargs
+        self.assertEqual(kw['databases'], ['bldinst_prod', 'bldinst_test'])
+        self.driver.set_database_filter.assert_called_once_with('HANDLE', '^bldinst_.+$')
+
+    def test_deploy_without_modules_lists_no_databases(self):
+        build = self._build(image_ref='localhost:32000/acme/tenant-bldinst:18.0-b1')
+        self.instance._deploy_build(
+            build, self.driver, repository='localhost:32000/acme/tenant-bldinst',
+            tag='18.0-b1', addons_paths=[], module_versions={}, modules=[])
+        self.assertEqual(self.driver.deploy_image.call_args.kwargs['databases'], [])
 
     def test_poll_build_reschedules_while_running(self):
         build = self._build(stage='building', job_name='j1')
@@ -325,6 +346,31 @@ class TestImageBuildDriver(TransactionCase):
         self.assertEqual(patch_body['spec']['image'], {
             'repository': 'reg/tenant-acme', 'tag': '18.0-b1',
             'pullSecretRefs': [{'name': 'tenant-registry'}]})
-        self.assertEqual(patch_body['spec']['update'], {'token': 'build-1', 'modules': ['m']})
+        self.assertEqual(patch_body['spec']['update'],
+                         {'token': 'build-1', 'modules': ['m'], 'databases': None})
         self.assertEqual(patch_body['spec']['addonsPaths'], ['/opt/tenant-addons/x'])
         self.core.replace_namespaced_secret.assert_called_once()
+
+    def _cr(self, generation, applied, cond_reason, cond_generation):
+        self.custom.get_cluster_custom_object.return_value = {
+            'metadata': {'generation': generation},
+            'spec': {'update': {'token': 'build-2'}},
+            'status': {'appliedUpdateToken': applied, 'conditions': [{
+                'type': 'UpdateReady', 'reason': cond_reason,
+                'observedGeneration': cond_generation, 'message': 'boom'}]}}
+
+    def test_update_status_ignores_a_previous_updates_failure(self):
+        # build-1 failed at generation 4; build-2 was just requested (gen 5)
+        # and the operator hasn't reconciled it yet.
+        self._cr(5, 'build-0', 'UpdateFailed', 4)
+        st = self.driver.update_status(_handle())
+        self.assertEqual(st['state'], 'running')
+        self.assertEqual(st['message'], '')
+
+    def test_update_status_reports_a_current_failure(self):
+        self._cr(5, 'build-0', 'UpdateFailed', 5)
+        self.assertEqual(self.driver.update_status(_handle())['state'], 'failed')
+
+    def test_update_status_applied(self):
+        self._cr(5, 'build-2', 'UpdateApplied', 5)
+        self.assertEqual(self.driver.update_status(_handle())['state'], 'applied')

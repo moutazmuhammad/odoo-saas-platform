@@ -116,6 +116,21 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(handle.container_name, 'odoo_acme')
         self.assertEqual(handle.instance_path, 'odoo-tenant-odoo-acme')
 
+    def test_create_sets_database_filter_when_given(self):
+        from odoo.addons.saas_core.drivers.base import ComputeSpec
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
+        base_env = {'domain': 'acme.example.com'}
+        for env, expected in ((base_env, None),
+                              (dict(base_env, database_filter='^acme_.+$'), '^acme_.+$')):
+            driver.create(ComputeSpec(
+                container_name='odoo_acme', image='odoo:18.0', instance_path='/x',
+                http_port=8069, longpolling_port=8072, db_name='acme', db_host='db',
+                env=env))
+            body = custom_api.create_cluster_custom_object.call_args.args[3]
+            self.assertEqual(body['spec'].get('databaseFilter'), expected)
+
     def test_create_defaults_to_one_replica_and_rwo_storage(self):
         from odoo.addons.saas_core.drivers.base import ComputeSpec
         driver, _server = _make_driver()
@@ -485,6 +500,15 @@ class TestKubernetesDriver(TransactionCase):
             result = driver.exec(_handle(), 'echo ok')
         self.assertTrue(result.ok)
         self.assertEqual(result.stdout, 'ok\n')
+
+    # -------- database filter (hosting customer databases) ----------------
+    def test_set_database_filter_patches_the_cr(self):
+        driver, _server = _make_driver()
+        custom = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom)
+        driver.set_database_filter(_handle(), '^acme_.+$')
+        body = custom.patch_cluster_custom_object.call_args.args[4]
+        self.assertEqual(body, {'spec': {'databaseFilter': '^acme_.+$'}})
 
     # -------- usage metrics (Prometheus + in-pod storage) -----------------
     def _prom_driver(self, *responses):

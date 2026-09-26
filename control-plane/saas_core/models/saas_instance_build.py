@@ -280,10 +280,17 @@ class SaasInstance(models.Model):
                       module_versions, modules, log=None):
         base_repo, _base_tag = self._base_image_parts()
         reg = self._build_registry() if repository != base_repo else {}
+        databases = []
+        if self.is_hosting:
+            # Upgrade the customer databases too, and make sure the pods
+            # serve them (instances deployed before the filter existed).
+            self._ensure_hosting_db_filter()
+            if modules:
+                databases = [d['name'] for d in self.hosting_db_list()]
         driver.deploy_image(
             self._compute_handle(), repository=repository, tag=tag,
             addons_paths=addons_paths, update_token='build-%d' % build.id,
-            modules=modules, registry_host=reg.get('host'),
+            modules=modules, databases=databases, registry_host=reg.get('host'),
             registry_username=reg.get('username'), registry_password=reg.get('password'))
         vals = {
             'stage': 'deploying',
@@ -295,9 +302,10 @@ class SaasInstance(models.Model):
             vals['log'] = log[-8000:]
         build.write(vals)
         self._append_log(
-            "Build #%d: image ready; upgrading %s and rolling out (the current "
-            "version keeps serving until this succeeds)."
-            % (build.id, ', '.join(modules) if modules else 'no modules'))
+            "Build #%d: image ready; upgrading %s%s and rolling out (the "
+            "current version keeps serving until this succeeds)."
+            % (build.id, ', '.join(modules) if modules else 'no modules',
+               ' in %d customer database(s)' % len(databases) if databases else ''))
         self._schedule_build_step('_job_poll_rollout', build)
 
     def _job_poll_rollout(self, build_id):

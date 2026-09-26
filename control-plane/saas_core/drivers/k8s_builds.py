@@ -335,11 +335,14 @@ class ImageBuildMixin:
     # ------------------------------------------------------------------
     def deploy_image(self, handle, *, repository: str, tag: str,
                      addons_paths: list, update_token: str, modules: list,
+                     databases: Optional[list] = None,
                      registry_host: Optional[str] = None,
                      registry_username: Optional[str] = None,
                      registry_password: Optional[str] = None) -> None:
         """Point the instance at a built image. The operator upgrades
-        ``modules`` against it first, then rolls the pods (see module doc)."""
+        ``modules`` against it first — in its own database plus
+        ``databases`` (a hosting instance's customer databases) — then
+        rolls the pods (see module doc)."""
         image = {'repository': repository, 'tag': tag}
         if registry_username:
             namespace = handle.instance_path or self._namespace_for(handle)
@@ -350,7 +353,8 @@ class ImageBuildMixin:
         patch = {'spec': {
             'image': image,
             'addonsPaths': list(addons_paths) or None,
-            'update': {'token': update_token, 'modules': list(modules)},
+            'update': {'token': update_token, 'modules': list(modules),
+                       'databases': list(databases or []) or None},
         }}
         try:
             self._custom_api().patch_cluster_custom_object(
@@ -379,9 +383,16 @@ class ImageBuildMixin:
         status = cr.get('status') or {}
         token = ((cr.get('spec') or {}).get('update') or {}).get('token')
         cond = next((c for c in status.get('conditions') or [] if c.get('type') == 'UpdateReady'), None)
+        # A condition written for an older spec (e.g. the previous update's
+        # failure, before the operator has seen this token) says nothing
+        # about the current one: the update is still on its way.
+        generation = (cr.get('metadata') or {}).get('generation') or 0
+        stale = bool(cond) and (cond.get('observedGeneration') or 0) < generation
         state = 'unknown'
         if token and status.get('appliedUpdateToken') == token:
             state = 'applied'
+        elif stale:
+            state, cond = 'running', None
         elif cond and cond.get('reason') == 'UpdateFailed':
             state = 'failed'
         elif cond:

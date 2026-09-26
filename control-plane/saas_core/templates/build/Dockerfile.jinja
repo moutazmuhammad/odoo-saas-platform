@@ -1,0 +1,19 @@
+# Tenant image: the Odoo version image plus this instance's Git repos and
+# Python requirements. Rendered by saas.instance._render_build_dockerfile().
+# The requirements layer comes before the addons layer so a module-only
+# change reuses the cached pip install.
+FROM {{ base_image }}
+
+USER root
+
+COPY requirements.txt /tmp/tenant-requirements.txt
+RUN if [ -s /tmp/tenant-requirements.txt ]; then \
+        pip3 install --no-cache-dir --no-warn-script-location \
+            --break-system-packages -r /tmp/tenant-requirements.txt; \
+    fi
+
+# /opt/tenant-addons, not /mnt/extra-addons: the official image declares
+# the latter a VOLUME, which would shadow baked content.
+COPY --chown=odoo:odoo addons /opt/tenant-addons
+
+USER odoo

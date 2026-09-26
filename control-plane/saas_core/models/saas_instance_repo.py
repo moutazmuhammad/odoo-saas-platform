@@ -4,7 +4,6 @@ import ipaddress
 import json
 import logging
 import secrets
-import shlex
 import socket
 from urllib.parse import urlparse, urlunparse
 
@@ -1291,232 +1290,78 @@ class SaasInstanceRepo(models.Model):
         # GitLab sends the token directly in X-Gitlab-Token header.
         return hmac.compare_digest(secret, signature_header)
 
-    # Lock to prevent concurrent deploys on the same instance
-    _deploy_locks = {}
-
     def _run_webhook_deploy(self, build_id):
-        """Queue job (ARCH-004 Phase 4): pull + restart for a webhook push and
-        mark the build success. Raises on failure → the job's on_error
-        (_on_webhook_deploy_error) marks the build failed + handles the repo."""
+        """Queue job (ARCH-004 Phase 4): hand a webhook push's build to the
+        image pipeline (saas_instance_build.py), which builds the pushed
+        commit and rolls it out — the build is marked success/failed there.
+        Raises on failure → the job's on_error (_on_webhook_deploy_error)."""
         self.ensure_one()
-        self._do_webhook_pull_and_restart()
-        build = self.env['saas.build'].browse(build_id)
-        if build.exists():
-            log_tail = (self.instance_id.provisioning_log or '')[-8000:]
-            build._mark('success', log_tail)
+        build = self.env['saas.build'].sudo().browse(build_id)
+        if not build.exists():
+            return
+        self.webhook_last_event = fields.Datetime.now()
+        if not self.instance_id.action_build_and_deploy(
+                'push', repo=self, commit_sha=build.commit_sha, build=build):
+            build._mark('failed', _(
+                "Not deployed: the instance isn't running. Start it and "
+                "redeploy to ship this commit."))
 
     def _on_webhook_deploy_error(self, exception, build_id):
         """on_error handler for the webhook-deploy job: fail the build, then run
         the standard repo background-error handling."""
         self.ensure_one()
-        build = self.env['saas.build'].browse(build_id)
+        build = self.env['saas.build'].sudo().browse(build_id)
         if build.exists():
             build._mark('failed', str(exception))
         self._on_repo_background_error(exception)
 
     def _do_webhook_pull_and_restart(self):
-        """Pull repo and restart instance (runs in background thread).
-
-        Uses a blocking lock so no push event is lost — if another
-        deploy is running, this one waits then proceeds.
-        """
+        """Deploy this repo's branch head (portal "pull" button)."""
         self.ensure_one()
-        import threading
-
-        instance_id = self.instance_id.id
-        lock = self._deploy_locks.setdefault(instance_id, threading.Lock())
-
-        # Wait for any running deploy to finish, then proceed.
-        lock.acquire()
-        try:
-            _logger.info(
-                "Webhook auto-deploy: pulling %s for instance %s",
-                self.name, self.instance_id.name,
-            )
-            self._do_pull_repo()
-            self.instance_id._update_repo_config_and_restart()
-            self.webhook_last_event = fields.Datetime.now()
-            # Clear error state on successful pull
-            if self.state == 'error':
-                self.state = 'cloned'
-                self.error_message = False
-            _logger.info(
-                "Webhook auto-deploy: completed for %s / %s",
-                self.name, self.instance_id.name,
-            )
-        finally:
-            lock.release()
-
-    def _get_remote_repo_path(self):
-        """Return the full remote path inside the instance's addons directory."""
-        self.ensure_one()
-        instance = self.instance_id
-        instance_path = instance._get_instance_path()
-        return '%s/addons/%s' % (instance_path, self._get_repo_dir_name())
-
-    def _detect_addons_subdir(self, ssh, repo_path):
-        """Detect the addons subdirectory by scanning for __manifest__.py.
-
-        If modules sit directly in the repo root (e.g. repo/module_a/),
-        returns ``False`` (no subdir needed).  If they're nested one level
-        deep (e.g. repo/addons/module_a/), returns that subdirectory
-        name (e.g. ``'addons'``).
-        """
-        self.ensure_one()
-        # Find all __manifest__.py relative to repo root
-        exit_code, stdout, _ = ssh.execute(
-            'find %s -name __manifest__.py -maxdepth 3 '
-            '-not -path "*/.git/*" 2>/dev/null'
-            % shlex.quote(repo_path)
-        )
-        if exit_code != 0 or not stdout.strip():
-            return False
-
-        import os
-        # Collect parent directories (the module dirs) relative to repo root
-        subdirs = set()
-        for line in stdout.strip().splitlines():
-            # line: /path/to/repo/[subdir/]module/__manifest__.py
-            rel = line.replace(repo_path + '/', '', 1)
-            parts = rel.split('/')
-            if len(parts) == 2:
-                # module/__manifest__.py — modules at repo root, no subdir
-                return False
-            elif len(parts) == 3:
-                # subdir/module/__manifest__.py — modules in a subfolder
-                subdirs.add(parts[0])
-
-        if len(subdirs) == 1:
-            return subdirs.pop()
-        # Multiple subdirs or no clear pattern — don't guess
-        return False
-
-    def _get_container_addons_path(self):
-        """Return the addons path inside the container for this repo."""
-        self.ensure_one()
-        base = '/mnt/extra-addons/%s' % self._get_repo_dir_name()
-        if self.addons_subdir:
-            return '%s/%s' % (base, self.addons_subdir.strip('/'))
-        return base
+        self.webhook_last_event = fields.Datetime.now()
+        self.instance_id.action_build_and_deploy('redeploy', repo=self)
 
     def _clone_repo(self):
-        """Clone the repository on the remote server (no config update or restart)."""
+        """Attach the repository: make sure an environment's branch exists,
+        register the push webhook, then build it into the instance's image.
+        The repo turns 'cloned' once a build containing it succeeds (or
+        'error' if that build fails)."""
         for rec in self:
             instance = rec.instance_id
-            instance._ensure_can_ssh()
-            server = instance.docker_server_id
-            repo_path = rec._get_remote_repo_path()
-            clone_url = rec._get_clone_url()
-
             # Env servers (staging/dev) may target a branch that doesn't exist
-            # yet — create it from the project's main branch before cloning
-            # (Odoo.sh style). Best-effort here (it is normally created at
-            # env-create time); a genuinely missing branch surfaces as a clear
-            # clone error below.
-            if rec.instance_id.environment != 'production':
+            # yet — create it from the project's main branch first (Odoo.sh
+            # style). Best-effort here (it is normally created at env-create
+            # time); a genuinely missing branch fails the build clearly.
+            if instance.environment != 'production':
                 try:
                     rec._ensure_env_branch()
                 except Exception as e:
                     _logger.warning(
                         "Env branch ensure failed for %s: %s", rec.name, e)
+            instance._append_log(
+                "Adding repo %s (branch: %s)..." % (rec.repo_url, rec.branch))
 
-            try:
-                with server._get_ssh_connection() as ssh:
-                    # Allow git on dirs owned by the container user
-                    ssh.execute(
-                        "git config --global --add safe.directory '*' 2>/dev/null || true"
-                    )
-                    ssh.execute(
-                        "sudo git config --system --add safe.directory '*' 2>/dev/null || true"
-                    )
-
-                    # Create parent directory
-                    parent = '/'.join(repo_path.rsplit('/', 1)[:-1])
-                    ssh.execute('mkdir -p %s' % shlex.quote(parent))
-
-                    # Remove existing repo dir if re-cloning
-                    ssh.execute('rm -rf %s' % shlex.quote(repo_path))
-
-                    # Clone
-                    instance._append_log(
-                        "Cloning repo %s (branch: %s)..." % (rec.repo_url, rec.branch)
-                    )
-                    # Force TLS cert verification at clone time (ARCH-017) so a
-                    # downgraded/compromised host git config can't silently
-                    # disable it and allow a MITM of customer code over https.
-                    clone_cmd = (
-                        'git -c http.sslVerify=true clone --branch %s '
-                        '--single-branch --depth 1 %s %s 2>&1'
-                    ) % (
-                        shlex.quote(rec.branch),
-                        shlex.quote(clone_url),
-                        shlex.quote(repo_path),
-                    )
-                    exit_code, stdout, stderr = ssh.execute(clone_cmd, timeout=300)
-                    if exit_code != 0:
-                        rec.state = 'error'
-                        rec.error_message = stdout + '\n' + stderr
-                        raise UserError(
-                            _("Failed to clone repository:\n%s\n%s")
-                            % (stdout[-500:], stderr[-500:])
+            # Auto-register webhook on Git provider. A webhook failure never
+            # blocks the repo itself.
+            if rec.webhook_enabled:
+                try:
+                    if rec.sudo().github_token:
+                        rec._register_webhook_with_retry()
+                    else:
+                        instance._append_log(
+                            "Auto-deploy webhook NOT registered for %s: "
+                            "no access token provided. Add a token to "
+                            "enable automatic webhook registration."
+                            % rec.name
                         )
+                except Exception as e:
+                    _logger.warning(
+                        "Webhook registration failed for %s: %s", rec.name, e)
+                    instance._append_log(
+                        "WARNING: Webhook registration failed for %s: %s"
+                        % (rec.name, e))
 
-                    # Set permissions for container's odoo user
-                    container_uid = instance._get_container_uid(ssh)
-                    ssh.execute(
-                        'sudo chown -R %s:%s %s && sudo chmod -R 777 %s'
-                        % (container_uid, container_uid,
-                           shlex.quote(repo_path), shlex.quote(repo_path))
-                    )
-
-                    # Auto-detect addons subdirectory if not set.
-                    # Looks for __manifest__.py files and determines the
-                    # common parent directory of all modules.
-                    if not rec.addons_subdir:
-                        detected = rec._detect_addons_subdir(ssh, repo_path)
-                        if detected:
-                            rec.addons_subdir = detected
-                            instance._append_log(
-                                "Auto-detected addons subdirectory: %s" % detected
-                            )
-
-                    instance._append_log("Repository cloned successfully.")
-                    rec.state = 'cloned'
-                    rec.last_pull = fields.Datetime.now()
-                    rec.error_message = False
-
-                    # Auto-register webhook on Git provider.
-                    # Wrapped in try/except so a webhook failure never
-                    # marks the repo as 'error' — the clone succeeded.
-                    if rec.webhook_enabled:
-                        try:
-                            if rec.sudo().github_token:
-                                rec._register_webhook_with_retry()
-                            else:
-                                instance._append_log(
-                                    "Auto-deploy webhook NOT registered for %s: "
-                                    "no access token provided. Add a token to "
-                                    "enable automatic webhook registration."
-                                    % rec.name
-                                )
-                        except Exception as e:
-                            _logger.warning(
-                                "Webhook registration failed for %s: %s",
-                                rec.name, e,
-                            )
-                            instance._append_log(
-                                "WARNING: Webhook registration failed for %s: %s"
-                                % (rec.name, e)
-                            )
-
-            except UserError:
-                raise
-            except Exception as e:
-                rec.state = 'error'
-                rec.error_message = str(e)
-                raise UserError(
-                    _("Failed to clone repository: %s") % str(e)
-                )
+            instance.action_build_and_deploy('initial', repo=rec)
 
     def action_clone_repo(self):
         """Clone the repository, update config, and restart the instance (async)."""
@@ -1529,9 +1374,8 @@ class SaasInstanceRepo(models.Model):
                 on_error='_on_repo_background_error')
 
     def _do_clone_and_restart(self):
-        """Clone repo and restart instance (runs in background thread)."""
+        """Attach the repo and deploy it (queue job; see _clone_repo)."""
         self._clone_repo()
-        self.instance_id._update_repo_config_and_restart()
 
     def _on_repo_background_error(self, exception):
         """Handle background repo operation failure.
@@ -1558,54 +1402,9 @@ class SaasInstanceRepo(models.Model):
                 on_error='_on_repo_background_error')
 
     def _do_pull_repo(self):
-        """Pull repo (runs in background thread)."""
+        """Build and deploy this repo's current branch head."""
         self.ensure_one()
-        instance = self.instance_id
-        instance._ensure_can_ssh()
-        server = instance.docker_server_id
-        repo_path = self._get_remote_repo_path()
-        clone_url = self._get_clone_url()
-
-        try:
-            with server._get_ssh_connection() as ssh:
-                # Set safe.directory for both current user and root to handle
-                # ownership mismatches (repo may be owned by root or container UID)
-                ssh.execute(
-                    "git config --global --add safe.directory '*' 2>/dev/null || true"
-                )
-                ssh.execute(
-                    "sudo git config --system --add safe.directory '*' 2>/dev/null || true"
-                )
-                ssh.execute(
-                    'cd %s && git remote set-url origin %s'
-                    % (shlex.quote(repo_path), shlex.quote(clone_url))
-                )
-
-                instance._append_log(
-                    "Pulling latest changes for %s..." % self.name
-                )
-                pull_cmd = 'cd %s && git -c http.sslVerify=true pull origin %s 2>&1' % (
-                    shlex.quote(repo_path), shlex.quote(self.branch),
-                )
-                exit_code, stdout, stderr = ssh.execute(pull_cmd, timeout=300)
-                if exit_code != 0:
-                    self.error_message = stdout + '\n' + stderr
-                    raise UserError(
-                        _("Git pull failed:\n%s\n%s")
-                        % (stdout[-500:], stderr[-500:])
-                    )
-
-                instance._append_log("Pull completed: %s" % stdout.strip()[:200])
-                self.last_pull = fields.Datetime.now()
-                self.error_message = False
-
-        except UserError:
-            raise
-        except Exception as e:
-            self.error_message = str(e)
-            raise UserError(
-                _("Failed to pull repository: %s") % str(e)
-            )
+        self.instance_id.action_build_and_deploy('redeploy', repo=self)
 
     def action_reset_to_cloned(self):
         """Reset repo state from error to cloned.
@@ -1624,37 +1423,20 @@ class SaasInstanceRepo(models.Model):
         return True
 
     def unlink(self):
-        """Delete repo files from server, remove webhook, remove records, and update running instances."""
+        """Remove webhooks and records, then rebuild the affected running
+        instances without these repos."""
         for rec in self:
             if rec.webhook_enabled and rec.webhook_provider_id:
                 try:
                     rec._unregister_webhook_from_provider()
                 except Exception:
                     pass
-        instances_to_restart = self.env['saas.instance']
-        for rec in self:
-            instance = rec.instance_id
-            if instance.docker_server_id and rec.state == 'cloned':
-                try:
-                    instance._ensure_can_ssh()
-                    server = instance.docker_server_id
-                    repo_path = rec._get_remote_repo_path()
-                    with server._get_ssh_connection() as ssh:
-                        ssh.execute('rm -rf %s' % shlex.quote(repo_path))
-                    instance._append_log("Removed repo directory %s" % repo_path)
-                except Exception:
-                    _logger.exception("Failed to remove repo dir for %s", rec.name)
-            if instance.state == 'running':
-                instances_to_restart |= instance
-
+        instances = self.mapped('instance_id').filtered(lambda i: i.state == 'running')
         res = super().unlink()
-
-        for instance in instances_to_restart:
+        for instance in instances:
             try:
-                instance._update_repo_config_and_restart()
+                instance.action_build_and_deploy('redeploy')
             except Exception:
                 _logger.exception(
-                    "Failed to update config after repo removal for instance %s",
-                    instance.name,
-                )
+                    "Failed to rebuild instance %s after repo removal", instance.name)
         return res

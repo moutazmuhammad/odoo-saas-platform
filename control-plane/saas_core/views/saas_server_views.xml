@@ -70,7 +70,6 @@
                         </group>
                         <group string="Phase 2 (disposable compute)">
                             <field name="object_filestore_mount"/>
-                            <field name="registry_host"/>
                         </group>
                     </group>
                 </sheet>

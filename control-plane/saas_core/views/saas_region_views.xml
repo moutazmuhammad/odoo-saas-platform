@@ -63,6 +63,18 @@
                                invisible="not native_ingress_tls"
                                placeholder="e.g. letsencrypt-test-client"/>
                     </group>
+                    <group string="Tenant Image Builds (customer Git repos)">
+                        <field name="registry_host"
+                               placeholder="e.g. ghcr.io or localhost:32000"/>
+                        <field name="registry_push_host"
+                               placeholder="only if the build pushes elsewhere"/>
+                        <field name="registry_prefix" placeholder="e.g. my-org/odoo-tenants"/>
+                        <field name="registry_username"/>
+                        <field name="registry_password" password="True"/>
+                        <field name="registry_insecure"/>
+                        <field name="builder_image"/>
+                        <field name="git_image"/>
+                    </group>
                     <field name="server_ids" string="Compute" readonly="1">
                         <list>
                             <field name="name"/>

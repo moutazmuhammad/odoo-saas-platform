@@ -186,6 +186,10 @@
                     </group>
 
                     <notebook>
+                        <page string="Builds" invisible="not build_ids">
+                            <field name="build_ids" nolabel="1" readonly="1"
+                                   context="{'list_view_ref': 'saas_core.saas_build_view_list'}"/>
+                        </page>
                         <page string="Backups">
                             <field name="backup_ids" nolabel="1">
                                 <list create="0" edit="0" delete="0"

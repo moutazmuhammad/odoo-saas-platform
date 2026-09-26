@@ -739,11 +739,9 @@ class SaasInstance(models.Model):
     deploy_image = fields.Char(
         string='Deployed Image (immutable)',
         groups='saas_core.group_saas_manager',
-        help='Phase 2.2: when set, deploy runs THIS immutable image '
-             '(registry@sha256:… or <registry>/tenant-<sub>:<sha>) instead of '
-             'odoo-light + mounted source/addons. Set by the build pipeline; '
-             'rollback = point it at a previous build digest and redeploy. '
-             'Empty = legacy source-clone + build-on-host mode.',
+        help='The tenant image (with this instance\'s Git repos baked in) '
+             'currently deployed, set by the build pipeline once a build is '
+             'live. Empty = the plain Odoo version image (no repos).',
     )
 
     # ========== Custom Repos ==========
@@ -3505,26 +3503,6 @@ class SaasInstance(models.Model):
         template = _JINJA_ENV.get_template(template_name)
         return template.render(context)
 
-    def _get_all_addons_paths(self):
-        """Return addons paths for odoo.conf from instance and product repos.
-
-        All repos are cloned into the addons/ dir, already mounted at
-        /mnt/extra-addons — no extra volume mounts needed.
-        """
-        self.ensure_one()
-
-        # Instance-level repos
-        instance_repos = self.repo_ids.filtered(lambda r: r.state == 'cloned')
-        addons_paths = [r._get_container_addons_path() for r in instance_repos]
-
-        # Product-level repos
-        product = self.saas_product_id
-        if product:
-            for pr in product.repo_ids:
-                addons_paths.append(pr._get_container_addons_path())
-
-        return addons_paths
-
     # Keys a tenant must NEVER set via Extra Configuration:
     #  - logfile / log_db / pidfile / data_dir: would write unbounded files to
     #    disk. logfile is the key one — without it Odoo logs to stdout, which
@@ -4453,6 +4431,7 @@ class SaasInstance(models.Model):
                 'branch': self._env_branch(),
                 'source': source,
                 'state': state,
+                'stage': 'done' if state != 'running' else 'queued',
                 'commit_message': commit_message or False,
                 'date_done': fields.Datetime.now() if state != 'running' else False,
                 'log': (log or '')[:8000] or False,
@@ -4531,6 +4510,7 @@ class SaasInstance(models.Model):
             'tls_enabled': True,
             'tls_issuer_name': region.tls_cluster_issuer,
             'tls_issuer_kind': 'ClusterIssuer',
+            **self._k8s_plan_resources(),
         }
         spec = ComputeSpec(
             container_name=self._get_container_name(),
@@ -4578,6 +4558,14 @@ class SaasInstance(models.Model):
             self._sync_scheduled_backup()
         if self.is_trial:
             self._sync_partner_trial()
+        if self._build_sources() or self._build_pip_lines():
+            # Bake the product's/instance's repos and pip packages into an
+            # image and roll it out; the plain version image serves until then.
+            try:
+                self.action_build_and_deploy('initial')
+            except Exception as e:
+                _logger.exception("Could not queue the first build for %s", self.subdomain)
+                self._append_log("WARNING: could not start the code build: %s" % e)
 
     # ========== Lifecycle Actions ==========
 
@@ -5755,21 +5743,61 @@ class SaasInstance(models.Model):
     # Recurring billing, dunning and plan upgrade/downgrade (the commercial
     # side) live in saas_billing/models/saas_instance.py.
 
-    def _update_container_resources(self):
-        """Update CPU/RAM limits on a running container.
+    # Pod requests are this fraction of the plan's limits (the driver's own
+    # 250m/1 CPU and 512Mi/2Gi defaults use the same ratio), with a floor so
+    # a tiny plan still schedules sensibly.
+    _K8S_REQUEST_RATIO = 0.25
+    _K8S_MIN_CPU_REQUEST_M = 100
+    _K8S_MIN_MEM_REQUEST_MI = 128
 
-        TODO(k8s-metrics-replacement): the only implementation of this was
-        ``docker update --cpus/--memory`` over SSH (plus re-rendering
-        docker-compose.yml via the now-removed
-        ``_render_and_write_configs``), which is ssh_docker-only — there
-        is no Kubernetes equivalent yet (a real implementation would PATCH
-        the OdooInstance CR's resource requests/limits and let the
-        operator roll the Deployment). Until that lands, plan upgrades/
-        downgrades still change ``plan_id`` and billing, but the actual
-        pod resource limits are not updated. Not this run's job to
-        replace (see removal plan Phase 5).
-        """
-        return
+    def _k8s_plan_resources(self):
+        """The plan's CPU/RAM/workers as KubernetesDriver resource keys
+        (``cpu_limit``/``cpu_request``/``mem_limit``/``mem_request`` in
+        Kubernetes quantity form, plus ``workers``). Empty when the
+        instance has no plan; a plan field left at 0/blank is omitted so
+        the driver's default applies for it."""
+        self.ensure_one()
+        plan = self.plan_id
+        if not plan:
+            return {}
+        vals = {}
+        cpu_m = int(round((plan.cpu_limit or 0.0) * 1000))
+        if cpu_m > 0:
+            vals['cpu_limit'] = '%dm' % cpu_m
+            vals['cpu_request'] = '%dm' % max(
+                self._K8S_MIN_CPU_REQUEST_M,
+                int(cpu_m * self._K8S_REQUEST_RATIO))
+        mem_mi = int(self._parse_ram_string(plan.ram_limit) // (1024 ** 2))
+        if mem_mi > 0:
+            vals['mem_limit'] = '%dMi' % mem_mi
+            vals['mem_request'] = '%dMi' % max(
+                self._K8S_MIN_MEM_REQUEST_MI,
+                int(mem_mi * self._K8S_REQUEST_RATIO))
+        vals['workers'] = plan.workers or 0
+        return vals
+
+    def _update_container_resources(self):
+        """Apply the current plan's CPU/RAM/workers to the running pod (the
+        operator rolls the Deployment). Called after a plan change is
+        applied. Raises if the cluster rejects the patch — callers log it
+        and leave the plan change in place so an admin can redeploy."""
+        self.ensure_one()
+        if self.docker_server_id.compute_driver != 'kubernetes':
+            return
+        res = self._k8s_plan_resources()
+        if not res.get('cpu_limit') or not res.get('mem_limit'):
+            # Nothing concrete to apply (plan without limits): keep what
+            # the pod already runs with rather than resetting to defaults.
+            return
+        self._compute_driver().set_resources(
+            self._compute_handle(),
+            cpu_request=res['cpu_request'], cpu_limit=res['cpu_limit'],
+            mem_request=res['mem_request'], mem_limit=res['mem_limit'],
+            workers=res['workers'])
+        self._append_log(
+            "Resources updated to the %s plan: %s CPU, %s RAM, %d worker(s)."
+            % (self.plan_id.name, res['cpu_limit'], res['mem_limit'],
+               res['workers']))
 
     # ========== Billing hooks ==========
     # No-op defaults that saas_billing overrides. Core never reads or

@@ -587,12 +587,14 @@ class TestWebhookDeployViaQueue(TransactionCase):
             'instance_id': self.instance.id, 'repo_id': self.repo.id,
             'branch': 'main', 'source': 'push', 'state': 'running'})
 
-    def test_run_webhook_deploy_marks_build_success(self):
+    def test_run_webhook_deploy_hands_build_to_pipeline(self):
         build = self._build()
-        with patch.object(type(self.repo), '_do_webhook_pull_and_restart',
-                          lambda self: None):
+        calls = []
+        with patch.object(type(self.instance), 'action_build_and_deploy',
+                          lambda self, *a, **kw: calls.append(kw.get('build')) or kw.get('build')):
             self.repo._run_webhook_deploy(build.id)
-        self.assertEqual(build.state, 'success')
+        self.assertEqual(calls, [build])
+        self.assertEqual(build.state, 'running')
 
     def test_on_webhook_deploy_error_fails_build_and_handles_repo(self):
         build = self._build()

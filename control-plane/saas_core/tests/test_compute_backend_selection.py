@@ -96,6 +96,48 @@ class TestDeployOnKubernetes(TransactionCase):
         spec = driver.create.call_args.args[0]
         self.assertEqual(spec.env['replicas'], 2)
 
+    def test_deploy_requests_plan_resources(self):
+        """The pod is sized from the plan, not the driver's 1 CPU / 2Gi
+        defaults."""
+        self.plan.write({'cpu_limit': 2.0, 'ram_limit': '4g', 'workers': 3})
+        driver = MagicMock()
+        driver.create.return_value = MagicMock()
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
+                patch.object(type(self.instance), '_data_service') as mock_ds:
+            mock_ds.return_value._wait_until_healthy.return_value = None
+            self.instance._do_deploy_locked_kubernetes()
+        env = driver.create.call_args.args[0].env
+        self.assertEqual(env['cpu_limit'], '2000m')
+        self.assertEqual(env['cpu_request'], '500m')
+        self.assertEqual(env['mem_limit'], '4096Mi')
+        self.assertEqual(env['mem_request'], '1024Mi')
+        self.assertEqual(env['workers'], 3)
+
+    def test_plan_resources_floor_small_requests(self):
+        self.plan.write({'cpu_limit': 0.2, 'ram_limit': '256m', 'workers': 0})
+        res = self.instance._k8s_plan_resources()
+        self.assertEqual(res['cpu_request'], '100m')
+        self.assertEqual(res['mem_request'], '128Mi')
+        self.assertEqual(res['workers'], 0)
+
+    def test_update_container_resources_patches_running_pod(self):
+        self.instance.state = 'running'
+        self.plan.write({'cpu_limit': 1.5, 'ram_limit': '1536m', 'workers': 2})
+        driver = MagicMock()
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
+                patch.object(type(self.instance), '_compute_handle', return_value='H'):
+            self.instance._update_container_resources()
+        driver.set_resources.assert_called_once_with(
+            'H', cpu_request='375m', cpu_limit='1500m',
+            mem_request='384Mi', mem_limit='1536Mi', workers=2)
+
+    def test_update_container_resources_skips_plan_without_limits(self):
+        self.plan.write({'cpu_limit': 0.0, 'ram_limit': ''})
+        driver = MagicMock()
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver):
+            self.instance._update_container_resources()
+        driver.set_resources.assert_not_called()
+
     def test_deploy_refuses_without_native_ingress_tls(self):
         """No SSH-based Nginx fallback exists any more — a region without
         native_ingress_tls simply can't deploy."""

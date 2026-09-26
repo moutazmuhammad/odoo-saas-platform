@@ -1,6 +1,8 @@
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
 
+from ..fields import EncryptedChar
+
 
 class SaasRegion(models.Model):
     """A hosting region — one Kubernetes cluster. Server cost varies by
@@ -82,6 +84,47 @@ class SaasRegion(models.Model):
              'termination at the existing nginx/Certbot layer, so this is '
              'plain HTTP (80) by default — see KubernetesDriver.endpoint().',
     )
+
+    # ---------- Tenant image builds (customer Git repos) ----------
+    # Any OCI registry works (self-hosted registry, Harbor, GHCR, ECR, ...):
+    # builds push <registry_host>/<registry_prefix>/tenant-<sub>:<tag> and
+    # the cluster pulls it with the same credentials.
+    registry_host = fields.Char(
+        string='Registry Host',
+        groups='saas_core.group_saas_manager',
+        help='Registry the cluster pulls tenant images from, e.g. '
+             '"ghcr.io", "registry.example.com" or "localhost:32000". '
+             'Empty = customer Git repositories cannot be deployed in this '
+             'region.')
+    registry_push_host = fields.Char(
+        string='Registry Push Host',
+        groups='saas_core.group_saas_manager',
+        help='Where the in-cluster build pushes to, when that differs from '
+             'the pull host (e.g. an in-cluster registry pulled by nodes as '
+             '"localhost:32000" but pushed to as '
+             '"registry.container-registry.svc.cluster.local:5000"). '
+             'Empty = same as Registry Host.')
+    registry_prefix = fields.Char(
+        string='Registry Path Prefix',
+        groups='saas_core.group_saas_manager',
+        help='Optional repository path prefix, e.g. "my-org/odoo-tenants".')
+    registry_username = fields.Char(
+        string='Registry Username', groups='saas_core.group_saas_manager')
+    registry_password = EncryptedChar(
+        string='Registry Password / Token',
+        groups='saas_core.group_saas_manager', copy=False)
+    registry_insecure = fields.Boolean(
+        string='Plain-HTTP Registry',
+        groups='saas_core.group_saas_manager',
+        help='Push over plain HTTP (only for an in-cluster test registry).')
+    builder_image = fields.Char(
+        string='Builder Image', default='moby/buildkit:v0.16.0-rootless',
+        groups='saas_core.group_saas_manager',
+        help='Rootless BuildKit image the build Job runs.')
+    git_image = fields.Char(
+        string='Git Image', default='alpine/git:v2.45.2',
+        groups='saas_core.group_saas_manager',
+        help='Image the build Job clones repositories with.')
 
     _sql_constraints = [
         ('code_uniq', 'unique(code)', 'Region code must be unique.'),

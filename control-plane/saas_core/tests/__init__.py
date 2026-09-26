@@ -36,3 +36,4 @@ from . import test_compute_backend_selection
 from . import test_deployment_navigation
 from . import test_hosting_db_ops
 from . import test_full_instance_backup
+from . import test_image_builds

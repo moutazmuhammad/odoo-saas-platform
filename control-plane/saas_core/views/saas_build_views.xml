@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Builds (customer Git repos → tenant image → rolling rollout). See
+         saas_core/models/saas_instance_build.py. -->
+    <record id="saas_build_view_list" model="ir.ui.view">
+        <field name="name">saas.build.list</field>
+        <field name="model">saas.build</field>
+        <field name="arch" type="xml">
+            <list string="Builds" create="0"
+                  decoration-success="state == 'success'"
+                  decoration-danger="state == 'failed'"
+                  decoration-info="state == 'running'">
+                <field name="id" string="#"/>
+                <field name="instance_id" optional="show"/>
+                <field name="source"/>
+                <field name="branch"/>
+                <field name="commit_short" string="Commit"/>
+                <field name="commit_message" optional="show"/>
+                <field name="stage" optional="show"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'success'"
+                       decoration-danger="state == 'failed'"
+                       decoration-info="state == 'running'"/>
+                <field name="date_start"/>
+                <field name="date_done" optional="hide"/>
+                <button name="action_rollback" type="object" string="Roll back to this"
+                        icon="fa-undo" invisible="state != 'success' or not image_ref"
+                        confirm="Roll this environment back to this build's code? No module upgrade runs."/>
+                <field name="image_ref" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="saas_build_view_form" model="ir.ui.view">
+        <field name="name">saas.build.form</field>
+        <field name="model">saas.build</field>
+        <field name="arch" type="xml">
+            <form string="Build" create="0" edit="0">
+                <header>
+                    <button name="action_rollback" type="object" string="Roll back to this build"
+                            class="btn-secondary" icon="fa-undo"
+                            invisible="state != 'success' or not image_ref"
+                            confirm="Roll this environment back to this build's code? No module upgrade runs."/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="instance_id"/>
+                            <field name="source"/>
+                            <field name="stage"/>
+                            <field name="branch"/>
+                            <field name="commit_sha"/>
+                            <field name="commit_message"/>
+                            <field name="author"/>
+                        </group>
+                        <group>
+                            <field name="date_start"/>
+                            <field name="date_done"/>
+                            <field name="image_ref"/>
+                            <field name="image_digest"/>
+                            <field name="job_name"/>
+                        </group>
+                    </group>
+                    <group string="Log">
+                        <field name="log" nolabel="1" colspan="2" widget="text"/>
+                    </group>
+                    <group string="Image contents" groups="base.group_no_one">
+                        <field name="addons_paths"/>
+                        <field name="module_versions"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="saas_build_action" model="ir.actions.act_window">
+        <field name="name">Builds</field>
+        <field name="res_model">saas.build</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+</odoo>

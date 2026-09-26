@@ -876,14 +876,10 @@ class TestPortalRepoManagement(_PortalTestBase):
     boundary, which redirects to the bare '/my/instances' listing
     instead and so IS distinguishable).
 
-    action_redeploy() (called by update-repo/remove-repo after writing
-    the repo row) was removed along with ssh_docker — the routes still
-    swallow whatever it now raises (AttributeError) with a bare 'except
-    Exception', exactly like they did for a redeploy failure before, so
-    the repo CRUD side effects below (which happen BEFORE that call) are
-    unaffected; only the "redeploy was called" assertions were removed
-    since there's nothing left to mock. action_restart() (still real)
-    is mocked as before. run_in_background() (pull-repo, a fresh local
+    Repo changes rebuild the instance's image (action_build_and_deploy,
+    which queues a saas.job): the job's worker thread must never run for
+    real inside a live HttpCase request, so _spawn_worker is patched out
+    for the whole class. run_in_background() (pull-repo, a fresh local
     import inside the route body) is patched at its source module
     attribute, same standing rule as every other run_in_background()
     route in this plan.
@@ -892,6 +888,9 @@ class TestPortalRepoManagement(_PortalTestBase):
     def setUp(self):
         super().setUp()
         self.instance.sudo().write({'is_hosting': True, 'state': 'running'})
+        spawn = patch.object(type(self.env['saas.job']), '_spawn_worker', lambda self: None)
+        spawn.start()
+        self.addCleanup(spawn.stop)
 
     def test_update_repo_denies_non_owner(self):
         self.authenticate('portalintruder@example.com', 'intruderpass123')
@@ -938,14 +937,15 @@ class TestPortalRepoManagement(_PortalTestBase):
         repo = self.env['saas.instance.repo'].sudo().create({
             'instance_id': self.instance.id,
             'repo_url': 'https://github.com/acme/old.git', 'branch': 'main'})
-        mock_restart = MagicMock()
+        mock_build = MagicMock()
         self.authenticate('portalowner@example.com', 'ownerpass123')
-        with patch.object(type(self.instance), 'action_restart', mock_restart):
+        with patch.object(type(self.instance), 'action_build_and_deploy', mock_build):
             self._form_post(
                 '/my/instances/%d/update-repo' % self.instance.id,
                 {'repo_url': ''})
         self.assertFalse(repo.exists())
-        mock_restart.assert_called_once()
+        # Removing the repo rebuilds the image without it (rolling rollout).
+        mock_build.assert_called_once_with('redeploy')
 
     def test_remove_repo_denies_non_owner(self):
         self.authenticate('portalintruder@example.com', 'intruderpass123')

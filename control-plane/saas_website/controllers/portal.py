@@ -1,4 +1,5 @@
 import datetime
+import json
 import logging
 from dateutil.relativedelta import relativedelta
 from urllib.parse import quote as url_quote
@@ -1735,13 +1736,9 @@ class SaasPortal(CustomerPortal):
             except Exception:
                 _logger.exception("Failed to redeploy instance %s after repo update", instance_sudo.name)
         elif existing_repo:
-            # Repo URL cleared — remove the repo
+            # Repo URL cleared — remove the repo (unlink rebuilds without it)
             existing_repo.unlink()
-            try:
-                instance_sudo.action_restart()
-                instance_sudo._append_log("Repository removed by client.")
-            except Exception:
-                _logger.exception("Failed to restart instance %s after repo removal", instance_sudo.name)
+            instance_sudo._append_log("Repository removed by client.")
 
         return request.redirect('/my/instances/%s' % instance_id)
 
@@ -1769,15 +1766,9 @@ class SaasPortal(CustomerPortal):
                     existing_repo._unregister_webhook_from_provider()
                 except Exception:
                     pass
+            # unlink rebuilds the instance without the repo.
             existing_repo.unlink()
-            try:
-                instance_sudo.action_redeploy()
-                instance_sudo._append_log("Repository removed by client.")
-            except Exception:
-                _logger.exception(
-                    "Failed to redeploy instance %s after repo removal",
-                    instance_sudo.name,
-                )
+            instance_sudo._append_log("Repository removed by client.")
 
         return request.redirect('/my/instances/%s' % instance_id)
 
@@ -1974,34 +1965,17 @@ class SaasPortal(CustomerPortal):
             return {'error': 'Instance not running'}
 
         try:
-            server = instance_sudo.docker_server_id.sudo()
-            container = 'odoo_%s' % instance_sudo.subdomain
-            with server._get_ssh_connection() as ssh:
-                # List from both default site-packages and custom target path
-                exit_code, stdout, stderr = ssh.execute(
-                    'docker exec %s bash -c "'
-                    'pip3 list --path=/var/lib/odoo/pip_packages --format=columns 2>/dev/null; '
-                    'pip3 list --format=columns 2>/dev/null'
-                    '" 2>/dev/null' % container
-                )
-                result = stdout
-            # Parse pip list output into structured data (deduplicated)
+            res = instance_sudo._compute_driver().exec(
+                instance_sudo._compute_handle(),
+                'pip3 list --format=json 2>/dev/null', timeout=60)
             packages = []
             seen = set()
-            if result:
-                for line in result.strip().splitlines():
-                    line = line.strip()
-                    if not line or line.startswith('Package') or line.startswith('-'):
-                        continue
-                    parts = line.split()
-                    if not parts:
-                        continue
-                    name = parts[0]
-                    if name.lower() in seen:
-                        continue
-                    seen.add(name.lower())
-                    version = parts[1] if len(parts) >= 2 else ''
-                    packages.append({'name': name, 'version': version})
+            for pkg in json.loads(res.stdout or '[]') if res.rc == 0 else []:
+                name = pkg.get('name') or ''
+                if not name or name.lower() in seen:
+                    continue
+                seen.add(name.lower())
+                packages.append({'name': name, 'version': pkg.get('version') or ''})
             packages.sort(key=lambda p: p['name'].lower())
             return {'packages': packages, 'count': len(packages)}
         except Exception:
@@ -2049,7 +2023,6 @@ class SaasPortal(CustomerPortal):
 
         if new_packages != old_packages:
             install_result = 'success'
-            install_output = ''
             # Writing pip_packages triggers _sync_packages_from_text in
             # saas_core, which validates each line against PEP 508 and
             # raises UserError on bad input (e.g. "--index-url=…",
@@ -2066,38 +2039,15 @@ class SaasPortal(CustomerPortal):
                 return request.redirect(
                     '/my/instances/%s?pkg_result=invalid' % instance_id
                 )
+            # Packages are baked into the instance's image: build it and
+            # roll it out (the current version keeps serving meanwhile).
             try:
-                with instance_sudo.docker_server_id.sudo()._get_ssh_connection() as ssh:
-                    # Update requirements.txt and docker-compose on disk (for persistence)
-                    instance_sudo._render_and_write_configs(ssh)
-
-                    # Install packages live into the running container
-                    # Use /var/lib/odoo/pip_packages — already persisted via ./data/odoo volume
-                    container = 'odoo_%s' % instance_sudo.subdomain
-                    if unique_pkgs:
-                        install_cmd = (
-                            'docker exec %s bash -c "'
-                            'mkdir -p /var/lib/odoo/pip_packages && '
-                            'pip3 install --target=/var/lib/odoo/pip_packages '
-                            '--upgrade --no-warn-script-location %s'
-                            '" 2>&1'
-                        ) % (container, ' '.join(unique_pkgs))
-                        exit_code, stdout, stderr = ssh.execute(install_cmd)
-                        install_output = stdout or stderr or ''
-                        instance_sudo._append_log(
-                            "Packages installed live (exit=%s): %s\n%s"
-                            % (exit_code, ' '.join(unique_pkgs), install_output)
-                        )
-                        if exit_code != 0:
-                            install_result = 'partial'
-
-                    # Restart Odoo to pick up new packages (graceful)
-                    instance_sudo.action_restart()
-                    instance_sudo._append_log("Packages updated by client: %s" % (new_packages or '(cleared)'))
-            except Exception as e:
+                instance_sudo.action_build_and_deploy('redeploy')
+                instance_sudo._append_log(
+                    "Packages updated by client: %s" % (new_packages or '(cleared)'))
+            except Exception:
                 _logger.exception("Failed to update packages for instance %s", instance_sudo.name)
                 install_result = 'error'
-                install_output = str(e)
 
             return request.redirect(
                 '/my/instances/%s?pkg_result=%s' % (instance_id, install_result)

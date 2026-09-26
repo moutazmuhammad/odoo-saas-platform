@@ -945,29 +945,23 @@ class SaasApi(http.Controller):
                 type='json', auth='public')
     def instance_set_packages(self, instance_id, access_token=None,
                               pip_packages='', **kw):
-        """Replace the instance's Python packages (newline-separated), then
-        force-install them now and surface any failure to the customer. The
-        SPA sends the full list, so removing a package drops it from the
-        list (uninstalled on the forced reinstall of the remaining set)."""
+        """Replace the instance's Python packages (newline-separated) and
+        rebuild the instance's image with them. The SPA sends the full list,
+        so removing a package drops it from the next image."""
         try:
             instance = self._hosting(instance_id, access_token, write=True)
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
-        # Installing happens via docker exec, so the container must be up.
         if instance.state != 'running':
-            return err(_("Start the instance first — packages are installed "
-                         "into the running server."), 'invalid_state')
+            return err(_("Start the instance first — packages are deployed "
+                         "to the running server."), 'invalid_state')
         inst = instance.sudo()
         try:
             inst.pip_packages = (pip_packages or '').strip() or False
-            ok_install, output = inst._deploy_pip_packages()
-            if not ok_install:
-                # Saved, but the install failed — show the customer why.
-                return err(
-                    _("Some packages failed to install:\n\n%s")
-                    % (output[-1500:] or _("pip reported an error.")),
-                    'pip_failed',
-                )
+            # Packages are baked into the instance's image: build + rolling
+            # rollout. A pip failure fails the build (visible in its log) and
+            # leaves the current version serving.
+            inst.action_build_and_deploy('redeploy')
         except UserError as e:
             return err(str(e), 'deploy_failed')
         except Exception:

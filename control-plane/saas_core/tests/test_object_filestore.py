@@ -88,7 +88,7 @@ class TestObjectFilestore(TransactionCase):
 
     def test_immutable_addons_path_and_bake_dir(self):
         inst = self._instance('adn', self.env['saas.server'].sudo().create(
-            {'name': 'adn-srv', 'registry_host': '127.0.0.1:5000'}))
+            {'name': 'adn-srv'}))
         # odoo.conf: immutable mode points addons_path at the baked /opt/tenant-addons
         conf_immut = inst._render_template('odoo.conf.jinja', {
             'immutable': True, 'repo_addons_paths': ['/opt/tenant-addons/myrepo']})

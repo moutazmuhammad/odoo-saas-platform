@@ -159,6 +159,34 @@ class TestKubernetesDriver(TransactionCase):
             'saas.odoo.example.com', 'v1alpha1', 'odooinstances', 'odoo-acme',
             {'spec': {'replicas': 2}})
 
+    def test_set_resources_patches_resources_and_workers(self):
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
+        driver.set_resources(_handle(), cpu_request='250m', cpu_limit='1000m',
+                             mem_request='256Mi', mem_limit='1024Mi', workers=40)
+        custom_api.patch_cluster_custom_object.assert_called_once_with(
+            'saas.odoo.example.com', 'v1alpha1', 'odooinstances', 'odoo-acme',
+            {'spec': {
+                'resources': {
+                    'requests': {'cpu': '250m', 'memory': '256Mi'},
+                    'limits': {'cpu': '1000m', 'memory': '1024Mi'}},
+                # clamped to the CRD maximum
+                'workers': {'count': 32}}})
+
+    def test_create_sets_explicit_workers_including_zero(self):
+        from odoo.addons.saas_core.drivers.base import ComputeSpec
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
+        driver.create(ComputeSpec(
+            container_name='odoo_w', image='odoo:18.0', instance_path='/x',
+            http_port=8069, longpolling_port=8072, db_name='w', db_host='db',
+            env={'domain': 'w.example.com', 'workers': 0, 'cpu_limit': '500m'}))
+        spec = custom_api.create_cluster_custom_object.call_args.args[3]['spec']
+        self.assertEqual(spec['workers'], {'count': 0, 'maxCronThreads': 1})
+        self.assertEqual(spec['resources']['limits']['cpu'], '500m')
+
     def test_scale_raises_on_api_error(self):
         driver, _server = _make_driver()
         custom_api = MagicMock()
@@ -323,13 +351,43 @@ class TestKubernetesDriver(TransactionCase):
             'saas.odoo.example.com', 'v1alpha1', 'odooinstances', 'odoo-acme',
             {'spec': {'suspended': False}})
 
-    def test_restart_stops_then_starts(self):
+    def test_restart_is_a_rolling_restart_not_stop_start(self):
+        """Zero downtime: stamps the pod template instead of suspending."""
         driver, _server = _make_driver()
-        calls = []
-        driver.stop = lambda h: calls.append('stop')
-        driver.start = lambda h: calls.append('start')
+        driver._get_cr = MagicMock(return_value={'spec': {'suspended': False}})
+        driver.stop = MagicMock()
+        apps = MagicMock()
+        dep = MagicMock()
+        dep.metadata.name = 'odoo-acme'
+        apps.list_namespaced_deployment.return_value.items = [dep]
+        driver._apps_api = MagicMock(return_value=apps)
         driver.restart(_handle())
-        self.assertEqual(calls, ['stop', 'start'])
+        driver.stop.assert_not_called()
+        apps.list_namespaced_deployment.assert_called_once_with(
+            'odoo-tenant-odoo-acme',
+            label_selector='app.kubernetes.io/name=odoo,app.kubernetes.io/instance=odoo-acme')
+        name, ns, patch = apps.patch_namespaced_deployment.call_args.args
+        self.assertEqual((name, ns), ('odoo-acme', 'odoo-tenant-odoo-acme'))
+        self.assertIn('kubectl.kubernetes.io/restartedAt',
+                      patch['spec']['template']['metadata']['annotations'])
+
+    def test_restart_resumes_a_suspended_instance(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={'spec': {'suspended': True}})
+        driver._patch_suspended = MagicMock()
+        driver._apps_api = MagicMock()
+        driver.restart(_handle())
+        driver._patch_suspended.assert_called_once_with(_handle(), False)
+        driver._apps_api.assert_not_called()
+
+    def test_restart_raises_without_deployment(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={'spec': {}})
+        apps = MagicMock()
+        apps.list_namespaced_deployment.return_value.items = []
+        driver._apps_api = MagicMock(return_value=apps)
+        with self.assertRaises(RuntimeError):
+            driver.restart(_handle())
 
     # -------- health() ------------------------------------------------------
     def test_health_maps_ready_phase_to_running(self):
@@ -393,11 +451,13 @@ class TestKubernetesDriver(TransactionCase):
         driver, _server = _make_driver()
         driver._first_pod = MagicMock(return_value=_fake_pod())
         core_api = MagicMock()
-        core_api.read_namespaced_pod_log.return_value = 'hello from odoo\n'
+        # Raw response (urllib3) body: decoded as text, newlines intact.
+        core_api.read_namespaced_pod_log.return_value = MagicMock(data=b'hello\nfrom odoo\n')
         driver._core_api = MagicMock(return_value=core_api)
-        self.assertEqual(driver.logs(_handle(), tail=50), 'hello from odoo\n')
+        self.assertEqual(driver.logs(_handle(), tail=50), 'hello\nfrom odoo\n')
         core_api.read_namespaced_pod_log.assert_called_once_with(
-            'odoo-acme-xyz', 'odoo-tenant-odoo-acme', container='odoo', tail_lines=50)
+            'odoo-acme-xyz', 'odoo-tenant-odoo-acme', container='odoo', tail_lines=50,
+            _preload_content=False)
 
     def test_logs_empty_when_no_pod(self):
         driver, _server = _make_driver()

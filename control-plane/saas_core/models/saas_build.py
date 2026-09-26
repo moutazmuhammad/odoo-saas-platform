@@ -24,7 +24,23 @@ class SaasBuild(models.Model):
         ('initial', 'Initial deployment'),
         ('redeploy', 'Manual re-deploy'),
         ('merge', 'Branch merge'),
+        ('rollback', 'Rollback'),
     ], string='Trigger', default='push', required=True)
+    # Where a running build is in the pipeline (see saas_instance_build.py).
+    stage = fields.Selection([
+        ('queued', 'Queued'),
+        ('building', 'Building image'),
+        ('deploying', 'Upgrading modules & rolling out'),
+        ('done', 'Done'),
+    ], string='Stage', default='queued')
+    job_name = fields.Char(string='Build Job', help='Kubernetes build Job name.')
+    addons_paths = fields.Text(
+        string='Addons Paths', help='JSON list of the addons paths baked into '
+        'this build\'s image (needed to redeploy it on rollback).')
+    module_versions = fields.Text(
+        string='Module Versions', help='JSON {module: manifest version} of the '
+        'repos in this build — the next build upgrades the modules whose '
+        'version changed.')
     state = fields.Selection([
         ('running', 'Building'),
         ('success', 'Success'),
@@ -50,7 +66,7 @@ class SaasBuild(models.Model):
     def _mark(self, state, log=False):
         """Terminate a running build with the given state (and optional log)."""
         self.ensure_one()
-        vals = {'state': state, 'date_done': fields.Datetime.now()}
+        vals = {'state': state, 'date_done': fields.Datetime.now(), 'stage': 'done'}
         if log:
             vals['log'] = (log or '')[:8000]
         self.write(vals)

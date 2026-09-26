@@ -2105,7 +2105,7 @@ class SaasInstance(models.Model):
                     old_plan.name if old_plan else 'None', new_plan.name))
 
             # Update container resources for the lower plan
-            if self.state == 'running':
+            if self.state in ('running', 'stopped', 'suspended'):
                 try:
                     self._update_container_resources()
                 except Exception as e:
@@ -2113,14 +2113,8 @@ class SaasInstance(models.Model):
                         "Failed to update resources after downgrade for %s",
                         self.subdomain,
                     )
-                try:
-                    with self.docker_server_id._get_ssh_connection() as ssh:
-                        self._render_and_write_configs(ssh)
-                except Exception as e:
-                    _logger.exception(
-                        "Failed to regenerate configs after downgrade for %s",
-                        self.subdomain,
-                    )
+                    self._append_log(
+                        "WARNING: Plan downgraded but resource update failed: %s" % e)
 
             # Remove excess backups that exceed the new plan's lower limit
             try:
@@ -2599,7 +2593,7 @@ class SaasInstance(models.Model):
         # Update container resources / regenerate configs (best effort —
         # the customer is already paid and reactivated, don't roll back
         # the upgrade if these fail; they can be retried by Redeploy).
-        if self.state == 'running':
+        if self.state in ('running', 'stopped', 'suspended'):
             try:
                 self._update_container_resources()
             except Exception as e:
@@ -2609,14 +2603,6 @@ class SaasInstance(models.Model):
                 )
                 self._append_log(
                     "WARNING: Plan updated but container resource update failed: %s" % e
-                )
-            try:
-                with self.docker_server_id._get_ssh_connection() as ssh:
-                    self._render_and_write_configs(ssh)
-            except Exception:
-                _logger.exception(
-                    "Failed to regenerate configs on subscription for %s",
-                    self.subdomain,
                 )
 
     @staticmethod
@@ -2959,7 +2945,7 @@ class SaasInstance(models.Model):
             detail='Plan %s -> %s (%s)' % (
                 old_plan.name if old_plan else 'None', new_plan.name, cycle_msg))
 
-        if self.state == 'running':
+        if self.state in ('running', 'stopped', 'suspended'):
             try:
                 self._update_container_resources()
             except Exception as e:
@@ -2968,13 +2954,6 @@ class SaasInstance(models.Model):
                 )
                 self._append_log(
                     "WARNING: Plan updated but resource update failed: %s" % e
-                )
-            try:
-                with self.docker_server_id._get_ssh_connection() as ssh:
-                    self._render_and_write_configs(ssh)
-            except Exception as e:
-                _logger.exception(
-                    "Failed to regenerate configs for %s", self.subdomain,
                 )
 
     # ---------- DOWNGRADE ----------

@@ -41,6 +41,7 @@ import json
 import logging
 import shlex
 import time
+import datetime
 from typing import Optional
 
 import yaml
@@ -50,6 +51,7 @@ from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream as k8s_stream
 
 from .base import ComputeDriver, ComputeSpec, ComputeHandle, ExecResult, HealthStatus
+from .k8s_builds import ImageBuildMixin, read_pod_log
 
 # Kubernetes exec subresource WebSocket sub-channel indices (v4/v5
 # channel.k8s.io protocol) — STDIN=0/STDOUT=1/STDERR=2/ERROR=3/RESIZE=4.
@@ -187,11 +189,24 @@ _logger = logging.getLogger(__name__)
 _GROUP = 'saas.odoo.example.com'
 _VERSION = 'v1alpha1'
 _PLURAL = 'odooinstances'
+
+
+# WorkersSpec.Count bounds (+kubebuilder:validation:Minimum/Maximum).
+_MAX_WORKERS = 32
+
+
+def _clamp_workers(workers) -> int:
+    return max(0, min(int(workers or 0), _MAX_WORKERS))
 _NAMESPACE_PREFIX = 'odoo-tenant-'
 # Mirrors internal/resources/naming.go: OdooDeploymentName always returns
 # the literal string "odoo", regardless of the tenant's own name.
 _CONTAINER_NAME = 'odoo'
 _POD_LABEL_SELECTOR = 'app.kubernetes.io/name=odoo,app.kubernetes.io/instance=%s'
+# The serving web pods only — not the init/update Job pods, which carry the
+# same instance labels (and may be the only Running pod during an update).
+_WEB_POD_LABEL_SELECTOR = _POD_LABEL_SELECTOR + ',saas.odoo.example.com/role=web'
+# Same key `kubectl rollout restart` uses.
+_RESTARTED_AT_ANNOTATION = 'kubectl.kubernetes.io/restartedAt'
 # Mirrors internal/resources/naming.go's BackupCronJobName() — always the
 # literal string "odoo-backup", regardless of the tenant's own name.
 _BACKUP_CRONJOB_NAME = 'odoo-backup'
@@ -219,7 +234,7 @@ _PHASE_TO_STATUS = {
 }
 
 
-class KubernetesDriver(ComputeDriver):
+class KubernetesDriver(ImageBuildMixin, ComputeDriver):
     """ComputeDriver backed by a real Kubernetes cluster.
 
     Same constructor shape as SshDockerDriver: a ``saas.server`` record and
@@ -265,6 +280,9 @@ class KubernetesDriver(ComputeDriver):
     def _batch_api(self):
         return k8s_client.BatchV1Api(self._client())
 
+    def _apps_api(self):
+        return k8s_client.AppsV1Api(self._client())
+
     @staticmethod
     def _cr_name(handle_or_spec) -> str:
         # Same normalization the old stub used (container_name is always
@@ -293,7 +311,7 @@ class KubernetesDriver(ComputeDriver):
         provisioned anything in it yet — not an error condition)."""
         try:
             pods = self._core_api().list_namespaced_pod(
-                namespace, label_selector=_POD_LABEL_SELECTOR % cr_name)
+                namespace, label_selector=_WEB_POD_LABEL_SELECTOR % cr_name)
         except ApiException as e:
             if e.status == 404:
                 return None
@@ -431,6 +449,13 @@ class KubernetesDriver(ComputeDriver):
                 },
             },
         }
+
+        if spec.env.get('workers') is not None:
+            # Explicit, including 0 (dev mode) — see WorkersSpec.Count.
+            body['spec']['workers'] = {
+                'count': _clamp_workers(spec.env['workers']),
+                'maxCronThreads': 1,
+            }
 
         # A caller provisioning a brand-new instance FROM an existing
         # backup (not the in-place full-instance restore
@@ -608,6 +633,28 @@ class KubernetesDriver(ComputeDriver):
                 'patching OdooInstance %s replicas=%s failed: %s'
                 % (name, replicas, e)) from e
 
+    def set_resources(self, handle: ComputeHandle, *, cpu_request: str,
+                      cpu_limit: str, mem_request: str, mem_limit: str,
+                      workers: Optional[int] = None) -> None:
+        """Patch this instance's container requests/limits (and optionally
+        its Odoo worker count) in place — what a plan upgrade/downgrade
+        changes. The operator rolls the Deployment to apply it.
+        Kubernetes-only, like ``scale``."""
+        name = self._cr_name(handle)
+        patch = {'spec': {'resources': {
+            'requests': {'cpu': cpu_request, 'memory': mem_request},
+            'limits': {'cpu': cpu_limit, 'memory': mem_limit},
+        }}}
+        if workers is not None:
+            # Merge patch: maxCronThreads is left as-is.
+            patch['spec']['workers'] = {'count': _clamp_workers(workers)}
+        try:
+            self._custom_api().patch_cluster_custom_object(
+                _GROUP, _VERSION, _PLURAL, name, patch)
+        except ApiException as e:
+            raise RuntimeError(
+                'patching OdooInstance %s resources failed: %s' % (name, e)) from e
+
     def start(self, handle: ComputeHandle) -> None:
         self._patch_suspended(handle, False)
 
@@ -615,11 +662,43 @@ class KubernetesDriver(ComputeDriver):
         self._patch_suspended(handle, True)
 
     def restart(self, handle: ComputeHandle) -> None:
-        # No native rolling-restart trigger is exposed on the CR today, so
-        # this is a real stop-then-start via spec.suspended (heavier than a
-        # zero-downtime rolling restart, but a genuine documented gap, not
-        # a silent shortcut standing in for something broken).
-        self.restart_default(handle)
+        """Zero-downtime rolling restart (``kubectl rollout restart``).
+
+        Stamps a pod-template annotation on the tenant's Deployments; the
+        operator's RollingUpdate strategy (maxUnavailable=0, maxSurge=1)
+        brings the new pod up and ready before the old one stops. The
+        operator applies Deployments with server-side apply, which keeps
+        fields owned by another manager, so the annotation isn't reverted.
+        A suspended instance has no pods to roll — it's simply resumed.
+        """
+        name = self._cr_name(handle)
+        cr = self._get_cr(name)
+        if cr is None:
+            raise RuntimeError('OdooInstance %s not found' % name)
+        if (cr.get('spec') or {}).get('suspended'):
+            self._patch_suspended(handle, False)
+            return
+        namespace = handle.instance_path or self._namespace_for(handle)
+        apps = self._apps_api()
+        try:
+            deployments = apps.list_namespaced_deployment(
+                namespace, label_selector=_POD_LABEL_SELECTOR % name).items
+        except ApiException as e:
+            raise RuntimeError(
+                'listing Deployments in %s failed: %s' % (namespace, e)) from e
+        if not deployments:
+            raise RuntimeError(
+                'no Deployment found for OdooInstance %s in %s' % (name, namespace))
+        stamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        patch = {'spec': {'template': {'metadata': {'annotations': {
+            _RESTARTED_AT_ANNOTATION: stamp}}}}}
+        for dep in deployments:
+            try:
+                apps.patch_namespaced_deployment(dep.metadata.name, namespace, patch)
+            except ApiException as e:
+                raise RuntimeError(
+                    'rolling restart of %s/%s failed: %s'
+                    % (namespace, dep.metadata.name, e)) from e
 
     def _resolve_pod(self, handle: ComputeHandle):
         """Return (namespace, pod) for handle's workload, or (namespace,
@@ -751,9 +830,8 @@ class KubernetesDriver(ComputeDriver):
         if pod is None:
             return ''
         try:
-            return self._core_api().read_namespaced_pod_log(
-                pod.metadata.name, namespace, container=_CONTAINER_NAME,
-                tail_lines=int(tail) if tail else None)
+            return read_pod_log(self._core_api(), pod.metadata.name, namespace,
+                                _CONTAINER_NAME, tail)
         except ApiException as e:
             if e.status == 404:
                 return ''

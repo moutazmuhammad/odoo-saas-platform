@@ -122,12 +122,6 @@ class SaasServer(models.Model):
              'single server; the cluster\'s actual connection (kubeconfig, '
              'ingress) is configured on this entry\'s Region, since one '
              'region maps to one cluster.')
-    registry_host = fields.Char(
-        string='Container Registry Host',
-        help="Phase 2.2: registry endpoint for immutable tenant images "
-             "(e.g. 127.0.0.1:5000 self-hosted, or registry.digitalocean.com/<repo> "
-             "in prod). When set, builds produce <registry>/tenant-<sub>:<sha> and "
-             "deploy pulls by digest. Empty = legacy source-clone + build-on-host.")
     object_filestore_mount = fields.Char(
         string='Object-Storage Filestore Mount',
         help="Phase 2: host path of the object-storage-backed POSIX mount "

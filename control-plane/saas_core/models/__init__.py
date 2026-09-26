@@ -22,3 +22,4 @@ from . import saas_rate_limit
 from . import saas_audit_log
 from . import saas_alert
 from . import saas_job
+from . import saas_instance_build

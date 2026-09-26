@@ -20,7 +20,7 @@ import (
 // is kept as an independently overridable default (--restore-tool-image)
 // in case a platform ever wants to version backup and restore tooling
 // separately.
-const DefaultRestoreToolImage = "ghcr.io/freightright/odoo-saas-backup-tool:latest"
+const DefaultRestoreToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.0"
 
 // OdooRestoreJobName is the name of the one-time restore Job.
 func OdooRestoreJobName(instance *saasv1alpha1.OdooInstance) string {

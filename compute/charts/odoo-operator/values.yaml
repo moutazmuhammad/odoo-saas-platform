@@ -1,8 +1,8 @@
 # Default values for the odoo-operator chart.
 
 image:
-  repository: registry.example.com/odoo-saas/operator
-  tag: "0.1.0"
+  repository: docker.io/moutazmuhammad/odoo-saas-operator
+  tag: "0.1.5"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 

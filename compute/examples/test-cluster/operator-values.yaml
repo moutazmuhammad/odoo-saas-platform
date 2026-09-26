@@ -1,0 +1,13 @@
+# odoo-operator values for a single-node microk8s TEST cluster: no Gateway
+# API installed, so tenants are exposed through microk8s' Traefik ingress.
+#
+#   helm upgrade --install odoo-operator compute/charts/odoo-operator \
+#     -n odoo-system --create-namespace \
+#     -f compute/examples/test-cluster/operator-values.yaml
+#
+# Helm doesn't upgrade CRDs: after a CRD change also run
+#   kubectl apply --server-side --force-conflicts \
+#     -f compute/charts/odoo-operator/crds/
+networking:
+  provider: ingress
+  ingressClassName: traefik

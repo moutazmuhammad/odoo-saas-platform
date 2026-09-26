@@ -5,8 +5,8 @@ description: |
   CRD and the controller that reconciles it into a tenant namespace,
   managed PostgreSQL, filestore, Odoo workload, routing, and backups.
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: "0.1.5"
 home: https://github.com/freightright/odoo-saas-platform
 keywords:
   - odoo

@@ -35,7 +35,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: registry.example.com/odoo-saas/operator:dev
+          image: docker.io/moutazmuhammad/odoo-saas-operator:0.1.5
           args:
             - --leader-elect=false
             - --networking-provider=gateway-api

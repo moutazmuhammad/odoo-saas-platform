@@ -101,6 +101,9 @@ checkout (devctl.sh reads SAAS_DEV_BASE; every path is overridable).
 
 4. A Kubernetes cluster for tenants
 -----------------------------------
+Full step-by-step guide: MICROK8S-CLUSTER-SETUP.md. Running the control
+plane on a real server (prefork, nginx, TLS, services, backups):
+SAAS-SERVER-SETUP.md.
 Any conformant cluster works. Test setup used: single-node microk8s
 (164.90.236.33) with addons dns, helm3, hostpath-storage, ingress,
 cert-manager.

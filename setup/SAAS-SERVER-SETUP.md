@@ -13,7 +13,7 @@ It runs as two processes on one server:
 - **`odoo`**: the web server (prefork workers plus cron).
 - **`saas-jobs`**: the durable-job worker. It runs deploys, restores, backups and database operations outside Odoo's time limits.
 
-It manages tenants on Kubernetes clusters; see `MICROK8S-CLUSTER-SETUP.md`. It never needs SSH to them, only each cluster's kubeconfig.
+It manages tenants on Kubernetes clusters; see `PRODUCTION-CLUSTER-SETUP.md` (production) or `MICROK8S-CLUSTER-SETUP.md` (test). It never needs SSH to them, only each cluster's kubeconfig.
 
 This guide installs natively on Ubuntu 24.04 with systemd. Running the control plane as containers is PLAN.txt 3.3.
 
@@ -231,7 +231,7 @@ sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
    - *Products*: e.g. "Odoo Hosting" with *Is hosting* on.
    - *Plans*: CPU/RAM/workers/storage limits and prices, linked to products.
    - *Compute tiers*: seeded with Standard/HA/Scale; check the prices.
-7. **Register each cluster** (from `MICROK8S-CLUSTER-SETUP.md`):
+7. **Register each cluster** (from `PRODUCTION-CLUSTER-SETUP.md`, step 13):
    1. *Kubeconfig*: new record, upload the file.
    2. *Region*: name/code, the kubeconfig, ingress host = cluster IP, port 80, *Native Ingress TLS* on, ClusterIssuer name. Leave Monitoring at `monitoring` / `prometheus-server:80`. Fill Tenant Image Builds if Git repos are used.
    3. *Server*: compute driver Kubernetes, the region, the node IP.

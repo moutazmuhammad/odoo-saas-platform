@@ -107,7 +107,7 @@ PHASE 3 — Production platform
 
 PHASE 4 — Documentation and handover
 ------------------------------------
-4.1 Keep RUN-GUIDE.txt current (dev setup, cluster setup, registration).
+4.1 Keep setup/RUN-GUIDE.txt current (dev setup, cluster setup, registration).
 4.2 Operations runbook: upgrade the control plane, upgrade the operator +
     CRDs, add a region, rotate credentials, restore a tenant, restore the
     control-plane DB, incident checklist.

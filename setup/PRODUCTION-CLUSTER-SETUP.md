@@ -1,254 +1,284 @@
 # Production cluster setup
 
-This guide builds a production Kubernetes cluster for tenant Odoo instances, step by step. It covers high availability, traffic, storage, security, backups, the tests to run before go-live, and day-to-day operations.
+Step by step: a MicroK8s cluster that runs the tenant Odoo instances, connected to the SaaS control plane.
 
-- **Other guides in this folder:**
-  - `SAAS-SERVER-SETUP.md` — the control-plane server.
-  - `MICROK8S-CLUSTER-SETUP.md` — a single-node test cluster, plus an explanation of what each piece is for.
-  - `RUN-GUIDE.txt` — the dev environment.
-- **Where commands run:** on a node, as a sudo user in the `microk8s` group, unless the step says otherwise. `kubectl` means `microk8s kubectl` and `helm` means `microk8s helm3`:
+**How to use this guide**
 
-  ```bash
-  alias kubectl='microk8s kubectl'; alias helm='microk8s helm3'
-  ```
+- You write your values **once**, in `/root/cluster.env` on each node (step 2). Every block after that reads them, so you paste the blocks as they are.
+- Each block says where it runs: **every node**, **node1**, **your workstation**, or the **SaaS server**. On the nodes, work as `root`.
+- After step 2, `kubectl` and `helm` are aliases for `microk8s kubectl` and `microk8s helm3`.
+- **3 nodes** = production (HA). **2 nodes** = testing only: it works, but if either node goes down, the Kubernetes API stops.
+- Tested on DigitalOcean, Ubuntu 24.04, MicroK8s 1.35, Longhorn 1.12.1.
 
-- **Example values**, which you replace with your own:
-
-  | Thing | Example |
-  |---|---|
-  | Nodes (private IPs) | `node1` 10.0.0.11, `node2` 10.0.0.12, `node3` 10.0.0.13 |
-  | Load balancer public IP | `203.0.113.50` |
-  | Tenant domain | `*.apps.example.com` |
-  | Kubernetes API name | `k8s-api.example.com` |
-  | Control-plane server IP | `198.51.100.20` |
+Other guides: `SAAS-SERVER-SETUP.md` (the control-plane server), `MICROK8S-CLUSTER-SETUP.md` (a single-node test cluster), `RUN-GUIDE.txt` (dev).
 
 ---
 
-## The design in one page
+## Overview
 
 ```
-                    customers
-                        │ https
-                        ▼
-        DNS  *.apps.example.com → 203.0.113.50
-                        │
-             ┌──────────▼──────────┐
-             │ Cloud load balancer │   TCP 80/443, health-checks every node
-             └───┬───────┬───────┬─┘
-                 ▼       ▼       ▼                 private network 10.0.0.0/24
-             ┌──────┐ ┌──────┐ ┌──────┐
-             │node1 │ │node2 │ │node3 │   each node: Kubernetes control plane + tenants
-             │      │ │      │ │      │   Traefik (ingress) + cert-manager (TLS)
-             │ disk │ │ disk │ │ disk │   Longhorn: every volume copied to 3 nodes
-             └──────┘ └──────┘ └──────┘
-                 ▲       ▲       ▲
-                 └── k8s-api.example.com:16443 (3 A records), open only to the control plane
-                        ▲
-                 control plane (SaaS server) ──▶ tenant backups ──▶ S3 bucket
+ customers ──https──▶ *.apps.example.com ──▶ load balancer (TCP 80/443)
+                                                  │
+                     ┌────────────────────────────┼────────────────────────────┐
+                     ▼                            ▼                            ▼
+                  node1                        node2                        node3
+       Kubernetes + Traefik + tenants    (same on every node)       (private network between them)
+       Longhorn: a copy of every volume on every node
+                     ▲
+ SaaS server ──▶ Kubernetes API :16443 (firewalled)        tenant backups ──▶ S3 bucket
 ```
 
-| Area | Choice | What it gives you |
-|---|---|---|
-| **HA** | 3 identical MicroK8s nodes, all running the control plane | The cluster keeps working when any **one** node dies. 2 nodes can't do this; 3 is the minimum. |
-| **Traffic** | One cloud TCP load balancer → all 3 nodes | Customers never depend on a single node. TLS ends inside the cluster (cert-manager + Let's Encrypt). |
-| **Storage** | Longhorn, 3 copies of every volume | A tenant's database and files survive the loss of a node, and the tenant restarts on another node. |
-| **API** | `k8s-api.example.com` → 3 nodes, firewalled | The control plane can still manage the cluster when a node is down. Only the control plane can reach it. |
-| **Security** | Private network, cloud firewall, SSH keys only, revocable token for the control plane, tenant isolation | Details in steps 1, 2, 9 and 12. |
-| **Backups** | Nightly tenant backups to an S3 bucket at another provider/region | Protection against the loss of the whole cluster. |
+| Piece | What it gives you |
+|---|---|
+| 3 MicroK8s nodes | The cluster survives the loss of any one node. |
+| Load balancer → all nodes | Customers never depend on a single node. |
+| Longhorn | Tenant data survives a node loss, and the tenant restarts on another node. |
+| cert-manager + Let's Encrypt | Every tenant gets HTTPS automatically. |
+| ServiceAccount token | The control plane's cluster access, revocable at any time. |
+| S3 backups | Protection against losing the whole cluster. |
 
-Why MicroK8s and not GKE/EKS? This works on any provider, including cheap VPS providers, and it is what the platform is tested on. If you'd rather use a managed cloud, see the appendix. It is less work, but costs more.
+**Known platform gaps** (fix them or accept them before real customers):
+
+1. Rolling updates across nodes (PLAN.txt 3.7): zero downtime isn't guaranteed when the new pod lands on another node. Test 15.3 checks this.
+2. The operator images are public on Docker Hub (`moutazmuhammad/*`). Move them to a private registry.
+3. Tenants can't reach SMTP ports (25/465/587). Mail must go through an HTTPS provider.
+4. Let's Encrypt allows about 50 new certificates per domain per week.
+5. Not tested yet: the cloud load balancer, API failover (step 12.1), and tenant traffic across nodes (15.1).
 
 ---
 
-## Read first: what isn't production-ready yet
+## 0. What you need
 
-These gaps are in the platform, not in this guide. Fix them, or accept them knowingly, before real customers arrive.
-
-1. **Rolling updates across nodes (PLAN.txt 3.7).** A tenant's filestore volume attaches to one node at a time. If the updated pod starts on a different node, the update can hang, and zero downtime isn't guaranteed. Test 15.3 checks this. It's a blocker until it passes.
-2. **Operator images are public** on Docker Hub (`moutazmuhammad/*`). Move them to a private registry before go-live.
-3. **Tenants can only send traffic out on HTTPS (443) and DNS.** The tenant NetworkPolicy blocks SMTP ports 25/465/587. So tenant Odoo can't use a normal SMTP server; it needs a mail provider reachable over HTTPS, or a policy change.
-4. **Let's Encrypt limits** a domain to about 50 new certificates per week. More than ~50 new tenants a week under `apps.example.com` would hit that. The fix, a wildcard certificate via DNS-01, isn't built yet.
-5. **Not yet run on this platform:** steps 6 (Longhorn), 7 (load balancer), 9 (NetworkPolicy labels) and 12 (API failover) are standard setups, but untested here. Section 15 is where you prove them.
-
----
-
-## 0. Shopping list
-
-| Item | Recommended | Why |
-|---|---|---|
-| 3 servers, same size, same datacenter | Ubuntu 24.04. Start at 8 vCPU / 32 GB RAM each (minimum 4 vCPU / 16 GB). | 3 nodes give HA. The same size means any node can take over another's load. The same datacenter keeps the latency low that Kubernetes and Longhorn need. |
-| One extra data disk per server | SSD, 200+ GB, the same size on all 3 | Longhorn keeps a copy of **every** volume on every node, so each disk needs room for *all* tenant data plus ~30%. A separate disk keeps a full disk from killing the OS. |
-| Private network | The provider's VPC / private networking | Node-to-node traffic (storage copies, pod traffic) never goes over the internet. |
-| Cloud load balancer | TCP, ports 80 and 443 | A single public entry point that routes around a dead node. |
-| Cloud firewall | The provider's firewall, attached to all 3 servers | It blocks everything you don't explicitly open. |
-| A domain | `*.apps.example.com` and `k8s-api.example.com` | Tenant URLs and the API name. |
-| S3 bucket | At a **different** provider or region | Tenant backups must survive the loss of the whole cluster. |
-| Email address | For Let's Encrypt | Expiry warnings. |
+| Item | Recommended |
+|---|---|
+| 3 servers (or 2 for testing) | Ubuntu 24.04, same size, same datacenter, **in the same VPC**. Production: 8 vCPU / 32 GB (minimum 4 / 16). |
+| Data disk per server (optional) | SSD, 200+ GB. Each node holds a copy of *all* tenant data. |
+| Load balancer | TCP 80 + 443. Optional for testing. |
+| Cloud firewall | Attached to all the nodes (step 1). |
+| Domain | A wildcard for tenants, e.g. `*.apps.example.com`. |
+| S3 bucket | At a different provider or region, for backups. |
 
 ---
 
-## 1. Cloud firewall
+## 1. Firewall (provider console)
 
-**Why:** everything is closed by default, and each opening has a reason. Use the provider's firewall rather than `ufw` on the nodes: `ufw` and the Kubernetes network (Calico) get in each other's way.
+Use the provider's firewall, not `ufw` (it conflicts with Calico). Attach it to **all** the nodes.
 
-Inbound rules, applied to all 3 servers:
+| Inbound | From |
+|---|---|
+| TCP 22 | your IP |
+| TCP 80, 443 | everyone (or only the load balancer) |
+| TCP 16443 | the SaaS server's IP + your IP |
+| All TCP, all UDP, ICMP | the VPC range, e.g. `10.135.0.0/16` |
+| Anything else | denied |
 
-| Port | From | Reason |
-|---|---|---|
-| `22/tcp` | **Your admin IP only** | SSH |
-| `80/tcp`, `443/tcp` | The load balancer (or everyone, if the provider can't restrict it to the LB) | Customer traffic |
-| `16443/tcp` | Control-plane server `198.51.100.20` + your admin IP | Kubernetes API |
-| Everything | The private network `10.0.0.0/24` | Node-to-node: Kubernetes, Calico, Longhorn |
-| Everything else | — | **Denied** |
+Outbound: allow all.
 
-Outbound: allow all. Nodes pull images, reach Let's Encrypt, and send backups to S3.
-
----
-
-## 2. Prepare each server (all 3)
-
-**Why:** a clean, patched, key-only OS, with the tools Longhorn needs installed before Kubernetes arrives.
-
-```bash
-# Updates and packages. open-iscsi + nfs-common are needed by Longhorn.
-sudo apt update && sudo apt -y full-upgrade
-sudo apt -y install unattended-upgrades open-iscsi nfs-common
-sudo systemctl enable --now iscsid unattended-upgrades
-
-# multipathd grabs Longhorn's disks and breaks them (a known Longhorn issue).
-sudo systemctl disable --now multipathd multipathd.socket 2>/dev/null || true
-
-# Hostname: node1 / node2 / node3, one per server.
-sudo hostnamectl set-hostname node1
-
-# Every node must resolve every other node by name.
-echo "10.0.0.11 node1
-10.0.0.12 node2
-10.0.0.13 node3" | sudo tee -a /etc/hosts
-```
-
-**SSH: keys only.** First make sure your key login works. Then:
-
-```bash
-sudo sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/; s/^#\?PermitRootLogin .*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
-sudo systemctl restart ssh
-```
-
-**Data disk for Longhorn.** The device name is an example; check yours with `lsblk`.
-
-```bash
-sudo mkfs.ext4 /dev/sdb
-sudo mkdir -p /var/lib/longhorn
-echo '/dev/sdb /var/lib/longhorn ext4 defaults,nofail 0 2' | sudo tee -a /etc/fstab
-sudo mount -a && df -h /var/lib/longhorn
-```
-
-**Check:** `ping node2` works from node1 (and the same for every pair), and `systemctl is-active iscsid` says `active`.
+**Don't skip this.** Without it, the Kubernetes API (16443), kubelet (10250) and cluster join port (25000) are open to the internet.
 
 ---
 
-## 3. Install MicroK8s (all 3)
+## 2. Prepare each server
 
-**Why:** the same version on every node. The *hold* stops snap from upgrading Kubernetes by itself in the middle of the day. You upgrade by hand, one node at a time (section 16).
+### 2.1 Find the private IPs (every node)
 
 ```bash
-sudo snap install microk8s --classic --channel=1.35/stable
-sudo snap refresh --hold microk8s
-sudo usermod -aG microk8s $USER && newgrp microk8s
-
-# Make Kubernetes use the PRIVATE IP for this node (10.0.0.12 on node2, etc.).
-echo '--node-ip=10.0.0.11' | sudo tee -a /var/snap/microk8s/current/args/kubelet
-sudo snap restart microk8s
-microk8s status --wait-ready
+ip -4 -br addr | grep -E ' (10|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.'
 ```
 
----
+On DigitalOcean, use the **eth1** address (the VPC). Ignore eth0: it has the public IP and a `10.x` "anchor" IP, and neither is the VPC.
 
-## 4. Join the 3 nodes into one HA cluster
-
-**Why:** with 3 control-plane nodes, MicroK8s turns on HA by itself. The cluster's database is kept on all 3, and any one node can die.
-
-On **node1**, create a token (run it once per node you're adding; each token works once):
-
-```bash
-microk8s add-node
-# prints: microk8s join 10.0.0.11:25000/<token>/<hash>
+```
+eth0   UP   159.223.25.140/20 10.19.0.13/16   ← don't use
+eth1   UP   10.135.0.9/16                     ← use this
 ```
 
-On **node2**, run the printed line **without** `--worker`. Use the 10.0.0.x address. Then do the same for **node3** with a new token from node1.
+### 2.2 Write your values (every node, the same block)
+
+Edit the values, then paste the block on **every** node:
 
 ```bash
-microk8s join 10.0.0.11:25000/<token>/<hash>
+cat > /root/cluster.env <<'EOF'
+NODES="node1 node2 node3"                  # 2-node test: "node1 node2"
+declare -A PRIV=([node1]=10.0.0.11      [node2]=10.0.0.12      [node3]=10.0.0.13)
+declare -A PUB=( [node1]=198.51.100.11  [node2]=198.51.100.12  [node3]=198.51.100.13)
+REPLICAS=3                    # Longhorn copies: 3 with 3 nodes, 2 with 2
+LB_IP=203.0.113.50            # load balancer IP; no LB: node1's public IP
+API_HOST=k8s-api.example.com  # API address for the SaaS server; test: node1's public IP
+ACME_EMAIL=                   # optional: Let's Encrypt expiry emails
+DATA_DISK=                    # optional: e.g. /dev/sdb; empty = use the OS disk
+REPO=/root/odoo-saas-platform # where step 5 copies the charts
+EOF
+grep -q cluster.env ~/.bashrc || cat >> ~/.bashrc <<'EOF'
+. /root/cluster.env
+alias kubectl='microk8s kubectl'; alias helm='microk8s helm3'
+EOF
+. ~/.bashrc
 ```
 
-Make the pod network use the private IPs too (once, on any node):
+If a later block says `/root/cluster.env: No such file or directory`, stop and do this step on that node first. Otherwise every value is empty.
+
+### 2.3 Hostname (every node, the only line you edit by hand)
 
 ```bash
-kubectl -n kube-system set env daemonset/calico-node IP_AUTODETECTION_METHOD=kubernetes-internal-ip
+hostnamectl set-hostname node1    # node2 on the 2nd server, node3 on the 3rd
+```
+
+### 2.4 Packages and settings (every node)
+
+```bash
+. /root/cluster.env
+
+# Packages. open-iscsi + nfs-common are needed by Longhorn.
+apt update && DEBIAN_FRONTEND=noninteractive apt -y full-upgrade
+apt -y install unattended-upgrades open-iscsi nfs-common
+systemctl enable --now iscsid unattended-upgrades
+
+# Kernel modules for Longhorn, now and at boot.
+printf 'iscsi_tcp\ndm_crypt\n' > /etc/modules-load.d/longhorn.conf
+modprobe iscsi_tcp; modprobe dm_crypt
+
+# multipathd breaks Longhorn disks.
+systemctl disable --now multipathd multipathd.socket 2>/dev/null || true
+
+# Node names → private IPs. cloud-init rebuilds /etc/hosts from its template at boot, so write both.
+for f in /etc/hosts /etc/cloud/templates/hosts.debian.tmpl; do
+  [ -f "$f" ] || continue
+  sed -i '/# k8s-node$/d' "$f"
+  for n in $NODES; do echo "${PRIV[$n]} $n # k8s-node"; done >> "$f"
+done
+
+# Optional data disk. It formats the disk only if it has no filesystem yet.
+if [ -n "$DATA_DISK" ] && ! mountpoint -q /var/lib/longhorn; then
+  [ -z "$(lsblk -no FSTYPE "$DATA_DISK")" ] && mkfs.ext4 "$DATA_DISK"
+  mkdir -p /var/lib/longhorn
+  grep -q "^$DATA_DISK " /etc/fstab || echo "$DATA_DISK /var/lib/longhorn ext4 defaults,nofail 0 2" >> /etc/fstab
+  mount -a
+fi
 ```
 
 **Check:**
 
 ```bash
-microk8s status | grep high-availability     # high-availability: yes
-kubectl get nodes -o wide                    # 3 × Ready, INTERNAL-IP = 10.0.0.x
-kubectl -n kube-system get pods -o wide | grep calico-node   # 3 × Running
+. /root/cluster.env
+for n in $NODES; do ping -c1 -W2 ${PRIV[$n]} >/dev/null && echo "$n ok" || echo "$n UNREACHABLE"; done
+systemctl is-active iscsid                  # active
+lsmod | grep -cE '^(iscsi_tcp|dm_crypt)'    # 2
+```
+
+### 2.5 SSH keys only (every node, when your key works)
+
+Test first from your workstation: `ssh -o PasswordAuthentication=no root@<node>`. If that logs you in:
+
+```bash
+sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/; s/^#\?PermitRootLogin .*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+rm -f /etc/ssh/sshd_config.d/50-cloud-init.conf    # it can switch passwords back on
+systemctl restart ssh
 ```
 
 ---
 
-## 5. Addons (once, on any node)
+## 3. Install MicroK8s (every node)
 
-**Why:** DNS for the cluster, the ingress controller (Traefik), cert-manager for TLS, and Helm for installing the rest. Addons are cluster-wide, so enable them once.
+```bash
+. /root/cluster.env; ME=$(hostname)
+snap install microk8s --classic --channel=1.35/stable
+snap refresh --hold microk8s          # no automatic Kubernetes upgrades
+
+# Use the private network. Without this, the nodes talk over their public IPs.
+ip -4 -br addr | grep -q " ${PRIV[$ME]}/" || echo "!! ${PRIV[$ME]} is not on $ME: fix cluster.env or the hostname"
+sed -i '/^--node-ip=/d' /var/snap/microk8s/current/args/kubelet
+echo "--node-ip=${PRIV[$ME]}" >> /var/snap/microk8s/current/args/kubelet
+snap restart microk8s
+microk8s status --wait-ready
+kubectl get nodes -o wide             # INTERNAL-IP must be the private IP
+```
+
+If INTERNAL-IP shows the public IP, fix it **now**, before joining.
+
+---
+
+## 4. Join the nodes
+
+**node1**: print a join line. Run it once per node, since each line works only once:
+
+```bash
+. /root/cluster.env
+microk8s add-node | grep -m1 "^microk8s join ${PRIV[node1]}:"
+```
+
+**node2** (then **node3**, with a new line): paste the printed line. It looks like this:
+
+```bash
+microk8s join 10.0.0.11:25000/<token>/<hash>
+```
+
+**node1**: once all the nodes have joined:
+
+```bash
+kubectl -n kube-system set env daemonset/calico-node IP_AUTODETECTION_METHOD=kubernetes-internal-ip
+kubectl -n kube-system rollout status ds/calico-node
+
+microk8s status | grep high-availability                      # yes (3 nodes) / no (2 nodes, expected)
+kubectl get nodes -o wide                                     # all Ready, private INTERNAL-IPs
+kubectl -n kube-system get pods -o wide | grep calico-node    # one per node, private IPs
+```
+
+**Nodes joined with public IPs?** While the cluster is still empty:
+1. Run `microk8s leave` on each joined node, and wait for it to finish.
+2. Run `microk8s remove-node <name>` on node1.
+3. Fix `cluster.env`, repeat steps 2.4 and 3 on every node, then join again.
+
+---
+
+## 5. Addons and charts
+
+**node1:**
 
 ```bash
 microk8s enable dns ingress cert-manager helm3
+kubectl -n ingress rollout status ds/traefik
+kubectl -n cert-manager rollout status deploy/cert-manager-webhook
 ```
 
-**Don't enable `hostpath-storage`.** It keeps data on a single node, which is exactly what production must avoid. Longhorn replaces it in the next step.
+Don't enable `hostpath-storage` (single-node data). Longhorn is the storage.
 
-**Check:** `kubectl get pods -A` shows everything `Running`, and `kubectl get sc` shows **no** StorageClass yet.
+**Your workstation**, from the repo root: copy the charts to node1:
+
+```bash
+NODE1=198.51.100.11      # node1 public IP
+tar czf - compute/charts | ssh root@$NODE1 'mkdir -p /root/odoo-saas-platform && tar xzf - -C /root/odoo-saas-platform'
+```
+
+**Check (node1):** `kubectl get pods -A` shows everything Running, and `ls /root/odoo-saas-platform/compute/charts/vendor` shows `longhorn prometheus`.
 
 ---
 
-## 6. Storage: Longhorn
+## 6. Storage: Longhorn (node1)
 
-**Why:** each tenant's Postgres data and Odoo files live on volumes. Longhorn keeps 3 copies of every volume, one per node. When a node dies, the tenant starts on another node with its data intact.
-
-**6.1 Vendor the chart** (project rule: open-source charts live in the repo). On your workstation, pick the latest stable Longhorn version that supports Kubernetes 1.35:
+The chart is vendored at `compute/charts/vendor/longhorn` (1.12.1).
 
 ```bash
-helm repo add longhorn https://charts.longhorn.io && helm repo update
-helm search repo longhorn/longhorn --versions | head -5
-helm pull longhorn/longhorn --version <VERSION> --untar -d compute/charts/vendor/
-git add compute/charts/vendor/longhorn && git commit -m "chore(charts): vendor Longhorn <VERSION>"
-```
-
-**6.2 Install** (on a node, from the repo checkout):
-
-```bash
+. /root/cluster.env; cd $REPO
 helm upgrade --install longhorn compute/charts/vendor/longhorn \
   -n longhorn-system --create-namespace \
   --set csi.kubeletRootDir=/var/snap/microk8s/common/var/lib/kubelet \
   --set persistence.defaultClass=true \
-  --set persistence.defaultClassReplicaCount=3 \
-  --set defaultSettings.defaultReplicaCount=3 \
+  --set persistence.defaultClassReplicaCount=$REPLICAS \
+  --set defaultSettings.defaultReplicaCount=$REPLICAS \
   --set defaultSettings.defaultDataPath=/var/lib/longhorn \
   --set defaultSettings.nodeDownPodDeletionPolicy=delete-both-statefulset-and-deployment-pod
-kubectl -n longhorn-system rollout status deploy/longhorn-driver-deployer
+kubectl -n longhorn-system rollout status deploy/longhorn-driver-deployer --timeout=10m
+kubectl -n longhorn-system rollout status ds/longhorn-csi-plugin --timeout=10m
 ```
 
-What the settings do:
-- `kubeletRootDir` — MicroK8s keeps kubelet files in a non-standard place. Without this setting, volumes never mount.
-- `ReplicaCount=3` — one copy on each node.
-- `nodeDownPodDeletionPolicy` — when a node dies, Longhorn frees the tenant's volume so it can start elsewhere. Without it, the tenant stays stuck until someone steps in.
+- `kubeletRootDir`: MicroK8s's kubelet path. Without it, volumes never mount.
+- `nodeDownPodDeletionPolicy`: when a node dies, the tenant restarts elsewhere without manual help.
 
-**6.3 Check:**
+**Check:** a test volume is written, with one copy per node, then deleted:
 
 ```bash
-kubectl get sc                         # longhorn (default)
-kubectl -n longhorn-system get pods    # all Running
-# A test volume: create it, confirm it's Bound, delete it.
+kubectl get sc                                       # longhorn (default)
 kubectl create -f - <<'EOF'
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -256,161 +286,149 @@ metadata: {name: longhorn-test, namespace: default}
 spec: {accessModes: [ReadWriteOnce], resources: {requests: {storage: 1Gi}}}
 EOF
 kubectl run lh-test --image=busybox --restart=Never --overrides='{"spec":{"volumes":[{"name":"v","persistentVolumeClaim":{"claimName":"longhorn-test"}}],"containers":[{"name":"c","image":"busybox","command":["sh","-c","echo ok > /v/t && cat /v/t"],"volumeMounts":[{"name":"v","mountPath":"/v"}]}]}}'
-sleep 30; kubectl logs lh-test         # ok
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/lh-test --timeout=3m
+kubectl logs lh-test                                 # ok
+kubectl -n longhorn-system get replicas.longhorn.io -o custom-columns=NODE:.spec.nodeID,STATE:.status.currentState
 kubectl delete pod lh-test; kubectl delete pvc longhorn-test
 ```
 
-**Longhorn UI:** don't expose it publicly. Open it through a tunnel when you need it:
-`kubectl -n longhorn-system port-forward svc/longhorn-frontend 8080:80`, then browse http://localhost:8080.
+**Longhorn UI:** tunnel only, never public. Run `kubectl -n longhorn-system port-forward svc/longhorn-frontend 8080:80`, then open http://localhost:8080.
 
 ---
 
-## 7. Traffic: load balancer → Traefik
+## 7. Traffic
 
-**Why:** customers reach one address, the load balancer. It sends each request to any healthy node, and Traefik on that node forwards it to the right tenant, even if the tenant runs on another node.
+Traefik (from the ingress addon) runs on every node, on ports 80/443. So every node answers.
 
-**7.1 Traefik accepts traffic on every node.** It listens on the nodes' private IPs, and the Service is marked with the LB address. The operator waits for that address before it marks a tenant ready.
+**7.1 node1:** register the node IPs and the public address on the Traefik Service. The operator waits for that address before it marks a tenant ready.
 
 ```bash
-LB_IP=203.0.113.50
-kubectl -n ingress patch svc traefik --type=merge \
-  -p '{"spec":{"externalIPs":["10.0.0.11","10.0.0.12","10.0.0.13"]}}'
+. /root/cluster.env
+IPS=$(for n in $NODES; do printf '"%s",' "${PRIV[$n]}"; done)
+kubectl -n ingress patch svc traefik --type=merge -p "{\"spec\":{\"externalIPs\":[${IPS%,}]}}"
 kubectl -n ingress patch svc traefik --subresource=status --type=merge \
   -p "{\"status\":{\"loadBalancer\":{\"ingress\":[{\"ip\":\"$LB_IP\"}]}}}"
+kubectl -n ingress get svc traefik
 ```
 
-Traefik itself must run on more than one node:
+**7.2 Load balancer (provider console):** TCP 80→80 and 443→443, passthrough (no TLS on the LB). Targets: all the nodes. Health check: TCP 80.
+
+**7.3 DNS:** `*.apps.example.com` → an `A` record to the LB IP.
+No LB? Add one `A` record per node's public IP, and set `LB_IP` to node1's public IP.
+
+**Check (your workstation):** a 404 is correct, since there are no tenants yet.
 
 ```bash
-kubectl -n ingress get pods -o wide    # one per node? Good (DaemonSet).
-# If it's a Deployment with 1 pod:
-kubectl -n ingress scale deploy traefik --replicas=3
+curl -s -o /dev/null -w "%{http_code}\n" http://anything.apps.example.com/     # 404
 ```
 
-**7.2 Create the load balancer** in the provider console:
-- **Forwarding:** TCP 80 → 80 and TCP 443 → 443 (TCP *passthrough*, **no** TLS on the LB, because cert-manager handles certificates).
-- **Targets:** node1, node2 and node3, on their private IPs.
-- **Health check:** TCP port 80.
+**Check pod traffic between the nodes (node1):**
 
-**7.3 DNS:** `*.apps.example.com` — `A` record → `203.0.113.50`.
-
-**Check:** `curl -sI http://anything.apps.example.com` answers (404 is fine: no tenant yet). Then stop Traefik on one node, or power the node off, and the curl still answers.
-
-> **No load balancer at your provider?** Point `*.apps.example.com` at the 3 nodes' public IPs (3 `A` records), put those public IPs in `externalIPs`, and put one of them in the status patch. Browsers retry another IP when one fails, but less cleanly than a load balancer.
+```bash
+POD1=$(kubectl -n ingress get pods -l app.kubernetes.io/name=traefik --field-selector spec.nodeName=node1 -o jsonpath='{.items[0].status.podIP}')
+kubectl run nettest --image=busybox --restart=Never --overrides='{"spec":{"nodeName":"node2"}}' -- \
+  sh -c "nslookup kubernetes.default.svc.cluster.local >/dev/null && echo dns-ok; wget -qO- -T5 http://$POD1:8000/ 2>&1 | head -1"
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/nettest --timeout=90s; kubectl logs nettest; kubectl delete pod nettest
+# expect: dns-ok, then "404 Not Found". A timeout means the firewall blocks the VPC range.
+```
 
 ---
 
-## 8. TLS: Let's Encrypt
-
-**Why:** every tenant gets a real HTTPS certificate automatically, and it renews by itself.
+## 8. TLS: Let's Encrypt (node1)
 
 ```bash
-cat <<'EOF' | kubectl apply -f -
+. /root/cluster.env
+cat <<EOF | kubectl apply -f -
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
   name: letsencrypt-prod
 spec:
   acme:
-    email: ops@example.com
+    ${ACME_EMAIL:+email: $ACME_EMAIL}
     server: https://acme-v02.api.letsencrypt.org/directory
     privateKeySecretRef: {name: letsencrypt-prod-account-key}
     solvers:
       - http01: {ingress: {ingressClassName: traefik}}
 EOF
-kubectl get clusterissuer letsencrypt-prod    # READY True
+sleep 15; kubectl get clusterissuer letsencrypt-prod    # READY True
 ```
 
 ---
 
-## 9. The Odoo operator
+## 9. Odoo operator (node1)
 
-**Why:** it turns each `OdooInstance` from the control plane into the tenant's namespace, Postgres, Odoo, volumes, route and backups.
-
-**Security built into the operator** (no action needed):
-- Each tenant gets its own namespace, running under the `restricted` Pod Security level.
-- A default-deny NetworkPolicy blocks all traffic between tenants.
-- The Odoo pods have no access to the Kubernetes API.
-
-The one thing you must set is **which pods are allowed to send traffic to tenants**: the ingress controller. Find Traefik's labels:
+The operator isolates each tenant: its own namespace, the `restricted` Pod Security level, and a default-deny NetworkPolicy. The values below allow only Traefik (namespace `ingress`, label `app.kubernetes.io/name=traefik`) to reach tenants.
 
 ```bash
-kubectl -n ingress get pods --show-labels     # e.g. app.kubernetes.io/name=traefik
-```
-
-Write the production values (put the label you found under `podSelector`):
-
-```bash
-cat > operator-values-prod.yaml <<'EOF'
-replicaCount: 2          # two copies of the operator; one works, one waits
+. /root/cluster.env; cd $REPO
+cat > $REPO/operator-values-prod.yaml <<'EOF'
+replicaCount: 2
 leaderElection: true
 networking:
   provider: ingress
   ingressClassName: traefik
-  gateway:               # who may reach tenant pods (the NetworkPolicy)
+  gateway:
     namespace: ingress
     podSelector:
       app.kubernetes.io/name: traefik
 # imagePullSecrets: [{name: regcred}]   # once the operator images are private
 EOF
-
 kubectl apply --server-side --force-conflicts -f compute/charts/odoo-operator/crds/
 helm upgrade --install odoo-operator compute/charts/odoo-operator \
   -n odoo-system --create-namespace -f operator-values-prod.yaml
 kubectl -n odoo-system rollout status deploy/odoo-operator
+kubectl -n odoo-system get pods -o wide     # 2 Running, on different nodes
 ```
 
-Keep `operator-values-prod.yaml` safe (or commit it under `compute/examples/`). Every future operator upgrade uses it.
+Keep `operator-values-prod.yaml`. Every operator upgrade uses it.
 
 ---
 
-## 10. Prometheus
+## 10. Prometheus (node1)
 
-**Why:** the control plane reads tenant CPU/RAM usage from it, for the charts and for billing. It's reached only through the Kubernetes API, never publicly.
+The control plane reads tenant CPU/RAM usage through the Kubernetes API. Prometheus is never exposed publicly.
 
 ```bash
+. /root/cluster.env; cd $REPO
 helm upgrade --install prometheus compute/charts/vendor/prometheus \
-  -n monitoring --create-namespace \
-  -f compute/charts/monitoring/prometheus-values.yaml
-kubectl -n monitoring rollout status deploy/prometheus-server
-kubectl -n monitoring get pvc          # Bound, on longhorn
+  -n monitoring --create-namespace -f compute/charts/monitoring/prometheus-values.yaml
+kubectl -n monitoring rollout status deploy/prometheus-server --timeout=5m
+kubectl -n monitoring get pvc      # Bound, on longhorn
 ```
 
 ---
 
-## 11. Image registry (only if customers deploy their Git repos)
+## 11. Image registry (only if customers deploy Git repos)
 
-**Why:** each push to a customer's repo builds an image that must be stored somewhere private.
-
-- **Production:** use a real private registry with a fixed token: GHCR, Docker Hub (private), Harbor, or GCP Artifact Registry. Don't use the in-cluster test registry: its data lives on one volume, and it runs over plain HTTP. Don't use AWS ECR either: its passwords expire every 12 hours.
-- **Region fields in the control plane:**
-  - *Registry Host* and *Registry Push Host*: both the registry address (e.g. `ghcr.io`).
-  - *Registry Path Prefix*: your org.
-  - *Username / Token*: a token that can **only** push and pull (not an admin token).
-  - *Plain-HTTP*: **off**.
+Use a private registry with a fixed token: GHCR, Docker Hub (private), Harbor, or GCP Artifact Registry. Not the in-cluster test registry, and not AWS ECR, whose tokens expire every 12 hours. Put it in the Region's registry fields: host, push host, path prefix (your org), and a push/pull-only token. Leave plain-HTTP off.
 
 ---
 
-## 12. Kubernetes API access for the control plane
+## 12. API access for the control plane
 
-**Why:** the control plane manages everything through the API. The API must survive a dead node, and only the control plane should be able to use it.
+**12.1 DNS name (production only).** `k8s-api.example.com` → one `A` record per node's public IP. For a test cluster, skip this and use node1's IP as `API_HOST`.
 
-**12.1 One name for all 3 nodes.** DNS: `k8s-api.example.com` gets 3 `A` records, one per node's public IP. The client tries the next IP when one fails.
-
-**12.2 Add that name to the API certificate (on each of the 3 nodes):**
+**12.2 Add that name to the API certificate (every node, only if `API_HOST` is a name):**
 
 ```bash
-sudo sed -i 's/^#MOREIPS/DNS.99 = k8s-api.example.com\n#MOREIPS/' \
-  /var/snap/microk8s/current/certs/csr.conf.template
-sudo microk8s refresh-certs --cert server.crt
+. /root/cluster.env
+if ! [[ $API_HOST =~ ^[0-9.]+$ ]]; then
+  grep -q "DNS.99 = $API_HOST" /var/snap/microk8s/current/certs/csr.conf.template || \
+    sed -i "s/^#MOREIPS/DNS.99 = $API_HOST\n#MOREIPS/" /var/snap/microk8s/current/certs/csr.conf.template
+  microk8s refresh-certs --cert server.crt
+fi
+openssl x509 -in /var/snap/microk8s/current/certs/server.crt -noout -ext subjectAltName | tr ',' '\n' | grep -F "$API_HOST"
 ```
 
-**12.3 A dedicated, revocable credential.** Don't give the control plane `microk8s config`, which is the permanent admin certificate. Create a ServiceAccount token instead. It can be revoked at any time by deleting its Secret.
+**12.3 Create the control plane's token and kubeconfig (node1).** Safe to run again, for example to rebuild the file:
 
 ```bash
-kubectl -n kube-system create serviceaccount saas-control-plane
-kubectl create clusterrolebinding saas-control-plane \
-  --clusterrole=cluster-admin --serviceaccount=kube-system:saas-control-plane
+. /root/cluster.env
+[ -n "$API_HOST" ] || echo "!! API_HOST is empty: do step 2.2 first"
+kubectl -n kube-system create serviceaccount saas-control-plane --dry-run=client -o yaml | kubectl apply -f -
+kubectl create clusterrolebinding saas-control-plane --clusterrole=cluster-admin \
+  --serviceaccount=kube-system:saas-control-plane --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n kube-system apply -f - <<'EOF'
 apiVersion: v1
 kind: Secret
@@ -419,156 +437,233 @@ metadata:
   annotations: {kubernetes.io/service-account.name: saas-control-plane}
 type: kubernetes.io/service-account-token
 EOF
-
+sleep 5
 CA=$(kubectl -n kube-system get secret saas-control-plane-token -o jsonpath='{.data.ca\.crt}')
 TOKEN=$(kubectl -n kube-system get secret saas-control-plane-token -o jsonpath='{.data.token}' | base64 -d)
-cat > kubeconfig-prod <<EOF
+( umask 077; cat > /root/kubeconfig-prod <<EOF
 apiVersion: v1
 kind: Config
-clusters: [{name: prod, cluster: {server: "https://k8s-api.example.com:16443", certificate-authority-data: $CA}}]
+clusters: [{name: prod, cluster: {server: "https://$API_HOST:16443", certificate-authority-data: $CA}}]
 users: [{name: saas, user: {token: $TOKEN}}]
 contexts: [{name: prod, context: {cluster: prod, user: saas}}]
 current-context: prod
 EOF
+)
+kubectl --kubeconfig /root/kubeconfig-prod get nodes      # all the nodes
 ```
 
-**Check, from the control-plane server:** `kubectl --kubeconfig kubeconfig-prod get nodes` → 3 nodes. Then upload the file to the control plane (step 13) and **delete every local copy**.
+Don't use `microk8s config` instead: it's the permanent admin certificate. This token can be revoked by deleting its Secret.
+
+| Error | Fix |
+|---|---|
+| `https://:16443` / `ServerName or InsecureSkipVerify` | `API_HOST` is empty: do step 2.2, then run 12.3 again. |
+| `certificate is valid for …, not <API_HOST>` | Do 12.2. For an IP, add `IP.99 = <ip>` before `#MOREIPS` in `csr.conf.template`, then run `microk8s refresh-certs --cert server.crt`. |
+| Timeout on `:16443` | The firewall: allow 16443 from that machine (step 1). |
+| `Unauthorized` | The token was recreated: run 12.3 again and redo step 13. |
 
 ---
 
 ## 13. Register the cluster in the control plane
 
-In the backend (`SAAS-SERVER-SETUP.md`, step 8):
+The control plane needs four records: a **Kubeconfig**, a **Region** (the cluster: kubeconfig, ingress IP, TLS), a **Server** (the capacity entry inside the Region), and a **Based domain** (the tenant URLs). The script below creates or updates all four, and can also create a test catalog. It's safe to run again.
 
-1. **Kubeconfig:** a new record; upload `kubeconfig-prod`.
-2. **Region:**
+**13.1 Check DNS (anywhere):**
 
-   | Field | Value |
-   |---|---|
-   | Kubeconfig | the record above |
-   | Ingress Host / Port | `203.0.113.50` / `80` |
-   | Native Kubernetes Ingress TLS | **on** |
-   | TLS ClusterIssuer | `letsencrypt-prod` |
-   | Prometheus Namespace / Service | `monitoring` / `prometheus-server:80` (defaults) |
-   | Tenant Image Builds | from step 11, if used |
+```bash
+getent hosts test.apps.example.com      # the LB IP or the node IPs
+```
 
-3. **Server:** compute driver *Kubernetes*, this region, address `203.0.113.50`.
-4. **Based domain:** `apps.example.com`, with this region and server.
+**13.2 Move the kubeconfig to the SaaS server (your workstation).** It streams straight through, without being saved on your machine:
+
+```bash
+NODE1=198.51.100.11; SAAS=saas.example.com
+ssh root@$NODE1 cat /root/kubeconfig-prod | \
+  ssh root@$SAAS 'umask 077; cat > /tmp/kubeconfig-prod; chown odoo /tmp/kubeconfig-prod'
+ssh root@$NODE1 rm -f /root/kubeconfig-prod
+```
+
+**13.3 Register (SaaS server).** Edit the `CONFIG` lines, then paste the whole block:
+
+```bash
+cat > /tmp/register_cluster.py <<'PY'
+# ---- CONFIG ------------------------------------------------------------------
+CLUSTER_NAME = 'cluster-1'            # kubeconfig + server record name
+REGION_CODE = 'default'               # 'default' = the Region that comes preinstalled
+REGION_NAME = 'Default'               # used only when creating a new Region
+INGRESS_HOST = '203.0.113.50'         # LB_IP
+NODE_PUBLIC_IP = '198.51.100.11'      # node1 public IP
+NODE_PRIVATE_IP = '10.0.0.11'         # node1 private IP
+BASE_DOMAIN = 'apps.example.com'      # tenants get <sub>.apps.example.com
+TLS_ISSUER = 'letsencrypt-prod'       # step 8
+SEED_CATALOG = True                   # also create Odoo 17/18/19, "Odoo Hosting" and 3 test plans
+# -----------------------------------------------------------------------------
+import base64
+E = env
+
+def upsert(model, domain, vals):
+    rec = E[model].sudo().with_context(active_test=False).search(domain, limit=1)
+    if rec:
+        rec.write(vals)
+    else:
+        rec = E[model].sudo().create(vals)
+    return rec
+
+kc = upsert('saas.kubeconfig', [('name', '=', CLUSTER_NAME)], {
+    'name': CLUSTER_NAME,
+    'kubeconfig_file': base64.b64encode(open('/tmp/kubeconfig-prod', 'rb').read()),
+    'kubeconfig_file_name': 'kubeconfig-prod.yaml'})
+region = upsert('saas.region', [('code', '=', REGION_CODE)], {
+    **({} if E['saas.region'].sudo().search_count([('code', '=', REGION_CODE)])
+       else {'name': REGION_NAME, 'code': REGION_CODE}),
+    'kubeconfig_id': kc.id, 'ingress_host': INGRESS_HOST, 'ingress_port': 80,
+    'native_ingress_tls': True, 'tls_cluster_issuer': TLS_ISSUER,
+    'prometheus_namespace': 'monitoring', 'prometheus_service': 'prometheus-server:80'})
+srv = upsert('saas.server', [('name', '=', CLUSTER_NAME)], {
+    'name': CLUSTER_NAME, 'compute_driver': 'kubernetes', 'region_id': region.id,
+    'ip_v4': NODE_PUBLIC_IP, 'private_ip_v4': NODE_PRIVATE_IP})
+ok, err = srv._probe_reachable(timeout=10)
+srv._update_health(ok, err)
+dom = upsert('saas.based.domain', [('name', '=', BASE_DOMAIN)], {
+    'name': BASE_DOMAIN, 'proxy_server_id': srv.id})   # the domain's region follows this server
+
+if SEED_CATALOG:
+    vers = {v: upsert('saas.odoo.version', [('name', '=', v)], {
+        'name': v, 'docker_image': 'odoo', 'docker_image_tag': v,
+        'nginx_template': 'new', 'is_hosting_version': True})
+        for v in ('17.0', '18.0', '19.0')}
+    prod = upsert('saas.product', [('is_hosting', '=', True)], {
+        'name': 'Odoo Hosting', 'is_hosting': True, 'is_published': True,
+        'subtitle': 'Bring your own code — we run it.',
+        'odoo_version_id': vers['18.0'].id, 'sequence': 1})
+    for name, vals in [
+        ('Hosting Free Trial', {'is_trial_plan': True, 'price': 0.0, 'yearly_price': 0.0,
+            'workers': 1, 'storage_limit': 5, 'cpu_limit': 1.0, 'ram_limit': '1g', 'sequence': 1}),
+        ('Starter', {'is_public_tier': True, 'workers': 1, 'storage_limit': 10,
+            'cpu_limit': 1.0, 'ram_limit': '1g', 'price': 20.0, 'yearly_price': 200.0, 'sequence': 10}),
+        ('Professional', {'is_public_tier': True, 'is_recommended': True, 'badge': 'Popular',
+            'workers': 2, 'storage_limit': 20, 'cpu_limit': 2.0, 'ram_limit': '2g',
+            'price': 40.0, 'yearly_price': 400.0, 'sequence': 20})]:
+        upsert('saas.plan', [('name', '=', name)], dict(vals, name=name,
+            currency_id=E.company.currency_id.id, saas_product_ids=[(6, 0, [prod.id])]))
+E.cr.commit()
+
+print('RESULT region :', region.name, '| kubeconfig', kc.name, '| ingress', region.ingress_host, '| TLS', region.tls_cluster_issuer)
+print('RESULT server :', srv.name, '| health', srv.health_state, srv.last_health_error or '')
+print('RESULT domain :', dom.name, '| region', dom.region_id.name)
+if SEED_CATALOG:
+    print('RESULT plans  :', E['saas.plan'].sudo().search_read([], ['name', 'price']))
+PY
+chown odoo /tmp/register_cluster.py
+cd /opt/saas && sudo -u odoo venv/bin/python odoo18/odoo-bin shell -c /etc/odoo/saas.conf -d saas \
+  --no-http --logfile=/dev/null < /tmp/register_cluster.py 2>&1 | grep -E 'RESULT|Error|Traceback'
+rm -f /tmp/register_cluster.py /tmp/kubeconfig-prod
+```
+
+**Check:** the output must show `health ok`. If it shows `unreachable`, the SaaS server can't reach `API_HOST:16443`: check the firewall (step 1). Then repeat 13.2 and 13.3.
+
+**Notes:**
+- The backend recalculates plan prices from the pricing rates (Settings → SaaS Manager), so they can differ from the script's values until you set the rates.
+- Still to set in the backend (`SAAS-SERVER-SETUP.md`, step 8): backup storage (step 14), a payment provider, mail, and the registry (step 11) if you use it.
 
 ---
 
 ## 14. Tenant backups
 
-**Why:** Longhorn protects against losing a *node*. Backups protect against losing the *whole cluster*, human mistakes, and bad upgrades.
-
-1. Settings → SaaS Manager → backup storage: the S3 bucket from the shopping list (provider, keys, bucket, region/endpoint).
-2. Give the bucket's key access to **that bucket only**.
-3. In the bucket, turn on versioning or object lock if the provider has it, so a deleted backup can be recovered.
-4. Enable scheduled backups on the plans.
+1. Settings → SaaS Manager → backup storage: the S3 bucket (provider, keys, bucket, region/endpoint).
+2. The key gets access to **that bucket only**.
+3. Turn on bucket versioning or object lock, if the provider has it.
+4. Turn on scheduled backups on the plans.
 
 ---
 
-## 15. Tests before go-live (all must pass)
+## 15. Tests before go-live
 
-**15.1 Tenants on every node.** Order 3 test instances.
-
-```bash
-kubectl get pods -A -o wide | grep -E 'odoo-|postgresql'    # spread across node1..3
-curl -sI https://<each-sub>.apps.example.com/web/login       # HTTP/2 200 for all 3
-```
-
-If a tenant on one node times out while the others work, the NetworkPolicy labels in step 9 are wrong.
-
-**15.2 A node dies.** Power off the node that hosts one test tenant (from the provider console, not a clean shutdown).
-- `kubectl get nodes` still works through `k8s-api.example.com`, and shows the node `NotReady`.
-- The URLs of tenants on the other nodes keep answering.
-- The tenant from the dead node comes back on another node within ~5–10 minutes, with its data. That's a restart, not zero downtime.
-- Power the node back on, and it rejoins by itself. Longhorn then re-copies the volumes: watch for `healthy` in the UI.
-
-**15.3 Zero-downtime update** (the PLAN.txt 3.7 blocker). While polling a tenant every second:
-
-```bash
-while true; do curl -s -o /dev/null -w "%{http_code} " https://<sub>.apps.example.com/web/login; sleep 1; done
-```
-
-trigger an update from the control plane (e.g. change the plan or redeploy). Every response must be `200`, and the update must finish. Repeat until the new pod has landed on a **different** node at least once.
-
-**15.4 Backup and restore:** back up a test tenant, restore it, and log in.
-
-**15.5 Security:**
-- From an outside machine (not the control plane), `nc -zv <node-public-ip> 16443` must fail, and so must SSH from a non-admin IP.
-- Password SSH login must be refused.
+1. **Tenants on every node:** order 3 test instances. `kubectl get pods -A -o wide | grep odoo-` should show them spread across the nodes, and every `https://<sub>.apps.example.com/web/login` returns 200. If one node's tenant times out, the step 9 labels are wrong.
+2. **A node dies:** power off a node from the console.
+   - `kubectl get nodes` still works (3 nodes only).
+   - Tenants on the other nodes keep answering.
+   - The tenant from the dead node restarts elsewhere within about 5–10 minutes, with its data.
+   - Power the node back on: it rejoins, and Longhorn re-copies the volumes.
+3. **Zero-downtime update (PLAN.txt 3.7):** poll a tenant with `while true; do curl -s -o /dev/null -w "%{http_code} " https://<sub>.apps.example.com/web/login; sleep 1; done` while you trigger an update from the control plane. Every response must be 200. Repeat until the new pod lands on a different node.
+4. **Backup and restore:** back up a test tenant, restore it, and log in.
+5. **Security:**
+   - From an outside machine, `nc -zv <node-public-ip> 16443` must fail, and so must ports 10250 and 25000.
+   - SSH password login must be refused.
 
 ---
 
-## 16. Day-to-day operations
+## 16. Operations
 
-**Upgrading Kubernetes.** One minor version at a time, one node at a time, and wait until the cluster is fully healthy before moving to the next node:
+**Upgrade Kubernetes:** one minor version at a time, one node at a time:
 
 ```bash
 kubectl drain node1 --ignore-daemonsets --delete-emptydir-data
-sudo snap refresh microk8s --channel=1.36/stable     # on node1
+snap refresh microk8s --channel=1.36/stable     # on node1
 kubectl uncordon node1
-# Wait: all nodes Ready, and every Longhorn volume healthy. Then node2, then node3.
+# wait: all nodes Ready and Longhorn volumes healthy, then do the next node
 ```
 
-**OS updates and reboots:** security patches install by themselves. For a kernel update reboot: drain → reboot → uncordon, one node at a time, as above.
+**OS reboots:** drain → reboot → uncordon, one node at a time.
 
-**Upgrading the operator:** CRDs first, then Helm, using the same values file:
+**Upgrade the operator** (copy the charts first, as in step 5):
 
 ```bash
+. /root/cluster.env; cd $REPO
 kubectl apply --server-side --force-conflicts -f compute/charts/odoo-operator/crds/
 helm upgrade odoo-operator compute/charts/odoo-operator -n odoo-system -f operator-values-prod.yaml
 ```
 
-**Upgrading Longhorn:** vendor the new chart version (6.1), read its upgrade notes, one minor version at a time, then `helm upgrade` with the same `--set` flags.
+**Upgrade Longhorn:** one minor version at a time; read its upgrade notes first. On your workstation:
 
-**Replacing a dead node:**
-1. On a healthy node: `microk8s remove-node node3 --force`.
-2. Prepare a new server (steps 2–3), with the same name and private IP if you can.
-3. Join it (step 4) and add it to the load balancer.
-4. Longhorn copies the data onto it by itself.
+```bash
+helm repo add longhorn https://charts.longhorn.io && helm repo update
+helm search repo longhorn/longhorn --versions | head -5
+helm show chart longhorn/longhorn --version <VERSION> | grep kubeVersion    # must include your Kubernetes
+rm -rf compute/charts/vendor/longhorn
+helm pull longhorn/longhorn --version <VERSION> --untar -d compute/charts/vendor/
+rm -f compute/charts/vendor/longhorn/*.md compute/charts/vendor/longhorn/README.md.gotmpl
+git add -A compute/charts/vendor/longhorn && git commit -m "chore(charts): vendor Longhorn <VERSION>"
+```
 
-**Adding capacity:** prepare the servers the same way and join them with `--worker`. Keep exactly 3 control-plane nodes. Add each new node to the load balancer and the firewall.
+Then copy the charts (step 5) and run the step 6 install again.
 
-**Watch regularly:**
-- Longhorn disk usage: the UI, or `df -h /var/lib/longhorn` on each node. Act at 70%.
-- `kubectl get nodes`.
-- `kubectl get odooinstances -A` (anything not `Ready`).
-- `kubectl get certificates -A` (anything not `True`).
+**Replace a dead node:**
+1. `microk8s remove-node <name> --force` on a healthy node.
+2. Build a new server with steps 2–3, using the same name and IP if possible. If the IP changes, update `cluster.env` everywhere and run step 2.4 on every node.
+3. Join it (step 4), and add it to the load balancer.
 
-**Credentials:**
-- To revoke the control plane's access: `kubectl -n kube-system delete secret saas-control-plane-token`. Then create a new one (12.3) and upload it.
-- Rotate the registry and S3 keys yearly, and immediately if they were ever shared.
+**Add a worker node:**
+1. Add it to `cluster.env` on every node, and run step 2.4 on the existing nodes.
+2. Build the new node with steps 2–3.
+3. Join it using the `--worker` line from `microk8s add-node`. Keep exactly 3 control-plane nodes.
+
+**Watch:** `kubectl get nodes`, `kubectl get odooinstances -A`, `kubectl get certificates -A`, and the Longhorn disk space (act at 70%).
+
+**Revoke the control plane's access:** `kubectl -n kube-system delete secret saas-control-plane-token`. Then run 12.3 and 13 again.
 
 ---
 
-## Appendix: using a managed cloud (GKE / EKS / AKS / DOKS) instead
+## Appendix: managed Kubernetes (GKE / EKS / AKS / DOKS)
 
-The cloud runs the HA control plane, the nodes and the disks for you. So the steps change like this:
-
-| Step | On a managed cloud |
+| Step | Change |
 |---|---|
-| 1–4 (servers, MicroK8s, HA) | Create a cluster with a node pool of 3+ nodes, in **one zone**, with private nodes. On GKE, use a *Standard* cluster, not Autopilot. |
-| 5 (addons) | Install an ingress controller (e.g. ingress-nginx) and cert-manager with Helm (vendor both charts). |
-| 6 (Longhorn) | Skip. Use the cloud's disks: GKE `standard-rwo`, EKS `gp3` (install the EBS CSI add-on and make it the default), AKS `managed-csi`, DOKS `do-block-storage`. |
-| 7 (traffic) | Skip the patches. The ingress controller's Service gets a cloud load balancer automatically. EKS gives a hostname, so use a `CNAME` for `*.apps.example.com`. |
-| 8, 9, 10, 13–15 | The same, with `ingressClassName` and the NetworkPolicy labels set for your ingress controller. |
-| 12 (API) | Skip 12.1 and 12.2. Restrict the API endpoint to the control-plane IP (*authorized networks*). 12.3 is **required**: a cloud kubeconfig needs a cloud login that the control plane doesn't have. |
+| 1–4 | Create a cluster with 3+ nodes in one zone (on GKE: Standard, not Autopilot). |
+| 5 | Install an ingress controller and cert-manager with Helm (vendor the charts). |
+| 6 | Skip it. Use the cloud disks: `standard-rwo` / `gp3` / `managed-csi` / `do-block-storage`. |
+| 7 | Skip the patches. The ingress Service gets a cloud LB (EKS: use a CNAME). |
+| 9 | Set `ingressClassName` and the NetworkPolicy labels for your ingress controller. |
+| 12 | Skip 12.1–12.2. Restrict the API to the SaaS server's IP. 12.3 is required. |
 
 ---
 
 ## Final checklist
 
-- [ ] 3 nodes Ready, `high-availability: yes`, INTERNAL-IPs private
-- [ ] Firewall: 22 from admin only, 16443 from control plane only, 80/443 open, nothing else
-- [ ] SSH keys only; MicroK8s snap on hold; unattended-upgrades on
-- [ ] `longhorn (default)` StorageClass, 3 replicas, the only StorageClass
-- [ ] Load balancer → 3 nodes; `*.apps.example.com` → LB
-- [ ] `letsencrypt-prod` READY
-- [ ] Operator running with 2 replicas; NetworkPolicy labels match Traefik
-- [ ] Prometheus Bound on Longhorn
-- [ ] ServiceAccount kubeconfig via `k8s-api.example.com` uploaded; local copies deleted
-- [ ] Backups to an off-site S3 bucket; a restore tested
+- [ ] Nodes Ready with private INTERNAL-IPs; `high-availability: yes` (3 nodes)
+- [ ] Firewall attached: 16443 only from the SaaS server and admin; 10250/25000 not public
+- [ ] SSH keys only; snap on hold
+- [ ] Longhorn is the default StorageClass; test volume passed
+- [ ] `*.apps.example.com` resolves; `letsencrypt-prod` READY
+- [ ] Operator with 2 replicas; Prometheus Bound
+- [ ] Step 13 shows `health ok`; kubeconfig copies deleted
+- [ ] Backups to S3; a restore tested
 - [ ] Tests 15.1–15.5 passed
-- [ ] The "not production-ready yet" list is fixed or knowingly accepted

@@ -231,7 +231,7 @@ sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
    - *Products*: e.g. "Odoo Hosting" with *Is hosting* on.
    - *Plans*: CPU/RAM/workers/storage limits and prices, linked to products.
    - *Compute tiers*: seeded with Standard/HA/Scale; check the prices.
-7. **Register each cluster** (from `PRODUCTION-CLUSTER-SETUP.md`, step 13):
+7. **Register each cluster** (from `PRODUCTION-CLUSTER-SETUP.md`, step 13). That step has a copy-paste script that creates all of this, plus an optional test catalog (versions, product, plans). To do it by hand in the backend instead:
    1. *Kubeconfig*: new record, upload the file.
    2. *Region*: name/code, the kubeconfig, ingress host = cluster IP, port 80, *Native Ingress TLS* on, ClusterIssuer name. Leave Monitoring at `monitoring` / `prometheus-server:80`. Fill Tenant Image Builds if Git repos are used.
    3. *Server*: compute driver Kubernetes, the region, the node IP.

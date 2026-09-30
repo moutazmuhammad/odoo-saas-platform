@@ -103,6 +103,7 @@ export default function Register() {
   const [countries, setCountries] = React.useState<{ id: number; name: string }[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+  const [testOtp, setTestOtp] = React.useState<string | undefined>();
 
   React.useEffect(() => {
     api.meta().then((m) => setCountries(m.countries)).catch(() => {});
@@ -123,7 +124,8 @@ export default function Register() {
 
     setSubmitting(true);
     try {
-      await registerStart(form);
+      const res = await registerStart(form);
+      setTestOtp(res.test_otp);
       toast.info("Verification sent", "We texted a 6-digit code to your phone.");
       setStep(2);
     } catch (err) {
@@ -208,6 +210,7 @@ export default function Register() {
           ) : (
             <OtpStep
               form={form}
+              testOtp={testOtp}
               onBack={() => setStep(1)}
               onVerify={async (otp) => {
                 const me = await registerVerify({ ...form, otp });
@@ -215,7 +218,8 @@ export default function Register() {
                 goAfterRegister();
               }}
               onResend={async () => {
-                await registerResend(form.phone);
+                const res = await registerResend(form.phone);
+                setTestOtp(res.test_otp);
                 toast.info("Code resent", "A new code is on its way.");
               }}
             />
@@ -249,11 +253,13 @@ function Field({
 
 function OtpStep({
   form,
+  testOtp,
   onBack,
   onVerify,
   onResend,
 }: {
   form: Form;
+  testOtp?: string;
   onBack: () => void;
   onVerify: (otp: string) => Promise<void>;
   onResend: () => Promise<void>;
@@ -340,6 +346,15 @@ function OtpStep({
         Enter the 6-digit code we sent to{" "}
         <span className="font-medium text-foreground">{form.phone}</span>.
       </p>
+
+      {testOtp && (
+        <AlertBanner
+          className="mt-4"
+          variant="warning"
+          title={`Test mode: your code is ${testOtp}`}
+          description="Shown because no SMS provider is set up. Turn it off in Settings before going live."
+        />
+      )}
 
       {error && (
         <AlertBanner className="mt-4" variant="danger" title="Verification failed" description={error} />

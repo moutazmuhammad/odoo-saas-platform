@@ -1,5 +1,5 @@
 import * as React from "react";
-import { api, ApiError, setUnauthorizedHandler, type ApiUser } from "@/lib/api";
+import { api, ApiError, setUnauthorizedHandler, type ApiUser, type OtpSent } from "@/lib/api";
 import { useIdleLogout } from "@/hooks/useIdleLogout";
 import { useToast } from "@/context/ToastContext";
 
@@ -23,8 +23,8 @@ interface AuthContextValue {
   refresh: () => Promise<void>;
   // phone-OTP registration (mirrors the Odoo saas.registration.otp flow).
   // The code is delivered out-of-band (SMS) and never returned to the client.
-  registerStart: (form: RegisterForm) => Promise<{ otp_sent: boolean }>;
-  registerResend: (phone: string) => Promise<{ otp_sent: boolean }>;
+  registerStart: (form: RegisterForm) => Promise<OtpSent>;
+  registerResend: (phone: string) => Promise<OtpSent>;
   registerVerify: (form: RegisterForm & { otp: string }) => Promise<ApiUser>;
   // Password reset (in-SPA, email OTP). resetVerify signs the user in.
   resetStart: (email: string) => Promise<{ sent: boolean }>;

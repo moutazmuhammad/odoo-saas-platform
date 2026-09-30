@@ -516,6 +516,13 @@ export interface SqlResult {
 
 /* ──────────────────────────── Endpoints ──────────────────────────── */
 
+// test_otp is present only while Settings > SaaS Manager >
+// "Show Sign-up Code On Screen" is on (testing without an SMS provider).
+export interface OtpSent {
+  otp_sent: boolean;
+  test_otp?: string;
+}
+
 export const api = {
   // session / account
   me: () => rpc<ApiUser>("/saas/api/v1/me"),
@@ -523,9 +530,9 @@ export const api = {
     rpc<ApiUser>("/saas/api/v1/auth/login", { login, password }),
   logout: () => rpc("/saas/api/v1/auth/logout"),
   registerStart: (form: Record<string, unknown>) =>
-    rpc<{ otp_sent: boolean }>("/saas/api/v1/auth/register/start", form),
+    rpc<OtpSent>("/saas/api/v1/auth/register/start", form),
   registerResend: (phone: string) =>
-    rpc<{ otp_sent: boolean }>("/saas/api/v1/auth/register/resend", { phone }),
+    rpc<OtpSent>("/saas/api/v1/auth/register/resend", { phone }),
   registerVerify: (form: Record<string, unknown>) =>
     rpc<ApiUser>("/saas/api/v1/auth/register/verify", form),
   // Password reset (in-SPA, email OTP). `start` is account-enumeration safe.

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="res_config_settings_view_form_website" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.saas.website</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="saas_core.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//block[@name='saas_website_sections_container']" position="inside">
+                <setting id="saas_otp_test_mode_setting"
+                         string="Show Sign-up Code On Screen"
+                         help="Testing only: the sign-up page shows the phone verification code, so no SMS provider is needed. Turn it off before going live.">
+                    <field name="saas_otp_test_mode"/>
+                </setting>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

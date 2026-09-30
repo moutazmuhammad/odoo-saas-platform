@@ -29,6 +29,7 @@ from odoo.http import request
 
 from odoo.addons.saas_core.models.saas_instance import SUBDOMAIN_RE
 from .main import SaasWebsite, _ACTIVE_STATES
+from ..models.res_config_settings import OTP_TEST_MODE_PARAM
 
 _logger = logging.getLogger(__name__)
 
@@ -206,6 +207,15 @@ class SaasApi(http.Controller):
                      "already have one, please sign in instead.")
         return None
 
+    def _otp_sent_payload(self, otp):
+        """Sign-up OTP response. With Settings > SaaS Manager > "Show
+        Sign-up Code On Screen" on (testing without an SMS provider), the
+        code is included so the SPA can display it."""
+        payload = {'otp_sent': True}
+        if request.env['ir.config_parameter'].sudo().get_param(OTP_TEST_MODE_PARAM):
+            payload['test_otp'] = otp.code
+        return payload
+
     @http.route('/saas/api/v1/auth/register/start', type='json', auth='public')
     def register_start(self, **p):
         if not request.env.user._is_public():
@@ -229,8 +239,8 @@ class SaasApi(http.Controller):
                 'otp_send_failed',
             )
         # The verification code is delivered out-of-band (SMS / server log);
-        # it must never be returned to the client.
-        return ok({'otp_sent': True})
+        # only the operator's test-mode switch returns it to the client.
+        return ok(self._otp_sent_payload(otp))
 
     @http.route('/saas/api/v1/auth/register/resend', type='json', auth='public')
     def register_resend(self, phone=None, **kw):
@@ -246,7 +256,7 @@ class SaasApi(http.Controller):
             )._generate_and_send_phone(phone)
         except Exception:
             return err(_("Couldn't resend the code. Please try again."), 'otp_send_failed')
-        return ok({'otp_sent': True})
+        return ok(self._otp_sent_payload(otp))
 
     @http.route('/saas/api/v1/auth/register/verify', type='json', auth='public')
     def register_verify(self, **p):

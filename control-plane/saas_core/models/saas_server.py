@@ -1,20 +1,21 @@
+import base64
 import logging
 
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
 
+from ..fields import EncryptedChar
+
 _logger = logging.getLogger(__name__)
 
 
 class SaasServer(models.Model):
-    """A Kubernetes cluster registration — an allocation/capacity unit
-    representing one region's cluster (one region maps to one cluster).
-    This record is a placeholder for the whole cluster, not a single
-    machine: the cluster's actual connection details (kubeconfig,
-    ingress) live on ``saas.region``, not here.
+    """A Kubernetes cluster: its connection (kubeconfig, TLS issuer,
+    registry, Prometheus) and its capacity. A region can hold several;
+    new instances go to the least-loaded healthy one in the region.
     """
     _name = 'saas.server'
-    _description = 'Compute Target (Kubernetes Cluster)'
+    _description = 'Kubernetes Cluster'
     _inherit = ['mail.thread']
     _order = 'sequence, name'
 
@@ -26,15 +27,15 @@ class SaasServer(models.Model):
         string='Name',
         required=True,
         tracking=True,
-        help='Human-readable label for this server (e.g. "EU Production 1").',
+        help='Human-readable label for this cluster (e.g. "EU Production 1").',
     )
     region_id = fields.Many2one(
         'saas.region',
         string='Region',
         index=True,
         tracking=True,
-        help='Region this server belongs to. Used for region-based '
-             'allocation and pricing.',
+        help='Region this cluster belongs to. Customers pick a region; the '
+             'instance is placed on a healthy cluster in it.',
     )
     company_id = fields.Many2one(
         'res.company',
@@ -44,6 +45,88 @@ class SaasServer(models.Model):
         help='Company that owns this server. Used by the multi-company '
              'record rule — set to empty for shared infrastructure.',
     )
+
+    # ========== Connection ==========
+    # Upload inbox only: an uploaded kubeconfig is moved into the encrypted
+    # column (kubeconfig_enc) and this field is cleared on save, so no
+    # cleartext kubeconfig is persisted.
+    kubeconfig_file = fields.Binary(
+        string='Kubeconfig',
+        groups='saas_core.group_saas_manager',
+        help='Upload the kubeconfig to set or replace it. It is encrypted '
+             'at rest and this box is cleared on save.',
+    )
+    kubeconfig_file_name = fields.Char(string='Kubeconfig Filename')
+    kubeconfig_enc = EncryptedChar(
+        string='Encrypted Kubeconfig',
+        groups='saas_core.group_saas_manager',
+        copy=False,
+    )
+    kubeconfig_loaded = fields.Boolean(
+        string='Kubeconfig Loaded',
+        compute='_compute_kubeconfig_loaded',
+    )
+    tls_cluster_issuer = fields.Char(
+        string='TLS ClusterIssuer',
+        default='letsencrypt-prod',
+        help='cert-manager ClusterIssuer that issues tenant HTTPS '
+             'certificates on this cluster.',
+    )
+
+    # ---------- Tenant image builds (customer Git repos) ----------
+    # Any OCI registry works (self-hosted registry, Harbor, GHCR, ...):
+    # builds push <registry_host>/<registry_prefix>/tenant-<sub>:<tag> and
+    # the cluster pulls it with the same credentials.
+    registry_host = fields.Char(
+        string='Registry Host',
+        groups='saas_core.group_saas_manager',
+        help='Registry the cluster pulls tenant images from, e.g. '
+             '"ghcr.io", "registry.example.com" or "localhost:32000". '
+             'Empty = customer Git repositories cannot be deployed on this '
+             'cluster.')
+    registry_push_host = fields.Char(
+        string='Registry Push Host',
+        groups='saas_core.group_saas_manager',
+        help='Where the in-cluster build pushes to, when that differs from '
+             'the pull host (e.g. an in-cluster registry pulled by nodes as '
+             '"localhost:32000" but pushed to as '
+             '"registry.container-registry.svc.cluster.local:5000"). '
+             'Empty = same as Registry Host.')
+    registry_prefix = fields.Char(
+        string='Registry Path Prefix',
+        groups='saas_core.group_saas_manager',
+        help='Optional repository path prefix, e.g. "my-org/odoo-tenants".')
+    registry_username = fields.Char(
+        string='Registry Username', groups='saas_core.group_saas_manager')
+    registry_password = EncryptedChar(
+        string='Registry Password / Token',
+        groups='saas_core.group_saas_manager', copy=False)
+    registry_insecure = fields.Boolean(
+        string='Plain-HTTP Registry',
+        groups='saas_core.group_saas_manager',
+        help='Push over plain HTTP (only for an in-cluster test registry).')
+    builder_image = fields.Char(
+        string='Builder Image', default='moby/buildkit:v0.16.0-rootless',
+        groups='saas_core.group_saas_manager',
+        help='Rootless BuildKit image the build Job runs.')
+    git_image = fields.Char(
+        string='Git Image', default='alpine/git:v2.45.2',
+        groups='saas_core.group_saas_manager',
+        help='Image the build Job clones repositories with.')
+
+    # ---------- Monitoring (Prometheus) ----------
+    # Read through the Kubernetes API service proxy with this cluster's
+    # kubeconfig; Prometheus is never exposed outside the cluster.
+    prometheus_namespace = fields.Char(
+        string='Prometheus Namespace', default='monitoring',
+        groups='saas_core.group_saas_manager',
+        help='Namespace of the Prometheus server Service. Empty = no '
+             'Prometheus on this cluster (CPU/RAM usage and history are '
+             'unavailable; storage is still measured).')
+    prometheus_service = fields.Char(
+        string='Prometheus Service', default='prometheus-server:80',
+        groups='saas_core.group_saas_manager',
+        help='Prometheus server Service as "<name>:<port>".')
 
     # ========== Network ==========
     ip_v4 = fields.Char(
@@ -117,11 +200,7 @@ class SaasServer(models.Model):
     compute_driver = fields.Selection(
         [('kubernetes', 'Kubernetes (Cluster)')],
         string='Deployment Type', default='kubernetes', required=True,
-        help='Which backend this entry represents. This record is an '
-             'allocation/capacity placeholder for a whole cluster, NOT a '
-             'single server; the cluster\'s actual connection (kubeconfig, '
-             'ingress) is configured on this entry\'s Region, since one '
-             'region maps to one cluster.')
+        help='Which backend this entry represents (Kubernetes only).')
     object_filestore_mount = fields.Char(
         string='Object-Storage Filestore Mount',
         help="Phase 2: host path of the object-storage-backed POSIX mount "
@@ -163,7 +242,7 @@ class SaasServer(models.Model):
         return self._probe_kubernetes_reachable(timeout=timeout)
 
     def _probe_kubernetes_reachable(self, timeout=None):
-        """Cheap reachability probe: load the region's kubeconfig and make
+        """Cheap reachability probe: load this cluster's kubeconfig and make
         one short-timeout API call. Reuses KubernetesDriver's own
         client-loading rather than duplicating the kubeconfig-parsing/auth
         logic here."""
@@ -177,8 +256,36 @@ class SaasServer(models.Model):
         except Exception as e:
             return False, str(e)
 
+    @api.depends('kubeconfig_enc', 'kubeconfig_file')
+    def _compute_kubeconfig_loaded(self):
+        for rec in self.sudo():
+            rec.kubeconfig_loaded = bool(rec.kubeconfig_enc or rec.kubeconfig_file)
+
+    @staticmethod
+    def _capture_uploaded_kubeconfig(vals):
+        """Move an uploaded kubeconfig out of the cleartext inbox into the
+        encrypted column."""
+        if vals.get('kubeconfig_file'):
+            vals = dict(vals)
+            upload = vals['kubeconfig_file']
+            vals['kubeconfig_enc'] = upload.decode('ascii') if isinstance(upload, bytes) else upload
+            vals['kubeconfig_file'] = False
+        return vals
+
+    def _kubeconfig_yaml(self):
+        """The kubeconfig YAML text (decrypted, base64-decoded), or ''."""
+        self.ensure_one()
+        rec = self.sudo()
+        raw_b64 = rec.kubeconfig_enc or rec.kubeconfig_file or ''
+        if isinstance(raw_b64, bytes):
+            raw_b64 = raw_b64.decode('ascii')
+        if not raw_b64:
+            return ''
+        return base64.b64decode(raw_b64).decode('utf-8')
+
     @api.model_create_multi
     def create(self, vals_list):
+        vals_list = [self._capture_uploaded_kubeconfig(v) for v in vals_list]
         servers = super().create(vals_list)
         # New compute capacity -> let queued deploys retry immediately (PROV-004).
         if servers:
@@ -188,6 +295,7 @@ class SaasServer(models.Model):
     def write(self, vals):
         # Detect newly-enabled overcommit to retry queued deploys without
         # waiting out their back-off (PROV-004).
+        vals = self._capture_uploaded_kubeconfig(vals)
         adds_capacity = (
             vals.get('allow_overcommit') and not all(self.mapped('allow_overcommit'))
         )
@@ -336,6 +444,12 @@ class SaasServer(models.Model):
             return ['|', ('region_id', '=', region.id), ('region_id', '=', False)]
         return [('region_id', '=', region.id)]
 
+    @api.model
+    def _cluster_domain(self, cluster):
+        """Domain fragment pinning allocation to *cluster* (the cluster a
+        base domain's wildcard DNS points at), or no constraint."""
+        return [('id', '=', cluster.id)] if cluster else []
+
     @api.constrains('ip_v4', 'private_ip_v4', 'region_id')
     def _check_no_duplicate_machine(self):
         """One cluster = one server record.
@@ -372,18 +486,20 @@ class SaasServer(models.Model):
 
     @api.model
     def _allocate_docker_server(self, plan=None, raise_on_failure=False,
-                               region=None):
+                               region=None, cluster=None):
         """Level 1 — Ideal allocation: least-loaded cluster with capacity.
 
         Returns a saas.server record, or None if no cluster qualifies.
         When *raise_on_failure* is True, raises ValidationError instead of
         returning None (used by strict provisioning mode). When *region*
-        is set, only clusters in that region are considered (co-location).
+        is set, only clusters in that region are considered (co-location);
+        when *cluster* is set, only that cluster (see ``_cluster_domain``).
         """
         # Exclude hosts already known to be unreachable (last health cron) so
         # we never even consider a dead cluster for a new customer.
         domain = [('health_state', '!=', 'unreachable')]
-        candidates = self.search(domain + self._region_match_domain(region))
+        candidates = self.search(
+            domain + self._region_match_domain(region) + self._cluster_domain(cluster))
         if not candidates:
             if raise_on_failure:
                 raise ValidationError(
@@ -418,7 +534,7 @@ class SaasServer(models.Model):
         return None
 
     @api.model
-    def _allocate_overcommit_server(self, plan=None, region=None):
+    def _allocate_overcommit_server(self, plan=None, region=None, cluster=None):
         """Level 2 — Overcommit fallback: least-loaded cluster that allows
         overcommit.
 
@@ -432,7 +548,8 @@ class SaasServer(models.Model):
             ('allow_overcommit', '=', True),
             ('health_state', '!=', 'unreachable'),
         ]
-        candidates = self.search(domain + self._region_match_domain(region))
+        candidates = self.search(
+            domain + self._region_match_domain(region) + self._cluster_domain(cluster))
         if not candidates:
             return None
         # Live-probe (least-loaded first) so overcommit can't strand a deploy

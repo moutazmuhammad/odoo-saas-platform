@@ -116,17 +116,15 @@ class TestOrderControllerFixes(HttpCase):
             'cpu_limit': 1.0, 'ram_limit': '1g',
             'currency_id': self.env.company.currency_id.id,
             'saas_product_ids': [(6, 0, [self.product.id])]})
-        # Region WITH capacity: a kubeconfig + one reachable Kubernetes
-        # cluster registration (has_capacity() requires both).
-        kc = self.env['saas.kubeconfig'].sudo().create({
-            'name': 'ord-kubeconfig',
-            'kubeconfig_file': base64.b64encode(
-                b'apiVersion: v1\nkind: Config\n').decode()})
+        # Region WITH capacity: one reachable cluster that has a kubeconfig
+        # (has_capacity() requires both).
         self.region = self.env['saas.region'].sudo().create({
-            'name': 'ORD Region', 'code': 'ord-reg', 'kubeconfig_id': kc.id})
+            'name': 'ORD Region', 'code': 'ord-reg'})
         self.env['saas.server'].sudo().create({
             'name': 'ord-host', 'compute_driver': 'kubernetes',
-            'region_id': self.region.id, 'health_state': 'ok'})
+            'region_id': self.region.id, 'health_state': 'ok',
+            'kubeconfig_file': base64.b64encode(
+                b'apiVersion: v1\nkind: Config\n').decode()})
         self.domain = self.env['saas.based.domain'].sudo().create({
             'name': 'ord.example.com', 'region_id': self.region.id})
         self.version = self.env['saas.odoo.version'].sudo().search(

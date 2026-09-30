@@ -15,11 +15,7 @@ def _make_driver(kubeconfig='apiVersion: v1\nkind: Config\n'):
     server = MagicMock()
     server.id = 7
     server.name = 'k8s-test-server'
-    # kubeconfig now lives on a dedicated saas.kubeconfig record
-    # (region.kubeconfig_id), read via its _kubeconfig_yaml() accessor —
-    # same upload-only/encrypted-at-rest shape as saas.ssh.key.pair.
-    server.region_id.kubeconfig_id._kubeconfig_yaml.return_value = kubeconfig
-    server.region_id.name = 'test-region'
+    server._kubeconfig_yaml.return_value = kubeconfig
     driver = KubernetesDriver(server)
     driver._api_client = MagicMock()
     return driver, server
@@ -436,31 +432,6 @@ class TestKubernetesDriver(TransactionCase):
         self.assertFalse(hs.running)
         self.assertEqual(hs.restart_count, 5)
 
-    # -------- endpoint() ----------------------------------------------------
-    def test_endpoint_returns_region_ingress_address(self):
-        """endpoint() must return a CONNECT-TO address (the cluster's own
-        ingress front door), not the tenant's own public domain — that
-        hostname's DNS still points wherever it pointed before cutover, so
-        "connecting" to it would loop back rather than reach the cluster."""
-        driver, server = _make_driver()
-        server.region_id.ingress_host = '192.168.1.15'
-        server.region_id.ingress_port = 80
-        host, port = driver.endpoint(_handle())
-        self.assertEqual(host, '192.168.1.15')
-        self.assertEqual(port, 80)
-
-    def test_endpoint_defaults_port_80(self):
-        driver, server = _make_driver()
-        server.region_id.ingress_host = '192.168.1.15'
-        server.region_id.ingress_port = False
-        host, port = driver.endpoint(_handle())
-        self.assertEqual(port, 80)
-
-    def test_endpoint_empty_when_no_ingress_host_configured(self):
-        driver, server = _make_driver()
-        server.region_id.ingress_host = False
-        self.assertEqual(driver.endpoint(_handle()), ('', 0))
-
     # -------- logs() ----------------------------------------------------
     def test_logs_reads_pod_log(self):
         driver, _server = _make_driver()
@@ -516,9 +487,9 @@ class TestKubernetesDriver(TransactionCase):
         (each a vector/matrix ``result``)."""
         import json
         driver, server = _make_driver()
-        region = server.region_id.sudo.return_value
-        region.prometheus_namespace = 'monitoring'
-        region.prometheus_service = 'prometheus-server:80'
+        cluster = server.sudo.return_value
+        cluster.prometheus_namespace = 'monitoring'
+        cluster.prometheus_service = 'prometheus-server:80'
         replies = []
         for result in responses:
             reply = MagicMock()
@@ -539,7 +510,7 @@ class TestKubernetesDriver(TransactionCase):
     def test_prometheus_unconfigured_raises_unavailable(self):
         from odoo.addons.saas_core.drivers.kubernetes_driver import PrometheusUnavailable
         driver, server = _make_driver()
-        server.region_id.sudo.return_value.prometheus_namespace = ''
+        server.sudo.return_value.prometheus_namespace = ''
         with self.assertRaises(PrometheusUnavailable):
             driver.prometheus_query('up')
         driver._api_client.call_api.assert_not_called()

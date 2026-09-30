@@ -6,9 +6,9 @@
         <field name="view_mode">list,form</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Create a region</p>
-            <p>Each region carries a price multiplier (server cost varies by
-               region). Assign servers (proxy, docker, db) to a region; an
-               instance's three servers must share one region.</p>
+            <p>A region is a location customers pick at checkout. Add its
+               Kubernetes clusters under Configuration &gt; Kubernetes
+               Clusters; new instances go to the least-loaded healthy one.</p>
         </field>
     </record>
 
@@ -47,42 +47,11 @@
                             <field name="currency_id"/>
                         </group>
                     </group>
-                    <div class="text-muted mb-2">
-                        One region maps to exactly one Kubernetes cluster.
-                        This is where that cluster's connection lives — not
-                        on any individual entry under Compute. Leave empty
-                        if this region only serves Docker Compose hosts.
-                    </div>
-                    <group string="Kubernetes Cluster Connection">
-                        <field name="kubeconfig_id" options="{'no_open': False}"/>
-                        <field name="ingress_host"
-                               placeholder="e.g. 203.0.113.10 or ingress.eu-cluster.example.com"/>
-                        <field name="ingress_port"/>
-                        <field name="native_ingress_tls"/>
-                        <field name="tls_cluster_issuer"
-                               invisible="not native_ingress_tls"
-                               placeholder="e.g. letsencrypt-test-client"/>
-                    </group>
-                    <group string="Tenant Image Builds (customer Git repos)">
-                        <field name="registry_host"
-                               placeholder="e.g. ghcr.io or localhost:32000"/>
-                        <field name="registry_push_host"
-                               placeholder="only if the build pushes elsewhere"/>
-                        <field name="registry_prefix" placeholder="e.g. my-org/odoo-tenants"/>
-                        <field name="registry_username"/>
-                        <field name="registry_password" password="True"/>
-                        <field name="registry_insecure"/>
-                        <field name="builder_image"/>
-                        <field name="git_image"/>
-                    </group>
-                    <group string="Monitoring (Prometheus)">
-                        <field name="prometheus_namespace" placeholder="e.g. monitoring"/>
-                        <field name="prometheus_service" placeholder="e.g. prometheus-server:80"/>
-                    </group>
-                    <field name="server_ids" string="Compute" readonly="1">
+                    <separator string="Clusters"/>
+                    <field name="server_ids" readonly="1">
                         <list>
                             <field name="name"/>
-                            <field name="compute_driver"/>
+                            <field name="instance_count" string="Instances"/>
                             <field name="health_state" widget="badge"
                                    decoration-success="health_state == 'ok'"
                                    decoration-danger="health_state == 'unreachable'"/>

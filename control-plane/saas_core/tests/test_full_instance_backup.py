@@ -29,8 +29,7 @@ class TestFullInstanceBackup(TransactionCase):
             {'name': 'fib.example.com'})
         self.partner = self.env['res.partner'].sudo().create({'name': 'FIB Cust'})
         self.region = self.env['saas.region'].sudo().create(
-            {'name': 'FIB Region', 'code': 'fib-region',
-             'native_ingress_tls': True, 'tls_cluster_issuer': 'letsencrypt-prod'})
+            {'name': 'FIB Region', 'code': 'fib-region'})
         self.server = self.env['saas.server'].sudo().create(
             {'name': 'fib-k8s-srv', 'compute_driver': 'kubernetes',
              'region_id': self.region.id})

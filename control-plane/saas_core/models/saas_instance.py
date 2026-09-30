@@ -3661,6 +3661,9 @@ class SaasInstance(models.Model):
         # Region the instance must stay within (co-location). Legacy
         # instances have no region -> no constraint (today's behaviour).
         region = self.region_id
+        # The base domain's wildcard DNS points at one cluster's load
+        # balancer; an instance on that domain must run on that cluster.
+        cluster = self.domain_id.sudo().proxy_server_id
 
         # Serialize allocation per region: without this, two concurrent
         # deploys both read the same least-loaded host (capacity is only
@@ -3683,6 +3686,7 @@ class SaasInstance(models.Model):
         if mode == 'strict':
             self.docker_server_id = Server._allocate_docker_server(
                 plan=plan, raise_on_failure=True, region=region,
+                cluster=cluster,
             )
             self._append_log(
                 "Allocated compute cluster (strict): %s"
@@ -3690,7 +3694,8 @@ class SaasInstance(models.Model):
             )
             return True
 
-        server = Server._allocate_docker_server(plan=plan, region=region)
+        server = Server._allocate_docker_server(
+            plan=plan, region=region, cluster=cluster)
         if server:
             self.docker_server_id = server
             self._append_log(
@@ -3699,7 +3704,8 @@ class SaasInstance(models.Model):
             return True
 
         # Level 2 — Overcommit fallback
-        server = Server._allocate_overcommit_server(plan=plan, region=region)
+        server = Server._allocate_overcommit_server(
+            plan=plan, region=region, cluster=cluster)
         if server:
             self.docker_server_id = server
             self.is_overcommitted = True
@@ -4477,23 +4483,15 @@ class SaasInstance(models.Model):
         ``internal/resources/init_job.go``), so a bare ``create()`` with no
         ``restore`` key is a complete, self-initializing fresh tenant.
 
-        TLS/ingress is exclusively Kubernetes-native (Ingress +
-        cert-manager, ``region.native_ingress_tls``) — there is no SSH
-        fallback to an external Nginx host any more (that path was
-        ssh_docker-only and has been removed along with the rest of that
-        backend). A region without ``native_ingress_tls`` simply can't
-        deploy; fix the region's setup, don't add a workaround here.
+        TLS is terminated by the cluster's own Ingress, with cert-manager
+        issuing the certificate from the cluster's ``tls_cluster_issuer``.
         """
         self.ensure_one()
         server = self.docker_server_id
-        region = server.region_id
-        if not (region and region.native_ingress_tls):
+        if not server.tls_cluster_issuer:
             raise UserError(_(
-                "Cannot deploy '%s' on Kubernetes: server '%s's region "
-                "does not have native_ingress_tls configured (Region > "
-                "Kubeconfig tab). Kubernetes deploys are TLS-terminated "
-                "natively by the cluster's own Ingress + cert-manager — "
-                "there is no other supported ingress path."
+                "Cannot deploy '%s': cluster '%s' has no TLS ClusterIssuer "
+                "set (Kubernetes Clusters > Connection)."
             ) % (self.subdomain, server.name))
 
         self._append_log("Creating Kubernetes instance...")
@@ -4504,7 +4502,7 @@ class SaasInstance(models.Model):
             'odoo_version': self.odoo_version_id.name,
             'replicas': replicas,
             'tls_enabled': True,
-            'tls_issuer_name': region.tls_cluster_issuer,
+            'tls_issuer_name': server.tls_cluster_issuer,
             'tls_issuer_kind': 'ClusterIssuer',
             'database_filter': self._k8s_database_filter(),
             **self._k8s_plan_resources(),

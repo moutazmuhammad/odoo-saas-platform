@@ -29,8 +29,7 @@ class TestHostingDbOps(TransactionCase):
             {'name': 'dbops.example.com'})
         self.partner = self.env['res.partner'].sudo().create({'name': 'DBOps Cust'})
         self.region = self.env['saas.region'].sudo().create(
-            {'name': 'DBOps Region', 'code': 'dbops-region',
-             'native_ingress_tls': True, 'tls_cluster_issuer': 'letsencrypt-prod'})
+            {'name': 'DBOps Region', 'code': 'dbops-region'})
         self.server = self.env['saas.server'].sudo().create(
             {'name': 'dbops-k8s-srv', 'compute_driver': 'kubernetes',
              'region_id': self.region.id})

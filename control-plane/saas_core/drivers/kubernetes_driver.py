@@ -284,19 +284,15 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
     def _client(self):
         if self._api_client is not None:
             return self._api_client
-        region = self.server.region_id
-        kc = region.kubeconfig_id if region else False
-        kubeconfig = (kc._kubeconfig_yaml() or '').strip() if kc else ''
+        kubeconfig = (self.server._kubeconfig_yaml() or '').strip()
         if not kubeconfig:
             raise RuntimeError(
-                "Server '%s' has compute_driver=kubernetes but its region "
-                "(%s) has no kubeconfig configured." % (
-                    self.server.name, region.name if region else 'none'))
+                "Cluster '%s' has no kubeconfig configured." % self.server.name)
         try:
             config_dict = yaml.safe_load(kubeconfig)
         except yaml.YAMLError as e:
             raise RuntimeError(
-                "Server '%s': region kubeconfig is not valid YAML: %s"
+                "Cluster '%s': kubeconfig is not valid YAML: %s"
                 % (self.server.name, e)) from e
         configuration = k8s_client.Configuration()
         k8s_config.load_kube_config_from_dict(
@@ -756,18 +752,17 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
 
     # -- usage metrics (Prometheus + in-pod storage measurement) --------------
     def _prometheus_get(self, path, params):
-        """GET ``/api/v1/<path>`` on the region's Prometheus through the
-        Kubernetes API service proxy (the region kubeconfig is the only
+        """GET ``/api/v1/<path>`` on the cluster's Prometheus through the
+        Kubernetes API service proxy (the cluster kubeconfig is the only
         credential; Prometheus stays cluster-internal). Returns the
         response's ``data`` member. Raises ``PrometheusUnavailable`` when
-        the region has no Prometheus configured or it can't be reached."""
-        region = self.server.region_id
-        namespace = (region.sudo().prometheus_namespace or '').strip() if region else ''
-        service = (region.sudo().prometheus_service or '').strip() if region else ''
+        the cluster has no Prometheus configured or it can't be reached."""
+        cluster = self.server.sudo()
+        namespace = (cluster.prometheus_namespace or '').strip()
+        service = (cluster.prometheus_service or '').strip()
         if not namespace or not service:
             raise PrometheusUnavailable(
-                'no Prometheus configured for region %s'
-                % (region.name if region else 'none'))
+                'no Prometheus configured for cluster %s' % cluster.name)
         try:
             resp = self._client().call_api(
                 '/api/v1/namespaces/{namespace}/services/{service}/proxy/api/v1/' + path,
@@ -1025,27 +1020,6 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             raise RuntimeError(
                 'opening the log stream for %s failed: %s'
                 % (pod.metadata.name, e)) from e
-
-    def endpoint(self, handle: ComputeHandle) -> tuple[str, int]:
-        """Return where an external reverse proxy should connect to reach
-        this tenant — NOT the tenant's own public domain (``status.url``,
-        which a caller can't route to: that hostname's DNS still points at
-        whatever fronted the tenant before, so "connecting" to it would
-        loop back rather than reach the cluster). This is the cluster's own
-        ingress front door, a manually-configured, per-region value (see
-        ``saas.region.ingress_host`` — which controller/Service backs it
-        isn't safely auto-discoverable from here; the operator supports
-        both plain Ingress and Gateway API, chosen at the operator level).
-
-        The caller is expected to route with the tenant's own domain
-        (``status.url``'s hostname) sent as the Host header — that's what
-        the cluster's ingress rule for this CR actually matches on.
-        """
-        region = self.server.region_id
-        host = (region.ingress_host or '').strip() if region else ''
-        if not host:
-            return ('', 0)
-        return (host, region.ingress_port or 80)
 
     def health(self, handle: ComputeHandle) -> HealthStatus:
         name = self._cr_name(handle)

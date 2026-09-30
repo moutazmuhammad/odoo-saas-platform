@@ -135,26 +135,26 @@ class SaasInstance(models.Model):
     # configuration
     # ------------------------------------------------------------------
     def _build_registry(self):
-        """The region's registry settings; raises if the region can't build."""
+        """The cluster's registry settings; raises if the cluster can't build."""
         self.ensure_one()
-        region = self.docker_server_id.region_id.sudo()
-        if not region or not region.registry_host:
+        cluster = self.docker_server_id.sudo()
+        if not cluster or not cluster.registry_host:
             raise UserError(_(
-                "Git repositories can't be deployed in region '%s' yet: no "
-                "container registry is configured for it (Region > Tenant "
-                "Image Builds).") % (region.name if region else '-'))
-        prefix = (region.registry_prefix or '').strip('/')
+                "Git repositories can't be deployed on cluster '%s' yet: no "
+                "container registry is configured for it (Kubernetes Clusters "
+                "> Image Builds).") % (cluster.name or '-'))
+        prefix = (cluster.registry_prefix or '').strip('/')
         repo_path = '/'.join(p for p in (prefix, 'tenant-%s' % self.subdomain) if p)
         return {
-            'host': region.registry_host,
-            'push_host': region.registry_push_host or region.registry_host,
-            'repository': '%s/%s' % (region.registry_host, repo_path),
-            'push_repository': '%s/%s' % (region.registry_push_host or region.registry_host, repo_path),
-            'username': region.registry_username or None,
-            'password': region.registry_password or None,
-            'insecure': bool(region.registry_insecure),
-            'builder_image': region.builder_image or 'moby/buildkit:v0.16.0-rootless',
-            'git_image': region.git_image or 'alpine/git:v2.45.2',
+            'host': cluster.registry_host,
+            'push_host': cluster.registry_push_host or cluster.registry_host,
+            'repository': '%s/%s' % (cluster.registry_host, repo_path),
+            'push_repository': '%s/%s' % (cluster.registry_push_host or cluster.registry_host, repo_path),
+            'username': cluster.registry_username or None,
+            'password': cluster.registry_password or None,
+            'insecure': bool(cluster.registry_insecure),
+            'builder_image': cluster.builder_image or 'moby/buildkit:v0.16.0-rootless',
+            'git_image': cluster.git_image or 'alpine/git:v2.45.2',
         }
 
     def _base_image_parts(self):

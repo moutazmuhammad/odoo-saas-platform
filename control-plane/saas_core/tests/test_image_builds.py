@@ -22,12 +22,12 @@ class TestImageBuildPipeline(TransactionCase):
             'currency_id': self.env.company.currency_id.id,
             'saas_product_ids': [(6, 0, [self.product.id])]})
         self.region = self.env['saas.region'].sudo().create({
-            'name': 'Build Region', 'code': 'build-region',
+            'name': 'Build Region', 'code': 'build-region'})
+        self.server = self.env['saas.server'].sudo().create({
+            'name': 'build-k8s', 'compute_driver': 'kubernetes', 'region_id': self.region.id,
             'registry_host': 'localhost:32000',
             'registry_push_host': 'registry.container-registry.svc:5000',
             'registry_prefix': 'acme', 'registry_insecure': True})
-        self.server = self.env['saas.server'].sudo().create(
-            {'name': 'build-k8s', 'compute_driver': 'kubernetes', 'region_id': self.region.id})
         self.version = self.env['saas.odoo.version'].sudo().create({
             'name': '18.0', 'docker_image': 'odoo', 'docker_image_tag': '18.0',
             'nginx_template': 'new', 'is_hosting_version': True})
@@ -79,8 +79,8 @@ class TestImageBuildPipeline(TransactionCase):
         self.assertEqual(job.lock_key, 'build:%s' % self.instance.id)
         self.assertTrue(job.idempotent, "a dead worker must retry, not fail, the build")
 
-    def test_region_without_registry_refuses(self):
-        self.region.registry_host = False
+    def test_cluster_without_registry_refuses(self):
+        self.server.registry_host = False
         with self.assertRaises(UserError):
             self.instance.action_build_and_deploy('redeploy')
 

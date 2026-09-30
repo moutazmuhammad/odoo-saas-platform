@@ -15,6 +15,9 @@ class TestPricingEngine(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # Instances default to the first base domain; a fresh DB has none.
+        if not self.env['saas.based.domain'].search_count([]):
+            self.env['saas.based.domain'].sudo().create({'name': 'pricing.example.com'})
         self.engine = self.env['saas.pricing.engine']
         self.icp = self.env['ir.config_parameter'].sudo()
         # Pin known rates so the assertions are deterministic regardless

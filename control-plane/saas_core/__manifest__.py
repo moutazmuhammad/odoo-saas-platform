@@ -1,6 +1,6 @@
 {
     'name': 'SaaS Instance Manager',
-    'version': '18.0.54.0.0',
+    'version': '18.0.55.0.0',
     'category': 'SaaS',
     'summary': 'Provision and manage multi-tenant Odoo instances with Docker containers',
     'description': """
@@ -50,7 +50,6 @@ Key capabilities:
         'views/saas_plan_views.xml',
         'views/saas_build_views.xml',
         'views/saas_instance_views.xml',
-        'views/saas_kubeconfig_views.xml',
         'views/saas_region_views.xml',
         'views/saas_compute_tier_views.xml',
         'views/saas_server_views.xml',

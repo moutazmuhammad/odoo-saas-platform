@@ -114,10 +114,6 @@ class ComputeDriver(abc.ABC):
         """Return recent container logs."""
 
     @abc.abstractmethod
-    def endpoint(self, handle: ComputeHandle) -> tuple[str, int]:
-        """Return (host, http_port) where ingress should route traffic."""
-
-    @abc.abstractmethod
     def health(self, handle: ComputeHandle) -> HealthStatus:
         """Return whether the workload is up (+ a short detail string)."""
 

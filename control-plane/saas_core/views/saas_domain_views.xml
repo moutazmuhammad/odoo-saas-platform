@@ -16,10 +16,8 @@
                     </div>
                     <group>
                         <group string="Routing">
-                            <field name="proxy_server_id"
-                                   help="When set, Nginx configs are deployed on this proxy server instead of on each Docker server. The wildcard DNS for this domain should point to this server's IP."/>
-                            <field name="region_id"
-                                   help="Derived from the proxy server's region. The configurator only offers this domain to customers in the same region."/>
+                            <field name="proxy_server_id"/>
+                            <field name="region_id"/>
                         </group>
                     </group>
                 </sheet>

@@ -6,7 +6,7 @@
         <field name="name">saas.server.form</field>
         <field name="model">saas.server</field>
         <field name="arch" type="xml">
-            <form string="Compute Target">
+            <form string="Kubernetes Cluster">
                 <sheet>
                     <div class="oe_title">
                         <label for="name"/>
@@ -15,26 +15,19 @@
                         </h1>
                     </div>
                     <group>
-                        <group string="Deployment">
-                            <field name="compute_driver"/>
+                        <group string="Connection">
                             <field name="region_id"
                                    options="{'no_create_edit': True}"/>
+                            <field name="kubeconfig_loaded" readonly="1"/>
+                            <field name="kubeconfig_file" filename="kubeconfig_file_name"/>
+                            <field name="kubeconfig_file_name" invisible="1"/>
+                            <field name="tls_cluster_issuer"/>
                         </group>
                         <group string="Network">
                             <field name="ip_v4"/>
                             <field name="private_ip_v4"/>
                         </group>
                     </group>
-                    <div class="alert alert-info" role="alert">
-                        This entry represents a <b>Kubernetes cluster</b>, not
-                        a single machine — it exists so the cluster can be
-                        allocated capacity and priced like any other compute
-                        target. The cluster's actual connection (kubeconfig,
-                        ingress address) is configured once on its
-                        <b>Region</b>, since one region maps to exactly one
-                        cluster — open the Region record above to view or
-                        change it.
-                    </div>
                     <group string="Health">
                         <group>
                             <field name="health_state"
@@ -61,17 +54,49 @@
                             <field name="allocated_ram_gb"/>
                         </group>
                     </group>
-                    <group string="Cost model (per-tenant margin) &amp; immutable images">
-                        <group string="Infra cost rate card (per month)">
-                            <field name="cost_per_cpu_month"/>
-                            <field name="cost_per_gb_ram_month"/>
-                            <field name="cost_per_gb_storage_month"/>
-                            <field name="monthly_cost"/>
-                        </group>
-                        <group string="Phase 2 (disposable compute)">
-                            <field name="object_filestore_mount"/>
-                        </group>
-                    </group>
+                    <notebook>
+                        <page string="Image Builds" name="image_builds">
+                            <p class="text-muted">
+                                Needed only if customers deploy their own Git
+                                repositories on this cluster.
+                            </p>
+                            <group>
+                                <group>
+                                    <field name="registry_host"
+                                           placeholder="e.g. ghcr.io or localhost:32000"/>
+                                    <field name="registry_push_host"
+                                           placeholder="only if the build pushes elsewhere"/>
+                                    <field name="registry_prefix" placeholder="e.g. my-org/odoo-tenants"/>
+                                    <field name="registry_username"/>
+                                    <field name="registry_password" password="True"/>
+                                </group>
+                                <group>
+                                    <field name="registry_insecure"/>
+                                    <field name="builder_image"/>
+                                    <field name="git_image"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Monitoring" name="monitoring">
+                            <group>
+                                <field name="prometheus_namespace" placeholder="e.g. monitoring"/>
+                                <field name="prometheus_service" placeholder="e.g. prometheus-server:80"/>
+                            </group>
+                        </page>
+                        <page string="Cost" name="cost">
+                            <group>
+                                <group string="Cost per month">
+                                    <field name="cost_per_cpu_month"/>
+                                    <field name="cost_per_gb_ram_month"/>
+                                    <field name="cost_per_gb_storage_month"/>
+                                    <field name="monthly_cost"/>
+                                </group>
+                                <group>
+                                    <field name="object_filestore_mount"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
                 </sheet>
                 <chatter/>
             </form>
@@ -83,10 +108,11 @@
         <field name="name">saas.server.list</field>
         <field name="model">saas.server</field>
         <field name="arch" type="xml">
-            <list string="Compute">
+            <list string="Kubernetes Clusters">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="region_id" optional="show"/>
+                <field name="kubeconfig_loaded" string="Connected" optional="show"/>
                 <field name="ip_v4" optional="show"/>
                 <field name="private_ip_v4" optional="hide"/>
                 <field name="health_state" widget="badge"
@@ -103,7 +129,7 @@
         <field name="name">saas.server.search</field>
         <field name="model">saas.server</field>
         <field name="arch" type="xml">
-            <search string="Search Compute">
+            <search string="Search Clusters">
                 <field name="name"/>
                 <field name="ip_v4"/>
                 <field name="region_id"/>
@@ -123,11 +149,9 @@
             <p class="o_view_nocontent_smiling_face">
                 No Kubernetes clusters registered yet
             </p>
-            <p>One entry per managed Kubernetes cluster (any provider — EKS,
-               GKE, AKS, self-hosted...). Create the entry here for capacity/
-               pricing, then configure its actual connection (kubeconfig,
-               ingress address) on the matching Region — one region maps to
-               one cluster.</p>
+            <p>One entry per Kubernetes cluster: upload its kubeconfig and
+               pick its region. A region can have several clusters; new
+               instances go to the least-loaded healthy one.</p>
         </field>
     </record>
 

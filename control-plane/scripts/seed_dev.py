@@ -23,8 +23,7 @@ now = fields.Datetime.now()
 # Placeholder kubeconfig for the mock regions below — well-formed YAML
 # pointing at a deliberately unreachable address. This is NOT a real
 # cluster: has_capacity()'s region-picker check only reads the cached
-# health_state (forced to 'ok' below) and region.kubeconfig_id being
-# truthy, so checkout/billing/portal can be exercised for real without
+# health_state (forced to 'ok' below) and the cluster having a kubeconfig, so checkout/billing/portal can be exercised for real without
 # any real infra. A live probe (at actual action_deploy() time — the
 # region picker never triggers one) will correctly fail to connect,
 # matching this project's "mock provisioning" contract: no real
@@ -49,15 +48,7 @@ users:
 """
 
 
-def make_mock_kubeconfig(name):
-    kc = E['saas.kubeconfig'].sudo().search([('name', '=', name)], limit=1)
-    if kc:
-        return kc
-    return E['saas.kubeconfig'].sudo().create({
-        'name': name,
-        'kubeconfig_file': base64.b64encode(_MOCK_KUBECONFIG_YAML.encode()),
-        'kubeconfig_file_name': 'mock-kubeconfig.yaml',
-    })
+MOCK_KUBECONFIG = base64.b64encode(_MOCK_KUBECONFIG_YAML.encode())
 
 
 def upsert(model, domain, vals):
@@ -93,16 +84,6 @@ region_us = upsert('saas.region', [('code', '=', 'us-east')], {
     'name': 'US · East', 'code': 'us-east', 'price_multiplier': 1.15,
     'sequence': 3,
 })
-kc_fra = make_mock_kubeconfig('Mock Cluster (EU Frankfurt)')
-kc_us = make_mock_kubeconfig('Mock Cluster (US East)')
-region_fra.write({
-    'kubeconfig_id': kc_fra.id,
-    'ingress_host': 'mock-cluster.invalid', 'ingress_port': 80,
-})
-region_us.write({
-    'kubeconfig_id': kc_us.id,
-    'ingress_host': 'mock-cluster.invalid', 'ingress_port': 80,
-})
 print('regions', region_default.id, region_fra.id, region_us.id)
 
 # ----------------------------------------------------------------- domains
@@ -122,15 +103,17 @@ ver17 = upsert('saas.odoo.version', [('name', '=', '17.0')], {
 print('versions', ver18.id, ver17.id)
 
 # ----------------------------------------------------------------- servers
-# Mock Kubernetes cluster registrations — see make_mock_kubeconfig()'s
-# docstring above for why health_state is force-set to 'ok' here.
+# Mock Kubernetes clusters — see _MOCK_KUBECONFIG_YAML above for why
+# health_state is force-set to 'ok' here.
 srv_fra = upsert('saas.server', [('name', '=', 'fra-host-1')], {
     'name': 'fra-host-1', 'compute_driver': 'kubernetes',
     'region_id': region_fra.id, 'ip_v4': '10.0.0.11',
+    'kubeconfig_file': MOCK_KUBECONFIG,
     'health_state': 'ok', 'allow_overcommit': True})
 srv_us = upsert('saas.server', [('name', '=', 'us-host-1')], {
     'name': 'us-host-1', 'compute_driver': 'kubernetes',
     'region_id': region_us.id, 'ip_v4': '10.0.0.21',
+    'kubeconfig_file': MOCK_KUBECONFIG,
     'health_state': 'ok'})
 print('servers', srv_fra.id, srv_us.id)
 

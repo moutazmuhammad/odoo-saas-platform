@@ -100,7 +100,7 @@ EOF
 kubectl get clusterissuer letsencrypt-prod    # READY True
 ```
 
-You will enter this name (`letsencrypt-prod`) on the Region in the control plane.
+You will enter this name (`letsencrypt-prod`) on the cluster in the control plane (*Kubernetes Clusters*).
 
 ## 4. The Odoo operator
 
@@ -141,7 +141,7 @@ kubectl -n monitoring rollout status deploy/prometheus-server
 
 - It runs only the Prometheus server (15-day retention, 8 Gi volume) and kube-state-metrics.
 - The control plane reads it through the Kubernetes API proxy, so nothing is exposed publicly.
-- Leave the Region's Monitoring fields at their defaults: `monitoring` and `prometheus-server:80`.
+- Leave the cluster's Monitoring fields at their defaults: `monitoring` and `prometheus-server:80`.
 
 ## 6. Image registry for customer Git repositories (optional)
 
@@ -158,7 +158,7 @@ kubectl apply -f compute/examples/test-registry/registry.yaml
 kubectl -n container-registry rollout status deploy/registry
 ```
 
-For this registry, fill in the Region's "Tenant Image Builds" fields as follows:
+For this registry, fill in the cluster's "Image Builds" tab as follows:
 
 | Field | Value |
 |---|---|
@@ -169,7 +169,7 @@ For this registry, fill in the Region's "Tenant Image Builds" fields as follows:
 
 ## 7. Kubeconfig for the control plane
 
-**Why:** the kubeconfig is the address plus the credentials of the Kubernetes API (requirement #1). The control plane stores it on the Region and uses it for everything.
+**Why:** the kubeconfig is the address plus the credentials of the Kubernetes API (requirement #1). The control plane stores it on the cluster record and uses it for everything.
 
 ```bash
 microk8s config > kubeconfig-<cluster-name>
@@ -186,7 +186,7 @@ sudo sed -i 's/^#MOREIPS/IP.99 = 203.0.113.10\n#MOREIPS/' \
 sudo microk8s refresh-certs --cert server.crt
 ```
 
-This file is an admin credential for the whole cluster. Upload it in the control plane (a Kubeconfig record, stored encrypted), then delete the local copy. Allow `16443` only from the control-plane server.
+This file is an admin credential for the whole cluster. Upload it in the control plane (*Kubernetes Clusters*, stored encrypted), then delete the local copy. Allow `16443` only from the control-plane server.
 
 ## 8. Verify end to end
 
@@ -297,7 +297,7 @@ Other points:
 
 ### 9.6 Control plane side
 
-Nothing to change. The kubeconfig still points at `node1:16443`, and the Region stays the same. New tenants are scheduled on either node automatically.
+Nothing to change. The kubeconfig still points at `node1:16443`, and the cluster record stays the same. New tenants are scheduled on either node automatically.
 
 ### 9.7 Removing node2
 
@@ -333,7 +333,7 @@ The platform doesn't care which Kubernetes it runs on. It needs the same seven t
 | cert-manager (#4) | Addon | Install it with Helm (vendor the chart under `compute/charts/vendor/`). The ClusterIssuer in step 3 is the same, with `ingressClassName` changed to your controller (e.g. `nginx`). |
 | Operator (#5) | Step 4 | Same commands. Change `ingressClassName` in the values file to your controller. |
 | Prometheus (#6) | Step 5 | Same. |
-| Registry (#7) | In-cluster, plain HTTP | Use a real registry: Docker Hub, GHCR, Harbor, or GCP Artifact Registry. Turn **Plain-HTTP off**, and set Registry Host and Push Host to the same value. **Avoid ECR for now**: its passwords expire every 12 hours, and the Region stores a fixed password. |
+| Registry (#7) | In-cluster, plain HTTP | Use a real registry: Docker Hub, GHCR, Harbor, or GCP Artifact Registry. Turn **Plain-HTTP off**, and set Registry Host and Push Host to the same value. **Avoid ECR for now**: its passwords expire every 12 hours, and the cluster stores a fixed password. |
 | Kubeconfig (#1) | `microk8s config`, works as is | **Must be rebuilt** (see below). |
 | API firewall | Open `16443` only to the control plane | Restrict the API endpoint to the control-plane server's IP: GKE *authorized networks*, EKS *public access CIDRs*, AKS *authorized IP ranges*. |
 | 2+ nodes, HA | Sections 9–10 | Built in: the cloud runs the API with HA. Just set the node count or autoscaling. |
@@ -383,4 +383,4 @@ Upload that file to the control plane as in step 7. Deleting the Secret revokes 
 
 ### Everything else
 
-Sections 3 (ClusterIssuer), 4 (operator), 5 (Prometheus) and 8 (verify) are the same on every cluster. On a cloud, the whole setup is: **create the cluster → install an ingress controller → install cert-manager → steps 3, 4, 5 → wildcard DNS → ServiceAccount kubeconfig → register the Region**.
+Sections 3 (ClusterIssuer), 4 (operator), 5 (Prometheus) and 8 (verify) are the same on every cluster. On a cloud, the whole setup is: **create the cluster → install an ingress controller → install cert-manager → steps 3, 4, 5 → wildcard DNS → ServiceAccount kubeconfig → register the cluster**.

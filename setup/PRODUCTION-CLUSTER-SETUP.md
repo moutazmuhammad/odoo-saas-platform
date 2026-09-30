@@ -401,7 +401,7 @@ kubectl -n monitoring get pvc      # Bound, on longhorn
 
 ## 11. Image registry (only if customers deploy Git repos)
 
-Use a private registry with a fixed token: GHCR, Docker Hub (private), Harbor, or GCP Artifact Registry. Not the in-cluster test registry, and not AWS ECR, whose tokens expire every 12 hours. Put it in the Region's registry fields: host, push host, path prefix (your org), and a push/pull-only token. Leave plain-HTTP off.
+Use a private registry with a fixed token: GHCR, Docker Hub (private), Harbor, or GCP Artifact Registry. Not the in-cluster test registry, and not AWS ECR, whose tokens expire every 12 hours. Put it in the cluster's *Image Builds* tab: host, push host, path prefix (your org), and a push/pull-only token. Leave plain-HTTP off.
 
 ---
 
@@ -465,7 +465,13 @@ Don't use `microk8s config` instead: it's the permanent admin certificate. This 
 
 ## 13. Register the cluster in the control plane
 
-The control plane needs four records: a **Kubeconfig**, a **Region** (the cluster: kubeconfig, ingress IP, TLS), a **Server** (the capacity entry inside the Region), and a **Based domain** (the tenant URLs). The script below creates or updates all four, and can also create a test catalog. It's safe to run again.
+The control plane needs three records:
+
+- a **Region**: the location customers pick at checkout;
+- a **Kubernetes Cluster** inside it: the kubeconfig, TLS issuer and Prometheus. A region can have several clusters, and new instances go to the least-loaded healthy one;
+- a **Base domain**: the tenant URLs. Its wildcard DNS points at one cluster, so instances on that domain are placed on that cluster.
+
+The script below creates or updates all three. It's safe to run again.
 
 **13.1 Check DNS (anywhere):**
 
@@ -487,15 +493,13 @@ ssh root@$NODE1 rm -f /root/kubeconfig-prod
 ```bash
 cat > /tmp/register_cluster.py <<'PY'
 # ---- CONFIG ------------------------------------------------------------------
-CLUSTER_NAME = 'cluster-1'            # kubeconfig + server record name
+CLUSTER_NAME = 'cluster-1'            # the cluster record's name
 REGION_CODE = 'default'               # 'default' = the Region that comes preinstalled
 REGION_NAME = 'Default'               # used only when creating a new Region
-INGRESS_HOST = '203.0.113.50'         # LB_IP
 NODE_PUBLIC_IP = '198.51.100.11'      # node1 public IP
 NODE_PRIVATE_IP = '10.0.0.11'         # node1 private IP
 BASE_DOMAIN = 'apps.example.com'      # tenants get <sub>.apps.example.com
 TLS_ISSUER = 'letsencrypt-prod'       # step 8
-SEED_CATALOG = True                   # also create Odoo 17/18/19, "Odoo Hosting" and 3 test plans
 # -----------------------------------------------------------------------------
 import base64
 E = env
@@ -508,50 +512,24 @@ def upsert(model, domain, vals):
         rec = E[model].sudo().create(vals)
     return rec
 
-kc = upsert('saas.kubeconfig', [('name', '=', CLUSTER_NAME)], {
-    'name': CLUSTER_NAME,
-    'kubeconfig_file': base64.b64encode(open('/tmp/kubeconfig-prod', 'rb').read()),
-    'kubeconfig_file_name': 'kubeconfig-prod.yaml'})
-region = upsert('saas.region', [('code', '=', REGION_CODE)], {
-    **({} if E['saas.region'].sudo().search_count([('code', '=', REGION_CODE)])
-       else {'name': REGION_NAME, 'code': REGION_CODE}),
-    'kubeconfig_id': kc.id, 'ingress_host': INGRESS_HOST, 'ingress_port': 80,
-    'native_ingress_tls': True, 'tls_cluster_issuer': TLS_ISSUER,
-    'prometheus_namespace': 'monitoring', 'prometheus_service': 'prometheus-server:80'})
+region = upsert('saas.region', [('code', '=', REGION_CODE)],
+    {} if E['saas.region'].sudo().search_count([('code', '=', REGION_CODE)])
+    else {'name': REGION_NAME, 'code': REGION_CODE})
 srv = upsert('saas.server', [('name', '=', CLUSTER_NAME)], {
     'name': CLUSTER_NAME, 'compute_driver': 'kubernetes', 'region_id': region.id,
+    'kubeconfig_file': base64.b64encode(open('/tmp/kubeconfig-prod', 'rb').read()),
+    'kubeconfig_file_name': 'kubeconfig-prod.yaml',
+    'tls_cluster_issuer': TLS_ISSUER,
+    'prometheus_namespace': 'monitoring', 'prometheus_service': 'prometheus-server:80',
     'ip_v4': NODE_PUBLIC_IP, 'private_ip_v4': NODE_PRIVATE_IP})
 ok, err = srv._probe_reachable(timeout=10)
 srv._update_health(ok, err)
 dom = upsert('saas.based.domain', [('name', '=', BASE_DOMAIN)], {
-    'name': BASE_DOMAIN, 'proxy_server_id': srv.id})   # the domain's region follows this server
-
-if SEED_CATALOG:
-    vers = {v: upsert('saas.odoo.version', [('name', '=', v)], {
-        'name': v, 'docker_image': 'odoo', 'docker_image_tag': v,
-        'nginx_template': 'new', 'is_hosting_version': True})
-        for v in ('17.0', '18.0', '19.0')}
-    prod = upsert('saas.product', [('is_hosting', '=', True)], {
-        'name': 'Odoo Hosting', 'is_hosting': True, 'is_published': True,
-        'subtitle': 'Bring your own code — we run it.',
-        'odoo_version_id': vers['18.0'].id, 'sequence': 1})
-    for name, vals in [
-        ('Hosting Free Trial', {'is_trial_plan': True, 'price': 0.0, 'yearly_price': 0.0,
-            'workers': 1, 'storage_limit': 5, 'cpu_limit': 1.0, 'ram_limit': '1g', 'sequence': 1}),
-        ('Starter', {'is_public_tier': True, 'workers': 1, 'storage_limit': 10,
-            'cpu_limit': 1.0, 'ram_limit': '1g', 'price': 20.0, 'yearly_price': 200.0, 'sequence': 10}),
-        ('Professional', {'is_public_tier': True, 'is_recommended': True, 'badge': 'Popular',
-            'workers': 2, 'storage_limit': 20, 'cpu_limit': 2.0, 'ram_limit': '2g',
-            'price': 40.0, 'yearly_price': 400.0, 'sequence': 20})]:
-        upsert('saas.plan', [('name', '=', name)], dict(vals, name=name,
-            currency_id=E.company.currency_id.id, saas_product_ids=[(6, 0, [prod.id])]))
+    'name': BASE_DOMAIN, 'proxy_server_id': srv.id})   # the domain's cluster (and region)
 E.cr.commit()
 
-print('RESULT region :', region.name, '| kubeconfig', kc.name, '| ingress', region.ingress_host, '| TLS', region.tls_cluster_issuer)
-print('RESULT server :', srv.name, '| health', srv.health_state, srv.last_health_error or '')
-print('RESULT domain :', dom.name, '| region', dom.region_id.name)
-if SEED_CATALOG:
-    print('RESULT plans  :', E['saas.plan'].sudo().search_read([], ['name', 'price']))
+print('RESULT cluster:', srv.name, '| region', region.name, '| health', srv.health_state, srv.last_health_error or '')
+print('RESULT domain :', dom.name, '| cluster', dom.proxy_server_id.name, '| region', dom.region_id.name)
 PY
 chown odoo /tmp/register_cluster.py
 cd /opt/saas && sudo -u odoo venv/bin/python odoo18/odoo-bin shell -c /etc/odoo/saas.conf -d saas \
@@ -562,7 +540,8 @@ rm -f /tmp/register_cluster.py /tmp/kubeconfig-prod
 **Check:** the output must show `health ok`. If it shows `unreachable`, the SaaS server can't reach `API_HOST:16443`: check the firewall (step 1). Then repeat 13.2 and 13.3.
 
 **Notes:**
-- The backend recalculates plan prices from the pricing rates (Settings → SaaS Manager), so they can differ from the script's values until you set the rates.
+- For a test catalog (Odoo versions, the "Odoo Hosting" product, plans), install the **SaaS Demo Catalog** app (`saas_demo_data`) from Apps.
+- A second cluster in the same region: repeat 12.3 on that cluster, then 13.2 and 13.3 with a new `CLUSTER_NAME` and that cluster's own `BASE_DOMAIN` (its wildcard DNS points at its own load balancer).
 - Still to set in the backend (`SAAS-SERVER-SETUP.md`, step 8): backup storage (step 14), a payment provider, mail, and the registry (step 11) if you use it.
 
 ---

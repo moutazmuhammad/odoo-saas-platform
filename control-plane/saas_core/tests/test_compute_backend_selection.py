@@ -35,8 +35,7 @@ class TestDeployOnKubernetes(TransactionCase):
             {'name': 'deploy.example.com'})
         self.partner = self.env['res.partner'].sudo().create({'name': 'Deploy Cust'})
         self.region = self.env['saas.region'].sudo().create(
-            {'name': 'Deploy Region', 'code': 'deploy-region',
-             'native_ingress_tls': True, 'tls_cluster_issuer': 'letsencrypt-prod'})
+            {'name': 'Deploy Region', 'code': 'deploy-region'})
         self.k8s_server = self.env['saas.server'].sudo().create(
             {'name': 'deploy-k8s-srv', 'compute_driver': 'kubernetes',
              'region_id': self.region.id})
@@ -138,10 +137,10 @@ class TestDeployOnKubernetes(TransactionCase):
             self.instance._update_container_resources()
         driver.set_resources.assert_not_called()
 
-    def test_deploy_refuses_without_native_ingress_tls(self):
-        """No SSH-based Nginx fallback exists any more — a region without
-        native_ingress_tls simply can't deploy."""
-        self.region.native_ingress_tls = False
+    def test_deploy_refuses_without_tls_issuer(self):
+        """TLS is always cluster-native; a cluster with no ClusterIssuer
+        can't deploy."""
+        self.k8s_server.tls_cluster_issuer = False
         driver = MagicMock()
         with patch.object(type(self.instance), '_compute_driver', return_value=driver):
             with self.assertRaises(UserError):

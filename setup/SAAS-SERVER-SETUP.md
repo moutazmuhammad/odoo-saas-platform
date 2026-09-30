@@ -226,16 +226,15 @@ sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
    - backup storage (provider, keys, bucket, region/endpoint);
    - pricing rates.
 5. **Payments:** Invoicing/Website → Payment Providers. Enable the real provider with its keys and test a small real charge (PLAN.txt 3.1).
-6. **Catalog:**
+6. **Catalog** (*SaaS Manager → Catalog*; for a test catalog, install the **SaaS Demo Catalog** app instead):
    - *Odoo versions*: e.g. `18.0`, image `odoo`, tag `18.0`, hosting version on.
    - *Products*: e.g. "Odoo Hosting" with *Is hosting* on.
    - *Plans*: CPU/RAM/workers/storage limits and prices, linked to products.
    - *Compute tiers*: seeded with Standard/HA/Scale; check the prices.
-7. **Register each cluster** (from `PRODUCTION-CLUSTER-SETUP.md`, step 13). That step has a copy-paste script that creates all of this, plus an optional test catalog (versions, product, plans). To do it by hand in the backend instead:
-   1. *Kubeconfig*: new record, upload the file.
-   2. *Region*: name/code, the kubeconfig, ingress host = cluster IP, port 80, *Native Ingress TLS* on, ClusterIssuer name. Leave Monitoring at `monitoring` / `prometheus-server:80`. Fill Tenant Image Builds if Git repos are used.
-   3. *Server*: compute driver Kubernetes, the region, the node IP.
-   4. *Based domain*: the tenant wildcard domain (e.g. `apps.example.com`), with its region/server.
+7. **Register each cluster** (from `PRODUCTION-CLUSTER-SETUP.md`, step 13). That step has a copy-paste script. To do it by hand in the backend instead (*SaaS Manager → Configuration*):
+   1. *Regions*: the location customers pick (name, code).
+   2. *Kubernetes Clusters*: the region, upload the kubeconfig, the TLS ClusterIssuer, the node IP. Fill the *Image Builds* tab if Git repos are used. A region can have several clusters.
+   3. *Base Domains*: the tenant wildcard domain (e.g. `apps.example.com`) and the cluster its DNS points at.
 8. **Smoke test:**
    1. Sign up as a customer on `https://saas.example.com/`.
    2. Order a plan, pay; the instance deploys in about 2-4 minutes.

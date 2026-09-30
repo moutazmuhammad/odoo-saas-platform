@@ -6,6 +6,15 @@
         <field name="sequence">50</field>
     </record>
 
+    <!-- Pod Shell lives in its own category: Odoo shows a category as an
+         always-visible dropdown only when its groups form one chain. With
+         Pod Shell next to User/Manager, the whole SaaS section was shown
+         only in Developer Mode. -->
+    <record id="module_category_saas_pod_shell" model="ir.module.category">
+        <field name="name">SaaS Pod Shell</field>
+        <field name="sequence">51</field>
+    </record>
+
     <record id="group_saas_user" model="res.groups">
         <field name="name">User</field>
         <field name="category_id" ref="module_category_saas"/>
@@ -16,6 +25,7 @@
         <field name="name">Manager</field>
         <field name="category_id" ref="module_category_saas"/>
         <field name="implied_ids" eval="[(4, ref('group_saas_user'))]"/>
+        <field name="users" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
         <field name="comment">Full management access to SaaS instances, servers, and configuration.</field>
     </record>
 
@@ -29,7 +39,7 @@
          pod-exec access into the fleet. -->
     <record id="group_saas_pod_shell" model="res.groups">
         <field name="name">Pod Shell</field>
-        <field name="category_id" ref="module_category_saas"/>
+        <field name="category_id" ref="module_category_saas_pod_shell"/>
         <field name="comment">Grants kubectl-exec access into tenant pods (NOT the platform's own infrastructure — there is none reached over SSH anymore). Extremely sensitive: a member can reach every tenant's running container. Grant narrowly, separately from Manager.</field>
     </record>
 

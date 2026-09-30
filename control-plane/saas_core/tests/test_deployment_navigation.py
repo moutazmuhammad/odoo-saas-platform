@@ -4,8 +4,7 @@ from odoo.tests.common import TransactionCase, tagged
 @tagged('post_install', '-at_install')
 class TestDeploymentAwareNavigation(TransactionCase):
     """billing/pricing architecture redesign, Part 4/5/7: saas.instance's
-    compute_driver convenience field and the Kubernetes Instances
-    list-filter action.
+    compute_driver convenience field.
 
     The sibling "Compose Instances" action/menu item (domain
     compute_driver='ssh_docker') was removed along with the ssh_docker
@@ -40,9 +39,3 @@ class TestDeploymentAwareNavigation(TransactionCase):
     def test_compute_driver_follows_the_server(self):
         k8s_inst = self._inst('deploynavk8s', self.k8s_server)
         self.assertEqual(k8s_inst.compute_driver, 'kubernetes')
-
-    def test_kubernetes_instances_action_domain_filters_correctly(self):
-        k8s_inst = self._inst('deploynavk8sfilter', self.k8s_server)
-        action = self.env.ref('saas_core.saas_instance_action_kubernetes')
-        found = self.env['saas.instance'].search(eval(action.domain))
-        self.assertIn(k8s_inst, found)

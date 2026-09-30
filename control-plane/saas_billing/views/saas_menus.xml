@@ -1,71 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- Billing (A1/A4) — top-level menu moved here from saas_core along
-         with the wallet/payment models. References saas_core's root menu
-         as parent (allowed: saas_billing depends on saas_core). -->
+    <!-- Catalog items owned by this addon (the Catalog menu is saas_core's). -->
+    <menuitem id="saas_master_menu_plans"
+              name="Plans"
+              parent="saas_core.saas_master_menu_catalog"
+              action="saas_core.saas_plan_action"
+              sequence="20"/>
+    <menuitem id="saas_master_menu_compute_tiers"
+              name="Compute Tiers"
+              parent="saas_core.saas_master_menu_catalog"
+              action="saas_core.saas_compute_tier_action"
+              sequence="30"/>
+    <menuitem id="saas_master_menu_addons"
+              name="Add-ons"
+              parent="saas_core.saas_master_menu_catalog"
+              action="saas_addon_action"
+              sequence="40"/>
+    <menuitem id="saas_master_menu_support_plans"
+              name="Support Plans"
+              parent="saas_core.saas_master_menu_catalog"
+              action="saas_support_plan_action"
+              sequence="50"/>
+
     <menuitem id="saas_master_menu_billing"
               name="Billing"
               parent="saas_core.saas_master_menu_root"
               sequence="20"/>
-    <!-- Commercial catalog config — moved here from Infrastructure/
-         Configuration (billing/pricing architecture redesign, Part 6/9):
-         these are pricing/plan decisions the owner makes, not
-         infrastructure config, so they belong alongside the rest of
-         Billing rather than mixed in with Servers/Regions/Domains. -->
-    <menuitem id="saas_master_menu_plans"
-              name="Plans"
-              parent="saas_master_menu_billing"
-              action="saas_core.saas_plan_action"
-              sequence="5"/>
-    <menuitem id="saas_master_menu_compute_tiers"
-              name="Compute Tiers"
-              parent="saas_master_menu_billing"
-              action="saas_core.saas_compute_tier_action"
-              sequence="7"/>
-    <menuitem id="saas_master_menu_addons"
-              name="Add-ons"
-              parent="saas_master_menu_billing"
-              action="saas_addon_action"
-              sequence="8"/>
-    <menuitem id="saas_master_menu_support_plans"
-              name="Support Plans"
-              parent="saas_master_menu_billing"
-              action="saas_support_plan_action"
-              sequence="9"/>
-    <!-- Profitability (views/saas_margin_views.xml): the promoted
-         Dashboard item at the app root ("can I make money on this?" in
-         one click, first item in the app on purpose), and also reachable
-         from Billing directly. -->
-    <menuitem id="saas_master_menu_dashboard"
-              name="Dashboard"
-              parent="saas_core.saas_master_menu_root"
-              action="action_saas_tenant_margins"
-              sequence="5"/>
     <menuitem id="saas_master_menu_margins"
               name="Profitability"
               parent="saas_master_menu_billing"
               action="action_saas_tenant_margins"
-              sequence="35"/>
+              sequence="10"/>
     <menuitem id="saas_master_menu_wallets"
               name="Customer Wallets"
               parent="saas_master_menu_billing"
               action="saas_wallet_action"
-              sequence="40"/>
-    <menuitem id="saas_master_menu_payment_methods"
-              name="Saved Payment Methods"
-              parent="saas_master_menu_billing"
-              action="saas_payment_method_action"
-              sequence="50"/>
+              sequence="20"/>
     <menuitem id="saas_master_menu_payment_attempts"
               name="Payment Attempts"
               parent="saas_master_menu_billing"
               action="saas_payment_attempt_action"
-              sequence="60"/>
+              sequence="30"/>
+    <menuitem id="saas_master_menu_payment_methods"
+              name="Saved Payment Methods"
+              parent="saas_master_menu_billing"
+              action="saas_payment_method_action"
+              sequence="40"/>
     <menuitem id="saas_master_menu_payment_routing"
               name="Payment Provider Routing"
               parent="saas_master_menu_billing"
               action="saas_payment_provider_config_action"
-              sequence="70"/>
+              sequence="50"/>
 
 </odoo>

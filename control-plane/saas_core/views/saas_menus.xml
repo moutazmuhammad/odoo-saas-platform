@@ -1,118 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- Root Menu -->
+    <!-- SaaS Manager
+           Instances
+           Catalog         Services, Odoo Versions (+ plans, tiers, add-ons,
+                           support plans from saas_billing)
+           Billing         (saas_billing)
+           Configuration   Regions, Kubernetes Clusters, Base Domains, Settings -->
+
     <menuitem id="saas_master_menu_root"
               name="SaaS Manager"
               sequence="50"
               web_icon="saas_core,static/description/icon.png"
               groups="base.group_user"/>
 
-    <!-- Instances -->
+    <!-- One list; hosting/service/state live in the search filters. -->
     <menuitem id="saas_master_menu_instances"
               name="Instances"
               parent="saas_master_menu_root"
-              sequence="10"/>
-
-    <menuitem id="saas_master_menu_instances_all"
-              name="All Instances"
-              parent="saas_master_menu_instances"
               action="saas_instance_action"
-              sequence="1"/>
-
-    <menuitem id="saas_master_menu_instances_services"
-              name="Service Instances"
-              parent="saas_master_menu_instances"
-              action="saas_instance_action_services"
               sequence="10"/>
 
-    <menuitem id="saas_master_menu_instances_hosting"
-              name="Hosting Instances"
-              parent="saas_master_menu_instances"
-              action="saas_instance_action_hosting"
-              sequence="20"/>
-
-    <!-- Deployment-type filter (Part 5/7). The sibling "Compose Instances"
-         filter was removed: ssh_docker is no longer a valid compute_driver
-         value (Kubernetes is the only backend), so a domain filtering for
-         it could never match anything. This one is kept since it's still
-         a harmless/forward-compatible filter (currently equivalent to no
-         filter, since every instance is Kubernetes-backed). -->
-    <menuitem id="saas_master_menu_instances_kubernetes"
-              name="Kubernetes Instances"
-              parent="saas_master_menu_instances"
-              action="saas_instance_action_kubernetes"
-              sequence="30"/>
-
-    <!-- Billing menu (A1/A4) lives in saas_billing/views/saas_menus.xml —
-         moved there along with the wallet/payment models. Tenant Margins
-         (action still defined here, in saas_core) is nested under it
-         from that file, since saas_billing depends on saas_core and can
-         reference this module's action, but not vice versa. -->
-
-    <!-- Infrastructure (renamed from "Configuration" — billing/pricing
-         architecture redesign, Part 6/9: commercial catalog config
-         (Plans, Compute Tiers, Add-ons, Support Plans, Payment Routing)
-         moved into Billing, leaving this menu purely infrastructure/
-         technical-operator config). Menu id kept unchanged so cross-addon
-         parent= references (saas_billing's menus) don't need touching. -->
-    <menuitem id="saas_master_menu_configuration"
-              name="Infrastructure"
+    <menuitem id="saas_master_menu_catalog"
+              name="Catalog"
               parent="saas_master_menu_root"
-              sequence="90"/>
+              sequence="15"/>
 
-    <!-- Infrastructure > Services -->
     <menuitem id="saas_master_menu_services"
               name="Services"
-              parent="saas_master_menu_configuration"
+              parent="saas_master_menu_catalog"
               action="saas_product_action"
               sequence="10"/>
 
-    <!-- Plans, Compute Tiers, Add-ons, Support Plans, and Payment
-         Provider Routing all live under Billing now
-         (saas_billing/views/saas_menus.xml) — they're commercial catalog
-         config, not infrastructure. -->
+    <menuitem id="saas_master_menu_odoo_version"
+              name="Odoo Versions"
+              parent="saas_master_menu_catalog"
+              action="saas_odoo_version_action"
+              sequence="60"/>
 
-    <!-- Infrastructure > Base Domains -->
+    <menuitem id="saas_master_menu_configuration"
+              name="Configuration"
+              parent="saas_master_menu_root"
+              sequence="90"/>
+
+    <menuitem id="saas_master_menu_regions"
+              name="Regions"
+              parent="saas_master_menu_configuration"
+              action="saas_region_action"
+              sequence="10"/>
+
+    <menuitem id="saas_master_menu_compute_kubernetes"
+              name="Kubernetes Clusters"
+              parent="saas_master_menu_configuration"
+              action="saas_server_action"
+              sequence="20"/>
+
     <menuitem id="saas_master_menu_based_domain"
               name="Base Domains"
               parent="saas_master_menu_configuration"
               action="saas_odoo_based_domain_action"
               sequence="30"/>
 
-    <!-- Infrastructure > Odoo Versions -->
-    <menuitem id="saas_master_menu_odoo_version"
-              name="Odoo Versions"
-              parent="saas_master_menu_configuration"
-              action="saas_odoo_version_action"
-              sequence="40"/>
-
-    <!-- Infrastructure > Regions -->
-    <menuitem id="saas_master_menu_regions"
-              name="Regions"
-              parent="saas_master_menu_configuration"
-              action="saas_region_action"
-              sequence="55"/>
-
-    <!-- Infrastructure > Compute — a provider-agnostic umbrella (this
-         platform's only deployment target is a managed Kubernetes
-         cluster, any provider — EKS, GKE, AKS, self-hosted...). -->
-    <menuitem id="saas_master_menu_compute"
-              name="Compute"
-              parent="saas_master_menu_configuration"
-              sequence="50"/>
-
-    <menuitem id="saas_master_menu_compute_kubernetes"
-              name="Kubernetes Clusters"
-              parent="saas_master_menu_compute"
-              action="saas_server_action"
-              sequence="10"/>
-
-    <!-- Infrastructure > Settings -->
     <menuitem id="saas_master_menu_settings"
               name="Settings"
               parent="saas_master_menu_configuration"
               action="action_saas_master_config_settings"
-              sequence="70"/>
+              sequence="90"/>
 
 </odoo>

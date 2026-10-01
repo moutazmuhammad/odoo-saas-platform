@@ -129,8 +129,8 @@ cert-manager.
          -n odoo-system --create-namespace \
          -f compute/examples/test-cluster/operator-values.yaml
      Images (public on Docker Hub for now):
-       docker.io/moutazmuhammad/odoo-saas-operator:0.1.11
-       docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.1 (compiled-in default)
+       docker.io/moutazmuhammad/odoo-saas-operator:0.1.12
+       docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.2 (compiled-in default)
      Without Gateway API, keep networking.provider=ingress (the values file).
 
   e) Metrics (CPU/RAM usage, customer dashboard):

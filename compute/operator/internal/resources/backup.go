@@ -22,7 +22,7 @@ import (
 //
 // Overridable per operator deployment via the --backup-tool-image flag
 // (see cmd/main.go); this constant is only the compiled-in default.
-const DefaultBackupToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.1"
+const DefaultBackupToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.2"
 
 // BackupCronJob builds the scheduled backup CronJob. Each run coordinates a
 // database dump and a filestore archive into one timestamped, atomically

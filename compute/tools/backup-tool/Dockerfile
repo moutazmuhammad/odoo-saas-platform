@@ -11,6 +11,9 @@
 # itself.
 FROM postgres:16-bookworm
 
+# ca-certificates: rclone verifies the object-storage endpoint's TLS
+# certificate; without the CA bundle every upload failed (x509: unknown
+# authority) and rclone kept retrying.
 # `apt-get upgrade` picks up patched versions of packages already present
 # in the base image (e.g. libpcre2-8-0), not just the ones this Dockerfile
 # adds — a stale base-image package is still this image's own CVE surface.
@@ -21,7 +24,7 @@ FROM postgres:16-bookworm
 # CVEs for a binary nothing here ever executes.
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends postgresql-client-16 rclone && \
+    apt-get install -y --no-install-recommends postgresql-client-16 rclone ca-certificates && \
     rm -f /usr/local/bin/gosu && \
     rm -rf /var/lib/apt/lists/*
 

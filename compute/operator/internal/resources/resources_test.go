@@ -506,3 +506,14 @@ func TestOdooDeployment_Shell_SidecarWithoutSecrets(t *testing.T) {
 		t.Error("the cron Deployment never gets the shell")
 	}
 }
+
+func TestOdooDeployment_LivenessOutlastsOdooRequestLimit(t *testing.T) {
+	odoo := OdooDeployment(testInstance(), RoleWeb).Spec.Template.Spec.Containers[0]
+	live := odoo.LivenessProbe
+	if window := live.PeriodSeconds * live.FailureThreshold; window <= 120 {
+		t.Errorf("liveness gives up after %ds, must exceed Odoo's 120s limit_time_real", window)
+	}
+	if odoo.ReadinessProbe.FailureThreshold != 3 {
+		t.Errorf("readiness must still react quickly, got failureThreshold=%d", odoo.ReadinessProbe.FailureThreshold)
+	}
+}

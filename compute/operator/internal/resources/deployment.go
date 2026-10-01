@@ -202,7 +202,7 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 				Args:            args,
 				Ports:           ports,
 				Resources:       instance.Spec.Resources,
-				LivenessProbe:   probe,
+				LivenessProbe:   odooLivenessProbe(exposesHTTP),
 				ReadinessProbe:  probe,
 				StartupProbe:    odooStartupProbe(exposesHTTP),
 				// Zero-downtime rollouts: keep serving for a few seconds after
@@ -461,6 +461,23 @@ func odooProbe(exposesHTTP bool) *corev1.Probe {
 		FailureThreshold:    3,
 	}
 }
+
+// odooLivenessProbe restarts Odoo only when it is really stuck. A single
+// worker busy with a long request (creating or restoring a database from
+// the database manager) can't answer probes, and Odoo itself ends any
+// request after limit_time_real (120s by default), so liveness waits
+// longer than that; readiness still takes a busy pod out of rotation at
+// once.
+func odooLivenessProbe(exposesHTTP bool) *corev1.Probe {
+	p := odooProbe(exposesHTTP)
+	if exposesHTTP {
+		p.FailureThreshold = livenessFailureThreshold
+	}
+	return p
+}
+
+// livenessFailureThreshold x 15s period = 150s > Odoo's limit_time_real.
+const livenessFailureThreshold = 10
 
 // odooStartupProbe allows generously for first-boot database
 // initialization (Odoo creates/migrates schema on first connection to an

@@ -330,31 +330,39 @@ class SaasInstanceBackup(models.Model):
             ) % cfg['provider'].upper())
 
         region = cfg['region'] or 'us-east-1'
+        if cfg['provider'] == 'hetzner':
+            region = cfg['region'] or 'fsn1'
         kwargs = {
             'aws_access_key_id': ak,
             'aws_secret_access_key': sk,
             'region_name': region,
         }
-
-        if cfg['provider'] == 'digitalocean':
-            # DigitalOcean Spaces requires virtual-hosted style addressing
-            # for presigned URLs to work correctly.
-            # Endpoint: https://{region}.digitaloceanspaces.com
-            kwargs['endpoint_url'] = 'https://%s.digitaloceanspaces.com' % region
+        endpoint = self._storage_endpoint_url(cfg)
+        if cfg['provider'] in ('digitalocean', 'hetzner'):
+            # Virtual-hosted style, required for presigned URLs to work.
+            kwargs['endpoint_url'] = endpoint
             kwargs['config'] = BotoConfig(s3={'addressing_style': 'virtual'})
-        elif cfg['provider'] == 'hetzner':
-            # Hetzner Object Storage — virtual-hosted style, endpoint
-            # derived from the region (fsn1 / nbg1 / hel1).
-            # Endpoint: https://{region}.your-objectstorage.com
-            region = cfg['region'] or 'fsn1'
-            kwargs['region_name'] = region
-            kwargs['endpoint_url'] = 'https://%s.your-objectstorage.com' % region
-            kwargs['config'] = BotoConfig(s3={'addressing_style': 'virtual'})
-        elif cfg['endpoint']:
-            kwargs['endpoint_url'] = cfg['endpoint']
+        elif endpoint:
+            kwargs['endpoint_url'] = endpoint
             kwargs['config'] = BotoConfig(s3={'addressing_style': 'path'})
 
         return boto3.client('s3', **kwargs), cfg['bucket']
+
+    @api.model
+    def _storage_endpoint_url(self, cfg=None):
+        """The S3 endpoint URL for the configured provider: derived from the
+        region for DigitalOcean Spaces (https://<region>.digitaloceanspaces.com)
+        and Hetzner (https://<region>.your-objectstorage.com), else the
+        Endpoint setting ('' = AWS). Used by the control plane's own client
+        AND handed to in-cluster backup/restore Jobs, which can't derive it
+        themselves — an empty endpoint there made every DigitalOcean backup
+        fail."""
+        cfg = cfg or self._get_backup_config()
+        if cfg['provider'] == 'digitalocean':
+            return 'https://%s.digitaloceanspaces.com' % (cfg['region'] or 'us-east-1')
+        if cfg['provider'] == 'hetzner':
+            return 'https://%s.your-objectstorage.com' % (cfg['region'] or 'fsn1')
+        return cfg['endpoint'] or ''
 
     def _get_gcs_client(self):
         """Return a google-cloud-storage client configured from settings."""
@@ -1066,7 +1074,7 @@ class SaasInstanceBackup(models.Model):
         driver.set_scheduled_backup(
             handle, enabled=True, bucket=cfg['bucket'], prefix=prefix,
             access_key=cfg['access_key'], secret_key=cfg['secret_key'],
-            endpoint=cfg['endpoint'] or '')
+            endpoint=self._storage_endpoint_url(cfg))
         driver.trigger_backup_now(handle)
         deadline = time.time() + wait_timeout
         stamp = None

@@ -3398,7 +3398,7 @@ class SaasInstance(models.Model):
                 prefix=self._backup_bucket_prefix(),
                 access_key=cfg['access_key'],
                 secret_key=cfg['secret_key'],
-                endpoint=cfg['endpoint'] or '',
+                endpoint=Backup._storage_endpoint_url(cfg),
             )
         try:
             self._compute_driver().set_scheduled_backup(

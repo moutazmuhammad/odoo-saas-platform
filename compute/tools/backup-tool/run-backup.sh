@@ -36,7 +36,10 @@ echo "[backup-tool] archiving filestore"
 # entry individually (find -mindepth 1, NUL-delimited for filenames with
 # spaces/newlines) instead keeps the archive's own top level "flat", so
 # restore never needs to touch $ODOO_DATA_DIR's own attributes at all.
-(cd /filestore && find . -mindepth 1 -print0 | \
+#
+# ./lost+found is skipped: ext4 volumes (e.g. Longhorn) create it owned by
+# root, so this non-root tool can't read it and tar aborted every backup.
+(cd /filestore && find . -mindepth 1 -path ./lost+found -prune -o -print0 | \
   tar --null --no-recursion -czf "${WORKDIR}/filestore.tar.gz" -T -)
 
 cat > "${WORKDIR}/manifest.json" <<EOF

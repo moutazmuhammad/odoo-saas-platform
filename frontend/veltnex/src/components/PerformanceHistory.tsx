@@ -165,8 +165,8 @@ export function PerformanceHistory({
         <LiveStat label="Memory" pct={ramNow} sub={split(now?.odoo_ram, now?.db_ram)} color="#a142f4" live={!!live} />
         <LiveStat
           label="Disk"
-          pct={storagePct}
-          sub={pkg ? `Files ${formatMb(pkg.files_mb)} · DB ${formatMb(pkg.databases_mb)}` : `${storageMb.toFixed(0)} MB`}
+          pct={pkg ? pkg.storage_pct : storagePct}
+          sub={pkg ? `${formatMb(pkg.used_mb)} of ${pkg.storage_gb} GB` : `${storageMb.toFixed(0)} MB`}
           color="#12b886"
         />
       </div>
@@ -201,15 +201,19 @@ export function PerformanceHistory({
             startMs={startMs}
             endMs={endMs}
           />
-          <AreaChart
-            label="Storage"
-            unit="MB"
-            color="#12b886"
-            samples={chartSamples}
-            pick={(s) => s.storage_mb}
-            startMs={startMs}
-            endMs={endMs}
-          />
+          {pkg ? (
+            <StorageBreakdown pkg={pkg} />
+          ) : (
+            <AreaChart
+              label="Storage"
+              unit="MB"
+              color="#12b886"
+              samples={chartSamples}
+              pick={(s) => s.storage_mb}
+              startMs={startMs}
+              endMs={endMs}
+            />
+          )}
         </div>
       )}
     </Card>
@@ -398,6 +402,40 @@ function AreaChart({
           ))}
         </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Storage as measured for the limit: files + databases out of the package. */
+function StorageBreakdown({ pkg }: { pkg: PackageSummary }) {
+  const totalMb = Math.max(1, pkg.storage_gb * 1024);
+  const pct = (mb: number) => Math.min(100, (mb / totalMb) * 100);
+  const freeMb = Math.max(0, totalMb - pkg.used_mb);
+  return (
+    <div>
+      <div className="mb-1.5 flex items-baseline justify-between text-xs">
+        <span className="font-medium text-foreground">Storage</span>
+        <span className="text-muted">
+          <span className="font-semibold tabular-nums text-foreground">{formatMb(pkg.used_mb)}</span> of{" "}
+          {pkg.storage_gb} GB
+          {pkg.measured_at && <span className="ml-1.5 opacity-70">· measured {formatTime(pkg.measured_at + "Z")}</span>}
+        </span>
+      </div>
+      <div className="flex h-3 overflow-hidden rounded-full bg-border">
+        <div style={{ width: `${pct(pkg.files_mb)}%`, backgroundColor: "#12b886" }} />
+        <div style={{ width: `${pct(pkg.databases_mb)}%`, backgroundColor: DB_COLOR }} />
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
+        <span className="inline-flex items-center gap-1">
+          <span className="size-2 rounded-sm" style={{ backgroundColor: "#12b886" }} />
+          Files {formatMb(pkg.files_mb)}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="size-2 rounded-sm" style={{ backgroundColor: DB_COLOR }} />
+          Databases {formatMb(pkg.databases_mb)}
+        </span>
+        <span>Free {formatMb(freeMb)}</span>
       </div>
     </div>
   );

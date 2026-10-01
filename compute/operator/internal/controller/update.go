@@ -20,6 +20,9 @@ const (
 	ReasonUpdateApplied = "UpdateApplied"
 	ReasonUpdateRunning = "UpdateRunning"
 	ReasonUpdateFailed  = "UpdateFailed"
+	// ReasonVolumeNotGrown: a requested volume expansion was refused;
+	// the instance keeps running on the current size and it is retried.
+	ReasonVolumeNotGrown = "VolumeNotGrown"
 )
 
 // updatePending reports whether spec.update carries a token that has not

@@ -481,6 +481,10 @@ export interface PackageSummary {
   storage_gb: number;
   files_mb: number;
   databases_mb: number;
+  /** Measured (files + database sizes) — what the storage limit enforces. */
+  used_mb: number;
+  storage_pct: number;
+  measured_at: string;
 }
 
 export interface LiveMetrics {

@@ -24,17 +24,28 @@ func (r *OdooInstanceReconciler) reconcileStorage(ctx context.Context, instance 
 	// Volumes never shrink: a smaller spec size (e.g. a plan downgrade)
 	// keeps the live size instead of failing the apply.
 	var current corev1.PersistentVolumeClaim
+	growing := false
 	if err := r.Get(ctx, types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}, &current); err == nil {
 		have := current.Spec.Resources.Requests[corev1.ResourceStorage]
 		want := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
 		if have.Cmp(want) > 0 {
 			pvc.Spec.Resources.Requests[corev1.ResourceStorage] = have
 		}
+		growing = want.Cmp(have) > 0
 	} else if !apierrors.IsNotFound(err) {
 		return false, err
 	}
 	if err := r.apply(ctx, pvc); err != nil {
-		return false, err
+		if !growing {
+			return false, err
+		}
+		// The expansion was refused (e.g. not enough schedulable space):
+		// keep the current size, report it, and let the rest proceed.
+		r.warnVolumeNotGrown(ctx, instance, err)
+		pvc.Spec.Resources.Requests[corev1.ResourceStorage] = current.Spec.Resources.Requests[corev1.ResourceStorage]
+		if err := r.apply(ctx, pvc); err != nil {
+			return false, err
+		}
 	}
 
 	var live corev1.PersistentVolumeClaim

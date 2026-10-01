@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	saasv1alpha1 "github.com/freightright/odoo-saas-platform/operator/api/v1alpha1"
 	"github.com/freightright/odoo-saas-platform/operator/internal/resources"
@@ -82,8 +83,11 @@ func (r *OdooInstanceReconciler) reconcileManagedDatabase(ctx context.Context, i
 	if err := r.syncDatabasePod(ctx, instance); err != nil {
 		return databaseResult{}, err
 	}
+	// Growing the volume can be refused (e.g. Longhorn without enough
+	// schedulable space); that must not hold back the rest of the package
+	// (Odoo resources, quota). Report it and retry on the next reconcile.
 	if err := r.growDatabaseVolume(ctx, instance); err != nil {
-		return databaseResult{}, err
+		r.warnVolumeNotGrown(ctx, instance, err)
 	}
 
 	var existing appsv1.StatefulSet
@@ -296,4 +300,13 @@ func sameResources(a, b corev1.ResourceRequirements) bool {
 		}
 	}
 	return true
+}
+
+// warnVolumeNotGrown records a refused volume expansion as a Warning event
+// and log line; the reconcile carries on and retries it later.
+func (r *OdooInstanceReconciler) warnVolumeNotGrown(ctx context.Context, instance *saasv1alpha1.OdooInstance, err error) {
+	log.FromContext(ctx).Error(err, "volume not grown; will retry")
+	if r.Recorder != nil {
+		r.Recorder.Event(instance, corev1.EventTypeWarning, ReasonVolumeNotGrown, err.Error())
+	}
 }

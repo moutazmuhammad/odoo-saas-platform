@@ -4362,8 +4362,13 @@ class SaasInstance(models.Model):
             'db_cpu_cores': pkg['db_cpu_m'] / 1000.0,
             'db_ram_mb': pkg['db_mem_mi'],
             'storage_gb': self.effective_storage_limit_gb or 0,
+            # Measured storage (files + database sizes) — the same numbers
+            # the storage limit is enforced on.
             'files_mb': round((self.filestore_bytes or 0.0) / 1024 ** 2, 1),
             'databases_mb': round((self.db_storage_bytes or 0.0) / 1024 ** 2, 1),
+            'used_mb': round((self.total_storage_bytes or 0.0) / 1024 ** 2, 1),
+            'storage_pct': self.storage_usage_pct or 0.0,
+            'measured_at': fields.Datetime.to_string(self.usage_last_updated) or '',
         }
 
     def _get_metric_series(self, hours=24, max_points=240):

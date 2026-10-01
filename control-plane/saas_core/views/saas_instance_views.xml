@@ -278,27 +278,6 @@
                                 </list>
                             </field>
                         </page>
-                        <page string="Python Packages">
-                            <field name="package_ids" nolabel="1">
-                                <list editable="bottom">
-                                    <field name="name"
-                                           placeholder="e.g. phonenumbers or openpyxl==3.1.0"/>
-                                </list>
-                            </field>
-                        </page>
-                        <page string="Extra Configuration">
-                            <group string="Docker Overrides (leave empty = auto from plan)">
-                                <field name="override_docker_cpu"
-                                       placeholder="e.g. 2.0"/>
-                                <field name="override_docker_mem"
-                                       placeholder="e.g. 2g or 2500m"/>
-                                <field name="override_docker_swap"
-                                       placeholder="e.g. 3g or -1 for unlimited"/>
-                            </group>
-                            <separator string="Odoo Configuration Overrides"/>
-                            <field name="extra_config" nolabel="1"
-                                   placeholder="key = value (one per line)&#10;&#10;Examples:&#10;limit_memory_soft = 1073741824&#10;limit_memory_hard = 1395864371&#10;limit_time_real = 300&#10;workers = 4"/>
-                        </page>
                         <page string="Provisioning Log"
                               invisible="not provisioning_log">
                             <group invisible="not last_error"

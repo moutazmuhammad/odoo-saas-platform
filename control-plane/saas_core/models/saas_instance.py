@@ -333,23 +333,6 @@ class SaasInstance(models.Model):
         store=True,
         help='True if this instance is a self-managed hosting instance.',
     )
-    pip_packages = fields.Text(
-        string='PyPI Packages',
-        help='Python packages to install via pip on container startup. '
-             'One package per line (e.g. phonenumbers, openpyxl).',
-    )
-    pip_install_error = fields.Text(
-        string='Last Package Install Error',
-        copy=False,
-        help='Output of the last failed pip install, surfaced to the '
-             'customer. Empty when the most recent install succeeded.',
-    )
-    package_ids = fields.One2many(
-        'saas.instance.package',
-        'instance_id',
-        string='Python Packages',
-        help='Python packages to install via pip on container startup.',
-    )
 
     @api.depends('saas_product_id.is_hosting')
     def _compute_is_hosting(self):
@@ -698,32 +681,6 @@ class SaasInstance(models.Model):
         readonly=True,
         help='Timestamped log of all provisioning and deployment steps.',
     )
-    extra_config = fields.Text(
-        string='Extra Configuration',
-        help='Additional odoo.conf directives, one key = value pair per line. '
-             'Lines starting with # are ignored. '
-             'Values here override auto-calculated settings (e.g. '
-             'limit_memory_soft, limit_memory_hard, limit_time_real).',
-    )
-    override_docker_cpu = fields.Char(
-        string='Docker CPU Override',
-        groups='saas_core.group_saas_manager',
-        help='Override cpus in docker-compose.yml (e.g. "2.0"). '
-             'Leave empty to use the plan default.',
-    )
-    override_docker_mem = fields.Char(
-        string='Docker Memory Override',
-        groups='saas_core.group_saas_manager',
-        help='Override mem_limit in docker-compose.yml (e.g. "2g", "2500m"). '
-             'Leave empty to use the plan-based default (plan RAM × 1.3).',
-    )
-    override_docker_swap = fields.Char(
-        string='Docker Swap Override',
-        groups='saas_core.group_saas_manager',
-        help='Override memswap_limit in docker-compose.yml (e.g. "3g"). '
-             'Leave empty to use the same value as mem_limit. '
-             'Set to "-1" for unlimited swap.',
-    )
     deploy_image = fields.Char(
         string='Deployed Image (immutable)',
         groups='saas_core.group_saas_manager',
@@ -1068,82 +1025,7 @@ class SaasInstance(models.Model):
                 vals['db_password'] = SaasInstance._generate_random_password()
             if not vals.get('admin_password'):
                 vals['admin_password'] = SaasInstance._generate_random_password()
-        records = super().create(vals_list)
-        for rec in records:
-            if rec.pip_packages:
-                rec._sync_packages_from_text()
-        return records
-
-    def write(self, vals):
-        result = super().write(vals)
-        if 'pip_packages' in vals and not self.env.context.get('_skip_pip_sync'):
-            self._sync_packages_from_text()
-        return result
-
-    # Strict PEP 508 / requirement-spec regex. Refuses anything that pip
-    # would interpret as an option flag (e.g. `--index-url=...`) or a
-    # path/URL — those would let a tenant redirect pip to attacker-
-    # controlled packages whose setup.py runs arbitrary code.
-    _PIP_PACKAGE_RE = re.compile(
-        r'^[A-Za-z0-9][A-Za-z0-9._-]*'           # name
-        r'(\[[A-Za-z0-9._,-]+\])?'                # optional [extras]
-        r'(\s*(==|!=|<=|>=|<|>|~=)\s*[A-Za-z0-9._*+-]+'  # spec op + version
-        r'(\s*,\s*(==|!=|<=|>=|<|>|~=)\s*[A-Za-z0-9._*+-]+)*)?$'
-    )
-
-    def _validate_pip_line(self, line):
-        if not self._PIP_PACKAGE_RE.match(line):
-            raise UserError(_(
-                "Invalid pip package spec: %r\n\n"
-                "Use the form 'name[==version]' (PEP 508). "
-                "Options like '--index-url' or paths/URLs are not allowed."
-            ) % line)
-
-    def _sync_packages_from_text(self):
-        """Sync ``pip_packages`` text field to ``package_ids`` One2many.
-
-        Parses the text field, deduplicates by package name, and
-        creates/updates/removes ``package_ids`` records to match.
-        """
-        Package = self.env['saas.instance.package']
-        for rec in self:
-            existing = {}
-            for p in rec.package_ids:
-                key = p.name.lower().split('=')[0].split('<')[0].split('>')[0].split('!')[0].split('[')[0].strip()
-                existing[key] = p
-
-            new_names = []
-            if rec.pip_packages:
-                for line in rec.pip_packages.splitlines():
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        rec._validate_pip_line(line)
-                        new_names.append(line)
-
-            new_keys = set()
-            to_create = []
-            for name in new_names:
-                key = name.lower().split('=')[0].split('<')[0].split('>')[0].split('!')[0].split('[')[0].strip()
-                if key in new_keys:
-                    continue
-                new_keys.add(key)
-                if key not in existing:
-                    to_create.append({'instance_id': rec.id, 'name': name})
-                elif existing[key].name != name:
-                    existing[key].name = name
-
-            to_remove = rec.package_ids.filtered(
-                lambda p: p.name.lower().split('=')[0].split('<')[0].split('>')[0].split('!')[0].split('[')[0].strip() not in new_keys
-            )
-            to_remove.unlink()
-            if to_create:
-                Package.create(to_create)
-
-    def _sync_text_from_packages(self):
-        """Sync ``package_ids`` One2many back to ``pip_packages`` text field."""
-        for rec in self:
-            names = rec.package_ids.mapped('name')
-            rec.with_context(_skip_pip_sync=True).pip_packages = '\n'.join(names) if names else False
+        return super().create(vals_list)
 
     def unlink(self):
         """Block deletion of instances that have live infrastructure.
@@ -3610,61 +3492,6 @@ class SaasInstance(models.Model):
         template = _JINJA_ENV.get_template(template_name)
         return template.render(context)
 
-    # Keys a tenant must NEVER set via Extra Configuration:
-    #  - logfile / log_db / pidfile / data_dir: would write unbounded files to
-    #    disk. logfile is the key one — without it Odoo logs to stdout, which
-    #    Docker caps (json-file max-size 10m x3 = 30MB), so a tenant can't fill
-    #    the host disk with logs. log_db would bloat the database instead.
-    #  - db_* / admin_passwd / list_db: would let a tenant repoint its database
-    #    or change the master password.
-    _FORBIDDEN_EXTRA_CONFIG = {
-        'logfile', 'log_db', 'log_db_level', 'pidfile', 'data_dir',
-        'db_host', 'db_port', 'db_user', 'db_password', 'db_name',
-        'db_sslmode', 'db_template', 'admin_passwd', 'list_db', 'dbfilter',
-    }
-
-    def _parse_extra_config(self):
-        """Parse the extra_config text field into a dict, dropping any key in
-        ``_FORBIDDEN_EXTRA_CONFIG`` so a tenant can never override logging,
-        data paths or DB/credentials from odoo.conf (see the constraint for the
-        user-facing rejection — this strip is the belt-and-braces guarantee)."""
-        self.ensure_one()
-        result = {}
-        if self.extra_config:
-            for line in self.extra_config.strip().splitlines():
-                line = line.strip()
-                if '=' in line and not line.startswith('#'):
-                    key, _, value = line.partition('=')
-                    key = key.strip()
-                    if key.lower() in self._FORBIDDEN_EXTRA_CONFIG:
-                        continue
-                    result[key] = value.strip()
-        return result or None
-
-    @api.constrains('extra_config')
-    def _check_extra_config(self):
-        """Reject blocked keys at save time with a clear message — so a tenant
-        knows WHY their override didn't apply (rather than it being silently
-        dropped). 'logfile' is the important one: it keeps logs on stdout
-        (Docker-capped at 30MB) instead of growing a file that fills the disk."""
-        for rec in self:
-            if not rec.extra_config:
-                continue
-            bad = []
-            for line in rec.extra_config.splitlines():
-                line = line.strip()
-                if '=' in line and not line.startswith('#'):
-                    key = line.partition('=')[0].strip().lower()
-                    if key in self._FORBIDDEN_EXTRA_CONFIG:
-                        bad.append(key)
-            if bad:
-                raise ValidationError(_(
-                    "These options can't be set in Extra Configuration: %s.\n\n"
-                    "In particular 'logfile' is blocked on purpose — your logs "
-                    "always stream to the platform (and are size-capped) so they "
-                    "can never fill your instance's disk. View them under Logs."
-                ) % ', '.join(sorted(set(bad))))
-
     # Advisory-lock namespace for server allocation (distinct from the port
     # allocator's 0x5AA5_0001) — serializes concurrent allocations per region.
     _ALLOC_LOCK_NAMESPACE = 0x5AA5_0002
@@ -4647,9 +4474,9 @@ class SaasInstance(models.Model):
             self._sync_scheduled_backup()
         if self.is_trial:
             self._sync_partner_trial()
-        if self._build_sources() or self._build_pip_lines():
-            # Bake the product's/instance's repos and pip packages into an
-            # image and roll it out; the plain version image serves until then.
+        if self._build_sources():
+            # Bake the product's/instance's repos into an image and roll it
+            # out; the plain version image serves until then.
             try:
                 self.action_build_and_deploy('initial')
             except Exception as e:

@@ -402,8 +402,6 @@ export interface ApiInstance {
   compute_tier?: ApiComputeTier | null;
   compute_tiers?: ApiComputeTier[];
   compute_tier_pending?: ApiComputeTier | null;
-  pip_packages?: string;
-  pip_install_error?: string;
   last_error?: string;
   repo?: { url: string; branch: string; has_token: boolean; state: string };
   pending_plan?: string;
@@ -732,8 +730,6 @@ export const api = {
     id: number,
     p: { repo_url: string; repo_branch: string; git_token?: string }
   ) => rpc(`/saas/api/v1/instances/${id}/repo`, p),
-  setPackages: (id: number, pip_packages: string) =>
-    rpc(`/saas/api/v1/instances/${id}/packages`, { pip_packages }),
   invoiceCancel: (id: number) =>
     rpc<{ result: string; state: string }>(`/saas/api/v1/instances/${id}/invoice/cancel`),
   dbResetPassword: (id: number, name: string, new_password: string, login?: string) =>

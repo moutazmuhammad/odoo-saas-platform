@@ -166,6 +166,7 @@ class SshTerminal extends Component {
             // here and the SSE subscribe below is the only at-risk window
             // for output loss — typically nothing.
             if (result.initial_output) {
+                this._sawOutput = true;
                 try {
                     const bytes = Uint8Array.from(
                         atob(result.initial_output),
@@ -209,6 +210,12 @@ class SshTerminal extends Component {
         this.eventSource.onopen = () => {
             this._streamErrorCount = 0;
             console.log("[terminal] SSE stream connected");
+            // A shell's first prompt can be printed before this stream is
+            // listening, and is then lost: ask for a fresh one so the
+            // terminal never sits blank.
+            if (!this._sawOutput && this.sessionId && this.state.connected) {
+                this._sendInput("\r");
+            }
         };
 
         this.eventSource.onmessage = (event) => {
@@ -216,6 +223,7 @@ class SshTerminal extends Component {
             // when the SSE message was queued and when it's delivered. Guard
             // against null to avoid an unhandled TypeError in the console.
             if (!this.terminal) return;
+            this._sawOutput = true;
             try {
                 const encoded = JSON.parse(event.data);
                 const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
@@ -248,6 +256,10 @@ class SshTerminal extends Component {
         });
 
         this.eventSource.addEventListener("error", (event) => {
+            // The browser's own connection errors share this event type but
+            // carry no data; EventSource reconnects by itself and onerror
+            // counts them. Only a server-sent error (with data) ends it.
+            if (!event.data) return;
             let msg = "Unknown error";
             if (event.data) {
                 try { msg = JSON.parse(event.data); } catch { msg = event.data; }

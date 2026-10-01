@@ -955,39 +955,6 @@ class SaasApi(http.Controller):
                        'deploy_failed')
         return ok(instance._get_status_dict())
 
-    @http.route('/saas/api/v1/instances/<int:instance_id>/packages',
-                type='json', auth='public')
-    def instance_set_packages(self, instance_id, access_token=None,
-                              pip_packages='', **kw):
-        """Replace the instance's Python packages (newline-separated) and
-        rebuild the instance's image with them. The SPA sends the full list,
-        so removing a package drops it from the next image."""
-        try:
-            instance = self._hosting(instance_id, access_token, write=True)
-        except (AccessError, MissingError):
-            return err(_("Instance not found."), 'not_found')
-        if instance.state != 'running':
-            return err(_("Start the instance first — packages are deployed "
-                         "to the running server."), 'invalid_state')
-        inst = instance.sudo()
-        try:
-            inst.pip_packages = (pip_packages or '').strip() or False
-            # Packages are baked into the instance's image: build + rolling
-            # rollout. A pip failure fails the build (visible in its log) and
-            # leaves the current version serving.
-            inst.action_build_and_deploy('redeploy')
-        except UserError as e:
-            return err(str(e), 'deploy_failed')
-        except Exception:
-            _logger.exception("Set packages failed for %s", instance_id)
-            return err(_("Couldn't apply the change. Please try again."),
-                       'deploy_failed')
-        return ok(instance._get_status_dict())
-
-    # ==================================================================
-    #  Portal: hosting databases
-    # ==================================================================
-
     def _hosting(self, instance_id, access_token=None, write=False):
         instance = self._instance(instance_id, access_token, write=write)
         if not instance.is_hosting:
@@ -1960,9 +1927,7 @@ class SaasApi(http.Controller):
                     if instance.compute_tier_pending_invoice_id
                     and instance.pending_compute_tier_id else None
                 ),
-                # Post-purchase custom code & packages (hosting only).
-                'pip_packages': instance.pip_packages or '',
-                'pip_install_error': instance.pip_install_error or '',
+                # Post-purchase custom code (hosting only).
                 'last_error': instance.last_error or '',
                 'repo': ({
                     'url': instance.repo_ids[:1].repo_url or '',

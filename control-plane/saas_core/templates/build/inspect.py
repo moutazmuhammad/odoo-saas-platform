@@ -1,7 +1,7 @@
 """Build Job, step 2 (the Odoo base image, for its Python): find each repo's
 modules, pick its addons directory (repo root, or the single sub-folder
-holding the modules), read module versions, and merge requirements (the
-instance's pip packages + each repo's root requirements.txt). Writes
+holding the modules), read module versions, and merge requirements (each
+repo's root requirements.txt). Writes
 /workspace/requirements.txt and /workspace/meta/result.json."""
 import ast
 import json

@@ -1116,7 +1116,6 @@ class SaasWebsite(http.Controller):
         repo_url = (post.get('repo_url') or '').strip()
         repo_branch = (post.get('repo_branch') or 'main').strip()
         git_token = (post.get('git_token') or '').strip()
-        pip_packages = (post.get('pip_packages') or '').strip()
         is_trial = post.get('is_trial') == '1'
         # Odoo.sh-style environments chosen at checkout: extra Staging /
         # Development servers (each billed at the lowest-spec env price).
@@ -1244,7 +1243,6 @@ class SaasWebsite(http.Controller):
             'plan_id': plan.id,
             'odoo_version_id': version.id,
             'billing_period': billing_period,
-            'pip_packages': pip_packages or False,
             # Paid daily-backup add-on. Trials don't get it.
             'daily_backup_enabled': (
                 not is_trial and post.get('daily_backup') == '1'

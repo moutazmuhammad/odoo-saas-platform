@@ -63,7 +63,7 @@ class SaasInstance(models.Model):
             # A deploy picks the repos up (see _do_deploy_locked_kubernetes);
             # a stopped/suspended instance has no pods to roll.
             return self.env['saas.build']
-        if self._build_sources() or self._build_pip_lines():
+        if self._build_sources():
             self._build_registry()  # fail fast, before anything is queued
         Build = self.env['saas.build'].sudo()
         if not build:
@@ -174,15 +174,6 @@ class SaasInstance(models.Model):
             sources.append((repo, repo._get_repo_dir_name()))
         return sources
 
-    def _build_pip_lines(self):
-        self.ensure_one()
-        lines = []
-        for line in (self.pip_packages or '').splitlines():
-            line = line.strip()
-            if line and not line.startswith('#'):
-                lines.append(line)
-        return lines
-
     # ------------------------------------------------------------------
     # pipeline steps (saas.job entry points)
     # ------------------------------------------------------------------
@@ -194,7 +185,7 @@ class SaasInstance(models.Model):
         driver = self._compute_driver()
         base_repo, base_tag = self._base_image_parts()
         sources = self._build_sources()
-        if not sources and not self._build_pip_lines():
+        if not sources:
             # Nothing to bake (e.g. last repo removed): the plain version image.
             self._deploy_build(build, driver, repository=base_repo, tag=base_tag,
                                addons_paths=[], module_versions={}, modules=[])
@@ -215,7 +206,8 @@ class SaasInstance(models.Model):
         job_name = ('build-%d-%s' % (build.id, self.subdomain))[:63].rstrip('-')
         driver.start_image_build(
             name=job_name, repos=spec_repos, dockerfile=dockerfile,
-            requirements='\n'.join(self._build_pip_lines()),
+            # Python dependencies come from each repo's requirements.txt.
+            requirements='',
             base_image='%s:%s' % (base_repo, base_tag),
             image_ref='%s:%s' % (reg['push_repository'], tag),
             builder_image=reg['builder_image'], git_image=reg['git_image'],

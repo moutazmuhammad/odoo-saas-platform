@@ -44,7 +44,6 @@
                         <input type="hidden" name="repo_url" t-att-value="form_values.get('repo_url', '')"/>
                         <input type="hidden" name="repo_branch" t-att-value="form_values.get('repo_branch', 'main')"/>
                         <input type="hidden" name="git_token" t-att-value="form_values.get('git_token', '')"/>
-                        <input type="hidden" name="pip_packages" t-att-value="form_values.get('pip_packages', '')"/>
                         <t t-if="is_trial"><input type="hidden" name="is_trial" value="1"/></t>
 
                         <div class="row g-4">

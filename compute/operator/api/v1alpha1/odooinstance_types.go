@@ -214,6 +214,17 @@ type DomainSpec struct {
 	TLS TLSSpec `json:"tls,omitempty"`
 }
 
+// DatabaseManagerSpec configures customer access to Odoo's database
+// manager. See OdooInstanceSpec.DatabaseManager.
+type DatabaseManagerSpec struct {
+	// Prefix every customer database name must start with, e.g. "acme_".
+	// Should match DatabaseFilter so the manager lists those databases.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9-]*_$`
+	Prefix string `json:"prefix"`
+}
+
 // WorkersSpec configures Odoo's internal process model. These are *not*
 // Kubernetes pod replicas: Odoo's own prefork/gevent worker model runs
 // multiple OS processes inside a single pod to serve concurrent HTTP
@@ -479,6 +490,21 @@ type OdooInstanceSpec struct {
 	// +optional
 	// +kubebuilder:validation:MaxLength=256
 	DatabaseFilter string `json:"databaseFilter,omitempty"`
+
+	// DatabaseManager gives the instance's customer Odoo's database
+	// manager (/web/database/manager) without the master password: the
+	// platform addon saas_tenant_dbm is loaded server-wide, list_db is
+	// turned on, and the manager opens only through a link the control
+	// plane signs with this instance's key (Secret odoo-admin-credentials,
+	// key dbmanager-key). Database names are limited to Prefix.
+	// +optional
+	DatabaseManager *DatabaseManagerSpec `json:"databaseManager,omitempty"`
+
+	// Shell adds a "shell" container to the web pods: the same image and
+	// filestore as Odoo, but without odoo.conf, so a customer terminal
+	// opened there can't read the master or database password.
+	// +optional
+	Shell bool `json:"shell,omitempty"`
 
 	// Update requests a module upgrade (`odoo -u`) against the new Image
 	// before any pod is switched to it. Each distinct Token is applied

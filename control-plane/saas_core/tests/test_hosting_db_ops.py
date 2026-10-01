@@ -48,7 +48,7 @@ class TestHostingDbOps(TransactionCase):
             'region_id': False, 'state': 'running', 'is_hosting': True,
         })
         # Setting the pods' database filter talks to the cluster.
-        p = patch.object(type(self.instance), '_ensure_hosting_db_filter')
+        p = patch.object(type(self.instance), '_ensure_hosting_access')
         self.m_filter = p.start()
         self.addCleanup(p.stop)
 
@@ -323,3 +323,39 @@ class TestHostingDbOps(TransactionCase):
     def test_hosting_db_duplicate_rolls_back_on_filestore_failure(self):
         with self.assertRaises(UserError):
             self._duplicate(fs_side_effect=RuntimeError('disk full'))
+
+    # -- database manager link ---------------------------------------------
+
+    def test_database_manager_url_is_signed_for_this_host(self):
+        import base64
+        import hashlib
+        import hmac
+        import json
+        import time
+        driver = self._driver()
+        driver.hosting_access_ready.return_value = True
+        driver.database_manager_key.return_value = 'k3y'
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver):
+            url = self.instance.hosting_database_manager_url()
+        host = self.instance.name
+        self.assertTrue(url.startswith('https://%s/saas/dbm/enter?t=' % host))
+        payload, sig = url.split('t=', 1)[1].rsplit('.', 1)
+        self.assertEqual(sig, hmac.new(b'k3y', payload.encode(), hashlib.sha256).hexdigest())
+        data = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+        self.assertEqual(data['h'], host)
+        self.assertGreater(data['e'], time.time())
+        self.assertLessEqual(data['e'], time.time() + 180)
+
+    def test_database_manager_url_switches_access_on_first(self):
+        driver = self._driver()
+        driver.hosting_access_ready.return_value = False
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver):
+            with self.assertRaises(UserError):
+                self.instance.hosting_database_manager_url()
+        self.m_filter.assert_called_once_with()
+        driver.database_manager_key.assert_not_called()
+
+    def test_database_manager_url_only_for_running_hosting(self):
+        self.instance.state = 'stopped'
+        with self.assertRaises(UserError):
+            self.instance.hosting_database_manager_url()

@@ -22,22 +22,10 @@
     <t t-if="object.is_hosting">
         <hr style="margin:16px 0;border:0;border-top:1px solid #ddd;"/>
         <p><strong>Your instance starts empty.</strong> Create as many
-           Odoo databases as you need from the database manager:</p>
-        <p>
-            <a t-attf-href="{{ object.url }}/web/database/manager"
-               t-attf-style="display:inline-block;padding:10px 16px;background:#10B981;color:white;text-decoration:none;border-radius:6px;">
-                Open Database Manager
-            </a>
-        </p>
-        <p>When prompted for the <em>master password</em>, use:</p>
-        <p style="font-family:monospace;background:#f4f4f5;padding:10px;border-radius:6px;display:inline-block;">
-            <t t-out="object.sudo().admin_password"/>
-        </p>
-        <p style="color:#666;font-size:13px;">
-            Keep this password safe — it's required to create, duplicate,
-            restore or delete databases on your instance. We never share
-            it again by email.
-        </p>
+           Odoo databases as you need from your control panel: open the
+           instance, then <em>Databases</em>. The <em>Database manager</em>
+           button there opens Odoo's own database manager; no master
+           password is needed.</p>
     </t>
 
     <p>You can manage your instance from the

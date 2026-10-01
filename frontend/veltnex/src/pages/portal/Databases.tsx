@@ -16,6 +16,7 @@ import {
   CopyPlus,
   RefreshCw,
   UploadCloud,
+  Settings2,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,28 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
   const embedded = embedId != null;
   const navigate = useNavigate();
   const toast = useToast();
+  const [openingManager, setOpeningManager] = React.useState(false);
+
+  // Open the tab synchronously (pop-up blockers drop window.open after an
+  // await), then point it at the one-time link.
+  const openDatabaseManager = async () => {
+    const tab = window.open("", "_blank");
+    setOpeningManager(true);
+    try {
+      const { url } = await api.databaseManagerUrl(instanceId);
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+    } catch (err) {
+      tab?.close();
+      toast.error("Database manager", err instanceof ApiError ? err.message : "Couldn't open the database manager.");
+    } finally {
+      setOpeningManager(false);
+    }
+  };
 
   const [data, setData] = React.useState<DbListData | null>(null);
   const [instance, setInstance] = React.useState<ApiInstance | null>(null);
@@ -192,7 +215,16 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
           <h1 className="text-2xl font-bold tracking-tight">Databases<HelpHint anchor="create-database" className="ml-1.5" /></h1>
           <p className="mt-1 text-sm text-muted">Create, back up, and manage your databases.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={openDatabaseManager}
+            disabled={!data?.ready || openingManager}
+            title={data?.ready ? "Odoo's database manager, without the master password." : "Available once your instance is running."}
+          >
+            {openingManager ? <Loader2 className="size-4 animate-spin" /> : <Settings2 className="size-4" />}
+            Database manager
+          </Button>
           <Button
             variant="secondary"
             onClick={() => setRestoreOpen(true)}

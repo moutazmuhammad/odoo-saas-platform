@@ -714,9 +714,18 @@ class SshTerminalController(http.Controller):
             rows_i = max(5, min(int(rows or 32), 200))
         except (TypeError, ValueError):
             cols_i, rows_i = 120, 32
+        # Customers get the secret-free "shell" container (no odoo.conf,
+        # so no master/database password); staff Pod Shell keeps "odoo".
+        driver = inst._compute_driver()
+        handle = inst._compute_handle()
+        if not driver.hosting_access_ready(handle):
+            inst._ensure_hosting_access()
+            raise Forbidden(
+                "The terminal is being prepared for this instance. "
+                "Please try again in a minute.")
         try:
-            channel = inst._compute_driver().exec_interactive(
-                inst._compute_handle(), cols=cols_i, rows=rows_i)
+            channel = driver.exec_interactive(
+                handle, cols=cols_i, rows=rows_i, container='shell')
         except Exception as e:
             _logger.error(
                 "Failed to open instance shell to %s: %s", container, e,

@@ -37,6 +37,7 @@ directly; see ``_do_deploy_locked_kubernetes``.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import shlex
@@ -234,6 +235,10 @@ _NAMESPACE_PREFIX = 'odoo-tenant-'
 # Mirrors internal/resources/naming.go: OdooDeploymentName always returns
 # the literal string "odoo", regardless of the tenant's own name.
 _CONTAINER_NAME = 'odoo'
+# The operator's secret-free container for customer terminals (spec.shell).
+_SHELL_CONTAINER_NAME = 'shell'
+# Operator Secret with the master password and the database-manager key.
+_ADMIN_SECRET_NAME = 'odoo-admin-credentials'
 _POD_LABEL_SELECTOR = 'app.kubernetes.io/name=odoo,app.kubernetes.io/instance=%s'
 # The serving web pods only — not the init/update Job pods, which carry the
 # same instance labels (and may be the only Running pod during an update).
@@ -481,6 +486,10 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
 
         if spec.env.get('database_filter'):
             body['spec']['databaseFilter'] = spec.env['database_filter']
+        if spec.env.get('db_manager_prefix'):
+            body['spec']['databaseManager'] = {'prefix': spec.env['db_manager_prefix']}
+        if spec.env.get('shell'):
+            body['spec']['shell'] = True
 
         if spec.env.get('workers') is not None:
             # Explicit, including 0 (dev mode) — see WorkersSpec.Count.
@@ -544,6 +553,51 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         except ApiException as e:
             raise RuntimeError(
                 'setting the database filter of %s failed: %s' % (name, e)) from e
+
+    def set_hosting_access(self, handle: ComputeHandle, database_filter: str,
+                           db_manager_prefix: str) -> None:
+        """Hosting customers' access in one patch (one rollout): the
+        databases Odoo serves, the database manager limited to
+        ``db_manager_prefix``, and the secret-free ``shell`` container for
+        their terminal. Setting the current values is a no-op."""
+        name = self._cr_name(handle)
+        try:
+            self._custom_api().patch_cluster_custom_object(
+                _GROUP, _VERSION, _PLURAL, name, {'spec': {
+                    'databaseFilter': database_filter or None,
+                    'databaseManager': {'prefix': db_manager_prefix} if db_manager_prefix else None,
+                    'shell': True,
+                }})
+        except ApiException as e:
+            raise RuntimeError(
+                'setting the hosting access of %s failed: %s' % (name, e)) from e
+
+    def hosting_access_ready(self, handle: ComputeHandle) -> bool:
+        """Whether the serving pods already run with the database manager
+        and the shell container (they roll after set_hosting_access)."""
+        namespace, pod = self._resolve_pod(handle)
+        if pod is None or not pod.status or pod.status.phase != 'Running':
+            return False
+        names = {c.name for c in (pod.spec.containers or [])}
+        args = ' '.join(next(
+            (c.args or [] for c in pod.spec.containers if c.name == _CONTAINER_NAME), []))
+        return _SHELL_CONTAINER_NAME in names and '--load=' in args
+
+    def database_manager_key(self, handle: ComputeHandle) -> str:
+        """The key the tenant's database-manager addon verifies links
+        with (operator Secret odoo-admin-credentials, key dbmanager-key)."""
+        namespace = handle.instance_path or self._namespace_for(handle)
+        try:
+            secret = self._core_api().read_namespaced_secret(_ADMIN_SECRET_NAME, namespace)
+        except ApiException as e:
+            raise RuntimeError(
+                'reading the database manager key of %s failed: %s'
+                % (self._cr_name(handle), e)) from e
+        raw = (secret.data or {}).get('dbmanager-key')
+        if not raw:
+            raise RuntimeError(
+                'the database manager key of %s is not ready yet' % self._cr_name(handle))
+        return base64.b64decode(raw).decode()
 
     def exists(self, handle: ComputeHandle) -> bool:
         """Whether the OdooInstance CR still exists — including while its
@@ -957,7 +1011,8 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
 
     def exec_interactive(self, handle: ComputeHandle, *,
                          command: Optional[list] = None,
-                         cols: int = 120, rows: int = 32) -> 'K8sExecChannel':
+                         cols: int = 120, rows: int = 32,
+                         container: str = _CONTAINER_NAME) -> 'K8sExecChannel':
         """Open a long-lived, interactive TTY exec session against the
         workload's pod — the Kubernetes-native replacement for SSHing into
         a Docker host and running ``docker exec -it``. Returns a
@@ -978,7 +1033,7 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             raise RuntimeError('no pod found for %s' % self._cr_name(handle))
         ws = k8s_stream(
             self._core_api().connect_get_namespaced_pod_exec,
-            pod.metadata.name, namespace, container=_CONTAINER_NAME,
+            pod.metadata.name, namespace, container=container,
             command=command or ['/bin/bash', '-l'],
             stderr=True, stdin=True, stdout=True, tty=True,
             binary=True, _preload_content=False)

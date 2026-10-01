@@ -130,7 +130,7 @@ class TestImageBuildPipeline(TransactionCase):
             tag='18.0-b1', addons_paths=[], module_versions={}, modules=['my_mod'])
         kw = self.driver.deploy_image.call_args.kwargs
         self.assertEqual(kw['databases'], ['bldinst_prod', 'bldinst_test'])
-        self.driver.set_database_filter.assert_called_once_with('HANDLE', '^bldinst_.+$')
+        self.driver.set_hosting_access.assert_called_once_with('HANDLE', '^bldinst_.+$', 'bldinst_')
 
     def test_deploy_without_modules_lists_no_databases(self):
         build = self._build(image_ref='localhost:32000/acme/tenant-bldinst:18.0-b1')

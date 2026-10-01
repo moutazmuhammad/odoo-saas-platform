@@ -631,6 +631,9 @@ export const api = {
     rpc<StatusData>(`/saas/api/v1/instances/${id}/action`, { action }),
 
   databases: (id: number) => rpc<DbListData>(`/saas/api/v1/instances/${id}/databases`),
+  /** One-time link to Odoo's own database manager (no master password). */
+  databaseManagerUrl: (id: number) =>
+    rpc<{ url: string }>(`/saas/api/v1/instances/${id}/database-manager`),
   sqlQuery: (id: number, db: string, query: string, limit = 1000) =>
     rpc<SqlResult>(`/saas/api/v1/instances/${id}/sql`, { db, query, limit }),
 

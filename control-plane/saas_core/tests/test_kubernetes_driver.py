@@ -127,6 +127,23 @@ class TestKubernetesDriver(TransactionCase):
             body = custom_api.create_cluster_custom_object.call_args.args[3]
             self.assertEqual(body['spec'].get('databaseFilter'), expected)
 
+    def test_create_turns_on_hosting_access_when_given(self):
+        from odoo.addons.saas_core.drivers.base import ComputeSpec
+        driver, _server = _make_driver()
+        custom_api = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom_api)
+        for env, dbm, shell in (
+                ({'domain': 'acme.example.com'}, None, None),
+                ({'domain': 'acme.example.com', 'db_manager_prefix': 'acme_', 'shell': True},
+                 {'prefix': 'acme_'}, True)):
+            driver.create(ComputeSpec(
+                container_name='odoo_acme', image='odoo:18.0', instance_path='/x',
+                http_port=8069, longpolling_port=8072, db_name='acme', db_host='db',
+                env=env))
+            spec = custom_api.create_cluster_custom_object.call_args.args[3]['spec']
+            self.assertEqual(spec.get('databaseManager'), dbm)
+            self.assertEqual(spec.get('shell'), shell)
+
     def test_create_defaults_to_one_replica_and_rwo_storage(self):
         from odoo.addons.saas_core.drivers.base import ComputeSpec
         driver, _server = _make_driver()
@@ -473,6 +490,37 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(result.stdout, 'ok\n')
 
     # -------- database filter (hosting customer databases) ----------------
+    def test_set_hosting_access_patches_one_spec(self):
+        driver, _server = _make_driver()
+        custom = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom)
+        driver.set_hosting_access(_handle(), '^acme_.+$', 'acme_')
+        body = custom.patch_cluster_custom_object.call_args.args[4]
+        self.assertEqual(body, {'spec': {
+            'databaseFilter': '^acme_.+$', 'databaseManager': {'prefix': 'acme_'}, 'shell': True}})
+
+    def test_database_manager_key_reads_the_operator_secret(self):
+        import base64
+        driver, _server = _make_driver()
+        core = MagicMock()
+        core.read_namespaced_secret.return_value.data = {
+            'dbmanager-key': base64.b64encode(b'k3y').decode()}
+        driver._core_api = MagicMock(return_value=core)
+        self.assertEqual(driver.database_manager_key(_handle()), 'k3y')
+        self.assertEqual(core.read_namespaced_secret.call_args.args,
+                         ('odoo-admin-credentials', 'odoo-tenant-odoo-acme'))
+
+    def test_hosting_access_ready_needs_shell_and_addon(self):
+        from types import SimpleNamespace as NS
+        driver, _server = _make_driver()
+        odoo_plain = NS(name='odoo', args=['-c', '/etc/odoo/odoo.conf'])
+        odoo_dbm = NS(name='odoo', args=['-c', '/etc/odoo/odoo.conf', '--load=base,web,saas_tenant_dbm'])
+        shell = NS(name='shell', args=None)
+        for containers, ready in (([odoo_plain], False), ([odoo_dbm], False), ([odoo_dbm, shell], True)):
+            pod = NS(status=NS(phase='Running'), spec=NS(containers=containers))
+            driver._resolve_pod = MagicMock(return_value=('ns', pod))
+            self.assertEqual(driver.hosting_access_ready(_handle()), ready)
+
     def test_set_database_filter_patches_the_cr(self):
         driver, _server = _make_driver()
         custom = MagicMock()

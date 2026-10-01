@@ -54,6 +54,13 @@ func odooConf(instance *saasv1alpha1.OdooInstance) string {
 	if len(instance.Spec.AddonsPaths) > 0 {
 		conf += "addons_path = " + strings.Join(instance.Spec.AddonsPaths, ",") + "\n"
 	}
+	if dbm := instance.Spec.DatabaseManager; dbm != nil {
+		// Read by the saas_tenant_dbm platform addon; the key is filled in
+		// from the admin Secret at pod start like the passwords above.
+		conf = strings.Replace(conf, "list_db = False", "list_db = True", 1)
+		conf += "saas_dbm_prefix = " + dbm.Prefix + "\n"
+		conf += "saas_dbm_key = __DBM_KEY__\n"
+	}
 	return conf
 }
 
@@ -89,7 +96,7 @@ func odooConfigMap(instance *saasv1alpha1.OdooInstance, name string) *corev1.Con
 // for every instance; kept as a function (not a const) so it stays next to
 // the template it depends on.
 func renderInitContainerScript() string {
-	tokens := []string{"ADMIN_PASSWORD", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"}
+	tokens := []string{"ADMIN_PASSWORD", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DBM_KEY"}
 	var sedExprs []string
 	for _, t := range tokens {
 		sedExprs = append(sedExprs, fmt.Sprintf(`s/__%s__/$%s/g`, t, t))

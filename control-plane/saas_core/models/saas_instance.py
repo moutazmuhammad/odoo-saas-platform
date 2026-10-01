@@ -1,5 +1,7 @@
 import base64
 import datetime
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -1879,15 +1881,46 @@ class SaasInstance(models.Model):
         # The prefix is [a-z0-9-] + '_' (SUBDOMAIN_RE): no regex metacharacters.
         return '^%s.+$' % prefix if self.is_hosting and prefix else ''
 
-    def _ensure_hosting_db_filter(self):
-        """Make the pods serve the customer databases — for instances
-        deployed before the filter existed. Idempotent: an unchanged value
-        doesn't roll the pods."""
+    def _ensure_hosting_access(self):
+        """Hosting customers' access on the cluster: the pods serve their
+        databases, the database manager is on (limited to their prefix),
+        and their terminal gets the secret-free shell container. For
+        instances deployed before these existed; idempotent, so an
+        unchanged spec doesn't roll the pods."""
         self.ensure_one()
         database_filter = self._k8s_database_filter()
         if database_filter:
-            self._compute_driver().set_database_filter(
-                self._compute_handle(), database_filter)
+            self._compute_driver().set_hosting_access(
+                self._compute_handle(), database_filter, self._hosting_db_prefix())
+
+    # Validity of a database-manager link; the tenant addon then grants
+    # one hour of access.
+    _DB_MANAGER_LINK_SECONDS = 120
+
+    def hosting_database_manager_url(self):
+        """A short-lived link that opens Odoo's database manager on this
+        hosting instance without the master password (verified by the
+        operator's saas_tenant_dbm addon with this instance's key).
+        Raises UserError while access is still being switched on."""
+        self.ensure_one()
+        if not self.is_hosting or self.state != 'running':
+            raise UserError(_("The database manager is available on running hosting instances."))
+        driver = self._compute_driver()
+        handle = self._compute_handle()
+        if not driver.hosting_access_ready(handle):
+            self._ensure_hosting_access()
+            raise UserError(_(
+                "The database manager is being switched on for this instance. "
+                "Please try again in a minute."))
+        key = driver.database_manager_key(handle)
+        host = (self.name or '').strip().lower()
+        payload = base64.urlsafe_b64encode(json.dumps({
+            'h': host,
+            'e': int(time.time()) + self._DB_MANAGER_LINK_SECONDS,
+            'n': secrets.token_hex(8),
+        }).encode()).decode().rstrip('=')
+        sig = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        return 'https://%s/saas/dbm/enter?t=%s.%s' % (host, payload, sig)
 
     def _hosting_db_prefix(self):
         """Prefix every customer-created DB with the instance subdomain.
@@ -2403,7 +2436,7 @@ class SaasInstance(models.Model):
                 "failed; rolled back:\n%s"
             ) % (name, e))
 
-        self._ensure_hosting_db_filter()
+        self._ensure_hosting_access()
         self._append_log("Database '%s' ready." % name)
         return name
 
@@ -2497,7 +2530,7 @@ class SaasInstance(models.Model):
             raise UserError(_(
                 "Database '%s' was copied but finishing the copy failed; "
                 "rolled back:\n%s") % (new_name, e))
-        self._ensure_hosting_db_filter()
+        self._ensure_hosting_access()
         self._append_log("Database '%s' ready." % new_name)
         return new_name
 
@@ -4505,6 +4538,8 @@ class SaasInstance(models.Model):
             'tls_issuer_name': server.tls_cluster_issuer,
             'tls_issuer_kind': 'ClusterIssuer',
             'database_filter': self._k8s_database_filter(),
+            'db_manager_prefix': self._hosting_db_prefix() if self.is_hosting else '',
+            'shell': bool(self.is_hosting),
             **self._k8s_plan_resources(),
         }
         spec = ComputeSpec(

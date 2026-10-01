@@ -256,6 +256,25 @@ spec:
                   databases sets e.g. ^acme_.+$ so Odoo serves those.
                 maxLength: 256
                 type: string
+              databaseManager:
+                description: |-
+                  DatabaseManager gives the instance's customer Odoo's database
+                  manager (/web/database/manager) without the master password: the
+                  platform addon saas_tenant_dbm is loaded server-wide, list_db is
+                  turned on, and the manager opens only through a link the control
+                  plane signs with this instance's key (Secret odoo-admin-credentials,
+                  key dbmanager-key). Database names are limited to Prefix.
+                properties:
+                  prefix:
+                    description: |-
+                      Prefix every customer database name must start with, e.g. "acme_".
+                      Should match DatabaseFilter so the manager lists those databases.
+                    maxLength: 64
+                    pattern: ^[a-z0-9][a-z0-9-]*_$
+                    type: string
+                required:
+                - prefix
+                type: object
               domain:
                 description: Domain configures external access and TLS.
                 properties:
@@ -538,6 +557,12 @@ spec:
                 x-kubernetes-validations:
                 - message: spec.restore is immutable once set
                   rule: self == oldSelf
+              shell:
+                description: |-
+                  Shell adds a "shell" container to the web pods: the same image and
+                  filestore as Odoo, but without odoo.conf, so a customer terminal
+                  opened there can't read the master or database password.
+                type: boolean
               storage:
                 description: Storage configures persistent volumes owned by this instance.
                 properties:

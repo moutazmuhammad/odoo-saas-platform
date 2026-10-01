@@ -34,6 +34,9 @@ func GeneratePassword(n int) (string, error) {
 // Secret.
 type AdminSecretData struct {
 	MasterPassword string
+	// DBManagerKey signs the control plane's database-manager links
+	// (spec.databaseManager).
+	DBManagerKey string
 }
 
 // AdminSecret builds the Secret holding Odoo's master password (used for
@@ -51,6 +54,7 @@ func AdminSecret(instance *saasv1alpha1.OdooInstance, data AdminSecretData) *cor
 		Type: corev1.SecretTypeOpaque,
 		StringData: map[string]string{
 			"master-password": data.MasterPassword,
+			"dbmanager-key":   data.DBManagerKey,
 		},
 	}
 }

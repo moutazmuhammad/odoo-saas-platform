@@ -284,7 +284,7 @@ class SaasInstance(models.Model):
         if self.is_hosting:
             # Upgrade the customer databases too, and make sure the pods
             # serve them (instances deployed before the filter existed).
-            self._ensure_hosting_db_filter()
+            self._ensure_hosting_access()
             if modules:
                 databases = [d['name'] for d in self.hosting_db_list()]
         driver.deploy_image(

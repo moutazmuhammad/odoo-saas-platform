@@ -1040,7 +1040,7 @@ class SaasApi(http.Controller):
             ('state', '=', 'running'),
         ])
         return ok({
-            'databases': [{'name': d.get('name'), 'login': d.get('login', '')}
+            'databases': [{'name': d.get('name'), 'login': d.get('admin_login', '')}
                           for d in dbs],
             'ready': True,
             # Instance host (https://<sub>.<domain>). The SPA opens a
@@ -1049,6 +1049,23 @@ class SaasApi(http.Controller):
             'url': instance.url or '',
             'pending_ops': [{'db_name': o.db_name, 'operation': o.operation} for o in ops],
         })
+
+    @http.route('/saas/api/v1/instances/<int:instance_id>/database-manager',
+                type='json', auth='public')
+    def db_manager_link(self, instance_id, access_token=None, **kw):
+        """A short-lived link that opens Odoo's own database manager on the
+        instance without the master password."""
+        try:
+            instance = self._hosting(instance_id, access_token, write=True)
+        except (AccessError, MissingError):
+            return err(_("Instance not found."), 'not_found')
+        try:
+            return ok({'url': instance.hosting_database_manager_url()})
+        except UserError as e:
+            return err(str(e), 'not_ready')
+        except Exception:
+            _logger.exception("Database manager link failed for %s", instance_id)
+            return err(_("We couldn't open the database manager right now."), 'failed')
 
     @http.route('/saas/api/v1/instances/<int:instance_id>/sql',
                 type='json', auth='public')

@@ -7,6 +7,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
@@ -113,6 +114,29 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 		fmt.Sprintf("--workers=%d", workers),
 		fmt.Sprintf("--max-cron-threads=%d", cronThreads),
 	}
+	odooMounts := []corev1.VolumeMount{
+		{Name: "etc-odoo", MountPath: "/etc/odoo", ReadOnly: true},
+		{Name: "filestore", MountPath: "/var/lib/odoo"},
+		{Name: "tmp", MountPath: "/tmp"},
+	}
+	var extraVolumes []corev1.Volume
+	if instance.Spec.DatabaseManager != nil {
+		// On the command line rather than in odoo.conf, so the one-shot
+		// init/update Jobs (which share odoo.conf) don't need the mount.
+		args = append(args,
+			"--load=base,web,"+DatabaseManagerModule,
+			"--addons-path="+strings.Join(append([]string{PlatformAddonsPath}, instance.Spec.AddonsPaths...), ","),
+		)
+		odooMounts = append(odooMounts, corev1.VolumeMount{Name: "platform-addons", MountPath: PlatformAddonsPath, ReadOnly: true})
+		extraVolumes = append(extraVolumes, platformAddonsVolume(instance))
+	}
+	var sidecars []corev1.Container
+	if instance.Spec.Shell && exposesHTTP {
+		sidecars = append(sidecars, shellContainer(instance))
+		extraVolumes = append(extraVolumes, corev1.Volume{
+			Name: "shell-tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
 
 	var ports []corev1.ContainerPort
 	if exposesHTTP {
@@ -170,7 +194,7 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 				SecurityContext: containerSecurityContext(),
 			},
 		},
-		Containers: []corev1.Container{
+		Containers: append([]corev1.Container{
 			{
 				Name:            "odoo",
 				Image:           fmt.Sprintf("%s:%s", instance.Spec.Image.Repository, instance.Spec.Image.Tag),
@@ -191,15 +215,11 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 						Exec: &corev1.ExecAction{Command: []string{"sleep", strconv.Itoa(preStopDelaySeconds)}},
 					},
 				},
-				VolumeMounts: []corev1.VolumeMount{
-					{Name: "etc-odoo", MountPath: "/etc/odoo", ReadOnly: true},
-					{Name: "filestore", MountPath: "/var/lib/odoo"},
-					{Name: "tmp", MountPath: "/tmp"},
-				},
+				VolumeMounts:    odooMounts,
 				SecurityContext: containerSecurityContext(),
 			},
-		},
-		Volumes: []corev1.Volume{
+		}, sidecars...),
+		Volumes: append([]corev1.Volume{
 			{
 				Name: "config-template",
 				VolumeSource: corev1.VolumeSource{
@@ -224,9 +244,41 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 				Name:         "tmp",
 				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 			},
-		},
+		}, extraVolumes...),
 	}
 }
+
+// shellContainer is the customer terminal's container (spec.shell): the
+// Odoo image and filestore, but no odoo.conf and no secret env, so the
+// master and database passwords stay out of reach. It idles until the
+// control plane execs a shell into it, and exits promptly on SIGTERM.
+func shellContainer(instance *saasv1alpha1.OdooInstance) corev1.Container {
+	return corev1.Container{
+		Name:            ShellContainerName,
+		Image:           fmt.Sprintf("%s:%s", instance.Spec.Image.Repository, instance.Spec.Image.Tag),
+		ImagePullPolicy: instance.Spec.Image.PullPolicy,
+		Command:         []string{"sh", "-c", "trap 'exit 0' TERM; while :; do sleep 3600 & wait $!; done"},
+		Env:             []corev1.EnvVar{{Name: "HOME", Value: "/var/lib/odoo"}},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("32Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("500m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "filestore", MountPath: "/var/lib/odoo"},
+			{Name: "shell-tmp", MountPath: "/tmp"},
+		},
+		SecurityContext: containerSecurityContext(),
+	}
+}
+
+// ShellContainerName is the spec.shell sidecar's container name.
+const ShellContainerName = "shell"
 
 // odooConfigEnvVars sources secret values only into the init container that
 // renders odoo.conf; the main Odoo container never receives them as
@@ -250,6 +302,13 @@ func odooConfigEnvVars(instance *saasv1alpha1.OdooInstance) []corev1.EnvVar {
 		{Name: "DB_USER", ValueFrom: envFrom(dbSecret, "username")},
 		{Name: "DB_PASSWORD", ValueFrom: envFrom(dbSecret, "password")},
 		{Name: "DB_NAME", ValueFrom: envFrom(dbSecret, "dbname")},
+		{Name: "DBM_KEY", ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: adminSecret},
+				Key:                  "dbmanager-key",
+				Optional:             ptr.To(true),
+			},
+		}},
 	}
 }
 
@@ -337,9 +396,13 @@ const AnnotationAddonsPaths = "saas.odoo.example.com/addons-paths"
 // so changing it rolls the pods onto the new odoo.conf.
 const AnnotationDatabaseFilter = "saas.odoo.example.com/database-filter"
 
-// podTemplateAnnotations is nil without addons paths or a database filter,
-// so instances that don't use them keep an unchanged pod template (no
-// spurious rollout).
+// AnnotationPlatformAddons records the platform addons' content hash while
+// spec.databaseManager is on, so new addon code rolls the pods.
+const AnnotationPlatformAddons = "saas.odoo.example.com/platform-addons"
+
+// podTemplateAnnotations is nil without addons paths, a database filter or
+// the database manager, so instances that don't use them keep an unchanged
+// pod template (no spurious rollout).
 func podTemplateAnnotations(instance *saasv1alpha1.OdooInstance) map[string]string {
 	var ann map[string]string
 	if len(instance.Spec.AddonsPaths) > 0 {
@@ -350,6 +413,12 @@ func podTemplateAnnotations(instance *saasv1alpha1.OdooInstance) map[string]stri
 			ann = map[string]string{}
 		}
 		ann[AnnotationDatabaseFilter] = instance.Spec.DatabaseFilter
+	}
+	if instance.Spec.DatabaseManager != nil {
+		if ann == nil {
+			ann = map[string]string{}
+		}
+		ann[AnnotationPlatformAddons] = platformAddonsHash()
 	}
 	return ann
 }

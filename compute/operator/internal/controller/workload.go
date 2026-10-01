@@ -38,11 +38,16 @@ func (r *OdooInstanceReconciler) reconcileStorage(ctx context.Context, instance 
 // reconcileAdminSecret ensures the Odoo master-password Secret exists,
 // preserving any value already present (see existingOrNewPassword).
 func (r *OdooInstanceReconciler) reconcileAdminSecret(ctx context.Context, instance *saasv1alpha1.OdooInstance) error {
-	password, err := r.existingOrNewPassword(ctx, resources.TenantNamespace(instance), resources.AdminSecretName(instance), "master-password", 32)
+	ns, name := resources.TenantNamespace(instance), resources.AdminSecretName(instance)
+	password, err := r.existingOrNewPassword(ctx, ns, name, "master-password", 32)
 	if err != nil {
 		return err
 	}
-	secret := resources.AdminSecret(instance, resources.AdminSecretData{MasterPassword: password})
+	dbmKey, err := r.existingOrNewPassword(ctx, ns, name, "dbmanager-key", 48)
+	if err != nil {
+		return err
+	}
+	secret := resources.AdminSecret(instance, resources.AdminSecretData{MasterPassword: password, DBManagerKey: dbmKey})
 	setOwner(instance, secret)
 	return r.apply(ctx, secret)
 }
@@ -55,7 +60,15 @@ func (r *OdooInstanceReconciler) reconcileAdminSecret(ctx context.Context, insta
 func (r *OdooInstanceReconciler) reconcileConfig(ctx context.Context, instance *saasv1alpha1.OdooInstance) error {
 	cm := resources.OdooConfigMap(instance)
 	setOwner(instance, cm)
-	return r.apply(ctx, cm)
+	if err := r.apply(ctx, cm); err != nil {
+		return err
+	}
+	if instance.Spec.DatabaseManager == nil {
+		return nil
+	}
+	addons := resources.PlatformAddonsConfigMap(instance)
+	setOwner(instance, addons)
+	return r.apply(ctx, addons)
 }
 
 // reconcileWorkload applies the Odoo Service and the web Deployment (plus a

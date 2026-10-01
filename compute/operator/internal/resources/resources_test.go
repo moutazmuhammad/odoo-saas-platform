@@ -411,3 +411,98 @@ func TestOdooInitJob_KeepsImageEntrypoint(t *testing.T) {
 		t.Errorf("init Job command = %v, want the image entrypoint", cmd)
 	}
 }
+
+func dbmInstance() *saasv1alpha1.OdooInstance {
+	instance := testInstance()
+	instance.Spec.DatabaseFilter = "^acme_.+$"
+	instance.Spec.DatabaseManager = &saasv1alpha1.DatabaseManagerSpec{Prefix: "acme_"}
+	return instance
+}
+
+func TestOdooConf_DatabaseManagerOff_KeepsManagerDisabled(t *testing.T) {
+	conf := odooConf(testInstance())
+	if !strings.Contains(conf, "list_db = False\n") || strings.Contains(conf, "saas_dbm_") {
+		t.Errorf("database manager must stay off by default:\n%s", conf)
+	}
+}
+
+func TestOdooConf_DatabaseManagerOn(t *testing.T) {
+	conf := odooConf(dbmInstance())
+	for _, want := range []string{"list_db = True\n", "saas_dbm_prefix = acme_\n", "saas_dbm_key = __DBM_KEY__\n"} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("missing %q:\n%s", want, conf)
+		}
+	}
+	if !strings.Contains(renderInitContainerScript(), "s/__DBM_KEY__/$DBM_KEY/g") {
+		t.Error("init script must substitute the database manager key")
+	}
+}
+
+func TestOdooDeployment_DatabaseManager_LoadsPlatformAddon(t *testing.T) {
+	instance := dbmInstance()
+	instance.Spec.AddonsPaths = []string{"/opt/tenant-addons/repo"}
+	dep := OdooDeployment(instance, RoleWeb)
+	odoo := dep.Spec.Template.Spec.Containers[0]
+	args := strings.Join(odoo.Args, " ")
+	if !strings.Contains(args, "--load=base,web,saas_tenant_dbm") ||
+		!strings.Contains(args, "--addons-path=/opt/saas-platform-addons,/opt/tenant-addons/repo") {
+		t.Errorf("args = %v", odoo.Args)
+	}
+	mounted := false
+	for _, m := range odoo.VolumeMounts {
+		mounted = mounted || (m.Name == "platform-addons" && m.MountPath == PlatformAddonsPath && m.ReadOnly)
+	}
+	if !mounted {
+		t.Errorf("platform addons not mounted read-only: %v", odoo.VolumeMounts)
+	}
+	if dep.Spec.Template.Annotations[AnnotationPlatformAddons] == "" {
+		t.Error("addon hash annotation missing")
+	}
+	if strings.Contains(strings.Join(OdooDeployment(testInstance(), RoleWeb).Spec.Template.Spec.Containers[0].Args, " "), "--load") {
+		t.Error("--load must only be set with the database manager on")
+	}
+}
+
+func TestPlatformAddonsConfigMap_ShipsTheAddonFiles(t *testing.T) {
+	cm := PlatformAddonsConfigMap(dbmInstance())
+	for _, key := range []string{"saas_tenant_dbm.__init__.py", "saas_tenant_dbm.__manifest__.py", "saas_tenant_dbm.controllers.py"} {
+		if cm.Data[key] == "" {
+			t.Errorf("ConfigMap key %s missing (keys: %v)", key, cm.Data)
+		}
+	}
+	vol := platformAddonsVolume(dbmInstance())
+	found := false
+	for _, item := range vol.ConfigMap.Items {
+		found = found || (item.Key == "saas_tenant_dbm.__init__.py" && item.Path == "saas_tenant_dbm/__init__.py")
+	}
+	if !found {
+		t.Errorf("volume items don't rebuild the addon directory: %v", vol.ConfigMap.Items)
+	}
+}
+
+func TestOdooDeployment_Shell_SidecarWithoutSecrets(t *testing.T) {
+	instance := testInstance()
+	instance.Spec.Shell = true
+	pod := OdooDeployment(instance, RoleWeb).Spec.Template.Spec
+	if len(pod.Containers) != 2 || pod.Containers[1].Name != ShellContainerName {
+		t.Fatalf("containers = %v, want odoo + shell", pod.Containers)
+	}
+	shell := pod.Containers[1]
+	for _, m := range shell.VolumeMounts {
+		if m.Name == "etc-odoo" {
+			t.Error("the shell must not mount odoo.conf")
+		}
+	}
+	for _, e := range shell.Env {
+		if e.ValueFrom != nil {
+			t.Errorf("the shell must not get secret env: %v", e)
+		}
+	}
+	if len(OdooDeployment(testInstance(), RoleWeb).Spec.Template.Spec.Containers) != 1 {
+		t.Error("no shell sidecar unless spec.shell is set")
+	}
+	instance.Spec.Replicas = ptr.To(int32(2))
+	if len(OdooDeployment(instance, RoleCron).Spec.Template.Spec.Containers) != 1 {
+		t.Error("the cron Deployment never gets the shell")
+	}
+}

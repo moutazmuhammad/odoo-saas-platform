@@ -19,6 +19,7 @@ from . import test_proration_unify
 from . import test_otp_encryption
 from . import test_webhook_security
 from . import test_cluster_kubeconfig
+from . import test_bucket_cors
 from . import test_container_hardening
 from . import test_audit_log
 from . import test_alerting

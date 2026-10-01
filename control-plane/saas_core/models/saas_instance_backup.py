@@ -713,6 +713,21 @@ class SaasInstanceBackup(models.Model):
                     "   • Allowed headers: *\n"
                     "   • Max age: 3600 seconds"
                 ) % ', '.join(origins))
+            if 'NotImplemented' in msg:
+                # DigitalOcean Spaces (current Spaces keys) and some other
+                # S3-compatible stores don't accept bucket CORS through the
+                # API at all; it can only be set in their console.
+                raise UserError(_(
+                    "Your storage provider doesn't let applications change the "
+                    "bucket's CORS policy (NotImplemented), so set it once in "
+                    "its console.\n\n"
+                    "DigitalOcean: Spaces Object Storage > %(bucket)s > Settings > "
+                    "CORS Configurations > Add.\n\n"
+                    "   • Origin: %(origins)s (one rule per origin)\n"
+                    "   • Allowed methods: PUT, GET\n"
+                    "   • Allowed headers: *\n"
+                    "   • Max age: 3600 seconds"
+                ) % {'bucket': bucket, 'origins': ', '.join(origins)})
             raise UserError(_(
                 "Couldn't set the bucket CORS policy: %s"
             ) % msg)

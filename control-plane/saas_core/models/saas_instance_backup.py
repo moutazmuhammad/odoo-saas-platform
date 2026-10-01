@@ -714,15 +714,19 @@ class SaasInstanceBackup(models.Model):
                     "   • Max age: 3600 seconds"
                 ) % ', '.join(origins))
             if 'NotImplemented' in msg:
-                # DigitalOcean Spaces (current Spaces keys) and some other
-                # S3-compatible stores don't accept bucket CORS through the
-                # API at all; it can only be set in their console.
+                # DigitalOcean Spaces answers NotImplemented to bucket-level
+                # calls (CORS, location) made with a Limited Access key.
                 raise UserError(_(
-                    "Your storage provider doesn't let applications change the "
-                    "bucket's CORS policy (NotImplemented), so set it once in "
-                    "its console.\n\n"
-                    "DigitalOcean: Spaces Object Storage > %(bucket)s > Settings > "
-                    "CORS Configurations > Add.\n\n"
+                    "This storage key can't change bucket settings "
+                    "(NotImplemented on PutBucketCors). On DigitalOcean, "
+                    "Limited Access Spaces keys can read and write files but "
+                    "not set CORS.\n\n"
+                    "Pick one:\n\n"
+                    "1) Create a Full Access Spaces key, enter it in the "
+                    "Admin Access/Secret Key fields (keep the limited key "
+                    "above for backups), save, and click this button again.\n\n"
+                    "2) Or add the rule once in the console: Spaces Object "
+                    "Storage > %(bucket)s > Settings > CORS Configurations:\n"
                     "   • Origin: %(origins)s (one rule per origin)\n"
                     "   • Allowed methods: PUT, GET\n"
                     "   • Allowed headers: *\n"

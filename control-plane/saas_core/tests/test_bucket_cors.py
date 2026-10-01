@@ -19,10 +19,11 @@ class TestBucketCors(TransactionCase):
                 patch.object(type(Backup), '_get_s3_client', return_value=(client, 'my-bucket')):
             Backup.apply_bucket_cors()
 
-    def test_not_implemented_explains_the_console_rule(self):
+    def test_not_implemented_explains_full_access_key_or_console(self):
         with self.assertRaises(UserError) as cm:
             self._apply('NotImplemented')
         msg = str(cm.exception)
+        self.assertIn('Full Access', msg)
         self.assertIn('console', msg)
         self.assertIn('my-bucket', msg)
         self.assertIn('https://portal.example.com', msg)

@@ -24,7 +24,7 @@ class TestBucketCors(TransactionCase):
             self._apply('NotImplemented')
         msg = str(cm.exception)
         self.assertIn('Full Access', msg)
-        self.assertIn('console', msg)
+        self.assertIn('standard Spaces bucket', msg)
         self.assertIn('my-bucket', msg)
         self.assertIn('https://portal.example.com', msg)
 

@@ -714,23 +714,21 @@ class SaasInstanceBackup(models.Model):
                     "   • Max age: 3600 seconds"
                 ) % ', '.join(origins))
             if 'NotImplemented' in msg:
-                # DigitalOcean Spaces answers NotImplemented to bucket-level
-                # calls (CORS, location) made with a Limited Access key.
+                # Seen on DigitalOcean: buckets of the newer type (e.g.
+                # Spaces Cold Storage) reject CORS/ACL calls whatever the
+                # key; Limited Access keys can't change bucket settings
+                # either. Standard buckets with a Full Access key work.
                 raise UserError(_(
-                    "This storage key can't change bucket settings "
-                    "(NotImplemented on PutBucketCors). On DigitalOcean, "
-                    "Limited Access Spaces keys can read and write files but "
-                    "not set CORS.\n\n"
-                    "Pick one:\n\n"
-                    "1) Create a Full Access Spaces key, enter it in the "
-                    "Admin Access/Secret Key fields (keep the limited key "
-                    "above for backups), save, and click this button again.\n\n"
-                    "2) Or add the rule once in the console: Spaces Object "
-                    "Storage > %(bucket)s > Settings > CORS Configurations:\n"
-                    "   • Origin: %(origins)s (one rule per origin)\n"
-                    "   • Allowed methods: PUT, GET\n"
-                    "   • Allowed headers: *\n"
-                    "   • Max age: 3600 seconds"
+                    "Bucket '%(bucket)s' doesn't accept CORS settings "
+                    "(NotImplemented on PutBucketCors).\n\n"
+                    "On DigitalOcean this happens with buckets of the newer "
+                    "type (e.g. Cold Storage), which don't support CORS at "
+                    "all, and with Limited Access keys.\n\n"
+                    "Fix: use a standard Spaces bucket for backups, put a "
+                    "Full Access key in the Admin Access/Secret Key fields, "
+                    "save, and click this button again. The rule it sets: "
+                    "origins %(origins)s, methods PUT and GET, headers *, "
+                    "max age 3600."
                 ) % {'bucket': bucket, 'origins': ', '.join(origins)})
             raise UserError(_(
                 "Couldn't set the bucket CORS policy: %s"

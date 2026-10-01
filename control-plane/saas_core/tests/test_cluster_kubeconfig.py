@@ -85,3 +85,17 @@ class TestClusterKubeconfig(TransactionCase):
                 Server._allocate_docker_server(region=self.region, cluster=b), b)
             self.assertEqual(
                 Server._allocate_docker_server(region=self.region, cluster=a), a)
+
+    def test_cluster_terminal_needs_cluster_shell(self):
+        from odoo.exceptions import AccessError
+        cluster = self._cluster('term-cluster', kubeconfig_file=self.upload)
+        user = self.env['res.users'].create({
+            'name': 'Mgr', 'login': 'term-mgr@example.com',
+            'groups_id': [(6, 0, [self.env.ref('base.group_user').id,
+                                  self.env.ref('saas_core.group_saas_manager').id,
+                                  self.env.ref('saas_core.group_saas_pod_shell').id])]})
+        with self.assertRaises(AccessError):
+            cluster.with_user(user).action_open_terminal()
+        user.groups_id = [(4, self.env.ref('saas_core.group_saas_cluster_shell').id)]
+        action = cluster.with_user(user).action_open_terminal()
+        self.assertEqual(action['context']['server_model'], 'saas.server')

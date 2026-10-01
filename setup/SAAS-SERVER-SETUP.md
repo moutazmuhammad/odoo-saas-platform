@@ -218,7 +218,7 @@ sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
 ## 8. First configuration (backend: `https://saas.example.com/web`)
 
 1. **Log in:** as `admin` / `admin`, and change the password immediately.
-2. **Groups:** turn on developer mode, then give your admin user the *SaaS / Manager* group. Admin access to Settings doesn't include it.
+2. **Groups:** on the Users form, *SaaS* sets User or Manager, and *SaaS Terminal* sets Pod Shell (terminals into tenant pods) or Cluster Shell (kubectl on whole clusters; needs `PRODUCTION-CLUSTER-SETUP.md` step 12.4). The `admin` user gets Manager and Cluster Shell on install.
 3. **Mail:** Settings → Technical → Outgoing Mail Servers (SMTP). Set the company email.
 4. **SaaS Manager settings:** Settings → SaaS Manager:
    - support email;

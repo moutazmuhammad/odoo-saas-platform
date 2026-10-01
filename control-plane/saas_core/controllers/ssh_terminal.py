@@ -38,7 +38,8 @@ import psycopg2.extensions
 from werkzeug.exceptions import Forbidden, NotFound
 
 import odoo
-from odoo import api, fields, http, SUPERUSER_ID
+from odoo import _, api, fields, http, SUPERUSER_ID
+from odoo.exceptions import UserError
 from odoo.http import request, Response
 
 _logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ INITIAL_BANNER_WAIT = 0.5
 # shell below (_get_owned_session/_authorize_instance_shell), which is
 # authorized by instance ownership and unaffected by this group entirely.
 TERMINAL_GROUP = 'saas_core.group_saas_pod_shell'
+CLUSTER_TERMINAL_GROUP = 'saas_core.group_saas_cluster_shell'
 _SID_RE = re.compile(
     r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
 )
@@ -336,16 +338,23 @@ class SshTerminalController(http.Controller):
                 "Pod Shell privileges required to open a terminal."
             )
 
-        if server_model not in ('saas.instance',):
+        if server_model not in ('saas.instance', 'saas.server'):
             raise Forbidden("Invalid model")
 
-        instance = request.env[server_model].browse(int(server_id))
-        if not instance.exists():
-            raise NotFound("Instance not found")
-        instance.check_access('read')
-        instance = instance.sudo()
-        if not instance.docker_server_id:
-            raise Forbidden("This instance isn't fully set up yet.")
+        target = request.env[server_model].browse(int(server_id))
+        if not target.exists():
+            raise NotFound("Not found")
+        target.check_access('read')
+        target = target.sudo()
+        if server_model == 'saas.server':
+            # Cluster-wide kubectl/helm: the narrower Cluster Shell group.
+            if not request.env.user.has_group(CLUSTER_TERMINAL_GROUP):
+                raise Forbidden("Cluster Shell privileges required to open a cluster terminal.")
+            target_name = target.name
+        else:
+            if not target.docker_server_id:
+                raise Forbidden("This instance isn't fully set up yet.")
+            target_name = target.subdomain
 
         _cleanup_stale_sessions(request.env)
 
@@ -360,13 +369,20 @@ class SshTerminalController(http.Controller):
                 )
 
         try:
-            channel = instance._compute_driver().exec_interactive(
-                instance._compute_handle(), cols=120, rows=40)
+            if server_model == 'saas.server':
+                from ..drivers.kubernetes_driver import KubernetesDriver, ToolboxNotSetUp
+                try:
+                    channel = KubernetesDriver(target).open_cluster_terminal(cols=120, rows=40)
+                except ToolboxNotSetUp as e:
+                    raise UserError(str(e)) from e
+                target.message_post(body=_("Cluster terminal opened by %s.") % request.env.user.name)
+            else:
+                channel = target._compute_driver().exec_interactive(
+                    target._compute_handle(), cols=120, rows=40)
+        except UserError:
+            raise
         except Exception as e:
-            _logger.error(
-                "Failed to open pod terminal for %s: %s",
-                instance.subdomain, e,
-            )
+            _logger.error("Failed to open terminal for %s: %s", target_name, e)
             raise
 
         sid = str(uuid.uuid4())
@@ -382,8 +398,8 @@ class SshTerminalController(http.Controller):
             'sid': sid,
             'uid': request.env.uid,
             'server_model': server_model,
-            'server_id': instance.id,
-            'server_name': instance.subdomain,
+            'server_id': target.id,
+            'server_name': target_name,
             'owner_pid': os.getpid(),
             'last_activity': fields.Datetime.now(),
         })
@@ -393,7 +409,7 @@ class SshTerminalController(http.Controller):
             dbname=request.env.cr.dbname,
             channel=channel,
             ssh_conn=None,
-            server_name=instance.subdomain,
+            server_name=target_name,
         )
         with _local_sessions_lock:
             _local_sessions[sid] = pump
@@ -401,7 +417,7 @@ class SshTerminalController(http.Controller):
 
         _logger.info(
             "Terminal session %s created for %s by uid %s (pid %s)",
-            sid, instance.subdomain, request.env.uid, os.getpid(),
+            sid, target_name, request.env.uid, os.getpid(),
         )
 
         return {

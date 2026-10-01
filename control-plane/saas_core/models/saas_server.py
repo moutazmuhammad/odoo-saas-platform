@@ -2,7 +2,7 @@ import base64
 import logging
 
 from odoo import api, fields, models, _
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 from ..fields import EncryptedChar
 
@@ -255,6 +255,26 @@ class SaasServer(models.Model):
             return True, ''
         except Exception as e:
             return False, str(e)
+
+    def action_open_terminal(self):
+        """Open kubectl/helm on this cluster in the browser (the toolbox
+        pod; see KubernetesDriver.open_cluster_terminal). Cluster Shell
+        only; the controller enforces it again."""
+        self.ensure_one()
+        if not self.env.user.has_group('saas_core.group_saas_cluster_shell'):
+            raise AccessError(_("Cluster Shell privileges are required to open a cluster terminal."))
+        if not self.kubeconfig_loaded:
+            raise UserError(_("Upload this cluster's kubeconfig first."))
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'ssh_terminal',
+            'name': _("Cluster terminal: %s") % self.name,
+            'context': {
+                'server_model': self._name,
+                'server_id': self.id,
+                'server_name': self.name,
+            },
+        }
 
     @api.depends('kubeconfig_enc', 'kubeconfig_file')
     def _compute_kubeconfig_loaded(self):

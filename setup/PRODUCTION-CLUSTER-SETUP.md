@@ -461,6 +461,22 @@ Don't use `microk8s config` instead: it's the permanent admin certificate. This 
 | Timeout on `:16443` | The firewall: allow 16443 from that machine (step 1). |
 | `Unauthorized` | The token was recreated: run 12.3 again and redo step 13. |
 
+### 12.4 Staff cluster terminal (node1, optional)
+
+The **Terminal** button on a *Kubernetes Clusters* form opens `kubectl` and `helm` on the cluster in the browser. It runs in a toolbox pod that the control plane starts in the `saas-toolbox` namespace, as the `saas-toolbox` ServiceAccount. The control plane never grants permissions itself; you decide here what that ServiceAccount may do:
+
+```bash
+kubectl create namespace saas-toolbox
+kubectl -n saas-toolbox create serviceaccount saas-toolbox
+kubectl create clusterrolebinding saas-toolbox --clusterrole=cluster-admin \
+  --serviceaccount=saas-toolbox:saas-toolbox
+```
+
+- **Read-only instead:** use `--clusterrole=view`. The terminal can then list, describe and read logs, but not change anything.
+- **Who can open it:** users with *SaaS Terminal → Cluster Shell* on the Users form. Every session is logged on the cluster record.
+- **The pod:** `alpine/k8s` (kubectl and helm). It stops on its own after 8 hours and starts again on the next open.
+- **Turn it off:** `kubectl delete clusterrolebinding saas-toolbox`. To remove everything, also run `kubectl delete namespace saas-toolbox`.
+
 ---
 
 ## 13. Register the cluster in the control plane

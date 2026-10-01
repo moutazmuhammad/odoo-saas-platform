@@ -7,6 +7,12 @@
         <field name="model">saas.server</field>
         <field name="arch" type="xml">
             <form string="Kubernetes Cluster">
+                <header>
+                    <button name="action_open_terminal" string="Terminal"
+                            type="object" icon="fa-terminal"
+                            groups="saas_core.group_saas_cluster_shell"
+                            invisible="not kubeconfig_loaded"/>
+                </header>
                 <sheet>
                     <div class="oe_title">
                         <label for="name"/>

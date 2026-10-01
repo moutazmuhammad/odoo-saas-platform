@@ -239,6 +239,19 @@ _CONTAINER_NAME = 'odoo'
 _SHELL_CONTAINER_NAME = 'shell'
 # Operator Secret with the master password and the database-manager key.
 _ADMIN_SECRET_NAME = 'odoo-admin-credentials'
+
+# Staff cluster terminal: a toolbox pod with kubectl + helm running as the
+# ServiceAccount saas-toolbox/saas-toolbox. An operator creates that
+# namespace, ServiceAccount and its role binding by hand (setup guide,
+# "Staff cluster terminal"); the control plane never grants permissions,
+# it only starts the pod. The pod ends after _TOOLBOX_LIFETIME and is
+# recreated on the next open. Keep the image's kubectl within one minor
+# version of the clusters.
+_TOOLBOX_NAMESPACE = 'saas-toolbox'
+_TOOLBOX_NAME = 'saas-toolbox'
+_TOOLBOX_IMAGE = 'alpine/k8s:1.35.6'
+_TOOLBOX_LIFETIME = 8 * 3600
+_TOOLBOX_START_TIMEOUT = 180
 _POD_LABEL_SELECTOR = 'app.kubernetes.io/name=odoo,app.kubernetes.io/instance=%s'
 # The serving web pods only — not the init/update Job pods, which carry the
 # same instance labels (and may be the only Running pod during an update).
@@ -270,6 +283,10 @@ _PHASE_TO_STATUS = {
     'Deleting': 'exited',
     'Failed': 'dead',
 }
+
+
+class ToolboxNotSetUp(RuntimeError):
+    """The cluster's saas-toolbox ServiceAccount hasn't been created yet."""
 
 
 class KubernetesDriver(ImageBuildMixin, ComputeDriver):
@@ -1040,6 +1057,81 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         channel = K8sExecChannel(ws)
         channel.resize_pty(cols, rows)
         return channel
+
+    # -- staff cluster terminal -----------------------------------------------
+    def open_cluster_terminal(self, cols: int = 120, rows: int = 32) -> 'K8sExecChannel':
+        """Interactive bash in this cluster's toolbox pod, with whatever
+        the saas-toolbox ServiceAccount was granted. Not tenant-scoped:
+        callers must restrict it to the Cluster Shell group."""
+        pod = self._ensure_toolbox_pod()
+        ws = k8s_stream(
+            self._core_api().connect_get_namespaced_pod_exec,
+            pod, _TOOLBOX_NAMESPACE, container='toolbox',
+            command=['/bin/bash', '-l'],
+            stderr=True, stdin=True, stdout=True, tty=True,
+            binary=True, _preload_content=False)
+        channel = K8sExecChannel(ws)
+        channel.resize_pty(cols, rows)
+        return channel
+
+    def _ensure_toolbox_pod(self) -> str:
+        """Start the toolbox pod when missing or finished; return its name
+        once Running. Requires the hand-made namespace and ServiceAccount."""
+        core = self._core_api()
+        try:
+            core.read_namespaced_service_account(_TOOLBOX_NAME, _TOOLBOX_NAMESPACE)
+        except ApiException as e:
+            if e.status == 404:
+                raise ToolboxNotSetUp(
+                    "Cluster '%s' has no %s/%s ServiceAccount yet. Create it once "
+                    "(setup guide, \"Staff cluster terminal\")."
+                    % (self.server.name, _TOOLBOX_NAMESPACE, _TOOLBOX_NAME)) from e
+            raise
+        deadline = time.time() + _TOOLBOX_START_TIMEOUT
+        while True:
+            try:
+                pod = core.read_namespaced_pod(_TOOLBOX_NAME, _TOOLBOX_NAMESPACE)
+            except ApiException as e:
+                if e.status != 404:
+                    raise
+                pod = None
+            phase = pod.status.phase if pod is not None and pod.status else None
+            if phase == 'Running':
+                return _TOOLBOX_NAME
+            if pod is not None and phase in ('Succeeded', 'Failed'):
+                # Past its lifetime, or crashed: replace it.
+                core.delete_namespaced_pod(_TOOLBOX_NAME, _TOOLBOX_NAMESPACE, grace_period_seconds=0)
+            elif pod is None:
+                core.create_namespaced_pod(_TOOLBOX_NAMESPACE, self._toolbox_pod_body())
+            if time.time() > deadline:
+                raise RuntimeError(
+                    'the cluster toolbox pod did not start within %ss (phase: %s)'
+                    % (_TOOLBOX_START_TIMEOUT, phase or 'not created'))
+            time.sleep(2)
+
+    def _toolbox_pod_body(self) -> dict:
+        return {
+            'metadata': {'name': _TOOLBOX_NAME, 'labels': {
+                'app.kubernetes.io/name': _TOOLBOX_NAME,
+                'app.kubernetes.io/managed-by': 'saas-control-plane'}},
+            'spec': {
+                'serviceAccountName': _TOOLBOX_NAME,
+                'restartPolicy': 'Never',
+                'activeDeadlineSeconds': _TOOLBOX_LIFETIME,
+                'terminationGracePeriodSeconds': 5,
+                'containers': [{
+                    'name': 'toolbox',
+                    'image': _TOOLBOX_IMAGE,
+                    'command': ['sh', '-c',
+                                "trap 'exit 0' TERM; while :; do sleep 3600 & wait $!; done"],
+                    'env': [{'name': 'PS1', 'value': '[%s] \\w \\$ ' % self.server.name}],
+                    'resources': {
+                        'requests': {'cpu': '10m', 'memory': '64Mi'},
+                        'limits': {'cpu': '1', 'memory': '512Mi'},
+                    },
+                }],
+            },
+        }
 
     def logs(self, handle: ComputeHandle, *, tail: Optional[int] = None) -> str:
         namespace = handle.instance_path or self._namespace_for(handle)

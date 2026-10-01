@@ -490,6 +490,54 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(result.stdout, 'ok\n')
 
     # -------- database filter (hosting customer databases) ----------------
+    # -------- staff cluster terminal (toolbox pod) -------------------------
+    def _toolbox_driver(self, pods):
+        """Driver whose read_namespaced_pod returns ``pods`` in turn."""
+        from types import SimpleNamespace as NS
+        from kubernetes.client.rest import ApiException
+        driver, _server = _make_driver()
+        core = MagicMock()
+
+        def read_pod(*a, **k):
+            phase = pods.pop(0)
+            if phase is None:
+                raise ApiException(status=404)
+            return NS(status=NS(phase=phase))
+        core.read_namespaced_pod.side_effect = read_pod
+        driver._core_api = MagicMock(return_value=core)
+        return driver, core
+
+    def test_toolbox_requires_the_hand_made_service_account(self):
+        from kubernetes.client.rest import ApiException
+        from odoo.addons.saas_core.drivers.kubernetes_driver import ToolboxNotSetUp
+        driver, core = self._toolbox_driver([])
+        core.read_namespaced_service_account.side_effect = ApiException(status=404)
+        with self.assertRaises(ToolboxNotSetUp):
+            driver._ensure_toolbox_pod()
+        core.create_namespaced_pod.assert_not_called()
+
+    def test_toolbox_pod_started_when_missing_and_replaced_when_finished(self):
+        with patch('odoo.addons.saas_core.drivers.kubernetes_driver.time.sleep'):
+            driver, core = self._toolbox_driver([None, 'Pending', 'Running'])
+            self.assertEqual(driver._ensure_toolbox_pod(), 'saas-toolbox')
+            body = core.create_namespaced_pod.call_args.args[1]
+            self.assertEqual(body['spec']['serviceAccountName'], 'saas-toolbox')
+            self.assertTrue(body['spec']['activeDeadlineSeconds'] > 0)
+
+            driver, core = self._toolbox_driver(['Succeeded', None, 'Running'])
+            driver._ensure_toolbox_pod()
+            core.delete_namespaced_pod.assert_called_once()
+            core.create_namespaced_pod.assert_called_once()
+
+    def test_toolbox_never_grants_permissions(self):
+        """Role bindings are an operator's manual step (setup guide 12.4)."""
+        import inspect
+        from odoo.addons.saas_core.drivers import kubernetes_driver
+        src = inspect.getsource(kubernetes_driver.KubernetesDriver._ensure_toolbox_pod) + \
+            inspect.getsource(kubernetes_driver.KubernetesDriver._toolbox_pod_body)
+        for forbidden in ('RbacAuthorization', 'role_binding', 'create_namespace('):
+            self.assertNotIn(forbidden, src)
+
     def test_set_hosting_access_patches_one_spec(self):
         driver, _server = _make_driver()
         custom = MagicMock()

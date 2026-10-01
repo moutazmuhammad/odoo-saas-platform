@@ -6,12 +6,12 @@
         <field name="sequence">50</field>
     </record>
 
-    <!-- Pod Shell lives in its own category: Odoo shows a category as an
-         always-visible dropdown only when its groups form one chain. With
-         Pod Shell next to User/Manager, the whole SaaS section was shown
-         only in Developer Mode. -->
+    <!-- The terminal groups live in their own category: Odoo shows a
+         category as an always-visible dropdown only when its groups form
+         one chain (Pod Shell < Cluster Shell). Next to User/Manager, the
+         whole SaaS section was shown only in Developer Mode. -->
     <record id="module_category_saas_pod_shell" model="ir.module.category">
-        <field name="name">SaaS Pod Shell</field>
+        <field name="name">SaaS Terminal</field>
         <field name="sequence">51</field>
     </record>
 
@@ -41,6 +41,17 @@
         <field name="name">Pod Shell</field>
         <field name="category_id" ref="module_category_saas_pod_shell"/>
         <field name="comment">Grants kubectl-exec access into tenant pods (NOT the platform's own infrastructure — there is none reached over SSH anymore). Extremely sensitive: a member can reach every tenant's running container. Grant narrowly, separately from Manager.</field>
+    </record>
+
+    <!-- Cluster-wide terminal (kubectl/helm in the cluster's toolbox pod,
+         with whatever an operator granted the saas-toolbox ServiceAccount).
+         Implies Pod Shell: it can reach every tenant pod anyway. -->
+    <record id="group_saas_cluster_shell" model="res.groups">
+        <field name="name">Cluster Shell</field>
+        <field name="category_id" ref="module_category_saas_pod_shell"/>
+        <field name="implied_ids" eval="[(4, ref('group_saas_pod_shell'))]"/>
+        <field name="users" eval="[(4, ref('base.user_admin'))]"/>
+        <field name="comment">Opens kubectl/helm on a whole Kubernetes cluster from the Kubernetes Clusters form. Grant only to platform operators.</field>
     </record>
 
     <!-- One-time-per-upgrade, idempotent: grandfather every EXISTING SaaS

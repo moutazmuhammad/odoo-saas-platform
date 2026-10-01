@@ -80,6 +80,22 @@ class TestReconcile(TransactionCase):
         self.assertEqual(inst.state, 'stopped')
         self.assertTrue(inst.last_error)
 
+    def test_reconcile_leaves_a_rollout_alone(self):
+        """'restarting' with no container restarts is the CR's Provisioning
+        / Degraded phase (a rolling update, a refused volume expansion) —
+        not a crash loop. Stopping it there caused an outage (seen live)."""
+        inst = self._inst('rroll', 'running')
+        fake, action = self._reconcile_with_health(inst, 'restarting', restart_count=0)
+        fake.stop.assert_not_called()
+        self.assertEqual(action, 'none')
+        self.assertEqual(inst.state, 'running')
+
+    def test_reconcile_breaks_crash_loop_backoff(self):
+        inst = self._inst('rloop2', 'running')
+        fake, action = self._reconcile_with_health(inst, 'restarting', restart_count=6)
+        fake.stop.assert_called_once_with('H')
+        self.assertEqual(action, 'stopped_crashloop')
+
     def test_reconcile_stops_container_that_should_be_stopped(self):
         inst = self._inst('rstop', 'stopped')   # desired = stopped
         fake, action = self._reconcile_with_health(inst, 'running')

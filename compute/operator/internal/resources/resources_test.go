@@ -595,3 +595,19 @@ func strconvI(v int64) string { return fmt.Sprintf("%d", v) }
 func unstructuredNestedString(obj map[string]interface{}, fields ...string) (string, bool, error) {
 	return unstructured.NestedString(obj, fields...)
 }
+
+func TestOdooDeployment_RWOFilestoreKeepsPodsOnOneNode(t *testing.T) {
+	instance := testInstance()
+	aff := OdooDeployment(instance, RoleWeb).Spec.Template.Spec.Affinity
+	if aff == nil || aff.PodAffinity == nil || len(aff.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution) != 1 {
+		t.Fatalf("web pods with an RWO filestore need required same-node affinity, got %+v", aff)
+	}
+	term := aff.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution[0]
+	if term.TopologyKey != "kubernetes.io/hostname" || term.LabelSelector.MatchLabels["saas.odoo.example.com/role"] != "web" {
+		t.Errorf("affinity term = %+v", term)
+	}
+	instance.Spec.Storage.Filestore.AccessMode = saasv1alpha1.FilestoreAccessModeRWX
+	if OdooDeployment(instance, RoleWeb).Spec.Template.Spec.Affinity != nil {
+		t.Error("RWX filestore: pods may spread across nodes")
+	}
+}

@@ -122,7 +122,7 @@ kubectl -n odoo-system logs deploy/odoo-operator --tail=5   # "Starting workers"
 
 - `operator-values.yaml` selects `networking.provider: ingress` with class `traefik`. Use the chart default `gateway-api` only when the Gateway API CRDs and a Gateway exist.
 - Images come from Docker Hub, public for now:
-  - `docker.io/moutazmuhammad/odoo-saas-operator:0.1.9`
+  - `docker.io/moutazmuhammad/odoo-saas-operator:0.1.10`
   - `docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.0`, used by the backup and restore Jobs and compiled in as the default.
 
   With a private registry, set `imagePullSecrets` in the values.

@@ -169,6 +169,7 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 	}
 
 	return corev1.PodSpec{
+		Affinity:                      filestoreCoLocation(instance, selector, true),
 		ServiceAccountName:            OdooServiceAccountName(instance),
 		AutomountServiceAccountToken:  ptr.To(false),
 		TerminationGracePeriodSeconds: ptr.To(int64(60)),
@@ -293,6 +294,39 @@ func odooMemoryLimitArgs(instance *saasv1alpha1.OdooInstance, workers int32) []s
 		fmt.Sprintf("--limit-memory-soft=%d", limit*60/100),
 		fmt.Sprintf("--limit-memory-hard=%d", limit*75/100),
 	}
+}
+
+// filestoreCoLocation keeps pods that mount a ReadWriteOnce filestore on
+// the node that already has it attached; otherwise a rolling update's surge
+// pod (or an update Job) placed on another node can never attach the
+// volume ("Multi-Attach error") and the rollout stalls. “required“ for
+// the web Deployment: Kubernetes still places the first pod anywhere (a pod
+// matching its own affinity term may start when no other pod matches).
+// Preferred for one-shot Jobs, which must still run when no web pod exists
+// (e.g. a stopped instance). Nil for ReadWriteMany.
+func filestoreCoLocation(instance *saasv1alpha1.OdooInstance, webSelector map[string]string, required bool) *corev1.Affinity {
+	if instance.Spec.Storage.Filestore.AccessMode == saasv1alpha1.FilestoreAccessModeRWX {
+		return nil
+	}
+	term := corev1.PodAffinityTerm{
+		LabelSelector: &metav1.LabelSelector{MatchLabels: webSelector},
+		TopologyKey:   "kubernetes.io/hostname",
+	}
+	if required {
+		return &corev1.Affinity{PodAffinity: &corev1.PodAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{term},
+		}}
+	}
+	return &corev1.Affinity{PodAffinity: &corev1.PodAffinity{
+		PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+			{Weight: 100, PodAffinityTerm: term},
+		},
+	}}
+}
+
+// WebSelectorLabels selects an instance's web pods.
+func WebSelectorLabels(instance *saasv1alpha1.OdooInstance) map[string]string {
+	return mergeLabels(SelectorLabels(instance), map[string]string{"saas.odoo.example.com/role": string(RoleWeb)})
 }
 
 // ShellContainerName is the spec.shell sidecar's container name.

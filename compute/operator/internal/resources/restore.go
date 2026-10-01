@@ -131,6 +131,7 @@ func OdooRestoreJob(instance *saasv1alpha1.OdooInstance, restoreToolImage string
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
+					Affinity:                      filestoreCoLocation(instance, WebSelectorLabels(instance), false),
 					RestartPolicy:                 corev1.RestartPolicyOnFailure,
 					ServiceAccountName:            OdooServiceAccountName(instance),
 					AutomountServiceAccountToken:  ptr.To(false),

@@ -5267,10 +5267,13 @@ class SaasInstance(models.Model):
         action = 'none'
 
         if desired == 'running':
+            # Only real container restarts mean a crash loop. 'restarting'
+            # alone is also the CR's Provisioning/Degraded phase, e.g. during
+            # a rolling update or a refused volume expansion — stopping the
+            # instance then caused the very outage it meant to prevent.
             crash_looping = (
-                status == 'restarting'
-                or (status in ('exited', 'dead')
-                    and health.restart_count >= self._CRASH_LOOP_THRESHOLD))
+                status in ('restarting', 'exited', 'dead')
+                and health.restart_count >= self._CRASH_LOOP_THRESHOLD)
             if crash_looping:
                 # Restarting a crash-looper is futile + burns resources. Break the
                 # loop: stop it, park as 'stopped', surface why (redeploy allowed).

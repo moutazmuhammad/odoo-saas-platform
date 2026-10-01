@@ -63,6 +63,7 @@ func odooOneShotJob(instance *saasv1alpha1.OdooInstance, name, component, contai
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
+					Affinity:                      filestoreCoLocation(instance, WebSelectorLabels(instance), false),
 					RestartPolicy:                 restartPolicy,
 					ServiceAccountName:            OdooServiceAccountName(instance),
 					AutomountServiceAccountToken:  ptr.To(false),

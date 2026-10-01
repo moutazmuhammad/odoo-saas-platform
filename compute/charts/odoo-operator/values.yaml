@@ -2,7 +2,7 @@
 
 image:
   repository: docker.io/moutazmuhammad/odoo-saas-operator
-  tag: "0.1.9"
+  tag: "0.1.10"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 

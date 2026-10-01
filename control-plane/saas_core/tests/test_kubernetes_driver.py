@@ -187,6 +187,29 @@ class TestKubernetesDriver(TransactionCase):
             'saas.odoo.example.com', 'v1alpha1', 'odooinstances', 'odoo-acme',
             {'spec': {'replicas': 2}})
 
+    def test_trigger_backup_waits_for_the_operator_cronjob(self):
+        """A just-enabled backup's CronJob appears asynchronously: wait for
+        it instead of failing (this made every final snapshot fail on a
+        tenant that never had backups)."""
+        driver, _server = _make_driver()
+        batch = MagicMock()
+        cron = MagicMock()
+        batch.read_namespaced_cron_job.side_effect = [
+            ApiException(status=404), ApiException(status=404), cron]
+        driver._batch_api = MagicMock(return_value=batch)
+        with patch('odoo.addons.saas_core.drivers.kubernetes_driver.time.sleep'):
+            name = driver.trigger_backup_now(_handle())
+        self.assertTrue(name.startswith('odoo-backup-manual-'))
+        batch.create_namespaced_job.assert_called_once()
+
+    def test_trigger_backup_gives_up_after_the_wait(self):
+        driver, _server = _make_driver()
+        batch = MagicMock()
+        batch.read_namespaced_cron_job.side_effect = ApiException(status=404)
+        driver._batch_api = MagicMock(return_value=batch)
+        with self.assertRaises(RuntimeError):
+            driver.trigger_backup_now(_handle(), wait_seconds=0)
+
     def test_set_package_patches_everything_in_one_go(self):
         driver, _server = _make_driver()
         custom = MagicMock()

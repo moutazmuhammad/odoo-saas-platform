@@ -699,24 +699,31 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 'patching OdooInstance %s backup config failed: %s'
                 % (name, e)) from e
 
-    def trigger_backup_now(self, handle: ComputeHandle) -> str:
+    def trigger_backup_now(self, handle: ComputeHandle,
+                           wait_seconds: int = 60) -> str:
         """Create a one-off Job cloned from the operator-managed backup
         CronJob's own template — the Kubernetes-native equivalent of
         ``kubectl create job --from=cronjob/odoo-backup``, for an
         on-demand "back up now" action outside the schedule. Requires
-        ``spec.backup.enabled`` already (the CronJob only exists once
-        the operator has reconciled it — see ``set_scheduled_backup``).
-        Returns the created Job's name."""
+        ``spec.backup.enabled`` (see ``set_scheduled_backup``); the
+        operator creates the CronJob asynchronously, so a just-enabled
+        backup is waited for up to ``wait_seconds``. Returns the created
+        Job's name."""
         namespace = handle.instance_path or self._namespace_for(handle)
         batch = self._batch_api()
-        try:
-            cron = batch.read_namespaced_cron_job(_BACKUP_CRONJOB_NAME, namespace)
-        except ApiException as e:
-            if e.status == 404:
-                raise RuntimeError(
-                    'No scheduled backup is configured for this instance '
-                    'yet — enable it first.') from e
-            raise RuntimeError('reading backup CronJob failed: %s' % e) from e
+        deadline = time.time() + max(0, wait_seconds)
+        while True:
+            try:
+                cron = batch.read_namespaced_cron_job(_BACKUP_CRONJOB_NAME, namespace)
+                break
+            except ApiException as e:
+                if e.status != 404:
+                    raise RuntimeError('reading backup CronJob failed: %s' % e) from e
+                if time.time() >= deadline:
+                    raise RuntimeError(
+                        'No scheduled backup is configured for this instance '
+                        'yet — enable it first.') from e
+                time.sleep(2)
         job_name = '%s-manual-%d' % (_BACKUP_CRONJOB_NAME, int(time.time()))
         job = k8s_client.V1Job(
             metadata=k8s_client.V1ObjectMeta(

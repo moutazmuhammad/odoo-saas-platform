@@ -46,9 +46,19 @@ type DatabaseSpec struct {
 	Version string `json:"version,omitempty"`
 
 	// Storage describes the persistent volume used by a Managed or
-	// CloudNativePG database. Ignored in External mode.
+	// CloudNativePG database. Ignored in External mode. A larger size grows
+	// the live volume online; a smaller one is ignored (volumes never
+	// shrink).
 	// +optional
 	Storage *StorageRequestSpec `json:"storage,omitempty"`
+
+	// Resources for the PostgreSQL container (Managed) or each
+	// CloudNativePG instance; part of the tenant's package. Default:
+	// requests 250m/512Mi, limits 2/2Gi. In Managed mode a change resizes
+	// the running pod in place (no restart); the memory-derived PostgreSQL
+	// settings follow at its next restart.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// CredentialsSecretRef references a Secret holding connection details
 	// for External mode, or overrides the auto-generated credentials Secret

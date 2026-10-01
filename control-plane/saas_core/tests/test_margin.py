@@ -33,12 +33,14 @@ class TestTenantMargin(TransactionCase):
 
     def test_cost_revenue_margin(self):
         inst = self._inst('mtest')
-        # cost = 2 cores*5 + 4 GB*2 + 0 storage*0.1 = 10 + 8 = 18
-        self.assertAlmostEqual(inst.monthly_cost, 18.0, places=2)
+        # The whole package: Odoo 2 cores / 4 GB + database (2 workers ×
+        # 0.25 cores, 512 MB floor) 0.5 cores / 0.5 GB.
+        # cost = 2.5 cores*5 + 4.5 GB*2 + 0 storage*0.1 = 12.5 + 9 = 21.5
+        self.assertAlmostEqual(inst.monthly_cost, 21.5, places=2)
         # revenue = monthly plan price 100
         self.assertAlmostEqual(inst.monthly_revenue, 100.0, places=2)
-        self.assertAlmostEqual(inst.monthly_margin, 82.0, places=2)
-        self.assertAlmostEqual(inst.margin_pct, 82.0, places=1)
+        self.assertAlmostEqual(inst.monthly_margin, 78.5, places=2)
+        self.assertAlmostEqual(inst.margin_pct, 78.5, places=1)
         self.assertTrue(inst.is_profitable)
 
     def test_yearly_revenue_normalized(self):
@@ -53,8 +55,9 @@ class TestTenantMargin(TransactionCase):
             'currency_id': self.env.company.currency_id.id,
             'saas_product_ids': [(6, 0, [self.product.id])]})
         inst = self._inst('mloss', plan_id=cheap.id)
-        self.assertAlmostEqual(inst.monthly_cost, 18.0, places=2)
-        self.assertAlmostEqual(inst.monthly_margin, 5.0 - 18.0, places=2)
+        # 2.25 cores*5 + 4.5 GB*2 (database 0.25 cores / 512 MB floor)
+        self.assertAlmostEqual(inst.monthly_cost, 20.25, places=2)
+        self.assertAlmostEqual(inst.monthly_margin, 5.0 - 20.25, places=2)
         self.assertFalse(inst.is_profitable)
 
     def test_unprofitable_alert_cron_flags_losses(self):
@@ -63,7 +66,7 @@ class TestTenantMargin(TransactionCase):
             'cpu_limit': 2.0, 'ram_limit': '4g', 'price': 5.0, 'yearly_price': 48.0,
             'currency_id': self.env.company.currency_id.id,
             'saas_product_ids': [(6, 0, [self.product.id])]})
-        loss = self._inst('mloss2', plan_id=cheap.id)   # cost 18 > rev 5
+        loss = self._inst('mloss2', plan_id=cheap.id)   # cost 20.25 > rev 5
         self._inst('mwin2')                              # profitable
         flagged = self.env['saas.instance'].sudo()._cron_flag_unprofitable_tenants()
         self.assertGreaterEqual(flagged, 1)
@@ -73,7 +76,7 @@ class TestTenantMargin(TransactionCase):
         prod = self._inst('mprod')
         child = self._inst('mstg', environment='staging', parent_id=prod.id)
         # parent cost includes its own + child's infra cost
-        self.assertAlmostEqual(prod.monthly_cost, 36.0, places=2)  # 18 own + 18 child
+        self.assertAlmostEqual(prod.monthly_cost, 43.0, places=2)  # 21.5 own + 21.5 child
         # child bills via parent -> own revenue 0
         self.assertAlmostEqual(child.monthly_revenue, 0.0, places=2)
         # parent revenue is the plan price (covers both)
@@ -94,3 +97,12 @@ class TestTenantMargin(TransactionCase):
                       'monthly_revenue asc', 'margin_pct desc',
                       'is_profitable asc', 'margin_currency_id asc'):
             Instance.search([], order=order)  # must not raise
+
+    def test_revenue_counts_every_recurring_line(self):
+        tier = self.env['saas.compute.tier'].sudo().create(
+            {'name': 'M HA', 'code': 'm-ha', 'replicas': 2, 'monthly_price': 30.0})
+        inst = self._inst('mlines', compute_tier_id=tier.id)
+        # plan 100 + tier 30
+        self.assertAlmostEqual(inst.monthly_revenue, 130.0, places=2)
+        # Two replicas add a web pod and the cron pod to the cost.
+        self.assertAlmostEqual(inst.monthly_cost, (2 * 3 + 0.5) * 5 + (4 * 3 + 0.5) * 2, places=2)

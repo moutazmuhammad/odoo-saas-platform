@@ -68,7 +68,21 @@ func (r *OdooInstanceReconciler) reconcileManagedDatabase(ctx context.Context, i
 
 	sts := resources.DatabaseStatefulSet(instance)
 	setOwner(instance, sts)
+	var live appsv1.StatefulSet
+	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: sts.Name}, &live); err == nil {
+		// volumeClaimTemplates are immutable; the volume is grown through
+		// its PVC instead (growDatabaseVolume).
+		sts.Spec.VolumeClaimTemplates = live.Spec.VolumeClaimTemplates
+	} else if !apierrors.IsNotFound(err) {
+		return databaseResult{}, err
+	}
 	if err := r.apply(ctx, sts); err != nil {
+		return databaseResult{}, err
+	}
+	if err := r.syncDatabasePod(ctx, instance); err != nil {
+		return databaseResult{}, err
+	}
+	if err := r.growDatabaseVolume(ctx, instance); err != nil {
 		return databaseResult{}, err
 	}
 
@@ -218,4 +232,68 @@ func firstNonEmptyString(candidates ...string) string {
 		}
 	}
 	return ""
+}
+
+// syncDatabasePod brings the running PostgreSQL pod in line with the
+// StatefulSet (which uses OnDelete): resources are resized in place
+// through pods/resize, so a package change never restarts the database;
+// only an image change deletes the pod for the StatefulSet to recreate.
+func (r *OdooInstanceReconciler) syncDatabasePod(ctx context.Context, instance *saasv1alpha1.OdooInstance) error {
+	var pod corev1.Pod
+	key := types.NamespacedName{Namespace: resources.TenantNamespace(instance), Name: resources.DatabasePodName(instance)}
+	if err := r.Get(ctx, key, &pod); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	if pod.DeletionTimestamp != nil || len(pod.Spec.Containers) == 0 {
+		return nil
+	}
+	desired := resources.DatabaseStatefulSet(instance).Spec.Template.Spec.Containers[0]
+	current := pod.Spec.Containers[0]
+	if current.Image != desired.Image {
+		return client.IgnoreNotFound(r.Delete(ctx, &pod))
+	}
+	if sameResources(current.Resources, desired.Resources) {
+		return nil
+	}
+	patch := client.MergeFrom(pod.DeepCopy())
+	pod.Spec.Containers[0].Resources = desired.Resources
+	if err := r.SubResource("resize").Patch(ctx, &pod, patch); err != nil {
+		return fmt.Errorf("resizing PostgreSQL pod %s in place: %w", key, err)
+	}
+	return nil
+}
+
+// growDatabaseVolume expands the database PVC when spec.database.storage
+// asks for more than it has (online on an expandable StorageClass such as
+// Longhorn). Smaller sizes are ignored: volumes never shrink.
+func (r *OdooInstanceReconciler) growDatabaseVolume(ctx context.Context, instance *saasv1alpha1.OdooInstance) error {
+	var pvc corev1.PersistentVolumeClaim
+	key := types.NamespacedName{Namespace: resources.TenantNamespace(instance), Name: resources.DatabaseDataPVCName(instance)}
+	if err := r.Get(ctx, key, &pvc); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	want := resources.DatabaseStorageSize(instance)
+	have := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	if want.Cmp(have) <= 0 {
+		return nil
+	}
+	patch := client.MergeFrom(pvc.DeepCopy())
+	pvc.Spec.Resources.Requests[corev1.ResourceStorage] = want
+	if err := r.Patch(ctx, &pvc, patch); err != nil {
+		return fmt.Errorf("growing database volume %s to %s: %w", key, want.String(), err)
+	}
+	return nil
+}
+
+func sameResources(a, b corev1.ResourceRequirements) bool {
+	for _, name := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		for _, pair := range [][2]corev1.ResourceList{{a.Requests, b.Requests}, {a.Limits, b.Limits}} {
+			x, xok := pair[0][name]
+			y, yok := pair[1][name]
+			if xok != yok || (xok && x.Cmp(y) != 0) {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -121,6 +121,28 @@ class ResConfigSettings(models.TransientModel):
         config_parameter='saas_master.hosting_ram_per_worker',
         default=512,
     )
+    # PostgreSQL's share of the package (saas.plan._recommended_db_resources),
+    # same for hosting and services.
+    saas_db_cpu_per_worker = fields.Float(
+        string='Database: CPU per Worker',
+        config_parameter='saas_master.db_cpu_per_worker',
+        default=0.25,
+    )
+    saas_db_ram_per_worker = fields.Integer(
+        string='Database: RAM per Worker (MB)',
+        config_parameter='saas_master.db_ram_per_worker',
+        default=256,
+    )
+    saas_db_cpu_min = fields.Float(
+        string='Database: Minimum CPU',
+        config_parameter='saas_master.db_cpu_min',
+        default=0.25,
+    )
+    saas_db_ram_min = fields.Integer(
+        string='Database: Minimum RAM (MB)',
+        config_parameter='saas_master.db_ram_min',
+        default=512,
+    )
     saas_hosting_yearly_discount_pct = fields.Integer(
         string='Hosting: Yearly Discount %',
         config_parameter='saas_master.hosting_yearly_discount_pct',

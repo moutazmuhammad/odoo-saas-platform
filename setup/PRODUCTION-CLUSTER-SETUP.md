@@ -267,13 +267,15 @@ helm upgrade --install longhorn compute/charts/vendor/longhorn \
   --set persistence.defaultClassReplicaCount=$REPLICAS \
   --set defaultSettings.defaultReplicaCount=$REPLICAS \
   --set defaultSettings.defaultDataPath=/var/lib/longhorn \
-  --set defaultSettings.nodeDownPodDeletionPolicy=delete-both-statefulset-and-deployment-pod
+  --set defaultSettings.nodeDownPodDeletionPolicy=delete-both-statefulset-and-deployment-pod \
+  --set defaultSettings.storageOverProvisioningPercentage=200
 kubectl -n longhorn-system rollout status deploy/longhorn-driver-deployer --timeout=10m
 kubectl -n longhorn-system rollout status ds/longhorn-csi-plugin --timeout=10m
 ```
 
 - `kubeletRootDir`: MicroK8s's kubelet path. Without it, volumes never mount.
 - `nodeDownPodDeletionPolicy`: when a node dies, the tenant restarts elsewhere without manual help.
+- `storageOverProvisioningPercentage=200`: each tenant's files volume and database volume are both sized to its whole storage package (either may hold most of the data; the measured total is what's enforced), and Longhorn only writes what's used. 200% lets those thin volumes be scheduled on that basis. Watch real disk use (act at 70%).
 
 **Check:** a test volume is written, with one copy per node, then deleted:
 

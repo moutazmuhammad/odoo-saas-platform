@@ -754,9 +754,10 @@ class SaasApi(http.Controller):
     @http.route('/saas/api/v1/instances/<int:instance_id>/metrics',
                 type='json', auth='public')
     def instance_metrics(self, instance_id, access_token=None):
-        """Live CPU/RAM (% of plan) for the dashboard, read from the
-        region's Prometheus (cached a few seconds per instance, so polling
-        every few seconds from many tabs costs one query)."""
+        """Live CPU/RAM (% of the package: Odoo + database, with the two
+        shares) for the dashboard, read from the cluster's Prometheus
+        (cached a few seconds per instance, so polling every few seconds
+        from many tabs costs one query)."""
         try:
             instance = self._instance(instance_id, access_token)
         except (AccessError, MissingError):
@@ -765,6 +766,10 @@ class SaasApi(http.Controller):
         return ok({
             'cpu': round(live['cpu']),
             'ram': round(live['ram']),
+            'odoo_cpu': live.get('odoo_cpu', 0.0),
+            'db_cpu': live.get('db_cpu', 0.0),
+            'odoo_ram': live.get('odoo_ram', 0.0),
+            'db_ram': live.get('db_ram', 0.0),
             'at': live['at'],
             'available': live['available'],
         })

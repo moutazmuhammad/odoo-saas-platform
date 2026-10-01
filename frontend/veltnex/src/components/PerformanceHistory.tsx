@@ -1,7 +1,7 @@
 import * as React from "react";
 import { usePolling } from "@/hooks/usePolling";
 import { Activity } from "lucide-react";
-import { api, type MetricsHistory, type MetricSample } from "@/lib/api";
+import { api, type LiveMetrics, type MetricsHistory, type MetricSample, type PackageSummary } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +55,7 @@ export function PerformanceHistory({
   // Live current reading (DigitalOcean-style): polled frequently, and the poll
   // itself marks the instance "watched" so the background sampler keeps
   // measuring it while this view is open.
-  const [live, setLive] = React.useState<{ cpu: number; ram: number; at: string } | null>(null);
+  const [live, setLive] = React.useState<LiveMetrics | null>(null);
 
   // History: load on range change, then auto-refresh on an interval matched to
   // the window so new points stream into the charts without a manual reload.
@@ -79,8 +79,12 @@ export function PerformanceHistory({
 
   const samples = data?.samples ?? [];
   const lastSample = samples[samples.length - 1];
-  const cpuNow = live?.cpu ?? lastSample?.cpu ?? 0;
-  const ramNow = live?.ram ?? lastSample?.ram ?? 0;
+  const now = live ?? lastSample;
+  const cpuNow = now?.cpu ?? 0;
+  const ramNow = now?.ram ?? 0;
+  const pkg = data?.package && "cpu_cores" in data.package ? (data.package as PackageSummary) : null;
+  const split = (odoo?: number, db?: number) =>
+    odoo == null && db == null ? undefined : `Odoo ${(odoo ?? 0).toFixed(0)}% · DB ${(db ?? 0).toFixed(0)}%`;
   const storagePct = lastSample?.storage_pct ?? 0;
   const storageMb = lastSample?.storage_mb ?? 0;
 
@@ -102,6 +106,10 @@ export function PerformanceHistory({
           t: new Date(endMs).toISOString(),
           cpu: live.cpu,
           ram: live.ram,
+          odoo_cpu: live.odoo_cpu,
+          db_cpu: live.db_cpu,
+          odoo_ram: live.odoo_ram,
+          db_ram: live.db_ram,
           storage_mb: storageMb,
           storage_pct: storagePct,
         },
@@ -142,11 +150,25 @@ export function PerformanceHistory({
         </div>
       </div>
 
+      {pkg && (
+        <p className="mt-2 text-xs text-muted">
+          Your package: {pkg.workers} worker{pkg.workers === 1 ? "" : "s"}
+          {pkg.replicas > 1 ? ` × ${pkg.replicas} replicas` : ""} · {formatCores(pkg.cpu_cores)} vCPU ·{" "}
+          {formatMb(pkg.ram_mb)} RAM · {pkg.storage_gb} GB storage, including the managed PostgreSQL database.
+          Percentages are of the whole package.
+        </p>
+      )}
+
       {/* Live readout — current CPU / Memory / Disk, refreshed every few secs. */}
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        <LiveStat label="CPU" pct={cpuNow} color="#4c8dff" live={!!live} />
-        <LiveStat label="Memory" pct={ramNow} color="#a142f4" live={!!live} />
-        <LiveStat label="Disk" pct={storagePct} sub={`${storageMb.toFixed(0)} MB`} color="#12b886" />
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <LiveStat label="CPU" pct={cpuNow} sub={split(now?.odoo_cpu, now?.db_cpu)} color="#4c8dff" live={!!live} />
+        <LiveStat label="Memory" pct={ramNow} sub={split(now?.odoo_ram, now?.db_ram)} color="#a142f4" live={!!live} />
+        <LiveStat
+          label="Disk"
+          pct={storagePct}
+          sub={pkg ? `Files ${formatMb(pkg.files_mb)} · DB ${formatMb(pkg.databases_mb)}` : `${storageMb.toFixed(0)} MB`}
+          color="#12b886"
+        />
       </div>
 
       {loading ? (
@@ -165,6 +187,7 @@ export function PerformanceHistory({
             color="#4c8dff"
             samples={chartSamples}
             pick={(s) => s.cpu}
+            pickDb={(s) => s.db_cpu}
             startMs={startMs}
             endMs={endMs}
           />
@@ -174,6 +197,7 @@ export function PerformanceHistory({
             color="#a142f4"
             samples={chartSamples}
             pick={(s) => s.ram}
+            pickDb={(s) => s.db_ram}
             startMs={startMs}
             endMs={endMs}
           />
@@ -198,6 +222,7 @@ function AreaChart({
   color,
   samples,
   pick,
+  pickDb,
   startMs,
   endMs,
 }: {
@@ -206,6 +231,8 @@ function AreaChart({
   color: string;
   samples: MetricSample[];
   pick: (s: MetricSample) => number;
+  /** The database's share of the total, drawn as a band at the bottom. */
+  pickDb?: (s: MetricSample) => number | undefined;
   startMs: number;
   endMs: number;
 }) {
@@ -234,6 +261,14 @@ function AreaChart({
   const area = pts.length
     ? `${pts[0].px.toFixed(1)},${H - PAD} ${line} ${pts[pts.length - 1].px.toFixed(1)},${H - PAD}`
     : "";
+  const dbValues = pickDb ? samples.map((s) => pickDb(s) ?? 0) : null;
+  const hasDb = !!dbValues && dbValues.some((v) => v > 0);
+  const dbLine = hasDb
+    ? samples.map((s, i) => `${x(tMs(s)).toFixed(1)},${y(dbValues![i]).toFixed(1)}`).join(" ")
+    : "";
+  const dbArea = hasDb && pts.length
+    ? `${pts[0].px.toFixed(1)},${H - PAD} ${dbLine} ${pts[pts.length - 1].px.toFixed(1)},${H - PAD}`
+    : "";
   const gid = `grad-${label}`;
 
   const last = values[values.length - 1] ?? 0;
@@ -247,7 +282,21 @@ function AreaChart({
   return (
     <div>
       <div className="mb-1.5 flex items-baseline justify-between text-xs">
-        <span className="font-medium text-foreground">{label}</span>
+        <span className="flex items-center gap-2 font-medium text-foreground">
+          {label}
+          {hasDb && (
+            <span className="flex items-center gap-2 font-normal text-muted">
+              <span className="inline-flex items-center gap-1">
+                <span className="size-2 rounded-sm" style={{ backgroundColor: color, opacity: 0.5 }} />
+                Odoo
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="size-2 rounded-sm" style={{ backgroundColor: DB_COLOR }} />
+                Database
+              </span>
+            </span>
+          )}
+        </span>
         <span className="text-muted">
           now <span className="font-semibold tabular-nums text-foreground">{fmt(last)}</span>
           <span className="mx-1.5 opacity-40">·</span>peak{" "}
@@ -303,6 +352,7 @@ function AreaChart({
             />
           ))}
           <polygon points={area} fill={`url(#${gid})`} />
+          {hasDb && <polygon points={dbArea} fill={DB_COLOR} fillOpacity="0.35" />}
           <polyline
             points={line}
             fill="none"
@@ -332,6 +382,11 @@ function AreaChart({
             style={{ left: `${((new Date(ht).getTime() - startMs) / span) * 100}%` }}
           >
             <div className="font-semibold tabular-nums">{fmt(hv)}</div>
+            {hasDb && hover != null && (
+              <div className="tabular-nums text-muted">
+                Odoo {fmt(Math.max(0, hv - dbValues![hover]))} · DB {fmt(dbValues![hover])}
+              </div>
+            )}
             <div className="text-muted">{formatTime(ht)}</div>
           </div>
         )}
@@ -346,6 +401,17 @@ function AreaChart({
       </div>
     </div>
   );
+}
+
+// The database band in the stacked CPU / Memory charts.
+const DB_COLOR = "#f59f00";
+
+function formatCores(cores: number): string {
+  return cores % 1 === 0 ? cores.toFixed(0) : cores.toFixed(2).replace(/0$/, "");
+}
+
+function formatMb(mb: number): string {
+  return mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB` : `${mb.toFixed(0)} MB`;
 }
 
 // Round a percentage up to a readable axis ceiling so a tiny CPU signal still

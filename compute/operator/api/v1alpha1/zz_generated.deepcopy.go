@@ -114,6 +114,11 @@ func (in *DatabaseSpec) DeepCopyInto(out *DatabaseSpec) {
 		*out = new(StorageRequestSpec)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.Resources != nil {
+		in, out := &in.Resources, &out.Resources
+		*out = new(v1.ResourceRequirements)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.CredentialsSecretRef != nil {
 		in, out := &in.CredentialsSecretRef, &out.CredentialsSecretRef
 		*out = new(v1.LocalObjectReference)

@@ -456,10 +456,42 @@ export interface StatusData {
 
 export interface MetricSample {
   t: string;
+  /** % of the whole package (Odoo + database). */
   cpu: number;
   ram: number;
+  /** The two shares of cpu / ram, each as % of the package. */
+  odoo_cpu?: number;
+  db_cpu?: number;
+  odoo_ram?: number;
+  db_ram?: number;
   storage_mb: number;
   storage_pct: number;
+}
+
+/** What the customer's package reserves: Odoo pods + PostgreSQL + storage. */
+export interface PackageSummary {
+  workers: number;
+  replicas: number;
+  cpu_cores: number;
+  ram_mb: number;
+  odoo_cpu_cores: number;
+  odoo_ram_mb: number;
+  db_cpu_cores: number;
+  db_ram_mb: number;
+  storage_gb: number;
+  files_mb: number;
+  databases_mb: number;
+}
+
+export interface LiveMetrics {
+  cpu: number;
+  ram: number;
+  odoo_cpu?: number;
+  db_cpu?: number;
+  odoo_ram?: number;
+  db_ram?: number;
+  at: string;
+  available: boolean;
 }
 
 export interface MetricsHistory {
@@ -469,6 +501,7 @@ export interface MetricsHistory {
   retention_days: number;
   available: boolean;
   plan: { cpu_limit: number; ram_limit: string; storage_limit_gb: number };
+  package?: PackageSummary | Record<string, never>;
   samples: MetricSample[];
 }
 
@@ -613,7 +646,7 @@ export const api = {
     rpc<ApiInstance>(`/saas/api/v1/instances/${id}`, accessToken ? { access_token: accessToken } : {}),
   instanceStatus: (id: number) => rpc<StatusData>(`/saas/api/v1/instances/${id}/status`),
   instanceMetrics: (id: number, accessToken?: string) =>
-    rpc<{ cpu: number; ram: number; at: string; available: boolean }>(
+    rpc<LiveMetrics>(
       `/saas/api/v1/instances/${id}/metrics`,
       accessToken ? { access_token: accessToken } : {},
     ),

@@ -119,23 +119,28 @@ class TestDeployOnKubernetes(TransactionCase):
         self.assertEqual(res['mem_request'], '128Mi')
         self.assertEqual(res['workers'], 0)
 
-    def test_update_container_resources_patches_running_pod(self):
+    def test_update_container_resources_applies_the_whole_package(self):
         self.instance.state = 'running'
         self.plan.write({'cpu_limit': 1.5, 'ram_limit': '1536m', 'workers': 2})
         driver = MagicMock()
         with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
                 patch.object(type(self.instance), '_compute_handle', return_value='H'):
             self.instance._update_container_resources()
-        driver.set_resources.assert_called_once_with(
-            'H', cpu_request='375m', cpu_limit='1500m',
-            mem_request='384Mi', mem_limit='1536Mi', workers=2)
+        handle, res = driver.set_package.call_args.args
+        self.assertEqual(handle, 'H')
+        self.assertEqual(
+            (res['cpu_request'], res['cpu_limit'], res['mem_request'], res['mem_limit'], res['workers']),
+            ('375m', '1500m', '384Mi', '1536Mi', 2))
+        # PostgreSQL: 0.25 CPU and 256 MB per worker, 512 MB minimum.
+        self.assertEqual((res['db_cpu_limit'], res['db_mem_limit']), ('500m', '512Mi'))
+        self.assertIn('limits.cpu', res['quota'])
 
-    def test_update_container_resources_skips_plan_without_limits(self):
-        self.plan.write({'cpu_limit': 0.0, 'ram_limit': ''})
+    def test_update_container_resources_skips_instance_without_plan(self):
+        self.instance.plan_id = False
         driver = MagicMock()
         with patch.object(type(self.instance), '_compute_driver', return_value=driver):
             self.instance._update_container_resources()
-        driver.set_resources.assert_not_called()
+        driver.set_package.assert_not_called()
 
     def test_deploy_refuses_without_tls_issuer(self):
         """TLS is always cluster-native; a cluster with no ClusterIssuer

@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"fmt"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -58,7 +59,11 @@ func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance) *appsv1.StatefulSe
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:    ptr.To(int32(1)),
 			ServiceName: DatabaseServiceName(instance),
-			Selector:    &metav1.LabelSelector{MatchLabels: labels},
+			// OnDelete: a resources change must not restart the only
+			// database pod. The controller resizes it in place and deletes
+			// it only for an image change (see reconcileManagedDatabase).
+			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{Type: appsv1.OnDeleteStatefulSetStrategyType},
+			Selector:       &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
@@ -85,15 +90,12 @@ func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance) *appsv1.StatefulSe
 							Ports: []corev1.ContainerPort{
 								{Name: "postgresql", ContainerPort: PostgreSQLPort, Protocol: corev1.ProtocolTCP},
 							},
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("250m"),
-									corev1.ResourceMemory: resource.MustParse("512Mi"),
-								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("2"),
-									corev1.ResourceMemory: resource.MustParse("2Gi"),
-								},
+							Args:      PostgresTuningArgs(DatabaseResources(instance)),
+							Resources: DatabaseResources(instance),
+							// Resized in place by the controller (pods/resize).
+							ResizePolicy: []corev1.ContainerResizePolicy{
+								{ResourceName: corev1.ResourceCPU, RestartPolicy: corev1.NotRequired},
+								{ResourceName: corev1.ResourceMemory, RestartPolicy: corev1.NotRequired},
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: DatabasePVCName(instance), MountPath: "/var/lib/postgresql/data"},
@@ -145,5 +147,68 @@ func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance) *appsv1.StatefulSe
 				},
 			},
 		},
+	}
+}
+
+// DatabasePodName is the managed PostgreSQL StatefulSet's only pod.
+func DatabasePodName(instance *saasv1alpha1.OdooInstance) string {
+	return DatabaseStatefulSetName(instance) + "-0"
+}
+
+// DatabaseDataPVCName is the PVC the StatefulSet's volume claim template
+// created for that pod.
+func DatabaseDataPVCName(instance *saasv1alpha1.OdooInstance) string {
+	return DatabasePVCName(instance) + "-" + DatabasePodName(instance)
+}
+
+// DatabaseStorageSize is the requested database volume size (default 20Gi).
+func DatabaseStorageSize(instance *saasv1alpha1.OdooInstance) resource.Quantity {
+	if instance.Spec.Database.Storage != nil && instance.Spec.Database.Storage.Size != "" {
+		if q, err := resource.ParseQuantity(instance.Spec.Database.Storage.Size); err == nil {
+			return q
+		}
+	}
+	return resource.MustParse("20Gi")
+}
+
+// DatabaseResources is spec.database.resources, or the platform default.
+func DatabaseResources(instance *saasv1alpha1.OdooInstance) corev1.ResourceRequirements {
+	if r := instance.Spec.Database.Resources; r != nil && (len(r.Limits) > 0 || len(r.Requests) > 0) {
+		return *r.DeepCopy()
+	}
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("250m"),
+			corev1.ResourceMemory: resource.MustParse("512Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("2"),
+			corev1.ResourceMemory: resource.MustParse("2Gi"),
+		},
+	}
+}
+
+// PostgresTuningArgs sizes PostgreSQL's memory settings to the
+// container's memory limit, the usual 25% / 50% split: shared_buffers 25%,
+// effective_cache_size 50%, work_mem limit/64 (min 4MB),
+// maintenance_work_mem limit/16 (min 32MB). Without a limit, nothing is
+// overridden.
+func PostgresTuningArgs(res corev1.ResourceRequirements) []string {
+	mem, ok := res.Limits[corev1.ResourceMemory]
+	if !ok || mem.Value() <= 0 {
+		return nil
+	}
+	mb := mem.Value() / (1024 * 1024)
+	maxOf := func(a, b int64) int64 {
+		if a > b {
+			return a
+		}
+		return b
+	}
+	return []string{
+		"-c", fmt.Sprintf("shared_buffers=%dMB", maxOf(mb/4, 32)),
+		"-c", fmt.Sprintf("effective_cache_size=%dMB", maxOf(mb/2, 64)),
+		"-c", fmt.Sprintf("work_mem=%dMB", maxOf(mb/64, 4)),
+		"-c", fmt.Sprintf("maintenance_work_mem=%dMB", maxOf(mb/16, 32)),
 	}
 }

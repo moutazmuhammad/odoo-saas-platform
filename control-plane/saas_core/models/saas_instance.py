@@ -606,6 +606,9 @@ class SaasInstance(models.Model):
         string='Total Storage (bytes)',
         readonly=True,
     )
+    # The two parts of total_storage_bytes, for the customer's breakdown.
+    filestore_bytes = fields.Float(string='Files (bytes)', readonly=True)
+    db_storage_bytes = fields.Float(string='Databases (bytes)', readonly=True)
     # A2: storage display (included / used) — cheap non-stored computes used
     # by the portal, the storage-usage email and the overage summary. NOTE:
     # ``storage_usage_pct`` already exists above (kept by the usage refresh
@@ -1219,6 +1222,11 @@ class SaasInstance(models.Model):
         handle = self._compute_handle()
         self._append_log(
             "Scaling to '%s' tier (%d replica(s))..." % (tier.name, tier.replicas))
+        # Quota first, sized for the larger replica count, so the new pods
+        # (and a rollback) fit; the final package follows once committed.
+        package = self._k8s_plan_resources(replicas=max(previous_replicas, tier.replicas))
+        if package:
+            driver.set_package(handle, package)
         driver.scale(handle, tier.replicas)
         # Settle delay before the first health check — live-verified this is
         # necessary: patching spec.replicas doesn't synchronously update
@@ -1251,6 +1259,10 @@ class SaasInstance(models.Model):
         self.write({'compute_tier_id': tier.id})
         self._append_log(
             "Now on the '%s' tier (%d replica(s))." % (tier.name, tier.replicas))
+        try:
+            self._update_container_resources()
+        except Exception as e:
+            _logger.warning("package update after scaling %s failed: %s", self.subdomain, e)
         self.message_post(body=_(
             "Compute tier changed to %s — this instance now runs across "
             "%d replica(s)."
@@ -4166,13 +4178,13 @@ class SaasInstance(models.Model):
             and r.docker_server_id.compute_driver == 'kubernetes')
 
     def _plan_limits(self):
-        """(cpu cores, RAM bytes, storage bytes) the plan allows per pod /
-        in total; 0 = no limit set."""
+        """(cpu cores, RAM bytes, storage bytes) of the whole package (all
+        Odoo pods + PostgreSQL; purchased storage); 0 = no plan."""
         self.ensure_one()
-        plan = self.plan_id
+        pkg = self._package_resources()
         return (
-            (plan.cpu_limit or 0.0) if plan else 0.0,
-            self._parse_ram_string(plan.ram_limit) if plan else 0,
+            pkg.get('total_cpu_m', 0) / 1000.0,
+            pkg.get('total_mem_mi', 0) * 1024 ** 2,
             (self.effective_storage_limit_gb or 0.0) * 1024 ** 3,
         )
 
@@ -4201,6 +4213,8 @@ class SaasInstance(models.Model):
             'db_size': self._format_bytes(db_bytes),
             'total_storage': self._format_bytes(total),
             'total_storage_bytes': float(total),
+            'filestore_bytes': float(filestore_bytes),
+            'db_storage_bytes': float(db_bytes),
             'storage_usage_pct': self._pct(total, self._plan_limits()[2]),
         }
 
@@ -4310,6 +4324,8 @@ class SaasInstance(models.Model):
                     u.get('cpu_cores', 0.0), u.get('mem_bytes', 0.0))
                 payload = {
                     'cpu': vals['cpu_usage_pct'], 'ram': vals['ram_usage_pct'],
+                    # Shares of the package (they add up to cpu / ram).
+                    **self._package_breakdown(u),
                     'at': fields.Datetime.to_string(fields.Datetime.now()),
                     'available': True,
                 }
@@ -4318,6 +4334,37 @@ class SaasInstance(models.Model):
         with _LIVE_METRICS_GUARD:
             _LIVE_METRICS_CACHE[self.id] = (mono, payload)
         return payload
+
+    def _package_breakdown(self, usage):
+        """Odoo and database CPU/RAM as % of the WHOLE package, so they
+        stack to the package total: ``{'odoo_cpu', 'db_cpu', 'odoo_ram',
+        'db_ram'}``."""
+        cpu_limit, ram_limit, _storage = self._plan_limits()
+        return {
+            'odoo_cpu': self._pct(usage.get('odoo_cpu_cores', 0.0), cpu_limit),
+            'db_cpu': self._pct(usage.get('db_cpu_cores', 0.0), cpu_limit),
+            'odoo_ram': self._pct(usage.get('odoo_mem_bytes', 0.0), ram_limit),
+            'db_ram': self._pct(usage.get('db_mem_bytes', 0.0), ram_limit),
+        }
+
+    def _package_summary(self):
+        """The package in customer terms, for the Performance page."""
+        pkg = self._package_resources()
+        if not pkg:
+            return {}
+        return {
+            'workers': pkg['workers'],
+            'replicas': pkg['replicas'],
+            'cpu_cores': pkg['total_cpu_m'] / 1000.0,
+            'ram_mb': pkg['total_mem_mi'],
+            'odoo_cpu_cores': pkg['odoo_cpu_m'] * pkg['odoo_pods'] / 1000.0,
+            'odoo_ram_mb': pkg['odoo_mem_mi'] * pkg['odoo_pods'],
+            'db_cpu_cores': pkg['db_cpu_m'] / 1000.0,
+            'db_ram_mb': pkg['db_mem_mi'],
+            'storage_gb': self.effective_storage_limit_gb or 0,
+            'files_mb': round((self.filestore_bytes or 0.0) / 1024 ** 2, 1),
+            'databases_mb': round((self.db_storage_bytes or 0.0) / 1024 ** 2, 1),
+        }
 
     def _get_metric_series(self, hours=24, max_points=240):
         """CPU/RAM (% of plan) and storage history for THIS instance over
@@ -4345,6 +4392,8 @@ class SaasInstance(models.Model):
                 series = {}
             cpu = dict(series.get('cpu_cores') or [])
             ram = dict(series.get('mem_bytes') or [])
+            parts = {k: dict(series.get(k) or []) for k in (
+                'odoo_cpu_cores', 'db_cpu_cores', 'odoo_mem_bytes', 'db_mem_bytes')}
             vol = dict(series.get('volume_bytes') or [])
             flat_storage = self.total_storage_bytes or 0.0
             for ts in sorted(set(cpu) | set(ram)):
@@ -4355,6 +4404,10 @@ class SaasInstance(models.Model):
                         .isoformat() + 'Z',
                     'cpu': self._pct(cpu.get(ts, 0.0), cpu_limit),
                     'ram': self._pct(ram.get(ts, 0.0), ram_limit),
+                    'odoo_cpu': self._pct(parts['odoo_cpu_cores'].get(ts, 0.0), cpu_limit),
+                    'db_cpu': self._pct(parts['db_cpu_cores'].get(ts, 0.0), cpu_limit),
+                    'odoo_ram': self._pct(parts['odoo_mem_bytes'].get(ts, 0.0), ram_limit),
+                    'db_ram': self._pct(parts['db_mem_bytes'].get(ts, 0.0), ram_limit),
                     'storage_mb': round(stored / 1024 ** 2, 2),
                     'storage_pct': self._pct(stored, storage_limit),
                 })
@@ -4370,6 +4423,7 @@ class SaasInstance(models.Model):
                 'ram_limit': plan.ram_limit if plan else '',
                 'storage_limit_gb': plan.storage_limit if plan else 0,
             },
+            'package': self._package_summary(),
             'samples': samples,
         }
 
@@ -5581,61 +5635,59 @@ class SaasInstance(models.Model):
     # Recurring billing, dunning and plan upgrade/downgrade (the commercial
     # side) live in saas_billing/models/saas_instance.py.
 
-    # Pod requests are this fraction of the plan's limits (the driver's own
-    # 250m/1 CPU and 512Mi/2Gi defaults use the same ratio), with a floor so
-    # a tiny plan still schedules sensibly.
-    _K8S_REQUEST_RATIO = 0.25
-    _K8S_MIN_CPU_REQUEST_M = 100
-    _K8S_MIN_MEM_REQUEST_MI = 128
-
-    def _k8s_plan_resources(self):
-        """The plan's CPU/RAM/workers as KubernetesDriver resource keys
-        (``cpu_limit``/``cpu_request``/``mem_limit``/``mem_request`` in
-        Kubernetes quantity form, plus ``workers``). Empty when the
-        instance has no plan; a plan field left at 0/blank is omitted so
-        the driver's default applies for it."""
+    def _package_resources(self, replicas=None):
+        """What this instance's package reserves (saas.plan._package):
+        Odoo pods, PostgreSQL, volumes and quota. Empty without a plan.
+        ``replicas`` overrides the compute tier's (used while scaling)."""
         self.ensure_one()
-        plan = self.plan_id
-        if not plan:
+        if not self.plan_id:
             return {}
-        vals = {}
-        cpu_m = int(round((plan.cpu_limit or 0.0) * 1000))
-        if cpu_m > 0:
-            vals['cpu_limit'] = '%dm' % cpu_m
-            vals['cpu_request'] = '%dm' % max(
-                self._K8S_MIN_CPU_REQUEST_M,
-                int(cpu_m * self._K8S_REQUEST_RATIO))
-        mem_mi = int(self._parse_ram_string(plan.ram_limit) // (1024 ** 2))
-        if mem_mi > 0:
-            vals['mem_limit'] = '%dMi' % mem_mi
-            vals['mem_request'] = '%dMi' % max(
-                self._K8S_MIN_MEM_REQUEST_MI,
-                int(mem_mi * self._K8S_REQUEST_RATIO))
-        vals['workers'] = plan.workers or 0
-        return vals
+        return self.plan_id._package(
+            replicas=replicas or self.compute_tier_id.replicas or 1,
+            storage_gb=self.effective_storage_limit_gb)
+
+    def _k8s_plan_resources(self, replicas=None):
+        """The package as KubernetesDriver keys: Odoo requests/limits and
+        workers, PostgreSQL requests/limits, volume sizes and the namespace
+        quota. Empty when the instance has no plan."""
+        self.ensure_one()
+        pkg = self._package_resources(replicas=replicas)
+        if not pkg:
+            return {}
+        return {
+            'cpu_limit': '%dm' % pkg['odoo_cpu_m'],
+            'cpu_request': '%dm' % pkg['odoo_cpu_req_m'],
+            'mem_limit': '%dMi' % pkg['odoo_mem_mi'],
+            'mem_request': '%dMi' % pkg['odoo_mem_req_mi'],
+            'workers': pkg['workers'],
+            'db_cpu_limit': '%dm' % pkg['db_cpu_m'],
+            'db_cpu_request': '%dm' % pkg['db_cpu_req_m'],
+            'db_mem_limit': '%dMi' % pkg['db_mem_mi'],
+            'db_mem_request': '%dMi' % pkg['db_mem_req_mi'],
+            'filestore_size': '%dGi' % pkg['storage_gb'],
+            'db_storage_size': '%dGi' % pkg['storage_gb'],
+            'quota': pkg['quota'],
+        }
 
     def _update_container_resources(self):
-        """Apply the current plan's CPU/RAM/workers to the running pod (the
-        operator rolls the Deployment). Called after a plan change is
-        applied. Raises if the cluster rejects the patch — callers log it
-        and leave the plan change in place so an admin can redeploy."""
+        """Apply the current package (plan, compute tier, storage blocks) to
+        the running tenant: Odoo rolls its pods (zero downtime), PostgreSQL
+        is resized in place, volumes grow online. Called after a plan,
+        tier or storage change. Raises if the cluster rejects the patch —
+        callers log it and leave the change in place so an admin can
+        redeploy."""
         self.ensure_one()
         if self.docker_server_id.compute_driver != 'kubernetes':
             return
         res = self._k8s_plan_resources()
-        if not res.get('cpu_limit') or not res.get('mem_limit'):
-            # Nothing concrete to apply (plan without limits): keep what
-            # the pod already runs with rather than resetting to defaults.
+        if not res:
             return
-        self._compute_driver().set_resources(
-            self._compute_handle(),
-            cpu_request=res['cpu_request'], cpu_limit=res['cpu_limit'],
-            mem_request=res['mem_request'], mem_limit=res['mem_limit'],
-            workers=res['workers'])
+        self._compute_driver().set_package(self._compute_handle(), res)
         self._append_log(
-            "Resources updated to the %s plan: %s CPU, %s RAM, %d worker(s)."
-            % (self.plan_id.name, res['cpu_limit'], res['mem_limit'],
-               res['workers']))
+            "Package applied (%s): Odoo %s CPU / %s RAM, %d worker(s); "
+            "database %s CPU / %s RAM; storage %s."
+            % (self.plan_id.name, res['cpu_limit'], res['mem_limit'], res['workers'],
+               res['db_cpu_limit'], res['db_mem_limit'], res['filestore_size']))
 
     # ========== Billing hooks ==========
     # No-op defaults that saas_billing overrides. Core never reads or

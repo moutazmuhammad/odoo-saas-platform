@@ -19,6 +19,11 @@ class TestInstanceMetrics(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # Package = Odoo 2 cores / 2 GB + database 2 cores / 2 GB (pinned via
+        # the DB minimums) = 4 cores / 4 GB, so percentages are easy to read.
+        icp = self.env['ir.config_parameter'].sudo()
+        icp.set_param('saas_master.db_cpu_min', '2')
+        icp.set_param('saas_master.db_ram_min', '2048')
         self.product = self.env['saas.product'].sudo().search(
             [('is_hosting', '=', True)], limit=1) or self.env['saas.product'].sudo().create(
             {'name': 'Mx Hosting', 'is_hosting': True, 'is_published': True})
@@ -37,7 +42,9 @@ class TestInstanceMetrics(TransactionCase):
         self.driver = MagicMock()
         self.driver._cr_name = KubernetesDriver._cr_name
         self.driver.usage_by_tenant.return_value = {
-            self.cr_name: {'cpu_cores': 0.5, 'mem_bytes': 1 * GB}}
+            self.cr_name: {'cpu_cores': 0.5, 'mem_bytes': 1 * GB,
+                           'odoo_cpu_cores': 0.4, 'db_cpu_cores': 0.1,
+                           'odoo_mem_bytes': 0.75 * GB, 'db_mem_bytes': 0.25 * GB}}
         self.driver.measure_storage.return_value = {
             'filestore_bytes': 2 * GB, 'db_bytes': 1 * GB}
         p = patch.object(type(self.inst), '_compute_driver',
@@ -56,10 +63,12 @@ class TestInstanceMetrics(TransactionCase):
         return self.env['saas.instance'].sudo().create(vals)
 
     # ---------------- stored usage refresh ----------------
-    def test_refresh_writes_plan_relative_cpu_ram_and_storage(self):
+    def test_refresh_writes_package_relative_cpu_ram_and_storage(self):
         self.inst.action_refresh_usage()
-        self.assertEqual(self.inst.cpu_usage_pct, 25.0)     # 0.5 of 2 cores
-        self.assertEqual(self.inst.ram_usage_pct, 50.0)     # 1 of 2 GB
+        self.assertEqual(self.inst.cpu_usage_pct, 12.5)     # 0.5 of 4 package cores
+        self.assertEqual(self.inst.ram_usage_pct, 25.0)     # 1 of 4 package GB
+        self.assertEqual(self.inst.filestore_bytes, 2 * GB)
+        self.assertEqual(self.inst.db_storage_bytes, 1 * GB)
         self.assertEqual(self.inst.total_storage_bytes, 3 * GB)
         self.assertEqual(self.inst.storage_usage_pct, 30.0)  # 3 of 10 GB
         self.assertEqual(self.inst.db_size, '1.00 GB')
@@ -86,7 +95,7 @@ class TestInstanceMetrics(TransactionCase):
     def test_safe_refresh_swallows_storage_failure(self):
         self.driver.measure_storage.side_effect = RuntimeError('exec failed')
         self.inst._safe_refresh_usage()
-        self.assertEqual(self.inst.cpu_usage_pct, 25.0)
+        self.assertEqual(self.inst.cpu_usage_pct, 12.5)
         self.assertFalse(self.inst.total_storage_bytes)
 
     def test_refresh_stops_storage_after_repeated_failures(self):
@@ -122,7 +131,10 @@ class TestInstanceMetrics(TransactionCase):
         second = self.inst._get_live_metrics()
         self.assertEqual(first, second)
         self.assertEqual((first['cpu'], first['ram'], first['available']),
-                         (25.0, 50.0, True))
+                         (12.5, 25.0, True))
+        # The Odoo / database shares stack to the package total.
+        self.assertEqual((first['odoo_cpu'], first['db_cpu']), (10.0, 2.5))
+        self.assertEqual((first['odoo_ram'], first['db_ram']), (18.8, 6.2))
         self.driver.usage_by_tenant.assert_called_once()
         self.driver.measure_storage.assert_not_called()
 
@@ -138,6 +150,7 @@ class TestInstanceMetrics(TransactionCase):
         self.driver.usage_history.return_value = {
             'cpu_cores': [(1790000000.0, 1.0), (1790000060.0, 0.2)],
             'mem_bytes': [(1790000000.0, 0.5 * GB), (1790000060.0, 1.0 * GB)],
+            'db_cpu_cores': [(1790000000.0, 0.2)],
             'volume_bytes': [],
         }
         data = self.inst._get_metric_series(hours=24)
@@ -145,8 +158,11 @@ class TestInstanceMetrics(TransactionCase):
         self.assertEqual(data['retention_days'], 14)
         s = data['samples']
         self.assertEqual(len(s), 2)
-        self.assertEqual((s[0]['cpu'], s[0]['ram']), (50.0, 25.0))
-        self.assertEqual((s[1]['cpu'], s[1]['ram']), (10.0, 50.0))
+        self.assertEqual((s[0]['cpu'], s[0]['ram']), (25.0, 12.5))
+        self.assertEqual((s[1]['cpu'], s[1]['ram']), (5.0, 25.0))
+        self.assertEqual(s[0]['db_cpu'], 5.0)
+        self.assertEqual(data['package']['cpu_cores'], 4.0)
+        self.assertEqual(data['package']['ram_mb'], 4096)
         self.assertTrue(s[0]['t'].endswith('Z'))
         self.assertEqual(s[0]['storage_mb'], 1024.0)
         self.assertEqual(s[0]['storage_pct'], 10.0)

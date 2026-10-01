@@ -34,7 +34,13 @@ rules:
     verbs: [create, patch]
   - apiGroups: [""]
     resources: [pods]
-    verbs: [get, list, watch]
+    # delete: replace the managed PostgreSQL pod on an image change
+    # (its StatefulSet uses OnDelete).
+    verbs: [get, list, watch, delete]
+  # In-place resize of the managed PostgreSQL pod on a package change.
+  - apiGroups: [""]
+    resources: [pods/resize]
+    verbs: [patch]
   - apiGroups: [apps]
     resources: [deployments, statefulsets]
     verbs: [create, delete, get, list, patch, update, watch]

@@ -369,9 +369,9 @@ class SaasServer(models.Model):
     def _compute_capacity_usage(self):
         """Compute current allocation from running/provisioning instances.
 
-        Single batched query grouped by (docker_server_id, plan_id) so we
-        never per-record `search()` regardless of how many servers are
-        loaded. Plans are pre-fetched once.
+        Counts each instance's whole package (Odoo pods + PostgreSQL; see
+        saas.plan._package) in batched queries, never a per-record
+        `search()`.
         """
         Instance = self.env['saas.instance']
         active_states = ('provisioning', 'running')
@@ -386,24 +386,23 @@ class SaasServer(models.Model):
         )
         count_map = {srv.id: count for srv, count in count_data}
 
-        # Resource allocation per server, grouped by plan to amortise
-        # plan-attribute lookups across all instances of the same plan.
+        # Package allocation per server (all Odoo pods + PostgreSQL),
+        # grouped by plan and compute tier so each package is sized once.
         alloc_data = Instance._read_group(
             [
                 ('docker_server_id', 'in', self.ids),
                 ('state', 'in', active_states),
                 ('plan_id', '!=', False),
             ],
-            ['docker_server_id', 'plan_id'],
+            ['docker_server_id', 'plan_id', 'compute_tier_id'],
             ['__count'],
         )
         cpu_map = {sid: 0.0 for sid in self.ids}
         ram_map = {sid: 0.0 for sid in self.ids}
-        for server, plan, count in alloc_data:
-            cpu_map[server.id] = cpu_map.get(server.id, 0.0) + plan.cpu_limit * count
-            ram_map[server.id] = ram_map.get(server.id, 0.0) + self._parse_ram_to_gb(
-                plan.ram_limit or '0'
-            ) * count
+        for server, plan, tier, count in alloc_data:
+            pkg = plan._package(replicas=tier.replicas or 1)
+            cpu_map[server.id] += pkg['total_cpu_m'] / 1000.0 * count
+            ram_map[server.id] += pkg['total_mem_mi'] / 1024.0 * count
 
         for rec in self:
             rec.instance_count = count_map.get(rec.id, 0)
@@ -435,12 +434,14 @@ class SaasServer(models.Model):
             return True
         if self.max_instances and self.instance_count >= self.max_instances:
             return False
-        if plan and self.max_cpu_cores:
-            if self.allocated_cpu + plan.cpu_limit > self.max_cpu_cores:
+        if plan and (self.max_cpu_cores or self.max_ram_gb):
+            # A new instance starts at one replica: its whole package.
+            pkg = plan._package()
+            if self.max_cpu_cores and \
+                    self.allocated_cpu + pkg['total_cpu_m'] / 1000.0 > self.max_cpu_cores:
                 return False
-        if plan and self.max_ram_gb:
-            ram_needed = self._parse_ram_to_gb(plan.ram_limit or '0')
-            if self.allocated_ram_gb + ram_needed > self.max_ram_gb:
+            if self.max_ram_gb and \
+                    self.allocated_ram_gb + pkg['total_mem_mi'] / 1024.0 > self.max_ram_gb:
                 return False
         return True
 

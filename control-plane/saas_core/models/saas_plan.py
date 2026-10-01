@@ -135,6 +135,93 @@ class SaasPlan(models.Model):
             'ram_limit': ram_limit,
         }
 
+    # ========== The managed package ==========
+    # Requests are this share of each limit (the rest is burst headroom);
+    # floors keep tiny limits schedulable.
+    _REQUEST_RATIO = 0.25
+    _MIN_CPU_REQUEST_M = 100
+    _MIN_MEM_REQUEST_MI = 128
+    # Defaults when the plan has no CPU/RAM set (match the driver's).
+    _DEFAULT_ODOO_CPU_M = 1000
+    _DEFAULT_ODOO_MEM_MI = 2048
+    # Quota headroom on top of the package: one rolling-update surge pod
+    # (counted separately) plus one-off Jobs (init/update/restore/backup;
+    # the restore Job's limits are the largest: 2 CPU / 2Gi).
+    _JOB_HEADROOM_CPU_M = 2000
+    _JOB_HEADROOM_MEM_MI = 2048
+    _SHELL_CPU_LIMIT_M = 500
+    _SHELL_MEM_LIMIT_MI = 256
+
+    @api.model
+    def _recommended_db_resources(self, workers):
+        """PostgreSQL CPU (millicores) and RAM (MiB) limits for ``workers``:
+        per worker like Odoo, half of Odoo's share by default
+        (Settings > SaaS Manager > Database per worker), with floors."""
+        icp = self.env['ir.config_parameter'].sudo()
+        try:
+            cpu_per = float(icp.get_param('saas_master.db_cpu_per_worker', '0.25') or 0.25)
+            ram_per = int(icp.get_param('saas_master.db_ram_per_worker', '256') or 256)
+            cpu_min = float(icp.get_param('saas_master.db_cpu_min', '0.25') or 0.25)
+            ram_min = int(icp.get_param('saas_master.db_ram_min', '512') or 512)
+        except (TypeError, ValueError):
+            cpu_per, ram_per, cpu_min, ram_min = 0.25, 256, 0.25, 512
+        workers = max(int(workers or 0), 0)
+        return (int(round(max(cpu_min, workers * cpu_per) * 1000)),
+                max(ram_min, workers * ram_per))
+
+    def _request_of(self, limit, floor):
+        return max(floor, int(limit * self._REQUEST_RATIO))
+
+    def _package(self, replicas=1, storage_gb=0.0):
+        """Everything one instance on this plan reserves on the cluster:
+        Odoo pods (web replicas, plus the cron pod when replicas > 1), the
+        PostgreSQL pod, the volumes and the namespace quota. The single
+        source for deploy, resize, capacity, cost and customer metrics.
+
+        CPU in millicores, memory in MiB, storage in GiB."""
+        self.ensure_one()
+        odoo_cpu = int(round((self.cpu_limit or 0.0) * 1000)) or self._DEFAULT_ODOO_CPU_M
+        odoo_mem = int(self.env['saas.instance']._parse_ram_string(self.ram_limit)
+                       // (1024 ** 2)) or self._DEFAULT_ODOO_MEM_MI
+        db_cpu, db_mem = self._recommended_db_resources(self.workers)
+        replicas = max(1, int(replicas or 1))
+        odoo_pods = replicas + (1 if replicas > 1 else 0)
+        storage = max(1, int(round(storage_gb or self.storage_limit or 0)) or 1)
+        pkg = {
+            'workers': self.workers or 0,
+            'replicas': replicas,
+            'odoo_pods': odoo_pods,
+            'odoo_cpu_m': odoo_cpu, 'odoo_cpu_req_m': self._request_of(odoo_cpu, self._MIN_CPU_REQUEST_M),
+            'odoo_mem_mi': odoo_mem, 'odoo_mem_req_mi': self._request_of(odoo_mem, self._MIN_MEM_REQUEST_MI),
+            'db_cpu_m': db_cpu, 'db_cpu_req_m': self._request_of(db_cpu, self._MIN_CPU_REQUEST_M),
+            'db_mem_mi': db_mem, 'db_mem_req_mi': self._request_of(db_mem, self._MIN_MEM_REQUEST_MI),
+            'storage_gb': storage,
+        }
+        # What the customer pays for (and sees as 100%): every Odoo pod
+        # plus the database.
+        pkg['total_cpu_m'] = odoo_cpu * odoo_pods + db_cpu
+        pkg['total_mem_mi'] = odoo_mem * odoo_pods + db_mem
+        pkg['total_cpu_req_m'] = pkg['odoo_cpu_req_m'] * odoo_pods + pkg['db_cpu_req_m']
+        pkg['total_mem_req_mi'] = pkg['odoo_mem_req_mi'] * odoo_pods + pkg['db_mem_req_mi']
+        # Namespace ceiling: the package, one surge Odoo pod, the shell
+        # sidecars and Job headroom. Nothing in the tenant can exceed it.
+        web_pods = replicas + 1
+        pkg['quota'] = {
+            'limits.cpu': '%dm' % (pkg['total_cpu_m'] + odoo_cpu
+                                   + self._SHELL_CPU_LIMIT_M * web_pods + self._JOB_HEADROOM_CPU_M),
+            'limits.memory': '%dMi' % (pkg['total_mem_mi'] + odoo_mem
+                                       + self._SHELL_MEM_LIMIT_MI * web_pods + self._JOB_HEADROOM_MEM_MI),
+            'requests.cpu': '%dm' % (pkg['total_cpu_req_m'] + pkg['odoo_cpu_req_m']
+                                     + 10 * web_pods + 250),
+            'requests.memory': '%dMi' % (pkg['total_mem_req_mi'] + pkg['odoo_mem_req_mi']
+                                         + 32 * web_pods + 512),
+            # Files and database volumes may each grow to the package size;
+            # the measured total is what's enforced.
+            'requests.storage': '%dGi' % (2 * storage + 1),
+            'pods': '20',
+        }
+        return pkg
+
     @api.onchange('workers', 'saas_product_ids')
     def _onchange_workers_resources(self):
         """Auto-fill CPU / RAM from the worker count so every plan delivers

@@ -21,6 +21,18 @@ func (r *OdooInstanceReconciler) reconcileStorage(ctx context.Context, instance 
 		return false, err
 	}
 	setOwner(instance, pvc)
+	// Volumes never shrink: a smaller spec size (e.g. a plan downgrade)
+	// keeps the live size instead of failing the apply.
+	var current corev1.PersistentVolumeClaim
+	if err := r.Get(ctx, types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}, &current); err == nil {
+		have := current.Spec.Resources.Requests[corev1.ResourceStorage]
+		want := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+		if have.Cmp(want) > 0 {
+			pvc.Spec.Resources.Requests[corev1.ResourceStorage] = have
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return false, err
+	}
 	if err := r.apply(ctx, pvc); err != nil {
 		return false, err
 	}

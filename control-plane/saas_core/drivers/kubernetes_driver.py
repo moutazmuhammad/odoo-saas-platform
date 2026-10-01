@@ -503,6 +503,11 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
 
         if spec.env.get('database_filter'):
             body['spec']['databaseFilter'] = spec.env['database_filter']
+        database = self._database_spec(spec.env)
+        if database:
+            body['spec']['database'] = database
+        if spec.env.get('quota'):
+            body['spec']['tenancy'] = {'resourceQuota': dict(spec.env['quota'])}
         if spec.env.get('db_manager_prefix'):
             body['spec']['databaseManager'] = {'prefix': spec.env['db_manager_prefix']}
         if spec.env.get('shell'):
@@ -754,6 +759,50 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 'patching OdooInstance %s replicas=%s failed: %s'
                 % (name, replicas, e)) from e
 
+    @staticmethod
+    def _database_spec(env: dict) -> dict:
+        """spec.database from the package keys (resources, volume size);
+        empty when none are given, so the CRD defaults apply."""
+        db = {}
+        if env.get('db_cpu_limit') and env.get('db_mem_limit'):
+            db['resources'] = {
+                'requests': {'cpu': env.get('db_cpu_request') or env['db_cpu_limit'],
+                             'memory': env.get('db_mem_request') or env['db_mem_limit']},
+                'limits': {'cpu': env['db_cpu_limit'], 'memory': env['db_mem_limit']},
+            }
+        if env.get('db_storage_size'):
+            db['storage'] = {'size': env['db_storage_size']}
+        return db
+
+    def set_package(self, handle: ComputeHandle, res: dict) -> None:
+        """Apply a whole package in one patch (instance._k8s_plan_resources
+        keys): Odoo requests/limits and workers (pods roll, zero downtime),
+        PostgreSQL resources (resized in place) and volume sizes (grown
+        online; never shrunk), and the namespace quota."""
+        name = self._cr_name(handle)
+        spec = {
+            'resources': {
+                'requests': {'cpu': res['cpu_request'], 'memory': res['mem_request']},
+                'limits': {'cpu': res['cpu_limit'], 'memory': res['mem_limit']},
+            },
+        }
+        if res.get('workers') is not None:
+            # Merge patch: maxCronThreads is left as-is.
+            spec['workers'] = {'count': _clamp_workers(res['workers'])}
+        database = self._database_spec(res)
+        if database:
+            spec['database'] = database
+        if res.get('filestore_size'):
+            spec['storage'] = {'filestore': {'size': res['filestore_size']}}
+        if res.get('quota'):
+            spec['tenancy'] = {'resourceQuota': dict(res['quota'])}
+        try:
+            self._custom_api().patch_cluster_custom_object(
+                _GROUP, _VERSION, _PLURAL, name, {'spec': spec})
+        except ApiException as e:
+            raise RuntimeError(
+                'applying the package to OdooInstance %s failed: %s' % (name, e)) from e
+
     def set_resources(self, handle: ComputeHandle, *, cpu_request: str,
                       cpu_limit: str, mem_request: str, mem_limit: str,
                       workers: Optional[int] = None) -> None:
@@ -863,58 +912,82 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
 
     @staticmethod
     def _odoo_container_selector(namespace_regex: str) -> str:
-        # cAdvisor series of the serving Odoo containers only: web pods
-        # (Deployment "odoo") — not the cron Deployment or the init/update/
-        # restore Job pods, which share the container name.
+        # cAdvisor series of the tenant's Odoo containers: web and cron
+        # pods — not the one-off init/update/restore Job pods, which share
+        # the container name, nor the shell sidecar.
         return ('namespace=~"%s",container="%s",pod=~"odoo-.+",'
-                'pod!~"odoo-(cron|init|update|restore)-.+"'
+                'pod!~"odoo-(init|update|restore)-.+"'
                 % (namespace_regex, _CONTAINER_NAME))
 
+    @staticmethod
+    def _db_container_selector(namespace_regex: str) -> str:
+        # The tenant's PostgreSQL: the Managed StatefulSet ("postgresql")
+        # or a CloudNativePG instance ("postgres").
+        return ('namespace=~"%s",container=~"postgresql|postgres",pod=~"postgresql-.+"'
+                % namespace_regex)
+
     def _usage_promql(self, namespace_regex):
-        sel = self._odoo_container_selector(namespace_regex)
-        # Per-pod average, so a tenant with N replicas (or a rollout's surge
-        # pod) is compared against the per-pod plan limit.
-        cpu = ('avg by (namespace) (rate(container_cpu_usage_seconds_total{%s}[%s]))'
-               % (sel, _PROMETHEUS_RATE_WINDOW))
-        mem = 'avg by (namespace) (container_memory_working_set_bytes{%s})' % sel
-        return cpu, mem
+        """PromQL per component, summed per tenant namespace: the package
+        is everything the tenant runs (all Odoo pods + its database)."""
+        out = {}
+        for part, sel in (('odoo', self._odoo_container_selector(namespace_regex)),
+                          ('db', self._db_container_selector(namespace_regex))):
+            out['%s_cpu_cores' % part] = (
+                'sum by (namespace) (rate(container_cpu_usage_seconds_total{%s}[%s]))'
+                % (sel, _PROMETHEUS_RATE_WINDOW))
+            out['%s_mem_bytes' % part] = (
+                'sum by (namespace) (container_memory_working_set_bytes{%s})' % sel)
+        return out
+
+    @staticmethod
+    def _with_package_totals(usage: dict) -> dict:
+        """Add cpu_cores / mem_bytes = Odoo + database."""
+        usage['cpu_cores'] = usage.get('odoo_cpu_cores', 0.0) + usage.get('db_cpu_cores', 0.0)
+        usage['mem_bytes'] = usage.get('odoo_mem_bytes', 0.0) + usage.get('db_mem_bytes', 0.0)
+        return usage
 
     def usage_by_tenant(self, handle: Optional[ComputeHandle] = None) -> dict:
-        """Current CPU (cores) and RAM (working-set bytes) per pod for
-        every tenant on this cluster — or only ``handle``'s — in two
-        queries: ``{cr_name: {'cpu_cores': float, 'mem_bytes': float}}``.
-        Tenants without running web pods are absent."""
+        """Current CPU (cores) and RAM (working-set bytes) per tenant on this
+        cluster — or only ``handle``'s: ``{cr_name: {'cpu_cores',
+        'mem_bytes', 'odoo_cpu_cores', 'odoo_mem_bytes', 'db_cpu_cores',
+        'db_mem_bytes'}}``, the totals being Odoo + database. Tenants
+        without running pods are absent."""
         # Namespace names are [a-z0-9-] only: safe as a literal regex.
         ns_re = (handle.instance_path or self._namespace_for(handle)) if handle \
             else _NAMESPACE_PREFIX + '.+'
-        cpu_q, mem_q = self._usage_promql(ns_re)
         out = {}
-        for key, promql in (('cpu_cores', cpu_q), ('mem_bytes', mem_q)):
+        for key, promql in self._usage_promql(ns_re).items():
             for row in self.prometheus_query(promql):
                 ns = row['metric'].get('namespace', '')
                 if not ns.startswith(_NAMESPACE_PREFIX):
                     continue
                 cr_name = ns[len(_NAMESPACE_PREFIX):]
                 out.setdefault(cr_name, {})[key] = float(row['value'][1])
-        return out
+        return {k: self._with_package_totals(v) for k, v in out.items()}
 
     def usage_history(self, handle: ComputeHandle, start: float, end: float,
                       step: int) -> dict:
-        """Time series for one tenant: ``{'cpu_cores': [(ts, v)],
-        'mem_bytes': [...], 'volume_bytes': [...]}``. ``volume_bytes``
-        (the tenant's PVCs, from kubelet volume stats) is empty when the
-        storage driver doesn't report them (e.g. hostpath)."""
+        """Time series for one tenant, ``[(ts, value)]`` per key: the
+        per-component ``odoo_cpu_cores``/``odoo_mem_bytes``/``db_cpu_cores``/
+        ``db_mem_bytes``, their totals ``cpu_cores``/``mem_bytes`` (Odoo +
+        database), and ``volume_bytes`` (the tenant's PVCs, from kubelet
+        volume stats; empty when the storage driver doesn't report them)."""
         namespace = handle.instance_path or self._namespace_for(handle)
-        cpu_q, mem_q = self._usage_promql(namespace)
-        vol_q = 'sum(kubelet_volume_stats_used_bytes{namespace="%s"})' % namespace
+        queries = dict(self._usage_promql(namespace))
+        queries['volume_bytes'] = 'sum(kubelet_volume_stats_used_bytes{namespace="%s"})' % namespace
         out = {}
-        for key, promql in (('cpu_cores', cpu_q), ('mem_bytes', mem_q),
-                            ('volume_bytes', vol_q)):
+        for key, promql in queries.items():
             series = self.prometheus_query_range(promql, start, end, step)
             out[key] = [(float(t), float(v)) for t, v in
                         (series[0]['values'] if series else [])]
+        for total, parts in (('cpu_cores', ('odoo_cpu_cores', 'db_cpu_cores')),
+                             ('mem_bytes', ('odoo_mem_bytes', 'db_mem_bytes'))):
+            summed = {}
+            for part in parts:
+                for ts, v in out[part]:
+                    summed[ts] = summed.get(ts, 0.0) + v
+            out[total] = sorted(summed.items())
         return out
-
     def measure_storage(self, handle: ComputeHandle) -> dict:
         """Filestore and database size, measured inside the web pod:
         ``{'filestore_bytes': int, 'db_bytes': int}``. The database figure

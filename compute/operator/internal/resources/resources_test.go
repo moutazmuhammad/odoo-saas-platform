@@ -1,12 +1,15 @@
 package resources
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/utils/ptr"
 
 	saasv1alpha1 "github.com/freightright/odoo-saas-platform/operator/api/v1alpha1"
@@ -516,4 +519,79 @@ func TestOdooDeployment_LivenessOutlastsOdooRequestLimit(t *testing.T) {
 	if odoo.ReadinessProbe.FailureThreshold != 3 {
 		t.Errorf("readiness must still react quickly, got failureThreshold=%d", odoo.ReadinessProbe.FailureThreshold)
 	}
+}
+
+func dbSized(cpu, mem string) *saasv1alpha1.OdooInstance {
+	instance := testInstance()
+	instance.Spec.Database.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("125m"), corev1.ResourceMemory: resource.MustParse("256Mi")},
+		Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpu), corev1.ResourceMemory: resource.MustParse(mem)},
+	}
+	return instance
+}
+
+func TestDatabaseStatefulSet_SizedFromSpecAndTuned(t *testing.T) {
+	sts := DatabaseStatefulSet(dbSized("500m", "1Gi"))
+	c := sts.Spec.Template.Spec.Containers[0]
+	if got := c.Resources.Limits[corev1.ResourceMemory]; got.String() != "1Gi" {
+		t.Errorf("memory limit = %s, want 1Gi", got.String())
+	}
+	args := strings.Join(c.Args, " ")
+	for _, want := range []string{"shared_buffers=256MB", "effective_cache_size=512MB", "work_mem=16MB", "maintenance_work_mem=64MB"} {
+		if !strings.Contains(args, want) {
+			t.Errorf("args %q missing %s", args, want)
+		}
+	}
+	if sts.Spec.UpdateStrategy.Type != "OnDelete" {
+		t.Error("the database StatefulSet must not roll its only pod on a resources change")
+	}
+	for _, p := range c.ResizePolicy {
+		if p.RestartPolicy != corev1.NotRequired {
+			t.Errorf("resize policy %v would restart PostgreSQL", p)
+		}
+	}
+}
+
+func TestDatabaseStatefulSet_DefaultsWithoutSpec(t *testing.T) {
+	c := DatabaseStatefulSet(testInstance()).Spec.Template.Spec.Containers[0]
+	if got := c.Resources.Limits[corev1.ResourceCPU]; got.String() != "2" {
+		t.Errorf("default cpu limit = %s, want 2", got.String())
+	}
+	if !strings.Contains(strings.Join(c.Args, " "), "shared_buffers=512MB") {
+		t.Errorf("default tuning args = %v", c.Args)
+	}
+}
+
+func TestOdooDeployment_PerProcessMemoryLimits(t *testing.T) {
+	instance := testInstance()
+	instance.Spec.Resources.Limits = corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1000Mi")}
+	args := strings.Join(OdooDeployment(instance, RoleWeb).Spec.Template.Spec.Containers[0].Args, " ")
+	limit := int64(1000 * 1024 * 1024)
+	for _, want := range []string{
+		"--limit-memory-soft=" + strconvI(limit*60/100),
+		"--limit-memory-hard=" + strconvI(limit*75/100),
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("args %q missing %s", args, want)
+		}
+	}
+	instance.Spec.Replicas = ptr.To(int32(2))
+	cron := strings.Join(OdooDeployment(instance, RoleCron).Spec.Template.Spec.Containers[0].Args, " ")
+	if strings.Contains(cron, "--limit-memory") {
+		t.Error("threaded (0-worker) cron pods must not get prefork memory limits")
+	}
+}
+
+func TestCloudNativePGCluster_CarriesDatabaseResources(t *testing.T) {
+	u := CloudNativePGCluster(dbSized("1", "2Gi"))
+	got, _, _ := unstructuredNestedString(u.Object, "spec", "resources", "limits", "memory")
+	if got != "2Gi" {
+		t.Errorf("CNPG memory limit = %q, want 2Gi", got)
+	}
+}
+
+func strconvI(v int64) string { return fmt.Sprintf("%d", v) }
+
+func unstructuredNestedString(obj map[string]interface{}, fields ...string) (string, bool, error) {
+	return unstructured.NestedString(obj, fields...)
 }

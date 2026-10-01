@@ -1,5 +1,5 @@
 # Image URL to use for building/pushing the operator image.
-IMG ?= docker.io/moutazmuhammad/odoo-saas-operator:0.1.7
+IMG ?= docker.io/moutazmuhammad/odoo-saas-operator:0.1.8
 # Odoo version(s) the platform image pipeline has published, used only by
 # the example manifests under examples/.
 KUBEBUILDER_ASSETS ?= $(shell $(LOCALBIN)/setup-envtest use $(ENVTEST_K8S_VERSION) -p path)

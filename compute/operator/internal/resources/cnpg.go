@@ -1,6 +1,7 @@
 package resources
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	saasv1alpha1 "github.com/freightright/odoo-saas-platform/operator/api/v1alpha1"
@@ -54,6 +55,9 @@ func CloudNativePGCluster(instance *saasv1alpha1.OdooInstance) *unstructured.Uns
 		"bootstrap":             map[string]interface{}{"initdb": map[string]interface{}{"database": OdooDatabaseName(instance), "owner": "odoo"}},
 		"enableSuperuserAccess": false,
 	}
+	if r := instance.Spec.Database.Resources; r != nil {
+		spec["resources"] = resourcesToMap(*r)
+	}
 	_ = unstructured.SetNestedMap(u.Object, spec, "spec")
 	return u
 }
@@ -63,4 +67,20 @@ func CloudNativePGCluster(instance *saasv1alpha1.OdooInstance) *unstructured.Uns
 // above (CloudNativePG's `<cluster>-app` naming convention).
 func CloudNativePGConnectionSecretName(instance *saasv1alpha1.OdooInstance) string {
 	return DatabaseStatefulSetName(instance) + "-app"
+}
+
+// resourcesToMap renders ResourceRequirements for an unstructured object.
+func resourcesToMap(r corev1.ResourceRequirements) map[string]interface{} {
+	out := map[string]interface{}{}
+	for key, list := range map[string]corev1.ResourceList{"requests": r.Requests, "limits": r.Limits} {
+		if len(list) == 0 {
+			continue
+		}
+		m := map[string]interface{}{}
+		for name, q := range list {
+			m[string(name)] = q.String()
+		}
+		out[key] = m
+	}
+	return out
 }

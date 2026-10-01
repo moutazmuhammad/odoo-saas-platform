@@ -114,6 +114,7 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 		fmt.Sprintf("--workers=%d", workers),
 		fmt.Sprintf("--max-cron-threads=%d", cronThreads),
 	}
+	args = append(args, odooMemoryLimitArgs(instance, workers)...)
 	odooMounts := []corev1.VolumeMount{
 		{Name: "etc-odoo", MountPath: "/etc/odoo", ReadOnly: true},
 		{Name: "filestore", MountPath: "/var/lib/odoo"},
@@ -274,6 +275,23 @@ func shellContainer(instance *saasv1alpha1.OdooInstance) corev1.Container {
 			{Name: "shell-tmp", MountPath: "/tmp"},
 		},
 		SecurityContext: containerSecurityContext(),
+	}
+}
+
+// odooMemoryLimitArgs sets Odoo's per-process memory limits from the
+// container's memory limit, so one runaway request gets its worker
+// recycled (soft: after the request, hard: at once) long before the
+// kernel OOM-kills the whole pod. Prefork mode (workers > 0) only; Odoo
+// ignores these limits in threaded mode.
+func odooMemoryLimitArgs(instance *saasv1alpha1.OdooInstance, workers int32) []string {
+	mem, ok := instance.Spec.Resources.Limits[corev1.ResourceMemory]
+	if workers <= 0 || !ok || mem.Value() <= 0 {
+		return nil
+	}
+	limit := mem.Value()
+	return []string{
+		fmt.Sprintf("--limit-memory-soft=%d", limit*60/100),
+		fmt.Sprintf("--limit-memory-hard=%d", limit*75/100),
 	}
 }
 

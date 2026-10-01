@@ -346,13 +346,15 @@ class SaasInstance(models.Model):
     monthly_cost = fields.Monetary(
         string='Infra Cost / month', compute='_compute_margin',
         currency_field='margin_currency_id', store=True,
-        help='Phase 4: provisioned CPU/RAM + used storage × this server\'s rate '
-             'card. For a Production env, includes its child (staging/dev) costs.')
+        help='The whole package\'s CPU/RAM (all Odoo pods + PostgreSQL) + used '
+             'storage × this server\'s rate card. For a Production env, includes '
+             'its child (staging/dev) costs.')
 
     monthly_revenue = fields.Monetary(
         string='Revenue / month', compute='_compute_margin',
         currency_field='margin_currency_id', store=True,
-        help='Monthly-equivalent recurring revenue (plan + support, period-normalized). '
+        help='Monthly-equivalent recurring revenue: plan, support, compute tier, '
+             'storage blocks, daily backups and staging/dev slots, period-normalized. '
              'Child environments bill via the parent, so their own revenue is 0.')
 
     monthly_margin = fields.Monetary(
@@ -370,37 +372,52 @@ class SaasInstance(models.Model):
         help='True when monthly margin ≥ 0.')
 
     def _instance_infra_cost(self):
-        """Own monthly infra cost from the server rate card (excludes children)."""
+        """Own monthly infra cost from the server rate card (excludes
+        children): the whole package it reserves (all Odoo pods +
+        PostgreSQL, saas.plan._package) plus the storage it really uses."""
         self.ensure_one()
         srv = self.docker_server_id
         if not srv:
             return 0.0
-        plan = self.plan_id
-        cpu = plan.cpu_limit or 0.0
-        ram_gb = (self._parse_ram_string(plan.ram_limit) / (1024 ** 3)) if plan and plan.ram_limit else 0.0
+        pkg = self._package_resources()
+        cpu = pkg.get('total_cpu_m', 0) / 1000.0
+        ram_gb = pkg.get('total_mem_mi', 0) / 1024.0
         storage_gb = self.storage_used_gb or 0.0
         return (cpu * (srv.cost_per_cpu_month or 0.0)
                 + ram_gb * (srv.cost_per_gb_ram_month or 0.0)
                 + storage_gb * (srv.cost_per_gb_storage_month or 0.0))
 
     def _instance_monthly_revenue(self):
-        """Monthly-equivalent recurring revenue. Children bill via the parent, so
-        they contribute 0 (their cost rolls up to the parent's margin)."""
+        """Monthly-equivalent recurring revenue: every line a renewal bills
+        (plan, support, compute tier, storage blocks, daily backups,
+        staging/dev slots). Children bill via the parent, so they
+        contribute 0 (their cost rolls up to the parent's margin)."""
         self.ensure_one()
         if self.parent_id:
             return 0.0
         plan = self.plan_id
         if not plan:
             return 0.0
+        period = self.billing_period or 'monthly'
+        months = 12 if period == 'yearly' else 1
         base = (plan.yearly_price or plan.price * 12) / 12.0 \
-            if self.billing_period == 'yearly' else plan.price
-        # Support is a flat monthly price (per the pricing rules: support/backup
-        # are flat ×12 for yearly), so it's the same per month regardless of period.
+            if period == 'yearly' else plan.price
+        # Support, tier, blocks and backups are flat monthly prices (×12 on
+        # a yearly bill), so they're the same per month whatever the period.
         support = self.support_plan_id.monthly_price if self.support_plan_id else 0.0
-        return (base or 0.0) + (support or 0.0)
+        tier = self.compute_tier_id.monthly_price if self.compute_tier_id else 0.0
+        _block_gb, block_price = self.env['saas.pricing.engine'].storage_block_config()
+        blocks = (self.extra_storage_blocks or 0) * (block_price or 0.0)
+        backups = self._get_daily_backup_price() if self.daily_backup_enabled else 0.0
+        slots = (self.staging_slots or 0) + (self.dev_slots or 0)
+        envs = slots * self._env_server_price(period) / months if slots else 0.0
+        return sum(v or 0.0 for v in (base, support, tier, blocks, backups, envs))
 
-    @api.depends('plan_id', 'billing_period', 'storage_used_gb',
+    @api.depends('plan_id', 'plan_id.workers', 'plan_id.cpu_limit', 'plan_id.ram_limit',
+                 'billing_period', 'storage_used_gb',
                  'support_plan_id', 'support_plan_id.monthly_price',
+                 'compute_tier_id', 'compute_tier_id.replicas', 'compute_tier_id.monthly_price',
+                 'extra_storage_blocks', 'daily_backup_enabled', 'staging_slots', 'dev_slots',
                  'docker_server_id.cost_per_cpu_month',
                  'docker_server_id.cost_per_gb_ram_month',
                  'docker_server_id.cost_per_gb_storage_month',
@@ -1091,6 +1108,14 @@ class SaasInstance(models.Model):
             self._activate_pending_storage_blocks()
         return invoice
 
+    def _apply_package_best_effort(self):
+        """Push the changed package (here: volume sizes, quota) to the
+        cluster; the next plan change or redeploy retries on failure."""
+        try:
+            self._update_container_resources()
+        except Exception:
+            _logger.exception("Applying the package to %s failed", self.subdomain)
+
     def _activate_pending_storage_blocks(self):
         """Apply purchased blocks after payment: raise capacity + clear the
         capacity warning immediately (instant 'Fix Now' recovery)."""
@@ -1104,6 +1129,7 @@ class SaasInstance(models.Model):
             'storage_block_pending_invoice_id': False,
         })
         self._append_log("Storage capacity expanded by %d block(s)." % pending)
+        self._apply_package_best_effort()
         self.message_post(body=_(
             "Storage expanded — your workspace now has more room. Thanks for "
             "scaling with us."))
@@ -1133,6 +1159,7 @@ class SaasInstance(models.Model):
                 "Free up space first, then you can release storage."))
         self.write({'extra_storage_blocks': self.extra_storage_blocks - qty})
         self._append_log("Released %d storage block(s)." % qty)
+        self._apply_package_best_effort()
         return True
 
     def _env_server_price(self, period=None):

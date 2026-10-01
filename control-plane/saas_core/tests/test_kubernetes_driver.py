@@ -187,6 +187,27 @@ class TestKubernetesDriver(TransactionCase):
             'saas.odoo.example.com', 'v1alpha1', 'odooinstances', 'odoo-acme',
             {'spec': {'replicas': 2}})
 
+    def test_set_package_patches_everything_in_one_go(self):
+        driver, _server = _make_driver()
+        custom = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom)
+        driver.set_package(_handle(), {
+            'cpu_request': '250m', 'cpu_limit': '1000m', 'mem_request': '256Mi',
+            'mem_limit': '1024Mi', 'workers': 2,
+            'db_cpu_request': '100m', 'db_cpu_limit': '500m',
+            'db_mem_request': '128Mi', 'db_mem_limit': '512Mi',
+            'filestore_size': '10Gi', 'db_storage_size': '10Gi',
+            'quota': {'limits.cpu': '5000m'}})
+        spec = custom.patch_cluster_custom_object.call_args.args[4]['spec']
+        self.assertEqual(spec['resources']['limits'], {'cpu': '1000m', 'memory': '1024Mi'})
+        self.assertEqual(spec['workers'], {'count': 2})
+        self.assertEqual(spec['database'], {
+            'resources': {'requests': {'cpu': '100m', 'memory': '128Mi'},
+                          'limits': {'cpu': '500m', 'memory': '512Mi'}},
+            'storage': {'size': '10Gi'}})
+        self.assertEqual(spec['storage'], {'filestore': {'size': '10Gi'}})
+        self.assertEqual(spec['tenancy'], {'resourceQuota': {'limits.cpu': '5000m'}})
+
     def test_set_resources_patches_resources_and_workers(self):
         driver, _server = _make_driver()
         custom_api = MagicMock()
@@ -618,22 +639,32 @@ class TestKubernetesDriver(TransactionCase):
         with self.assertRaises(PrometheusUnavailable):
             driver.prometheus_query('up')
 
-    def test_usage_by_tenant_maps_namespaces_to_cr_names(self):
+    def test_usage_by_tenant_sums_odoo_and_database(self):
+        ns = 'odoo-tenant-odoo-acme'
         driver = self._prom_driver(
-            [{'metric': {'namespace': 'odoo-tenant-odoo-acme'}, 'value': [1, '0.25']},
-             {'metric': {'namespace': 'kube-system'}, 'value': [1, '9']}],
-            [{'metric': {'namespace': 'odoo-tenant-odoo-acme'}, 'value': [1, '1048576']}],
+            [{'metric': {'namespace': ns}, 'value': [1, '0.25']},
+             {'metric': {'namespace': 'kube-system'}, 'value': [1, '9']}],   # odoo cpu
+            [{'metric': {'namespace': ns}, 'value': [1, '1048576']}],         # odoo mem
+            [{'metric': {'namespace': ns}, 'value': [1, '0.05']}],            # db cpu
+            [{'metric': {'namespace': ns}, 'value': [1, '524288']}],          # db mem
         )
-        self.assertEqual(driver.usage_by_tenant(), {
-            'odoo-acme': {'cpu_cores': 0.25, 'mem_bytes': 1048576.0}})
-        cpu_query = dict(driver._api_client.call_api.call_args_list[0][1]
-                         ['query_params'])['query']
-        # Web pods of the Odoo container only — not cron/Job pods.
-        self.assertIn('container="odoo"', cpu_query)
-        self.assertIn('pod!~"odoo-(cron|init|update|restore)-.+"', cpu_query)
+        usage = driver.usage_by_tenant()
+        self.assertEqual(list(usage), ['odoo-acme'])
+        expected = {'odoo_cpu_cores': 0.25, 'odoo_mem_bytes': 1048576.0,
+                    'db_cpu_cores': 0.05, 'db_mem_bytes': 524288.0,
+                    'cpu_cores': 0.3, 'mem_bytes': 1572864.0}
+        for key, value in expected.items():
+            self.assertAlmostEqual(usage['odoo-acme'][key], value, msg=key)
+        queries = [dict(c[1]['query_params'])['query']
+                   for c in driver._api_client.call_api.call_args_list]
+        # Odoo: web and cron pods, not one-off Jobs; the database separately.
+        self.assertIn('container="odoo"', queries[0])
+        self.assertIn('pod!~"odoo-(init|update|restore)-.+"', queries[0])
+        self.assertTrue(queries[0].startswith('sum by (namespace)'))
+        self.assertIn('container=~"postgresql|postgres"', queries[2])
 
     def test_usage_by_tenant_scoped_to_one_handle(self):
-        driver = self._prom_driver([], [])
+        driver = self._prom_driver([], [], [], [])
         driver.usage_by_tenant(_handle())
         cpu_query = dict(driver._api_client.call_api.call_args_list[0][1]
                          ['query_params'])['query']

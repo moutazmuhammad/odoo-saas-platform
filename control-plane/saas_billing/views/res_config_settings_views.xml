@@ -104,6 +104,20 @@
                                 </tr>
                             </tbody>
                         </table>
+                        <div class="text-muted mt-3">
+                            PostgreSQL is part of every package and sized the same way
+                            (hosting and services):
+                        </div>
+                        <div class="row mt-1">
+                            <label for="saas_db_cpu_per_worker" string="DB CPU / worker" class="col-6 o_light_label"/>
+                            <field name="saas_db_cpu_per_worker" class="col-3"/>
+                            <label for="saas_db_ram_per_worker" string="DB RAM / worker (MB)" class="col-6 o_light_label"/>
+                            <field name="saas_db_ram_per_worker" class="col-3"/>
+                            <label for="saas_db_cpu_min" string="DB minimum CPU" class="col-6 o_light_label"/>
+                            <field name="saas_db_cpu_min" class="col-3"/>
+                            <label for="saas_db_ram_min" string="DB minimum RAM (MB)" class="col-6 o_light_label"/>
+                            <field name="saas_db_ram_min" class="col-3"/>
+                        </div>
                     </setting>
                     <setting id="saas_plan_discount_setting"
                              string="Yearly discount (%)"

@@ -47,7 +47,11 @@ export function PerformanceHistory({
 }) {
   const [range, setRange] = React.useState("1h");
   const [data, setData] = React.useState<MetricsHistory | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  // Range the shown data belongs to. The placeholder is only for a first
+  // load or a range switch: background refreshes swap the data in place,
+  // so the page height (and the reader's scroll position) never jumps.
+  const [dataRange, setDataRange] = React.useState<string | null>(null);
+  const loading = dataRange !== range;
   // Live current reading (DigitalOcean-style): polled frequently, and the poll
   // itself marks the instance "watched" so the background sampler keeps
   // measuring it while this view is open.
@@ -56,11 +60,10 @@ export function PerformanceHistory({
   // History: load on range change, then auto-refresh on an interval matched to
   // the window so new points stream into the charts without a manual reload.
   const loadHistory = React.useCallback(async () => {
-    setLoading(true);
     try {
       setData(await api.instanceMetricsHistory(instanceId, range, accessToken));
     } finally {
-      setLoading(false);
+      setDataRange(range);
     }
   }, [instanceId, range, accessToken]);
   usePolling(loadHistory, {

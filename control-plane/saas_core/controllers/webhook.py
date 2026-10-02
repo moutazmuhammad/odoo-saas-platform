@@ -207,6 +207,8 @@ class SaasWebhookController(http.Controller):
             return True
         if event_type.startswith('repo:push'):
             return True
+        if event_type:
+            return False
         # Fallback: GitHub/Gitea-shaped push payloads carry both `ref`
         # AND a `commits` list (PR events have `ref` but no `commits`).
         if 'ref' in payload and isinstance(payload.get('commits'), list):

@@ -386,7 +386,14 @@ class SaasInstanceRepo(models.Model):
                     },
                     timeout=15,
                 )
-                return resp.status_code == 200
+                if resp.status_code != 200:
+                    return False
+                hook = resp.json()
+                config = hook.get('config') or {}
+                return (hook.get('active') is True
+                        and config.get('url') == self.webhook_url
+                        and config.get('content_type') == 'json'
+                        and bool({'push', '*'} & set(hook.get('events') or [])))
 
             elif provider == 'gitlab':
                 from urllib.parse import quote as url_quote
@@ -1192,8 +1199,7 @@ class SaasInstanceRepo(models.Model):
             raise UserError(_("No webhook URL configured."))
 
         payload = json.dumps({
-            'ref': 'refs/heads/%s' % self.branch,
-            'commits': [{'message': 'Webhook test from SaaS platform'}],
+            'zen': 'Webhook test from SaaS platform',
             'repository': {'clone_url': self.repo_url},
         }).encode()
         sig = 'sha256=' + hmac.new(

@@ -99,11 +99,7 @@ class TestWebhookSecurity(HttpCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_non_push_event_ignored(self):
-        # Must NOT reuse _push_payload(): _is_push_event() has a header-less
-        # fallback that treats any payload shaped like {ref, commits: [...]}
-        # as a push regardless of X-GitHub-Event (for providers that don't
-        # send an event header) — a real PR payload has neither key, so use
-        # one that doesn't accidentally match that fallback.
+        # A real pull request payload must be ignored.
         payload = {'action': 'opened',
                    'pull_request': {'number': 1, 'title': 'do a thing'}}
         resp = self._signed_post(payload, headers={'X-GitHub-Event': 'pull_request'})
@@ -114,6 +110,32 @@ class TestWebhookSecurity(HttpCase):
         resp = self._signed_post(self._push_payload(ref='refs/heads/other-branch'))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json().get('reason'), 'branch mismatch')
+
+    def test_ping_with_push_shaped_body_never_deploys(self):
+        with self._patched_enqueue() as mock_enqueue:
+            resp = self._signed_post(
+                self._push_payload(), headers={'X-GitHub-Event': 'ping'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json().get('reason'), 'not a push event')
+        mock_enqueue.assert_not_called()
+
+    def test_provider_verification_checks_configuration(self):
+        self.repo.write({'github_token': 'test-token', 'webhook_provider_id': '123'})
+        valid = {'active': True, 'events': ['push'],
+                 'config': {'url': self.repo.webhook_url, 'content_type': 'json'}}
+        response = MagicMock(status_code=200)
+        with patch('odoo.addons.saas_core.models.saas_instance_repo.http_requests.get',
+                   return_value=response):
+            response.json.return_value = valid
+            self.assertTrue(self.repo._verify_webhook_on_provider())
+            for changes in (
+                    {'active': False}, {'events': ['pull_request']},
+                    {'config': {'url': 'https://old.example.com/webhook',
+                                'content_type': 'json'}},
+                    {'config': {'url': self.repo.webhook_url,
+                                'content_type': 'form'}}):
+                response.json.return_value = {**valid, **changes}
+                self.assertFalse(self.repo._verify_webhook_on_provider())
 
     def test_instance_not_running_ignored(self):
         self.instance.write({'state': 'suspended'})

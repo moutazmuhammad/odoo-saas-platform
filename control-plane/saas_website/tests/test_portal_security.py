@@ -1146,3 +1146,18 @@ class TestStaffApiReadOnly(_PortalTestBase):
         result = self._json_call('/saas/api/v1/instances/%d/auto-renew' % self.instance.id,
                                  {'subscription': False})
         self.assertFalse(result['ok'])
+
+    def test_staff_project_list_includes_customer_for_filtering(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        result = self._json_call('/saas/api/v1/instances')
+        self.assertTrue(result['ok'])
+        project = next(p for p in result['data'] if p['id'] == self.instance.id)
+        self.assertEqual(project['customer'], {
+            'id': self.owner.partner_id.id, 'name': self.owner.partner_id.name})
+
+    def test_customer_project_list_does_not_include_staff_metadata(self):
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        result = self._json_call('/saas/api/v1/instances')
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['data'])
+        self.assertTrue(all('customer' not in project for project in result['data']))

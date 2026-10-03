@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Server, Plus, Search, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { AlertBanner } from "@/components/AlertBanner";
 import { PageHeader } from "@/components/PageHeader";
 import { DataTable, type Column } from "@/components/DataTable";
+import { CustomerFilter } from "@/components/CustomerFilter";
+import { useAuth } from "@/context/AuthContext";
 import { useInstances } from "@/context/InstancesContext";
 import { useSections } from "@/lib/useSections";
 import { formatBytes, formatDate } from "@/lib/format";
@@ -19,6 +21,17 @@ const projectLink = (i: ApiInstance) =>
 
 export default function Instances() {
   const { instances, loading, error } = useInstances();
+  const { user } = useAuth();
+  const isStaff = !!(user?.is_staff || user?.is_internal);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const customerId = searchParams.get("customer") || "";
+  const setCustomerId = (id: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set("customer", id);
+    else next.delete("customer");
+    setSearchParams(next, { replace: true });
+  };
+  const customerProjects = instances.filter((i) => !isStaff || !customerId || String(i.customer?.id) === customerId);
   const navigate = useNavigate();
   const sections = useSections();
   // Send "Create instance" to whichever offering is live.
@@ -26,9 +39,9 @@ export default function Instances() {
   const [query, setQuery] = React.useState("");
   const [onlyRunning, setOnlyRunning] = React.useState(false);
 
-  const runningTotal = instances.filter((i) => i.state === "running").length;
+  const runningTotal = customerProjects.filter((i) => i.state === "running").length;
 
-  const filtered = instances.filter((i) => {
+  const filtered = customerProjects.filter((i) => {
     const q = query.toLowerCase();
     const matchesQuery =
       i.name.toLowerCase().includes(q) || (i.region || "").toLowerCase().includes(q);
@@ -52,6 +65,7 @@ export default function Instances() {
         </div>
       ),
     },
+    ...(isStaff ? [{ key: "customer", header: "Customer", sortValue: (i: ApiInstance) => i.customer?.name || "", render: (i: ApiInstance) => i.customer?.name || "—" }] : []),
     { key: "type", header: "Type", hideBelow: "sm", sortValue: (i) => (i.is_hosting ? 0 : 1), className: "text-muted", render: (i) => (i.is_hosting ? "Hosting" : "Service") },
     { key: "region", header: "Region", hideBelow: "md", className: "text-muted", render: (i) => i.region || "—" },
     { key: "size", header: "Size", hideBelow: "lg", className: "text-muted", render: (i) => `${i.workers} workers · ${formatBytes(i.storage_gb)}` },
@@ -64,7 +78,7 @@ export default function Instances() {
     <div className="animate-fade-in">
       <PageHeader
         title="Projects"
-        subtitle="Manage and monitor all your Odoo projects."
+        subtitle={isStaff ? "Manage and monitor projects across all customers." : "Manage and monitor all your Odoo projects."}
         actions={
           <Button onClick={() => navigate(createTo)}>
             <Plus className="size-4" />
@@ -93,6 +107,7 @@ export default function Instances() {
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
+            {isStaff && <CustomerFilter projects={instances} value={customerId} onChange={setCustomerId} />}
             <div className="ml-auto inline-flex rounded-md border border-border p-0.5">
               {([
                 { key: false, label: "All" },
@@ -116,13 +131,13 @@ export default function Instances() {
           <EmptyState
             className="m-0 py-14"
             icon={Server}
-            title={query || onlyRunning ? "No matching projects" : "No projects yet"}
+            title={query || onlyRunning || (isStaff && customerId) ? "No matching projects" : "No projects yet"}
             description={
-              query || onlyRunning
+              query || onlyRunning || (isStaff && customerId)
                 ? "Try a different search term or filter."
                 : "Create your first project to deploy an Odoo environment."
             }
-            action={!query && !onlyRunning && <Button onClick={() => navigate(createTo)}>Create project</Button>}
+            action={!query && !onlyRunning && (!isStaff || !customerId) && <Button onClick={() => navigate(createTo)}>Create project</Button>}
           />
         }
         columns={columns}

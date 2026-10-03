@@ -370,6 +370,8 @@ export interface ProjectPriceResult extends PriceResult {
 }
 
 export interface ApiInstance {
+  /** Project owner, available only to staff. */
+  customer?: { id: number; name: string };
   id: number;
   name: string;
   domain: string;

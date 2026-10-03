@@ -1953,6 +1953,11 @@ class SaasApi(http.Controller):
             'branch': instance._env_branch(),
             'parent_id': instance.parent_id.id or False,
         }
+        if self._is_staff():
+            data['customer'] = {
+                'id': instance.partner_id.id or 0,
+                'name': instance.partner_id.name or _('Unassigned'),
+            }
         if detail:
             invoices = instance._get_all_invoices().filtered(
                 lambda i: i.state != 'cancel'

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Plus,
   ArrowRight,
@@ -16,6 +16,7 @@ import { Skeleton, SkeletonCard } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { AlertBanner } from "@/components/AlertBanner";
+import { CustomerFilter } from "@/components/CustomerFilter";
 import { useAuth } from "@/context/AuthContext";
 import { useSections } from "@/lib/useSections";
 import { api, ApiError, type DashboardData, type ApiInstance } from "@/lib/api";
@@ -42,6 +43,15 @@ function projectLink(i: ApiInstance) {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const isStaff = !!(user?.is_staff || user?.is_internal);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const customerId = searchParams.get("customer") || "";
+  const setCustomerId = (id: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set("customer", id);
+    else next.delete("customer");
+    setSearchParams(next, { replace: true });
+  };
   const navigate = useNavigate();
   const sections = useSections();
   const createTo = sections.hosting ? "/hosting" : "/services";
@@ -82,12 +92,16 @@ export default function Dashboard() {
   const currency = data?.currency || data?.wallet?.currency || "USD";
   const outstanding = data?.stats.outstanding ?? 0;
   const openInvoices = data?.stats.open_invoices ?? 0;
-  const total = data?.stats.instances ?? 0;
-  const running = data?.stats.running ?? 0;
+  const customerProjects = React.useMemo(
+    () => (data?.instances ?? []).filter((i) => !isStaff || !customerId || String(i.customer?.id) === customerId),
+    [data, isStaff, customerId],
+  );
+  const total = customerProjects.length;
+  const running = customerProjects.filter((i) => i.state === "running").length;
   const wallet = data?.wallet?.total ?? data?.stats.wallet_balance ?? 0;
   // The projects grid excludes awaiting-payment orders (they're surfaced in
   // "Needs your attention" instead) so the customer's project list stays clean.
-  const visibleProjects = (data?.instances ?? []).filter((i) => i.state !== "pending_payment");
+  const visibleProjects = customerProjects.filter((i) => i.state !== "pending_payment");
 
   const actions: ActionItem[] = React.useMemo(() => {
     if (!data) return [];
@@ -102,7 +116,7 @@ export default function Dashboard() {
         });
       }
     }
-    for (const i of data.instances) {
+    for (const i of customerProjects) {
       if (i.state === "suspended")
         items.push({ id: `s-${i.id}`, text: `${i.name} is suspended`, cta: "Resolve", to: projectLink(i) });
       else if (i.state === "failed")
@@ -111,7 +125,7 @@ export default function Dashboard() {
         items.push({ id: `p-${i.id}`, text: `${i.name} is awaiting payment`, cta: "Checkout", to: `/my/instances/${i.id}/checkout`, cancelId: i.id, cancelName: i.name });
     }
     return items.slice(0, 6);
-  }, [data]);
+  }, [data, customerProjects]);
 
   return (
     <div className="animate-fade-in">
@@ -140,6 +154,11 @@ export default function Dashboard() {
         </div>
       ) : data ? (
         <>
+          {isStaff && (
+            <div className="mt-6">
+              <CustomerFilter projects={data.instances} value={customerId} onChange={setCustomerId} />
+            </div>
+          )}
           {/* Hero: needs attention (balance owed) */}
           {outstanding > 0 ? (
             <Card className="mt-6 flex flex-col gap-4 border-warning/40 bg-warning/5 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -175,7 +194,7 @@ export default function Dashboard() {
             <Card className="p-5">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-muted">Fleet health</p>
-                <Link to="/my/instances" className="text-xs text-primary hover:underline">
+                <Link to={isStaff && customerId ? `/my/instances?customer=${encodeURIComponent(customerId)}` : "/my/instances"} className="text-xs text-primary hover:underline">
                   View projects
                 </Link>
               </div>
@@ -245,8 +264,8 @@ export default function Dashboard() {
 
           {/* Projects */}
           <div className="mt-8 flex items-center justify-between">
-            <h2 className="font-semibold">Your projects</h2>
-            <Link to="/my/instances" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
+            <h2 className="font-semibold">{isStaff ? "Customer projects" : "Your projects"}</h2>
+            <Link to={isStaff && customerId ? `/my/instances?customer=${encodeURIComponent(customerId)}` : "/my/instances"} className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
               View all <ArrowRight className="size-3.5" />
             </Link>
           </div>
@@ -254,8 +273,8 @@ export default function Dashboard() {
             <Card className="mt-3 p-5">
               <EmptyState
                 icon={Server}
-                title="No projects yet"
-                description="Create your first project to deploy an Odoo environment."
+                title={customerId ? "No matching projects" : "No projects yet"}
+                description={customerId ? "This customer has no active projects." : "Create your first project to deploy an Odoo environment."}
                 action={<Button onClick={() => navigate(createTo)}>Create project</Button>}
               />
             </Card>
@@ -267,6 +286,7 @@ export default function Dashboard() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-semibold">{i.name}</p>
+                        {isStaff && <p className="truncate text-xs text-muted">{i.customer?.name || "—"}</p>}
                         <p className="truncate text-xs text-muted">{i.region || i.domain}</p>
                       </div>
                       <StatusBadge status={i.state} label={i.state_label} />

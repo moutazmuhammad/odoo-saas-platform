@@ -357,6 +357,11 @@
         <field name="res_model">saas.instance</field>
         <field name="view_mode">list,form</field>
         <field name="search_view_id" ref="saas_instance_view_search"/>
+        <field name="context">{'search_default_group_partner': 1}</field>
+        <!-- Hide retired Staging/Development servers from the default list:
+             a cancelled 'production' stays visible so support can audit,
+             but torn-down children are not interesting in the day list. -->
+        <field name="domain">['|', ('environment', '=', 'production'), ('state', 'not in', ('cancelled', 'cancelled_by_client'))]</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 No instances yet

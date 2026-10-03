@@ -903,15 +903,13 @@ class SaasInstanceBackup(models.Model):
     # ``saas.instance.backup`` records for the portal/admin UI, and to
     # restore from one back onto a live instance.
     #
-    # Known limitation, inherited from the operator's own backup design
-    # (not something to work around here): ``spec.backup`` dumps only
-    # the instance's ONE primary database (``instance.subdomain``) plus
-    # the ENTIRE filestore volume. For a multi-database hosting
-    # instance, customer databases created via ``hosting_db_create``
-    # beyond the primary one are NOT individually pg_dump'd by this
-    # mechanism — only their filestore content (bundled in the same
-    # tar) is covered. Per-database coverage for those still exists via
-    # ``hosting_db_backup`` (on-demand, one DB at a time).
+    # ``spec.backup`` dumps the instance's primary database plus every
+    # OTHER database on the instance's Postgres (hosting customer
+    # databases included — they land under ``<bucket>/dbs/<name>.dump``
+    # and are named in the run's manifest.json ``extra_databases``),
+    # plus the ENTIRE filestore volume. Restore paths (operator
+    # run-restore.sh, ``_do_restore_full_instance``) reload each dump
+    # into a same-named database on the target.
     # ------------------------------------------------------------------
 
     def _list_backup_stamps(self, cfg, prefix):
@@ -1158,6 +1156,20 @@ class SaasInstanceBackup(models.Model):
                     "Failed to download %s:\n%s\n%s"
                 ) % (label, r.stdout, r.stderr))
 
+        extra_dbs = self._manifest_extra_databases(driver, handle, workdir)
+        for name in extra_dbs:
+            self._map_restore_db_name(name, instance)
+            dump_url = self._presigned_get_url(
+                '%s/dbs/%s.dump' % (self.bucket_path, name))
+            dest = '%s/%s' % (workdir, name.replace('/', '_') + '.dump')
+            r = driver.exec(
+                handle, 'curl -fsSL -o %s %s' % (
+                    shlex.quote(dest), shlex.quote(dump_url)),
+                timeout=1800)
+            if not r.ok:
+                raise UserError(_(
+                    "Failed to download database dump '%s':\n%s"
+                ) % (name, r.stderr or r.stdout))
         instance._append_log("Releasing connections to '%s'..." % db_name)
         safe_db = db_name.replace("'", "''")
         try:
@@ -1223,12 +1235,115 @@ class SaasInstanceBackup(models.Model):
                 "Filestore extraction failed:\n%s"
             ) % (r.stderr or r.stdout))
 
+        # Multi-database (hosting) snapshots carry one dump per customer
+        # database under <bucket>/dbs/<name>.dump, listed in the
+        # manifest's extra_databases. Without restoring those the
+        # "full instance" restore silently leaves every customer
+        # database at its current state while the filestore rolls back
+        # underneath them.
+        for name in extra_dbs:
+            target_db = self._map_restore_db_name(name, instance)
+            instance._append_log(
+                "Restoring database '%s' -> '%s'..." % (name, target_db))
+            dest = '%s/%s.dump' % (workdir, name)
+            rc, out, err = instance._docker_exec_sql(
+                'DROP DATABASE IF EXISTS "%s" WITH (FORCE)' % target_db,
+                timeout=120)
+            if rc != 0:
+                raise UserError(_("dropdb failed for %s:\n%s") % (target_db, err or out))
+            rc, out, err = instance._docker_exec_sql(
+                'CREATE DATABASE "%s"' % target_db, timeout=120)
+            if rc != 0:
+                raise UserError(_("createdb failed for %s:\n%s") % (target_db, err or out))
+            script = (
+                conn_prelude
+                + "p = subprocess.run(['pg_restore'] + conn + ['-d', %s,\n"
+                  "    '--no-owner', '--single-transaction', '--exit-on-error', %s],\n"
+                  "    env=env, capture_output=True, text=True)\n"
+                  "sys.stdout.write(p.stdout)\n"
+                  "sys.stderr.write(p.stderr)\n"
+                  "sys.exit(p.returncode)\n"
+            ) % (repr(target_db), repr(dest))
+            command = ("python3 - <<'SAAS_PGRESTORE_EOF'\n%s\n"
+                       "SAAS_PGRESTORE_EOF") % script
+            r = driver.exec(handle, command, timeout=1800)
+            if not r.ok:
+                raise UserError(_(
+                    "pg_restore failed for '%s':\n%s"
+                ) % (target_db, (r.stderr or r.stdout)[-4000:]))
+
+        for name in extra_dbs:
+            target_db = self._map_restore_db_name(name, instance)
+            if name != target_db:
+                src = instance._hosting_filestore_path(name)
+                dst = instance._hosting_filestore_path(target_db)
+                r = driver.exec(handle,
+                    'if [ -d %(src)s ]; then rm -rf %(dst)s && mv %(src)s %(dst)s; fi'
+                    % {'src': shlex.quote(src), 'dst': shlex.quote(dst)}, timeout=300)
+                if not r.ok:
+                    raise UserError(_("Failed to rename restored filestore: %s")
+                                    % (r.stderr or r.stdout))
         driver.exec(handle, 'rm -rf %s' % shlex.quote(workdir))
 
         instance.write({'state': 'running', 'pending_operation': False})
         instance._append_log(
             "Full-instance restore from '%s' completed successfully." % self.name)
         instance._safe_refresh_usage()
+
+    def _manifest_extra_databases(self, driver, handle, workdir):
+        """Names of the extra databases a full-instance snapshot
+        carries, from its manifest.json (``extra_databases``). Older
+        backups that predate multi-DB coverage simply have no such
+        entry — those restore as before (primary dump only)."""
+        manifest_url = self._presigned_get_url(
+            '%s/manifest.json' % self.bucket_path)
+        dest = '%s/manifest.json' % workdir
+        r = driver.exec(
+            handle, 'curl -fsSL -o %s %s' % (
+                shlex.quote(dest), shlex.quote(manifest_url)),
+            timeout=120)
+        if not r.ok:
+            raise UserError(_("Failed to download backup manifest: %s")
+                            % (r.stderr or r.stdout))
+        script = (
+            "import json, re\n"
+            "m = json.load(open(%r))\n"
+            "names = m.get('extra_databases', [])\n"
+            "if not isinstance(names, list):\n"
+            "    raise ValueError('Invalid extra_databases in manifest')\n"
+            "for n in names:\n"
+            "    if not isinstance(n, str) or not re.fullmatch(r'[_a-z][a-z0-9_-]{0,62}', n):\n"
+            "        raise ValueError('Invalid database name in manifest')\n"
+            "    print(n)\n"
+        ) % dest
+        r = driver.exec(
+            handle,
+            "python3 - <<'SAAS_MANIFEST_EOF'\n%sSAAS_MANIFEST_EOF" % script,
+            timeout=60)
+        if not r.ok:
+            raise UserError(_("Invalid backup manifest: %s") % (r.stderr or r.stdout))
+        return (r.stdout or '').splitlines()
+
+    def _map_restore_db_name(self, name, instance):
+        """Where a dumped extra database lands on the restore target.
+
+        Same instance: the name is already right. Cross-instance (a
+        retained snapshot reloaded onto a different customer instance):
+        hosting database names start with the SOURCE instance's
+        subdomain — rewrite to the TARGET instance's subdomain, or the
+        restored databases would come back under the old tenant's
+        names and nothing would serve them on the target."""
+        source_sub = (self.instance_id.subdomain or '')
+        target_sub = (instance.subdomain or '')
+        if (
+            source_sub and target_sub and source_sub != target_sub
+            and name.startswith(source_sub + '_')
+        ):
+            name = target_sub + '_' + name[len(source_sub) + 1:]
+        import re
+        if not re.fullmatch(r'[_a-z][a-z0-9_-]{0,62}', name):
+            raise UserError(_("Invalid restored database name: %s") % name)
+        return name
 
     def _on_restore_full_instance_error(self, exception, instance_id, prev_state):
         """``on_error`` shim: this job's record is a

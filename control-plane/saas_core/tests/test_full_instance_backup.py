@@ -195,3 +195,15 @@ class TestFullInstanceBackup(TransactionCase):
         self.assertIn("'-d', 'odoo'", pg_restore_cmd)
         self.assertEqual(self.instance.state, 'running')
         self.assertFalse(self.instance.pending_operation)
+
+    def test_unreadable_manifest_aborts_restore(self):
+        driver = MagicMock()
+        driver.exec.return_value = ExecResult(rc=1, stdout='', stderr='download failed')
+        backup = self.Backup.sudo().create({
+            'instance_id': self.instance.id, 'name': 'manifest-test',
+            'is_full_instance': True, 'format': 'operator',
+            'bucket_path': 'backups/fibinst/test', 'state': 'done',
+        })
+        with patch.object(type(backup), '_presigned_get_url', return_value='https://example.com/x'):
+            with self.assertRaisesRegex(UserError, 'manifest'):
+                backup._manifest_extra_databases(driver, 'handle', '/tmp/test')

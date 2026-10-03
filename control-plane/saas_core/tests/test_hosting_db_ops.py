@@ -281,6 +281,38 @@ class TestHostingDbOps(TransactionCase):
         self.assertIn('pg_terminate_backend', first_call_sql)
         self.assertEqual(self.instance.state, 'running')
 
+    def test_copy_without_overwrite_preserves_a_newly_created_target(self):
+        driver = self._driver()
+        driver.exec.return_value = ExecResult(
+            # Satisfies both the zipfile-listing check ("dump.sql" present)
+            # and the post-extraction existence check ("OK" present) — the
+            # mock returns the same ExecResult for every exec() call.
+            rc=0, stdout='dump.sql\nOK', stderr='')
+
+        Backup = self.env['saas.instance.backup']
+        backup = Backup.sudo().create({
+            'instance_id': self.instance.id,
+            'db_name': 'dbopsinst_prod',
+            'name': 'restore-upload',
+            'state': 'done',
+            'bucket_path': 'ondemand/x.zip',
+        })
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
+             patch.object(type(backup), '_read_manifest_safe', return_value=None), \
+             patch.object(type(backup), '_generate_presigned_url',
+                          return_value='https://example.com/x.zip'), \
+             patch.object(type(self.instance), '_docker_exec_sql') as m_sql, \
+             patch.object(type(self.instance), '_docker_exec_psql_file',
+                          return_value=(0, '', '')):
+            m_sql.return_value = (1, '', 'database already exists')
+            with self.assertRaisesRegex(UserError, 'createdb failed'):
+                self.instance._do_restore_backup(backup.id, overwrite=False)
+
+        driver.stop.assert_not_called()
+        driver.start.assert_not_called()
+        m_sql.assert_called_once()
+        self.assertEqual(m_sql.call_args.args[0], 'CREATE DATABASE "dbopsinst_prod"')
+
     # -- serving customer databases ------------------------------------------
 
     def test_database_filter_serves_customer_databases(self):

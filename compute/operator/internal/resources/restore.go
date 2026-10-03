@@ -20,7 +20,7 @@ import (
 // is kept as an independently overridable default (--restore-tool-image)
 // in case a platform ever wants to version backup and restore tooling
 // separately.
-const DefaultRestoreToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.2"
+const DefaultRestoreToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.5"
 
 // OdooRestoreJobName is the name of the one-time restore Job.
 func OdooRestoreJobName(instance *saasv1alpha1.OdooInstance) string {
@@ -63,7 +63,12 @@ func OdooRestoreJob(instance *saasv1alpha1.OdooInstance, restoreToolImage string
 	labels := WithComponent(instance, "restore")
 	source := instance.Spec.Restore.Source
 
+	dbPrefix := ""
+	if instance.Spec.DatabaseManager != nil {
+		dbPrefix = instance.Spec.DatabaseManager.Prefix
+	}
 	env := []corev1.EnvVar{
+		{Name: "DATABASE_PREFIX", Value: dbPrefix},
 		{Name: "INSTANCE_NAME", Value: instance.Name},
 		{Name: "SOURCE_TYPE", Value: string(source.Type)},
 		{Name: "SOURCE_BUCKET", Value: source.Bucket},

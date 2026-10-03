@@ -158,16 +158,27 @@ class TestOperationalCrons(TransactionCase):
             self.Instance._cron_verify_webhooks()
         self.assertEqual(calls, [])
 
-    def test_verify_webhooks_skips_disabled_or_uncloned(self):
+    def test_verify_webhooks_skips_disabled(self):
         inst = self._inst('wh4')
         self._repo(inst, webhook_enabled=False)
-        inst2 = self._inst('wh5')
-        self._repo(inst2, state='pending')
         calls = []
         with patch.object(type(self.Instance), '_ensure_webhooks_registered',
                            lambda self: calls.append(self.subdomain)):
             self.Instance._cron_verify_webhooks()
         self.assertEqual(calls, [])
+
+    def test_verify_webhooks_queues_clone_for_stuck_pending_repo(self):
+        """A running instance whose repo row never left 'pending' (e.g. the
+        env servers created before env webhook registration existed) gets its
+        initial clone+build queued — pushes never deploy without it and the
+        provider hook is never created."""
+        inst = self._inst('wh5')
+        repo = self._repo(inst, state='pending')
+        clones = []
+        with patch.object(type(repo), 'action_clone_repo',
+                          lambda self: clones.append(self.id)):
+            self.Instance._cron_verify_webhooks()
+        self.assertEqual(clones, [repo.id])
 
     # ---------------- _cron_check_container_health (back-compat shim) ----------------
 

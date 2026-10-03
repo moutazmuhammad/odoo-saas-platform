@@ -22,7 +22,7 @@ import (
 //
 // Overridable per operator deployment via the --backup-tool-image flag
 // (see cmd/main.go); this constant is only the compiled-in default.
-const DefaultBackupToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.2"
+const DefaultBackupToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.5"
 
 // BackupCronJob builds the scheduled backup CronJob. Each run coordinates a
 // database dump and a filestore archive into one timestamped, atomically
@@ -41,7 +41,12 @@ const DefaultBackupToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0
 func BackupCronJob(instance *saasv1alpha1.OdooInstance, backupToolImage string) *batchv1.CronJob {
 	labels := WithComponent(instance, "backup")
 
+	dbPrefix := ""
+	if instance.Spec.DatabaseManager != nil {
+		dbPrefix = instance.Spec.DatabaseManager.Prefix
+	}
 	env := []corev1.EnvVar{
+		{Name: "DATABASE_PREFIX", Value: dbPrefix},
 		{Name: "RETENTION", Value: strconv.Itoa(int(instance.Spec.Backup.Retention))},
 		{Name: "INSTANCE_NAME", Value: instance.Name},
 		{Name: "DESTINATION_TYPE", Value: string(instance.Spec.Backup.Destination.Type)},

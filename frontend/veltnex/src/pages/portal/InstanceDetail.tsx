@@ -440,7 +440,7 @@ function ComputeTierCard({
         </p>
         {current && (
           <span className="inline-flex items-center gap-1.5 text-xs text-success">
-            <ShieldCheck className="size-3.5" /> {current.name} ({current.replicas} replica{current.replicas !== 1 ? "s" : ""})
+            <ShieldCheck className="size-3.5" /> {current.name}
           </span>
         )}
       </div>
@@ -450,7 +450,7 @@ function ComputeTierCard({
           <div className="flex items-start gap-2">
             <Clock className="mt-0.5 size-4 shrink-0 text-info" />
             <p className="text-xs text-muted">
-              Payment pending for the <strong>{pending.name}</strong> tier ({pending.replicas} replicas).
+              Payment pending for the <strong>{pending.name}</strong> tier.
             </p>
           </div>
           <Button size="sm" className="shrink-0" onClick={onCheckout}>
@@ -473,7 +473,6 @@ function ComputeTierCard({
             >
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">{tier.name}</p>
-                <span className="text-xs text-muted">{tier.replicas} replica{tier.replicas !== 1 ? "s" : ""}</span>
               </div>
               <p className="text-xs text-muted">
                 {tier.price > 0 ? `${tier.price}/month` : "Included"}

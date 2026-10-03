@@ -86,9 +86,6 @@ func (r *OdooInstanceReconciler) reconcileConfig(ctx context.Context, instance *
 	if err := r.apply(ctx, cm); err != nil {
 		return err
 	}
-	if instance.Spec.DatabaseManager == nil {
-		return nil
-	}
 	addons := resources.PlatformAddonsConfigMap(instance)
 	setOwner(instance, addons)
 	return r.apply(ctx, addons)

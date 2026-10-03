@@ -48,12 +48,39 @@ func CloudNativePGCluster(instance *saasv1alpha1.OdooInstance) *unstructured.Uns
 		storage["storageClass"] = storageClass
 	}
 
+	bootstrap := map[string]interface{}{"initdb": map[string]interface{}{"database": OdooDatabaseName(instance), "owner": "odoo"}}
 	spec := map[string]interface{}{
 		"instances":             int64(1),
 		"imageName":             "ghcr.io/cloudnative-pg/postgresql:" + instance.Spec.Database.Version,
 		"storage":               storage,
-		"bootstrap":             map[string]interface{}{"initdb": map[string]interface{}{"database": OdooDatabaseName(instance), "owner": "odoo"}},
+		"bootstrap":             bootstrap,
 		"enableSuperuserAccess": false,
+		// Live, middle-of-the-road defaults that keep connections alive
+		// across long tenant operations instead of the austere upstream
+		// defaults that silently reap them:
+		//  - idle_in_transaction_session_timeout actually reaps orphaned
+		//    transactions after the request time limit (those otherwise
+		//    hold locks and get inherited as phantom "connection lost").
+		//  - idle_session_timeout=0: Odoo/psycopg intentionally keeps idle
+		//    clients in its per-worker pool; letting the server kills them
+		//    makes the next query fail(reconnect churn).
+		//  - TCP keepalives make dead peers fail fast (60s idle, 15s
+		//    interval, 5 pings) rather than up to hours of IEC-TC
+		//    (Ethernet) half-open sessions.
+		//  - statement_timeout stays 0 — the request-time ceiling lives on
+		//    the Odoo side; imposing it mid-report would slay queries a
+		//    tenant is owed.
+		//  - max_connections places room for web+cron of every replica
+		//    plus per-DB restore/admin connections beyond the often-tight
+		//    upstream 100.
+		"postgresql": map[string]interface{}{"parameters": map[string]interface{}{
+			"idle_in_transaction_session_timeout": "1800s",
+			"tcp_keepalives_idle":                 "60",
+			"tcp_keepalives_interval":             "15",
+			"tcp_keepalives_count":                "5",
+			"statement_timeout":                   "0",
+			"max_connections":                     "200",
+		}},
 	}
 	if r := instance.Spec.Database.Resources; r != nil {
 		spec["resources"] = resourcesToMap(*r)

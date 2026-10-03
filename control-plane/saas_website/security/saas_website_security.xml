@@ -73,4 +73,35 @@
         <field name="perm_unlink" eval="False"/>
     </record>
 
+    <!-- Staff (base.group_user or the dedicated support group) can READ all
+         instances so the admin can inspect every customer account from the
+         dashboard. Write/create/unlink remain ownership-gated by the portal
+         rules; nothing is granted beyond read through these rules. -->
+    <record id="group_saas_support" model="res.groups">
+        <field name="name">SaaS Support</field>
+        <field name="users" eval="[]"/>
+    </record>
+
+    <record id="rule_saas_instance_staff" model="ir.rule">
+        <field name="name">Staff: read all SaaS instances</field>
+        <field name="model_id" ref="saas_core.model_saas_instance"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('base.group_user')), (4, ref('group_saas_support'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="rule_saas_backup_staff" model="ir.rule">
+        <field name="name">Staff: read all instance backups</field>
+        <field name="model_id" ref="saas_core.model_saas_instance_backup"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('base.group_user')), (4, ref('group_saas_support'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
 </odoo>

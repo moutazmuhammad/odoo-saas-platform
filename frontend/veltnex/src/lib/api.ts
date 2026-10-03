@@ -94,6 +94,10 @@ export interface ApiUser {
   phone: string;
   /** True for Odoo internal/backend users (shows a "Backend" menu link). */
   is_internal?: boolean;
+  /** True for admin support (base.group_user or group_saas_support):
+   *  they see ALL customer projects/instances in the UI — the SPA
+   *  renders the global instance list for these users. */
+  is_staff?: boolean;
 }
 
 export interface ApiTier {
@@ -470,6 +474,9 @@ export interface MetricSample {
 export interface PackageSummary {
   workers: number;
   replicas: number;
+  /** Package flavour shown to the customer instead of a replica count:
+   *  "Standard" / "HA" / "Scale". */
+  tier?: string;
   cpu_cores: number;
   ram_mb: number;
   odoo_cpu_cores: number;
@@ -534,6 +541,9 @@ export interface DbListData {
   databases: { name: string; login: string }[];
   ready: boolean;
   state?: InstanceState;
+  /** Hosting instances own DBs under this `<sub>_` prefix ("" if the
+   *  instance isn't hosting). */
+  prefix?: string;
   /** Instance host, e.g. https://acme.veltnex.com. A specific DB is
    *  opened at `${url}/web?db=${name}` (all DBs share the host). */
   url?: string;
@@ -771,6 +781,16 @@ export const api = {
       name: name || undefined,
       branch: branch || undefined,
     }),
+  environmentCopyDbs: (
+    targetId: number,
+    sourceId: number,
+    dbNames: string[],
+    overwriteNames: string[],
+  ) =>
+    rpc<Record<string, never>>(
+      `/saas/api/v1/instances/${targetId}/environments/copy-dbs`,
+      { source_id: sourceId, db_names: dbNames, overwrite_names: overwriteNames },
+    ),
   environmentReserve: (
     id: number,
     type: "staging" | "development",

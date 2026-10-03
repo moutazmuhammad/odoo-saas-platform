@@ -26,6 +26,34 @@ echo "[backup-tool] dumping database ${DB_NAME}@${DB_HOST}:${DB_PORT}"
 pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
   --format=custom --file="${WORKDIR}/db.dump"
 
+# Multi-database (hosting) instances hold customer databases beside the
+# primary one — without dumping those, a "full-instance" backup is
+# anything but full and restore silently leaves the real data behind.
+# Dump every remaining non-system database under dbs/<name>.dump and
+# advertise the list in the manifest so restore knows what to reload.
+EXTRA_DBS="$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -tA \
+  -c "SELECT datname FROM pg_database WHERE NOT datistemplate AND datname <> 'postgres' AND datname <> '${DB_NAME}' ORDER BY datname" \
+  )"
+EXTRA_JSON="[]"
+if [ -n "$EXTRA_DBS" ]; then
+  mkdir -p "${WORKDIR}/dbs"
+  EXTRA_JSON="["
+  FIRST=1
+  while IFS= read -r db; do
+    [ -z "$db" ] && continue
+    if [[ ! "$db" =~ ^[_a-z][a-z0-9_-]{0,62}$ ]]; then
+      echo "[backup-tool] ERROR: unsupported database name: ${db}" >&2
+      exit 1
+    fi
+    echo "[backup-tool] dumping additional database ${db}"
+    pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$db" \
+      --format=custom --file="${WORKDIR}/dbs/${db}.dump"
+    if [ "$FIRST" -eq 1 ]; then FIRST=0; else EXTRA_JSON="${EXTRA_JSON}, "; fi
+    EXTRA_JSON="${EXTRA_JSON}\"${db}\""
+  done <<< "$EXTRA_DBS"
+  EXTRA_JSON="${EXTRA_JSON}]"
+fi
+
 echo "[backup-tool] archiving filestore"
 # Deliberately not `tar -C /filestore -czf ... .`: that stores /filestore's
 # own "." directory entry (with its mtime/mode) in the archive, and
@@ -45,10 +73,12 @@ echo "[backup-tool] archiving filestore"
 cat > "${WORKDIR}/manifest.json" <<EOF
 {
   "instance": "${INSTANCE_NAME}",
+  "database_prefix": "${DATABASE_PREFIX:-}",
   "timestamp": "${STAMP}",
   "db_dump": "db.dump",
   "filestore_archive": "filestore.tar.gz",
-  "retention": ${RETENTION:-0}
+  "retention": ${RETENTION:-0},
+  "extra_databases": ${EXTRA_JSON}
 }
 EOF
 
@@ -58,6 +88,7 @@ case "${DESTINATION_TYPE:-PVC}" in
     echo "[backup-tool] publishing to ${DEST}"
     mkdir -p "$DEST"
     mv "${WORKDIR}/db.dump" "${WORKDIR}/filestore.tar.gz" "${WORKDIR}/manifest.json" "$DEST/"
+    if [ -d "${WORKDIR}/dbs" ]; then mv "${WORKDIR}/dbs" "$DEST/"; fi
 
     if [ "${RETENTION:-0}" -gt 0 ]; then
       BASE="/backups/${INSTANCE_NAME}"

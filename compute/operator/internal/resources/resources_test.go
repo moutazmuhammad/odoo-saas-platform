@@ -372,8 +372,8 @@ func TestOdooConf_DatabaseFilterOverride(t *testing.T) {
 
 func TestOdooDeployment_DatabaseFilterChangeRollsPods(t *testing.T) {
 	instance := testInstance()
-	if ann := OdooDeployment(instance, RoleWeb).Spec.Template.Annotations; ann != nil {
-		t.Errorf("no filter: pod template annotations = %v, want none", ann)
+	if ann := OdooDeployment(instance, RoleWeb).Spec.Template.Annotations; len(ann) != 1 || ann[AnnotationPlatformAddons] == "" {
+		t.Errorf("no filter: pod template annotations = %v, want only the platform-addons hash", ann)
 	}
 	instance.Spec.DatabaseFilter = "^acme_.+$"
 	ann := OdooDeployment(instance, RoleWeb).Spec.Template.Annotations
@@ -461,8 +461,16 @@ func TestOdooDeployment_DatabaseManager_LoadsPlatformAddon(t *testing.T) {
 	if dep.Spec.Template.Annotations[AnnotationPlatformAddons] == "" {
 		t.Error("addon hash annotation missing")
 	}
-	if strings.Contains(strings.Join(OdooDeployment(testInstance(), RoleWeb).Spec.Template.Spec.Containers[0].Args, " "), "--load") {
-		t.Error("--load must only be set with the database manager on")
+	// Always, not just with the database manager on: saas_tenant_dbm
+	// gates the raw /web/database/* endpoints, so even instances
+	// without spec.databaseManager must load it (there it hard-locks
+	// every endpoint because no DBM key is configured).
+	defaultArgs := strings.Join(OdooDeployment(testInstance(), RoleWeb).Spec.Template.Spec.Containers[0].Args, " ")
+	if !strings.Contains(defaultArgs, "--load=base,web,saas_tenant_dbm") {
+		t.Errorf("default instance args = %v, want saas_tenant_dbm loaded", defaultArgs)
+	}
+	if OdooDeployment(testInstance(), RoleWeb).Spec.Template.Annotations[AnnotationPlatformAddons] == "" {
+		t.Error("platform-addons hash annotation must be set on every instance")
 	}
 }
 
@@ -513,8 +521,8 @@ func TestOdooDeployment_Shell_SidecarWithoutSecrets(t *testing.T) {
 func TestOdooDeployment_LivenessOutlastsOdooRequestLimit(t *testing.T) {
 	odoo := OdooDeployment(testInstance(), RoleWeb).Spec.Template.Spec.Containers[0]
 	live := odoo.LivenessProbe
-	if window := live.PeriodSeconds * live.FailureThreshold; window <= 120 {
-		t.Errorf("liveness gives up after %ds, must exceed Odoo's 120s limit_time_real", window)
+	if window := live.PeriodSeconds * live.FailureThreshold; window <= 1800 {
+		t.Errorf("liveness gives up after %ds, must exceed Odoo's 1800s limit_time_real", window)
 	}
 	if odoo.ReadinessProbe.FailureThreshold != 3 {
 		t.Errorf("readiness must still react quickly, got failureThreshold=%d", odoo.ReadinessProbe.FailureThreshold)
@@ -570,6 +578,11 @@ func TestOdooDeployment_PerProcessMemoryLimits(t *testing.T) {
 	for _, want := range []string{
 		"--limit-memory-soft=" + strconvI(limit*60/100),
 		"--limit-memory-hard=" + strconvI(limit*75/100),
+		// Long-running tenant ops (reports, imports, direct SQL on huge
+		// tables) must not be wall-clock killed by Odoo's tiny stock
+		// defaults of 120s real / 60s CPU.
+		"--limit-time-real=1800",
+		"--limit-time-cpu=1800",
 	} {
 		if !strings.Contains(args, want) {
 			t.Errorf("args %q missing %s", args, want)
@@ -587,6 +600,29 @@ func TestCloudNativePGCluster_CarriesDatabaseResources(t *testing.T) {
 	got, _, _ := unstructuredNestedString(u.Object, "spec", "resources", "limits", "memory")
 	if got != "2Gi" {
 		t.Errorf("CNPG memory limit = %q, want 2Gi", got)
+	}
+	// The cluster should no longer rely on stock PG defaults for idle/idle-in-
+	// txn reaping: long tenant requests previously left half-killed
+	// connections.
+	paramsIface, _, _ := unstructured.NestedMap(u.Object, "spec", "postgresql", "parameters")
+	params := map[string]string{}
+	for k, v := range paramsIface {
+		if s, ok := v.(string); ok {
+			params[k] = s
+		}
+	}
+	wantParams := map[string]string{
+		"idle_in_transaction_session_timeout": "1800s",
+		"tcp_keepalives_idle":                 "60",
+		"tcp_keepalives_interval":             "15",
+		"tcp_keepalives_count":                "5",
+		"statement_timeout":                   "0",
+		"max_connections":                     "200",
+	}
+	for k, v := range wantParams {
+		if params[k] != v {
+			t.Errorf("postgresql.parameters[%q] = %q, want %q (got %v)", k, params[k], v, params)
+		}
 	}
 }
 
@@ -609,5 +645,23 @@ func TestOdooDeployment_RWOFilestoreKeepsPodsOnOneNode(t *testing.T) {
 	instance.Spec.Storage.Filestore.AccessMode = saasv1alpha1.FilestoreAccessModeRWX
 	if OdooDeployment(instance, RoleWeb).Spec.Template.Spec.Affinity != nil {
 		t.Error("RWX filestore: pods may spread across nodes")
+	}
+}
+
+func TestBackupAndRestorePassHostingPrefix(t *testing.T) {
+	instance := testInstance()
+	instance.Name = "odoo-acme"
+	instance.Spec.DatabaseManager = &saasv1alpha1.DatabaseManagerSpec{Prefix: "acme_"}
+	instance.Spec.Backup = saasv1alpha1.BackupSpec{Schedule: "0 2 * * *", Destination: saasv1alpha1.BackupDestinationSpec{Type: saasv1alpha1.BackupDestinationPVC}}
+	instance.Spec.Restore = &saasv1alpha1.RestoreSpec{Source: saasv1alpha1.RestoreSourceSpec{BackupDestinationSpec: saasv1alpha1.BackupDestinationSpec{Type: saasv1alpha1.BackupDestinationPVC}}}
+	backup := BackupCronJob(instance, DefaultBackupToolImage).Spec.JobTemplate.Spec.Template.Spec.Containers[0]
+	restore := OdooRestoreJob(instance, DefaultRestoreToolImage).Spec.Template.Spec.Containers[0]
+	for _, c := range []corev1.Container{backup, restore} {
+		if got := envValue(c.Env, "DATABASE_PREFIX"); got != "acme_" {
+			t.Errorf("DATABASE_PREFIX = %q, want acme_", got)
+		}
+		if got := envValue(c.Env, "INSTANCE_NAME"); got != "odoo-acme" {
+			t.Errorf("INSTANCE_NAME = %q, want odoo-acme", got)
+		}
 	}
 }

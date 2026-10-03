@@ -39,6 +39,10 @@ _logger = logging.getLogger(__name__)
 # "Needs attention" alert, where they can either complete payment or abandon
 # it). Every other active/cancelled state stays visible (cancelled instances
 # remain reachable for reactivation).
+# Child Staging/Development servers are NEVER returned (they live inside
+# their project's Environments board). Cancelled projects stay listed here
+# so customers retain a receipt for their deleted work; dev/staging teardown
+# is already excluded from the instance rows by `parent_id == False`.
 _LIST_STATES = tuple(s for s in _ACTIVE_STATES if s != 'pending_payment')
 
 EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
@@ -80,6 +84,18 @@ class SaasApi(http.Controller):
         user = self._user()
         return user.partner_id if user else None
 
+    def _is_staff(self):
+        """Internal users (base.group_user — the platform admin) and the
+        dedicated SaaS Support group can READ every customer's project /
+        instance from the UI. Writes stay ownership-gated; read access is
+        granted via the ir.rules in saas_website_security.xml plus this
+        helper for the endpoints that list instances directly."""
+        user = self._user()
+        if not user:
+            return False
+        return user.has_group('base.group_user') or user.has_group(
+            'saas_website.group_saas_support')
+
     def _instance(self, instance_id, access_token=None, write=False):
         """Authorized sudo recordset for an instance the caller may act on.
 
@@ -102,6 +118,8 @@ class SaasApi(http.Controller):
         # Record-rule check: will raise AccessError if not the owner.
         instance.check_access_rights('read')
         instance.check_access_rule('read')
+        if write and instance.sudo().partner_id != self._partner():
+            raise AccessError(_("Only the owner can change this instance."))
         return instance.sudo()
 
     # ------------------------------------------------------------------
@@ -685,13 +703,15 @@ class SaasApi(http.Controller):
         if not partner:
             return err(_("Please sign in."), 'auth_required')
         Instance = request.env['saas.instance'].sudo()
-        instances = Instance.search([
-            ('partner_id', '=', partner.id),
+        inst_domain = [
             ('state', 'in', _ACTIVE_STATES),
             # Top-level only: Staging/Development servers live inside their
             # project and are reached from its Environments board.
             ('parent_id', '=', False),
-        ], order='create_date desc')
+        ]
+        if not self._is_staff():
+            inst_domain.append(('partner_id', '=', partner.id))
+        instances = Instance.search(inst_domain, order='create_date desc')
         invoices = self._partner_invoices(partner)
         open_invoices = [i for i in invoices if i.payment_state not in ('paid', 'in_payment')
                          and i.state == 'posted']
@@ -716,13 +736,14 @@ class SaasApi(http.Controller):
         if not partner:
             return err(_("Please sign in."), 'auth_required')
         domain = [
-            ('partner_id', '=', partner.id),
             # Awaiting-payment orders are hidden from the list + search
             # (surfaced on the Dashboard instead). See _LIST_STATES.
             ('state', 'in', _LIST_STATES),
             # Top-level only — children are listed on their project's board.
             ('parent_id', '=', False),
         ]
+        if not self._is_staff():
+            domain.append(('partner_id', '=', partner.id))
         if itype == 'services':
             domain.append(('is_hosting', '=', False))
         elif itype == 'hosting':
@@ -1019,6 +1040,9 @@ class SaasApi(http.Controller):
             # specific DB at <url>/web?db=<name> — all DBs share the
             # host, so the db must be selected via the query param.
             'url': instance.url or '',
+            # Hosting DBs are `<sub>_<suffix>`; give the SPA the owning
+            # prefix so it can preview copy mappings across instances.
+            'prefix': instance._hosting_db_prefix() if instance.is_hosting else '',
             'pending_ops': [{'db_name': o.db_name, 'operation': o.operation} for o in ops],
         })
 
@@ -1628,6 +1652,43 @@ class SaasApi(http.Controller):
                        'error')
         return ok(result)
 
+    @http.route('/saas/api/v1/instances/<int:instance_id>/environments/copy-dbs',
+                type='json', auth='public')
+    def environment_copy_dbs(self, instance_id, source_id=None, db_names=None,
+                             overwrite_names=None, access_token=None):
+        """Copy databases between two servers of the same project: from the
+        source (any environment) onto this Staging/Development target, optionally
+        overwriting explicitly-listed existing target databases."""
+        partner = self._partner()
+        if not partner:
+            return err(_("Please sign in."), 'auth_required')
+        target = request.env['saas.instance'].sudo().browse(instance_id)
+        if not target.exists() or target.partner_id != partner:
+            return err(_("Project not found."), 'not_found')
+        if target.environment not in ('staging', 'development'):
+            return err(_("Databases can only be copied onto a Staging or "
+                         "Development server."), 'invalid')
+        try:
+            source_id = int(source_id or 0)
+        except (TypeError, ValueError):
+            return err(_("Invalid source server."), 'invalid')
+        source = request.env['saas.instance'].sudo().browse(source_id)
+        if not source.exists() or source.partner_id != partner:
+            return err(_("Source server not found."), 'not_found')
+        if not isinstance(db_names, list) or not db_names:
+            return err(_("Pick at least one database to copy."), 'invalid')
+        if not isinstance(overwrite_names, list):
+            overwrite_names = []
+        try:
+            target.hosting_db_copy_from(source, db_names, overwrite_names)
+        except (UserError, ValidationError) as e:
+            return err(str(e), 'error')
+        except Exception:
+            _logger.exception("DB copy failed for %s", instance_id)
+            return err(_("Couldn't start the database copy. "
+                         "Please try again."), 'error')
+        return ok({})
+
     def _project_anchor(self, instance_id):
         """Return the owned Production anchor for ``instance_id`` (or its
         parent), or ``(None, err_envelope)``."""
@@ -1817,6 +1878,10 @@ class SaasApi(http.Controller):
             # SPA account menu — portal users don't. `_serialize_user` is
             # always called for the current user, so env.user is correct.
             'is_internal': request.env.user.has_group('base.group_user'),
+            # Only staff (admin + support) see EVERY customer account from
+            # the UI — used by the SPA to show the global view across all
+            # projects instead of only the logged-in partner's.
+            'is_staff': bool(self._is_staff()),
         }
 
     def _usage(self, instance):

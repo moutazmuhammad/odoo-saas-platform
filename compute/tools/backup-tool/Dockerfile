@@ -24,7 +24,7 @@ FROM postgres:16-bookworm
 # CVEs for a binary nothing here ever executes.
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends postgresql-client-16 rclone ca-certificates && \
+    apt-get install -y --no-install-recommends postgresql-client-16 rclone ca-certificates python3 && \
     rm -f /usr/local/bin/gosu && \
     rm -rf /var/lib/apt/lists/*
 

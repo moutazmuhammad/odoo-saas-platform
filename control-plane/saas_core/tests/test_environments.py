@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 from odoo.tests.common import TransactionCase, tagged
 
 
@@ -109,6 +109,31 @@ class TestEnvironments(TransactionCase):
         self.assertAlmostEqual(prod._env_server_price('monthly'), full * 0.5, 2)
 
     # -------------------------------------------------------------- renewal line
+    def test_env_child_registers_its_own_push_webhook(self):
+        """Each Staging/Development repo row needs its OWN webhook registered
+        on the Git provider — otherwise only the Production hook exists and
+        pushes to a Staging/Development branch never reach their servers."""
+        from unittest.mock import patch
+        prod = self._mk_prod('wp')
+        prod.write({'staging_slots': 1})
+        self.env['saas.instance.repo'].sudo().create({
+            'instance_id': prod.id, 'repo_url': 'https://github.com/x/y.git',
+            'branch': 'main', 'github_token': 'tok',
+            'webhook_enabled': True, 'state': 'cloned',
+        })
+        register_calls = []
+        with patch.object(
+                type(self.env['saas.instance.repo']),
+                '_register_webhook_with_retry',
+                lambda self: register_calls.append(self) or True), \
+                patch.object(
+                type(self.env['saas.instance.repo']),
+                '_create_branch_on_provider', lambda *a, **kw: True):
+            child = prod._create_env_child('staging', name='stg-wp')
+        self.assertEqual(len(register_calls), 1)
+        self.assertEqual(register_calls[0].instance_id, child)
+        self.assertEqual(register_calls[0].branch, 'stg-wp')
+
     def test_environment_order_lines_one_per_slot(self):
         # Billing follows purchased SLOTS (entitlement), not how many children
         # are spun up — creating within slots is free, so renewal bills slots.
@@ -229,3 +254,16 @@ class TestEnvironments(TransactionCase):
         self.assertEqual(prod.staging_slots, 1)          # count unchanged
         self.assertEqual(prod._env_used_for('staging'), 0)  # slot freed
         self.assertIn(child.state, ('cancelled', 'provisioning'))
+
+    def test_database_copy_rejects_different_projects(self):
+        prod = self._mk_prod('copyproj')
+        child = self._mk_child(prod)
+        other = self._mk_prod('otherproj')
+        with self.assertRaisesRegex(UserError, 'same project'):
+            child.hosting_db_copy_from(other, ['otherproj_main'])
+
+    def test_database_copy_rejects_malformed_names(self):
+        prod = self._mk_prod('copyproj')
+        child = self._mk_child(prod)
+        with self.assertRaisesRegex(UserError, 'valid database names'):
+            child.hosting_db_copy_from(prod, [{}])

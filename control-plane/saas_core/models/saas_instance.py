@@ -1276,7 +1276,10 @@ class SaasInstance(models.Model):
             if not name:
                 raise UserError(_(
                     "Please provide a name for the development server."))
-            branch = name  # a dev server's branch is always its own name
+            # A dev server runs whatever branch the caller picked — an
+            # existing one (e.g. an open PR branch for review), or a
+            # brand-new one named after the server.
+            branch = (branch or '').strip() or name
         else:  # staging
             name = name or 'staging'
             branch = (branch or '').strip() or name
@@ -1318,6 +1321,22 @@ class SaasInstance(models.Model):
                 if env_type == 'development':
                     child.unlink()
                     raise
+            # Register this child repo's push webhook NOW: only the
+            # Production repo's hook would otherwise appear on the Git
+            # provider (it is registered the first time Production's
+            # own repo is connected), so pushes to a Staging/Development
+            # branch would never reach their servers. The child repo is
+            # still 'pending' here, but the URL is derivable from its
+            # secret at create() time and registration does not require
+            # a built image. A failed registration never blocks server
+            # creation — the webhook cron re-registers later.
+            if child_repo.webhook_enabled and child_repo.sudo().github_token:
+                try:
+                    child_repo._register_webhook_with_retry()
+                except Exception as e:
+                    child._append_log(
+                        "Auto-deploy webhook registration failed for %s: %s"
+                        % (child_repo.name, e))
         return child
 
     def _activate_pending_environment(self):
@@ -2944,6 +2963,154 @@ class SaasInstance(models.Model):
         )
         return backup
 
+    # ------------------------------------------------------------------
+    # Copy selected databases from one instance to another (same project)
+    # ------------------------------------------------------------------
+
+    def hosting_db_copy_from(self, source, db_names, overwrite_names=None):
+        """Copy the selected databases (dump + filestore) from ``source``
+        onto THIS instance, which must be Staging or Development.
+
+        Naming rule: each source database is copied into the TARGET's
+        own prefix namespace — the source instance's ``<sub>_`` prefix
+        (if any) is replaced by the target's, so the copies stay
+        servable under the target's dbfilter and database manager. If
+        the mapped target name already exists on this instance, that DB
+        is only replaced when it is explicitly included in
+        ``overwrite_names`` (validated by the UI + re-validated here);
+        otherwise the job skips it with an error in the log. Every other
+        matching-name database on this instance is left untouched —
+        only the selected source DBs are copied.
+        """
+        self.ensure_one()
+        if self.environment not in ('staging', 'development'):
+            raise UserError(_(
+                "Databases can only be copied onto a Staging or "
+                "Development server."))
+        if not source or not source.exists():
+            raise UserError(_("Source instance not found."))
+        if source.id == self.id:
+            raise UserError(_(
+                "Source and target must be different servers."))
+        if (source.parent_id or source) != (self.parent_id or self):
+            raise UserError(_("Source and target must belong to the same project."))
+        if not isinstance(db_names, list) or any(
+                not isinstance(name, str) for name in db_names):
+            raise UserError(_("Pick valid database names to copy."))
+        if overwrite_names is not None and (
+                not isinstance(overwrite_names, list) or any(
+                    not isinstance(name, str) for name in overwrite_names)):
+            raise UserError(_("Invalid overwrite database names."))
+        if not source.is_hosting or not self.is_hosting:
+            # Cross-instance copies rely on the hosting namespacing
+            # (odoo.conf's ``dbfilter = ^<sub>_.+$``): only hosting
+            # instances serve databases by prefix, so a mapping between
+            # two different instances is only meaningful there.
+            raise UserError(_(
+                "Database copies require both servers to be hosting "
+                "instances."))
+        if source.state != 'running' or self.state != 'running':
+            raise UserError(_(
+                "Both servers must be running to copy databases."))
+        src_prefix = source._hosting_db_prefix()
+        src_full = {r['name'] for r in source.hosting_db_list()}
+        pairs = []
+        for name in db_names or []:
+            if name not in src_full:
+                raise UserError(_(
+                    "Database '%s' is not on the source server.") % name)
+            suffix = name[len(src_prefix):] if src_prefix and name.startswith(src_prefix) else name
+            target_name = self._hosting_db_full_name(suffix)
+            pairs.append((name, target_name))
+        if not pairs:
+            raise UserError(_("Pick at least one database to copy."))
+        overwrite = set(overwrite_names or [])
+        self.env['saas.job'].enqueue(
+            self, '_do_copy_dbs', args=(source.id, pairs, list(overwrite)),
+            channel='restore', lock_key='instance:%s' % self.id,
+            max_attempts=1, on_error='_on_background_error',
+            on_error_args=(self.state,),
+        )
+        return True
+
+    def _do_copy_dbs(self, source_id, pairs, overwrite_names):
+        """Background worker for ``hosting_db_copy_from``: for each
+        (source_db, target_db) pair, on the SOURCE instance produce the
+        standard zip (dump.sql + that DB's filestore), then, on THIS
+        target instance, restore it into ``target_db`` — reusing the
+        exact same ``pg_dump``/``psql -f``/filestore-replace logic the
+        per-DB backup restore already runs, now with an explicit target
+        name. One failed DB never aborts the rest."""
+        self.ensure_one()
+        source = self.env['saas.instance'].browse(source_id)
+        if not source.exists():
+            raise UserError(_("Source instance no longer exists."))
+        self._append_log(
+            "Copying %s database(s) from '%s'..." % (len(pairs), source.subdomain))
+        existing = {r['name'] for r in self.hosting_db_list()}
+        overwrite = set(overwrite_names or [])
+        copied = []
+        errors = []
+        for source_name, target_name in pairs:
+            if target_name in existing and target_name not in overwrite:
+                errors.append(
+                    "%s → %s skipped: exists on target and overwrite "
+                    "was not confirmed." % (source_name, target_name))
+                self._append_log(
+                    "SKIP '%s': target '%s' exists (not overwritten)."
+                    % (source_name, target_name))
+                continue
+            try:
+                self._append_log(
+                    "Copying '%s' → '%s'..." % (source_name, target_name))
+                backup = self.env['saas.instance.backup'].sudo().create({
+                    'instance_id': source.id,
+                    'db_name': source_name,
+                    'name': 'copy_%s_%s.zip' % (source_name, uuid.uuid4().hex),
+                    'state': 'running',
+                    'is_full_instance': False,
+                    'ephemeral': True,
+                    'format': 'zip',
+                })
+                backup._run_portal_backup()
+                if backup.state != 'done':
+                    raise UserError(_(
+                        "Source backup for '%s' failed: %s")
+                        % (source_name, backup.error_message or backup.state))
+                self._do_restore_backup(
+                    backup.id, target_name=target_name,
+                    overwrite=target_name in overwrite)
+                try:
+                    backup._delete_from_bucket()
+                except Exception:
+                    pass
+                backup.unlink()
+                copied.append(target_name)
+                existing.add(target_name)
+                self._append_log(
+                    "Copied '%s' onto '%s'." % (source_name, target_name))
+            except Exception as e:
+                errors.append("%s → %s: %s" % (
+                    source_name, target_name, str(e)[:500]))
+                self._append_log(
+                    "ERROR copying '%s' → '%s': %s"
+                    % (source_name, target_name, str(e)[:500]))
+        if copied:
+            self._append_log(
+                "Database copy finished: %s copied (%s)."
+                % (len(copied), ', '.join(copied)))
+        if errors:
+            self._append_log(
+                "Finished with %s issue(s):\n- %s"
+                % (len(errors), '\n- '.join(errors)))
+            if not copied:
+                raise UserError(_('All copies failed:\n%s')
+                                % '\n'.join(errors))
+        self.state = 'running'
+        self.pending_operation = False
+        self._safe_refresh_usage()
+        return {'copied': copied, 'errors': errors}
+
     def _hosting_template_db_name(self):
         """Per-instance template DB name — outside the customer's
         prefix namespace, so it never appears in ``hosting_db_list``
@@ -3108,8 +3275,13 @@ class SaasInstance(models.Model):
                 "Could not patch admin credentials:\n%s\n%s"
             ) % ((stdout or '')[-1000:], (stderr or '')[-500:]))
 
-    def _do_restore_backup(self, backup_id):
+    def _do_restore_backup(self, backup_id, target_name=None, overwrite=True):
         """Restore a backup — replace target DB and filestore.
+
+        ``target_name`` overrides where the database lands — used when
+        copying a database from another instance whose prefix differs
+        (see ``hosting_db_copy_from``); it must already be validated
+        against the same name rules the caller relies on.
 
         Unlike the ssh_docker era, the pod is never stopped: pod-exec
         IS the transport every step below uses, so stopping it would
@@ -3126,7 +3298,7 @@ class SaasInstance(models.Model):
         backup = self.env['saas.instance.backup'].browse(backup_id)
         # A backup without db_name is of the instance's own (served)
         # database — named by the operator, not after the subdomain.
-        db_name = backup.db_name or self._served_db_name()
+        db_name = target_name or backup.db_name or self._served_db_name()
         name_re = (
             re.compile(r'^[a-z][a-z0-9_-]{0,62}$')
             if self.is_hosting else SUBDOMAIN_RE
@@ -3148,16 +3320,17 @@ class SaasInstance(models.Model):
         driver = self._compute_driver()
         handle = self._compute_handle()
 
-        self._append_log("Releasing connections to database '%s'..." % db_name)
-        safe_db = db_name.replace("'", "''")
-        try:
-            self._docker_exec_sql(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname='%s' AND pid <> pg_backend_pid()" % safe_db,
-                timeout=30,
-            )
-        except Exception as e:
-            self._append_log("Note: connection release failed (%s); continuing." % e)
+        if overwrite:
+            self._append_log("Releasing connections to database '%s'..." % db_name)
+            safe_db = db_name.replace("'", "''")
+            try:
+                self._docker_exec_sql(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname='%s' AND pid <> pg_backend_pid()" % safe_db,
+                    timeout=30,
+                )
+            except Exception as e:
+                self._append_log("Note: connection release failed (%s); continuing." % e)
 
         self._append_log("Downloading backup...")
         download_url = backup._generate_presigned_url()
@@ -3210,13 +3383,14 @@ class SaasInstance(models.Model):
                 "extraction — aborting before any change."
             ))
 
-        self._append_log("Dropping current database...")
-        rc, out, err = self._docker_exec_sql(
-            'DROP DATABASE IF EXISTS "%s" WITH (FORCE)' % db_name, timeout=120)
-        if rc != 0:
-            raise UserError(_(
-                "dropdb failed for %s — aborting restore:\n%s"
-            ) % (db_name, err or out))
+        if overwrite:
+            self._append_log("Dropping current database...")
+            rc, out, err = self._docker_exec_sql(
+                'DROP DATABASE IF EXISTS "%s" WITH (FORCE)' % db_name, timeout=120)
+            if rc != 0:
+                raise UserError(_(
+                    "dropdb failed for %s — aborting restore:\n%s"
+                ) % (db_name, err or out))
         rc, out, err = self._docker_exec_sql(
             'CREATE DATABASE "%s"' % db_name, timeout=120)
         if rc != 0:
@@ -3238,7 +3412,9 @@ class SaasInstance(models.Model):
             'rm -rf %(dst)s && mkdir -p %(dst)s && '
             'if [ -d %(src)s ]; then cp -a %(src)s/. %(dst)s/; fi'
         ) % {'dst': shlex.quote(filestore_dst), 'src': shlex.quote(filestore_src)}
-        driver.exec(handle, fs_cmd, timeout=300)
+        r = driver.exec(handle, fs_cmd, timeout=300)
+        if not r.ok:
+            raise UserError(_("Filestore restore failed:\n%s") % (r.stderr or r.stdout))
 
         driver.exec(handle, 'rm -rf %s %s' % (
             shlex.quote(tmp_zip), shlex.quote(extract_dir)))
@@ -3930,6 +4106,30 @@ class SaasInstance(models.Model):
         if not instances:
             return
         for instance in instances:
+            # Repair case: a server is running while its repo row never
+            # left 'pending' — nothing was ever built from the repo and
+            # its push webhook was never registered (this is how
+            # Staging/Development environments created before the env
+            # webhook registration existed were left behind). Queue the
+            # clone+build now so the environment starts receiving its
+            # branch's pushes and rolling out its code.
+            stuck_repos = instance.repo_ids.filtered(
+                lambda r: r.state == 'pending' and r.webhook_enabled
+                and r.sudo().github_token)
+            for repo in stuck_repos:
+                try:
+                    _logger.info(
+                        "Cron: queueing initial clone for stuck repo %s on %s",
+                        repo.name, instance.subdomain,
+                    )
+                    repo.action_clone_repo()
+                    self.env.cr.commit()
+                except Exception:
+                    self.env.cr.rollback()
+                    _logger.exception(
+                        "Cron: clone repair failed for %s/%s",
+                        instance.subdomain, repo.name,
+                    )
             repos_needing_webhook = instance.repo_ids.filtered(
                 lambda r: r.state == 'cloned'
                 and r.webhook_enabled
@@ -4179,9 +4379,16 @@ class SaasInstance(models.Model):
         pkg = self._package_resources()
         if not pkg:
             return {}
+        # Show the customer the flavour, not a replica count.
+        replicas = int(pkg.get('odoo_pods', 1) or 1)
+        if self.compute_tier_id and self.compute_tier_id.name:
+            tier = self.compute_tier_id.name
+        else:
+            tier = {1: 'Standard', 2: 'HA'}.get(replicas, 'Scale')
         return {
             'workers': pkg['workers'],
             'replicas': pkg['replicas'],
+            'tier': tier,
             'cpu_cores': pkg['total_cpu_m'] / 1000.0,
             'ram_mb': pkg['total_mem_mi'],
             'odoo_cpu_cores': pkg['odoo_cpu_m'] * pkg['odoo_pods'] / 1000.0,

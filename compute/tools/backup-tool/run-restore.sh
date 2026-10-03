@@ -42,7 +42,8 @@ case "${SOURCE_TYPE:-PVC}" in
       exit 1
     fi
     echo "[restore-tool] restoring from ${SRC}"
-    cp "${SRC}/db.dump" "${SRC}/filestore.tar.gz" "$WORKDIR/"
+    cp "${SRC}/db.dump" "${SRC}/filestore.tar.gz" "${SRC}/manifest.json" "$WORKDIR/"
+    if [ -d "${SRC}/dbs" ]; then cp -r "${SRC}/dbs" "$WORKDIR/"; fi
     ;;
   ObjectStorage)
     # KEY_BASE must use the exact same fallback as run-backup.sh's
@@ -64,6 +65,10 @@ case "${SOURCE_TYPE:-PVC}" in
     echo "[restore-tool] restoring from s3://${SOURCE_BUCKET}/${KEY_BASE}/${RUN}"
     rclone copy "${SRC_REMOTE}/db.dump" "$WORKDIR/" --checksum
     rclone copy "${SRC_REMOTE}/filestore.tar.gz" "$WORKDIR/" --checksum
+    rclone copy "${SRC_REMOTE}/manifest.json" "$WORKDIR/" --checksum
+    if python3 -c 'import json, sys; sys.exit(not json.load(open(sys.argv[1])).get("extra_databases"))' "${WORKDIR}/manifest.json"; then
+      rclone copy "${SRC_REMOTE}/dbs" "${WORKDIR}/dbs" --checksum
+    fi
     if [ ! -f "${WORKDIR}/db.dump" ] || [ ! -f "${WORKDIR}/filestore.tar.gz" ]; then
       echo "[restore-tool] ERROR: backup artifacts not found at s3://${SOURCE_BUCKET}/${KEY_BASE}/${RUN}" >&2
       exit 1
@@ -75,6 +80,29 @@ case "${SOURCE_TYPE:-PVC}" in
     ;;
 esac
 
+# Validate every expected dump before changing any extra database. The manifest's
+# instance field is the source identity; SOURCE_PREFIX is a storage path.
+python3 - "$WORKDIR" "$INSTANCE_NAME" <<'PY_MANIFEST'
+import json, os, pathlib, re, sys
+workdir = pathlib.Path(sys.argv[1])
+manifest = json.loads((workdir / 'manifest.json').read_text())
+source = manifest.get('database_prefix') or (manifest.get('instance', '') + '_')
+target_prefix = os.environ.get('DATABASE_PREFIX') or (sys.argv[2] + '_')
+names = manifest.get('extra_databases', [])
+if not isinstance(names, list):
+    raise ValueError('Invalid extra_databases in backup manifest')
+pairs = []
+for name in names:
+    if not isinstance(name, str) or not re.fullmatch(r'[_a-z][a-z0-9_-]{0,62}', name):
+        raise ValueError('Invalid database name in backup manifest')
+    if not (workdir / 'dbs' / (name + '.dump')).is_file():
+        raise ValueError('Missing database dump: ' + name)
+    target = target_prefix + name[len(source):] if source and name.startswith(source) else name
+    if not re.fullmatch(r'[_a-z][a-z0-9_-]{0,62}', target):
+        raise ValueError('Invalid mapped database name: ' + target)
+    pairs.append((name, target))
+(workdir / 'db-pairs').write_text(''.join(a + '\t' + b + '\n' for a, b in pairs))
+PY_MANIFEST
 echo "[restore-tool] restoring database ${DB_NAME}@${DB_HOST}:${DB_PORT}"
 # --no-owner: the dump's original role (from wherever it was taken) has no
 # reason to exist in this cluster's Postgres, and this Job's own DB_USER
@@ -94,11 +122,33 @@ echo "[restore-tool] restoring database ${DB_NAME}@${DB_HOST}:${DB_PORT}"
 # attempt did (caught live: a restore that failed partway through — for
 # an unrelated, transient reason — poisoned the database for every retry
 # after it until this was added).
+psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres \
+  -c "DROP DATABASE IF EXISTS \"${DB_NAME}\" WITH (FORCE)"
+psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres \
+  -c "CREATE DATABASE \"${DB_NAME}\""
 pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
   --no-owner --single-transaction --exit-on-error "${WORKDIR}/db.dump"
+
+while IFS=$'\t' read -r NAME TARGET; do
+  echo "[restore-tool] restoring extra database ${NAME} into ${TARGET}@${DB_HOST}:${DB_PORT}"
+  psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres \
+    -c "DROP DATABASE IF EXISTS \"${TARGET}\" WITH (FORCE)"
+  psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres \
+    -c "CREATE DATABASE \"${TARGET}\""
+  pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$TARGET" \
+    --no-owner --single-transaction --exit-on-error "${WORKDIR}/dbs/${NAME}.dump"
+done < "${WORKDIR}/db-pairs"
 
 echo "[restore-tool] extracting filestore into ${ODOO_DATA_DIR}"
 mkdir -p "$ODOO_DATA_DIR"
 tar -C "$ODOO_DATA_DIR" -xzf "${WORKDIR}/filestore.tar.gz"
+
+
+# Filestore directories must follow the same cross-instance mapping as the DBs.
+while IFS=$'\t' read -r NAME TARGET; do
+  if [ "$NAME" != "$TARGET" ] && [ -d "${ODOO_DATA_DIR}/filestore/${NAME}" ]; then
+    mv "${ODOO_DATA_DIR}/filestore/${NAME}" "${ODOO_DATA_DIR}/filestore/${TARGET}"
+  fi
+done < "${WORKDIR}/db-pairs"
 
 echo "[restore-tool] restore completed successfully"

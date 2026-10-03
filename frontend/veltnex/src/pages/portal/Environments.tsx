@@ -805,6 +805,7 @@ function MainPanel({
   const toast = useToast();
   const [status, setStatus] = React.useState<StatusData | null>(null);
   const [pending, setPending] = React.useState<string | null>(null);
+  const [copyOpen, setCopyOpen] = React.useState(false);
 
   const refreshStatus = React.useCallback(async () => {
     try {
@@ -914,6 +915,12 @@ function MainPanel({
               Re-deploy
             </ActionButton>
           )}
+          {isRunning && env.environment !== "production" && (
+            <Button size="sm" variant="secondary" onClick={() => setCopyOpen(true)}>
+              <Database className="size-4" />
+              Copy databases
+            </Button>
+          )}
           {isStopped && (
             <ActionButton
               icon={Play}
@@ -1001,6 +1008,13 @@ function MainPanel({
         ) : null}
       </div>
       </div>
+      <CopyDbsDialog
+        open={copyOpen}
+        target={env}
+        allEnvs={[project.production, ...(project.environments || [])]}
+        onClose={() => setCopyOpen(false)}
+        onCopied={() => toast.success("Database copy started", `Databases will be copied to ${env.name} shortly. Check its logs for progress.`)}
+      />
     </Card>
   );
 }
@@ -1145,6 +1159,263 @@ function MergeEnvDialog({
   );
 }
 
+function CopyDbsDialog({
+  open,
+  target,
+  allEnvs,
+  onClose,
+  onCopied,
+}: {
+  open: boolean;
+  target: EnvChild;
+  allEnvs: EnvChild[];
+  onClose: () => void;
+  onCopied: () => void;
+}) {
+  const [sourceId, setSourceId] = React.useState<number | null>(null);
+  const [srcDbs, setSrcDbs] = React.useState<{ name: string; login: string }[]>([]);
+  const [srcPrefix, setSrcPrefix] = React.useState("");
+  const [dstDbs, setDstDbs] = React.useState<{ name: string; login: string }[]>([]);
+  const [dstPrefix, setDstPrefix] = React.useState("");
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [overwrite, setOverwrite] = React.useState<Set<string>>(new Set());
+  const [loading, setLoading] = React.useState(false);
+  const [loadingSrc, setLoadingSrc] = React.useState(false);
+  const [loadingDst, setLoadingDst] = React.useState(false);
+  const loadingDbs = loadingSrc || loadingDst;
+  const [error, setError] = React.useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+
+  const sources = React.useMemo(
+    () => allEnvs.filter((e) => e.id !== target.id && e.state === "running"),
+    [allEnvs, target.id],
+  );
+
+  React.useEffect(() => {
+    if (!open) return;
+    setSourceId(sources[0]?.id ?? null);
+    setSelected(new Set());
+    setOverwrite(new Set());
+    setError(null);
+    setConfirmOpen(false);
+    let cancelled = false;
+    setDstDbs([]);
+    setDstPrefix("");
+    setLoadingDst(true);
+    api.databases(target.id)
+      .then((d) => {
+        if (cancelled) return;
+        setDstDbs(d.databases);
+        setDstPrefix(d.prefix || "");
+      })
+      .catch(() => {
+        if (!cancelled) setError("Couldn't load the target databases. Close and try again.");
+      })
+      .finally(() => { if (!cancelled) setLoadingDst(false); });
+    return () => { cancelled = true; };
+  }, [open, target.id]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setSrcDbs([]);
+    setSrcPrefix("");
+    setSelected(new Set());
+    setOverwrite(new Set());
+    setConfirmOpen(false);
+    if (sourceId == null) {
+      setLoadingSrc(false);
+      return;
+    }
+    setLoadingSrc(true);
+    api.databases(sourceId)
+      .then((d) => {
+        if (cancelled) return;
+        setSrcDbs(d.databases);
+        setSrcPrefix(d.prefix || "");
+      })
+      .catch(() => {
+        if (!cancelled) setError("Couldn't load the source databases. Close and try again.");
+      })
+      .finally(() => { if (!cancelled) setLoadingSrc(false); });
+    return () => { cancelled = true; };
+  }, [open, sourceId]);
+
+  const toggle = (name: string, checked: boolean) => {
+    setSelected((s) => {
+      const n = new Set(s);
+      if (checked) n.add(name);
+      else n.delete(name);
+      return n;
+    });
+  };
+  const toggleAll = (all: boolean) =>
+    setSelected(all ? new Set(srcDbs.map((d) => d.name)) : new Set());
+
+  const mapped = React.useMemo(() => {
+    const out: { src: string; dst: string; collision: boolean }[] = [];
+    const dstNames = new Set(dstDbs.map((d) => d.name));
+    for (const d of srcDbs) {
+      const suffix = srcPrefix && d.name.startsWith(srcPrefix)
+        ? d.name.slice(srcPrefix.length)
+        : d.name;
+      const dst = dstPrefix ? dstPrefix + suffix : suffix;
+      out.push({ src: d.name, dst, collision: dstNames.has(dst) });
+    }
+    return out;
+  }, [srcDbs, srcPrefix, dstDbs, dstPrefix]);
+
+  const picked = mapped.filter((m) => selected.has(m.src));
+  const collisions = picked.filter((m) => m.collision);
+  const overwriteReady = collisions.every((m) => overwrite.has(m.dst));
+
+  const submit = async () => {
+    if (sourceId == null || picked.length === 0 || !overwriteReady || loadingDbs || !srcPrefix || !dstPrefix) return;
+    setError(null);
+    setLoading(true);
+    try {
+      await api.environmentCopyDbs(
+        target.id,
+        sourceId,
+        picked.map((m) => m.src),
+        Array.from(overwrite),
+      );
+      onCopied();
+      onClose();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't start the copy.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Copy databases">
+      {error && <AlertBanner className="mb-4" variant="danger" title="Couldn't copy" description={error} />}
+      <div className="space-y-4">
+        <div className="text-sm text-muted">
+          Copy databases (dump + filestore) from another server onto <b>{target.name}</b>. The mapped names on this server keep your databases namespaced; existing databases are only replaced if you check their overwrite box.
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="copy-source">Source server</Label>
+          <select
+            id="copy-source"
+            className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
+            value={sourceId ?? ""}
+            onChange={(e) => setSourceId(Number(e.target.value))}
+          >
+            {sources.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name} ({e.environment_label})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Databases to copy</Label>
+            <button
+              type="button"
+              className="text-xs text-primary hover:underline"
+              onClick={() => toggleAll(selected.size !== srcDbs.length)}
+            >
+              {selected.size === srcDbs.length ? "Clear all" : "Select all"}
+            </button>
+          </div>
+          {loadingDbs ? (
+            <p className="text-xs text-muted">Loading…</p>
+          ) : srcDbs.length === 0 ? (
+            <p className="text-xs text-muted">No databases on the source server.</p>
+          ) : (
+            <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-lg border border-border p-2">
+              {mapped.map((m) => (
+                <label key={m.src} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(m.src)}
+                    onChange={(e) => toggle(m.src, e.target.checked)}
+                  />
+                  <span className="font-mono">{m.src}</span>
+                  <span className="text-muted">→</span>
+                  <span className="font-mono">{m.dst}</span>
+                  {m.collision && (
+                    <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[10px] font-medium text-danger">
+                      exists
+                    </span>
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {collisions.length > 0 && (
+          <div className="rounded-lg border border-danger/30 bg-danger/5 p-3">
+            <p className="text-sm font-medium">Overwrite confirmation</p>
+            <p className="mb-2 text-xs text-muted">
+              These databases already exist on {target.name}. Check each one you
+              want to replace — its dump will be dropped and replaced.
+            </p>
+            {collisions.map((m) => (
+              <label key={m.dst} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={overwrite.has(m.dst)}
+                  onChange={(e) =>
+                    setOverwrite((s) => {
+                      const n = new Set(s);
+                      if (e.target.checked) n.add(m.dst);
+                      else n.delete(m.dst);
+                      return n;
+                    })
+                  }
+                />
+                <span className="font-mono">{m.dst}</span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <div className="text-xs text-muted">
+          Source: <b>{sources.find((e) => e.id === sourceId)?.name ?? "—"}</b> → Target: <b>{target.name}</b>. Nothing is overwritten unless checked above.
+        </div>
+      </div>
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose} disabled={loading}>
+          Cancel
+        </Button>
+        <ActionButton
+          loading={loading}
+          loadingText="Copying…"
+          disabled={picked.length === 0 || !overwriteReady || loadingDbs || !srcPrefix || !dstPrefix}
+          onClick={() => setConfirmOpen(true)}
+        >
+          Copy {picked.length || ""} database{picked.length === 1 ? "" : "s"}
+        </ActionButton>
+      </div>
+
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Confirm database copy">
+        <p className="text-sm">
+          Copy <b>{picked.length}</b> database(s) from{" "}
+          <b>{sources.find((e) => e.id === sourceId)?.name}</b> to <b>{target.name}</b>?
+          {overwrite.size > 0 && (
+            <> On this server, <b>{Array.from(overwrite).join(", ")}</b> will be replaced.</>
+          )}
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setConfirmOpen(false)} disabled={loading}>
+            Back
+          </Button>
+          <ActionButton loading={loading} loadingText="Copying…" onClick={submit}>
+            Start copy
+          </ActionButton>
+        </div>
+      </Dialog>
+    </Dialog>
+  );
+}
+
 function BranchPill({ name, branch, highlight }: { name: string; branch: string; highlight?: boolean }) {
   return (
     <div
@@ -1187,7 +1458,7 @@ function CreateEnvDialog({
     setBranch("");
     setError(null);
     setLoading(false);
-    if (type === "staging") {
+    if (type === "staging" || type === "development") {
       api.instanceBranches(instanceId).then((b) => setBranches(b.branches)).catch(() => setBranches([]));
     }
   }, [type, instanceId]);
@@ -1203,7 +1474,7 @@ function CreateEnvDialog({
         instanceId,
         type,
         name.trim(),
-        isStaging ? branch.trim() || undefined : undefined,
+        branch.trim() || undefined,
       );
       if (!res.auto_provisioned && res.checkout_url) {
         window.location.href = res.checkout_url;
@@ -1221,7 +1492,7 @@ function CreateEnvDialog({
       {error && <AlertBanner className="mb-4" variant="danger" title="Couldn't create" description={error} />}
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="env-name">{isStaging ? "Server name" : "Server / branch name"}</Label>
+          <Label htmlFor="env-name">Server name</Label>
           <Input
             id="env-name"
             autoFocus
@@ -1234,25 +1505,28 @@ function CreateEnvDialog({
           <p className="text-xs text-muted">
             {isStaging
               ? "A new server is provisioned automatically."
-              : "A Git branch with this name is created (from the main branch) and linked to the server."}
+              : "A new server is provisioned automatically."}
           </p>
         </div>
-        {isStaging && (
+        {type && (
           <div className="space-y-2">
-            <Label htmlFor="env-branch">Git branch (optional)</Label>
+            <Label htmlFor="env-branch">Git branch</Label>
             <select
               id="env-branch"
               className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
             >
-              <option value="">New branch from main</option>
+              <option value="">New branch from main (named after this server)</option>
               {branches.map((b) => (
                 <option key={b} value={b}>
                   {b}
                 </option>
               ))}
             </select>
+            <p className="text-xs text-muted">
+              Leave empty to create a fresh branch from your main branch and link it to this server, or pick an existing branch to run on that branch's latest code.
+            </p>
           </div>
         )}
       </div>

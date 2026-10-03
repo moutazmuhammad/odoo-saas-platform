@@ -6,7 +6,9 @@ payload is base64url JSON ``{"h": host, "e": expiry, "n": nonce}``. A
 valid link sets a signed cookie (path /web/database, one hour) during
 which the database manager works without the master password, limited to
 database names starting with ``saas_dbm_prefix``. Without it, the manager
-only shows a pointer to the portal.
+only shows a pointer to the portal — and so do ``/web/database/selector``
+and ``/web/database/list``, which database-manager mode (``list_db =
+True``) would otherwise expose to anyone.
 
 A cookie rather than the Odoo session: creating a database logs the
 browser into it, which resets the session. Every action also checks the
@@ -181,6 +183,22 @@ class SaasTenantDatabase(Database):
         if not _allowed():
             return request.make_response(_PORTAL_ONLY % '')
         return super().manager(**kw)
+
+    @http.route('/web/database/selector', type='http', auth='none')
+    def selector(self, **kw):
+        # With spec.databaseManager, list_db is on and the selector
+        # would otherwise publicly list the tenant's database names.
+        if not _allowed():
+            return request.make_response(_PORTAL_ONLY % '')
+        return super().selector(**kw)
+
+    # Inherit the upstream route type: Odoo 17/18 use json and 19 uses jsonrpc.
+    @http.route()
+    def list(self):
+        # JSON twin of the selector — same database-name leak.
+        if not _allowed():
+            return []
+        return super().list()
 
     def _guarded(self, call):
         if not _allowed():

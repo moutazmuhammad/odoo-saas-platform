@@ -113,6 +113,13 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 		"-c", "/etc/odoo/odoo.conf",
 		fmt.Sprintf("--workers=%d", workers),
 		fmt.Sprintf("--max-cron-threads=%d", cronThreads),
+		// Odoo's own defaults (--limit-time-real=120s, --limit-time-cpu=60s)
+		// kill a request — and its DB connection — mid-flight, so longs
+		// pop-up reports/imports/batch ops always died with a dropped
+		// connection. Give long-but-legitimate tenant jobs a 30-minute
+		// ceiling instead of the surprise-killing defaults.
+		"--limit-time-real=1800",
+		"--limit-time-cpu=1800",
 	}
 	args = append(args, odooMemoryLimitArgs(instance, workers)...)
 	odooMounts := []corev1.VolumeMount{
@@ -121,16 +128,17 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 		{Name: "tmp", MountPath: "/tmp"},
 	}
 	var extraVolumes []corev1.Volume
-	if instance.Spec.DatabaseManager != nil {
-		// On the command line rather than in odoo.conf, so the one-shot
-		// init/update Jobs (which share odoo.conf) don't need the mount.
-		args = append(args,
-			"--load=base,web,"+DatabaseManagerModule,
-			"--addons-path="+strings.Join(append([]string{PlatformAddonsPath}, instance.Spec.AddonsPaths...), ","),
-		)
-		odooMounts = append(odooMounts, corev1.VolumeMount{Name: "platform-addons", MountPath: PlatformAddonsPath, ReadOnly: true})
-		extraVolumes = append(extraVolumes, platformAddonsVolume(instance))
-	}
+	// On the command line rather than in odoo.conf, so the one-shot
+	// init/update Jobs (which share odoo.conf) don't need the mount.
+	// Always loaded — the platform addon gates Odoo's raw
+	// /web/database/* endpoints, which must never be left open just
+	// because an instance doesn't opt into the database manager.
+	args = append(args,
+		"--load=base,web,"+DatabaseManagerModule,
+		"--addons-path="+strings.Join(append([]string{PlatformAddonsPath}, instance.Spec.AddonsPaths...), ","),
+	)
+	odooMounts = append(odooMounts, corev1.VolumeMount{Name: "platform-addons", MountPath: PlatformAddonsPath, ReadOnly: true})
+	extraVolumes = append(extraVolumes, platformAddonsVolume(instance))
 	var sidecars []corev1.Container
 	if instance.Spec.Shell && exposesHTTP {
 		sidecars = append(sidecars, shellContainer(instance))
@@ -448,29 +456,22 @@ const AnnotationAddonsPaths = "saas.odoo.example.com/addons-paths"
 // so changing it rolls the pods onto the new odoo.conf.
 const AnnotationDatabaseFilter = "saas.odoo.example.com/database-filter"
 
-// AnnotationPlatformAddons records the platform addons' content hash while
-// spec.databaseManager is on, so new addon code rolls the pods.
+// AnnotationPlatformAddons records the platform addons' content hash so
+// new addon code rolls the pods.
 const AnnotationPlatformAddons = "saas.odoo.example.com/platform-addons"
 
-// podTemplateAnnotations is nil without addons paths, a database filter or
-// the database manager, so instances that don't use them keep an unchanged
-// pod template (no spurious rollout).
+// AnnotationPlatformAddons is always
+// set — the platform addons are always mounted/loaded (they gate the
+// raw /web/database/* endpoints regardless of the database manager
+// spec), and their hash rolls pods whenever the embedded addon code
+// changes.
 func podTemplateAnnotations(instance *saasv1alpha1.OdooInstance) map[string]string {
-	var ann map[string]string
+	ann := map[string]string{AnnotationPlatformAddons: platformAddonsHash()}
 	if len(instance.Spec.AddonsPaths) > 0 {
-		ann = map[string]string{AnnotationAddonsPaths: strings.Join(instance.Spec.AddonsPaths, ",")}
+		ann[AnnotationAddonsPaths] = strings.Join(instance.Spec.AddonsPaths, ",")
 	}
 	if instance.Spec.DatabaseFilter != "" {
-		if ann == nil {
-			ann = map[string]string{}
-		}
 		ann[AnnotationDatabaseFilter] = instance.Spec.DatabaseFilter
-	}
-	if instance.Spec.DatabaseManager != nil {
-		if ann == nil {
-			ann = map[string]string{}
-		}
-		ann[AnnotationPlatformAddons] = platformAddonsHash()
 	}
 	return ann
 }
@@ -514,12 +515,9 @@ func odooProbe(exposesHTTP bool) *corev1.Probe {
 	}
 }
 
-// odooLivenessProbe restarts Odoo only when it is really stuck. A single
-// worker busy with a long request (creating or restoring a database from
-// the database manager) can't answer probes, and Odoo itself ends any
-// request after limit_time_real (120s by default), so liveness waits
-// longer than that; readiness still takes a busy pod out of rotation at
-// once.
+// odooLivenessProbe allows a busy worker to finish within Odoo's request
+// time limit before treating an unanswered HTTP probe as a stuck process.
+// Readiness still removes an occupied pod from rotation promptly.
 func odooLivenessProbe(exposesHTTP bool) *corev1.Probe {
 	p := odooProbe(exposesHTTP)
 	if exposesHTTP {
@@ -528,8 +526,9 @@ func odooLivenessProbe(exposesHTTP bool) *corev1.Probe {
 	return p
 }
 
-// livenessFailureThreshold x 15s period = 150s > Odoo's limit_time_real.
-const livenessFailureThreshold = 10
+// 121 x 15 seconds exceeds --limit-time-real=1800, including when every
+// HTTP worker is occupied by a legitimate long request.
+const livenessFailureThreshold = 121
 
 // odooStartupProbe allows generously for first-boot database
 // initialization (Odoo creates/migrates schema on first connection to an

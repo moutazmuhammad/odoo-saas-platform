@@ -84,6 +84,7 @@ func TestReconcile_FullLifecycle(t *testing.T) {
 	assertExists(t, &appsv1.StatefulSet{}, ns, resources.DatabaseStatefulSetName(instance))
 	assertExists(t, &corev1.Service{}, ns, resources.DatabaseServiceName(instance))
 	assertExists(t, &corev1.ConfigMap{}, ns, resources.OdooConfigMapName(instance))
+	assertExists(t, &corev1.ConfigMap{}, ns, resources.PlatformAddonsConfigMapName(instance))
 	assertExists(t, &networkingv1.NetworkPolicy{}, ns, resources.NetworkPolicyName(instance))
 	assertExists(t, &networkingv1.Ingress{}, ns, resources.IngressName(instance))
 	assertNotExists(t, &appsv1.Deployment{}, ns, resources.OdooDeploymentName(instance))

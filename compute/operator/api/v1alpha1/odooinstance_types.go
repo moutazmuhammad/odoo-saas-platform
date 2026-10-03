@@ -503,10 +503,12 @@ type OdooInstanceSpec struct {
 
 	// DatabaseManager gives the instance's customer Odoo's database
 	// manager (/web/database/manager) without the master password: the
-	// platform addon saas_tenant_dbm is loaded server-wide, list_db is
-	// turned on, and the manager opens only through a link the control
-	// plane signs with this instance's key (Secret odoo-admin-credentials,
-	// key dbmanager-key). Database names are limited to Prefix.
+	// platform addon saas_tenant_dbm (loaded server-wide on every
+	// instance) lets list_db be turned on and the manager opens only
+	// through a link the control plane signs with this instance's key
+	// (Secret odoo-admin-credentials, key dbmanager-key). Database
+	// names are limited to Prefix. Without it, saas_tenant_dbm still
+	// loads but hard-locks every /web/database/* endpoint.
 	// +optional
 	DatabaseManager *DatabaseManagerSpec `json:"databaseManager,omitempty"`
 

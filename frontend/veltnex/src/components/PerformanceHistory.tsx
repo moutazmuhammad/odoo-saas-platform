@@ -153,9 +153,7 @@ export function PerformanceHistory({
       {pkg && (
         <p className="mt-2 text-xs text-muted">
           Your package: {pkg.workers} worker{pkg.workers === 1 ? "" : "s"}
-          {pkg.replicas > 1 ? ` × ${pkg.replicas} replicas` : ""} · {formatCores(pkg.cpu_cores)} vCPU ·{" "}
-          {formatMb(pkg.ram_mb)} RAM · {pkg.storage_gb} GB storage, including the managed PostgreSQL database.
-          Percentages are of the whole package.
+          {pkg.tier ? ` · ${pkg.tier}` : ""} · {pkg.storage_gb} GB storage, including the managed PostgreSQL database.
         </p>
       )}
 
@@ -443,10 +441,6 @@ function StorageBreakdown({ pkg }: { pkg: PackageSummary }) {
 
 // The database band in the stacked CPU / Memory charts.
 const DB_COLOR = "#f59f00";
-
-function formatCores(cores: number): string {
-  return cores % 1 === 0 ? cores.toFixed(0) : cores.toFixed(2).replace(/0$/, "");
-}
 
 function formatMb(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB` : `${mb.toFixed(0)} MB`;

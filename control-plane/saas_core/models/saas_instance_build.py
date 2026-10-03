@@ -83,7 +83,9 @@ class SaasInstance(models.Model):
             self, '_job_start_build', args=(build.id,), channel='deploy',
             lock_key='build:%s' % self.id, idempotency_key='build-start:%s' % build.id,
             idempotent=True, on_error='_on_build_job_error', on_error_args=(build.id,))
-        self._append_log("Build #%d queued (%s)." % (build.id, source))
+        self._append_log(
+            "[pipeline] Build #%d queued (sha=%s, source=%s) — waiting for the job worker at %s"
+            % (build.id, (build.commit_sha or '')[:7], source, fields.Datetime.now()))
         return build
 
     def _validate_repo_before_change(self, repo_url, branch, github_token=None):
@@ -206,6 +208,7 @@ class SaasInstance(models.Model):
         job_name = ('build-%d-%s' % (build.id, self.subdomain))[:63].rstrip('-')
         driver.start_image_build(
             name=job_name, repos=spec_repos, dockerfile=dockerfile,
+            tenant_key='%s-%s' % (self.id, self.subdomain),
             # Python dependencies come from each repo's requirements.txt.
             requirements='',
             base_image='%s:%s' % (base_repo, base_tag),
@@ -218,7 +221,7 @@ class SaasInstance(models.Model):
             'stage': 'building', 'job_name': job_name,
             'image_ref': '%s:%s' % (reg['repository'], tag),
         })
-        self._append_log("Build #%d: building image %s..." % (build.id, build.image_ref))
+        self._append_log("Build #%d: building image %s... (git prep + BuildKit Job started at %s)" % (build.id, build.image_ref, fields.Datetime.now()))
         self._schedule_build_step('_job_poll_build', build)
 
     def _job_poll_build(self, build_id):
@@ -259,6 +262,9 @@ class SaasInstance(models.Model):
         versions = result.get('modules') or {}
         repository, _sep, tag = build.image_ref.rpartition(':')
         build.image_digest = '%s@%s' % (repository, status['digest'])
+        self._append_log(
+            "[pipeline] Build #%d: image built & pushed at %s (digest=%s, %d repo(s), %d module(s))."
+            % (build.id, fields.Datetime.now(), status['digest'], len(result.get('repos') or []), len(versions)))
         self._deploy_build(build, driver, repository=repository, tag=tag,
                            addons_paths=addons_paths, module_versions=versions,
                            modules=self._modules_to_update(build, versions),
@@ -294,10 +300,13 @@ class SaasInstance(models.Model):
             vals['log'] = log[-8000:]
         build.write(vals)
         self._append_log(
-            "Build #%d: image ready; upgrading %s%s and rolling out (the "
-            "current version keeps serving until this succeeds)."
+            "[pipeline] build #%d image ready; upgrading %s%s and rolling out "
+            "(started %s) (the current version keeps serving until this "
+            "succeeds)."
             % (build.id, ', '.join(modules) if modules else 'no modules',
-               ' in %d customer database(s)' % len(databases) if databases else ''))
+               ' in %d customer database(s)' % len(databases) if databases else '',
+               fields.Datetime.now()))
+
         self._schedule_build_step('_job_poll_rollout', build)
 
     def _job_poll_rollout(self, build_id):
@@ -313,7 +322,7 @@ class SaasInstance(models.Model):
             if status['phase'] == 'Ready' and status['observed_image'] == build.image_ref:
                 build._mark('success')
                 self.sudo().deploy_image = build.image_ref
-                self._append_log("Build #%d is live (%s)." % (build.id, build.image_ref))
+                self._append_log("[pipeline] tenant is ready at %s — Build #%d is live (%s)." % (fields.Datetime.now(), build.id, build.image_ref))
                 self.message_post(body=_("Build #%d deployed.") % build.id)
                 return
         elif status['state'] == 'failed':
@@ -333,9 +342,17 @@ class SaasInstance(models.Model):
     # helpers
     # ------------------------------------------------------------------
     def _schedule_build_step(self, method, build):
+        now = fields.Datetime.now()
+        # During the first minute a build is most likely close to finishing
+        # (or at least worth a quick liveness check) — poll at 5 s; slow
+        # down to the default 15 s afterwards so a 6-minute image build
+        # doesn't spend all its polling budget on frequent hot-path checks.
+        recent = False
+        if build.date_start:
+            recent = (now - build.date_start).total_seconds() < 60
         self.env['saas.job'].enqueue(
             self, method, args=(build.id,), channel='deploy',
-            eta=fields.Datetime.now() + datetime.timedelta(seconds=_POLL_SECONDS),
+            eta=now + datetime.timedelta(seconds=(5 if recent else _POLL_SECONDS)),
             idempotent=True, on_error='_on_build_job_error', on_error_args=(build.id,))
 
     def _modules_to_update(self, build, versions):

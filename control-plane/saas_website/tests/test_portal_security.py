@@ -1122,3 +1122,27 @@ class TestPortalSubscribeAndCheckout(_PortalTestBase):
         self.authenticate('portalowner@example.com', 'ownerpass123')
         resp = self.url_open('/my/instances/%d/checkout' % self.instance.id)
         self.assertEqual(resp.status_code, 200)
+
+
+@tagged('post_install', '-at_install')
+class TestStaffApiReadOnly(_PortalTestBase):
+    def setUp(self):
+        super().setUp()
+        self.intruder.sudo().write({
+            'groups_id': [(4, self.env.ref('saas_website.group_saas_support').id)]})
+
+    def test_staff_can_read_but_cannot_restart_another_customers_instance(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        detail = self._json_call('/saas/api/v1/instances/%d' % self.instance.id)
+        self.assertTrue(detail['ok'])
+        with patch.object(type(self.instance), 'action_portal_restart') as restart:
+            result = self._json_call('/saas/api/v1/instances/%d/action' % self.instance.id,
+                                     {'action': 'restart'})
+        self.assertFalse(result['ok'])
+        restart.assert_not_called()
+
+    def test_staff_cannot_change_another_customers_billing(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        result = self._json_call('/saas/api/v1/instances/%d/auto-renew' % self.instance.id,
+                                 {'subscription': False})
+        self.assertFalse(result['ok'])

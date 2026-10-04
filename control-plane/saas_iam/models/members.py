@@ -1,11 +1,7 @@
-import hashlib
-import hmac
 import re
 import secrets
-from datetime import timedelta
-from markupsafe import escape
 from odoo import api, fields, models, _
-from odoo.exceptions import AccessError, ValidationError, UserError
+from odoo.exceptions import AccessDenied, AccessError, ValidationError
 
 
 class IamMember(models.Model):
@@ -15,28 +11,43 @@ class IamMember(models.Model):
     owner_id = fields.Many2one('res.partner', required=True, index=True, ondelete='cascade')
     user_id = fields.Many2one('res.users', required=True, index=True, ondelete='cascade')
     name = fields.Char(required=True)
-    phone = fields.Char(required=True)
+    phone = fields.Char()
     active = fields.Boolean(default=True)
-    email_verified = fields.Boolean(default=False)
-    verified_email = fields.Char()
-    phone_verified = fields.Boolean(default=False)
     _sql_constraints = [('owner_user_unique', 'unique(owner_id,user_id)', 'This teammate already has a profile.')]
 
     def _ready(self):
         self.ensure_one()
-        return self.active and self.email_verified and self.verified_email == self.user_id.login and self.phone_verified and not self.user_id.sudo().iam_initial_password
+        return self.active and self.user_id.active and not self.user_id.sudo().iam_initial_password
+
+    def _can_manage_login(self):
+        """Never let a customer take over an independently owned/shared login."""
+        self.ensure_one()
+        member = self.sudo()
+        user = member.user_id
+        if not user.share or user.iam_managed_owner_id != member.owner_id:
+            return False
+        if self.sudo().search_count([('user_id', '=', user.id), ('owner_id', '!=', member.owner_id.id)]):
+            return False
+        grants = self.env['saas.iam.grant'].sudo().search_count([
+            ('owner_id', '!=', member.owner_id.id), ('active', '=', True),
+            '|', ('user_id', '=', user.id), '&', ('group_id.active', '=', True), ('group_id.user_ids', 'in', user.ids)])
+        invitations = self.env['saas.iam.invitation'].sudo().search_count([
+            ('owner_id', '!=', member.owner_id.id), ('user_id', '=', user.id), ('state', '=', 'accepted')])
+        owned_projects = self.env['saas.instance'].sudo().with_context(active_test=False).search_count([('partner_id', '=', user.partner_id.id)])
+        orders = self.env['sale.order'].sudo().search_count([('partner_id', '=', user.partner_id.id)])
+        invoices = self.env['account.move'].sudo().search_count([('partner_id', '=', user.partner_id.id)])
+        return not (grants or invitations or owned_projects or orders or invoices)
 
     @api.model
     def _eligible_ids(self, owner):
         profiles = self.sudo().with_context(active_test=False).search([('owner_id', '=', owner.id)])
         accepted = self.env['saas.iam.invitation'].sudo().search([
             ('owner_id', '=', owner.id), ('state', '=', 'accepted'), ('user_id', '!=', False)])
-        # A removed profile overrides a legacy invitation; it cannot restore access.
-        return list(set(profiles.filtered('active').mapped('user_id').ids +
-                        (accepted.mapped('user_id') - profiles.mapped('user_id')).ids))
+        return list(set(profiles.filtered(lambda m: m.active and m.user_id.active).mapped('user_id').ids +
+                        (accepted.mapped('user_id') - profiles.mapped('user_id')).filtered('active').ids))
 
     @api.model
-    def _create_profile(self, name, email, phone):
+    def _create_profile(self, name, email, phone=None):
         owner = self.env.user.partner_id
         if not isinstance(name, str) or not name.strip() or len(name) > 100:
             raise ValidationError(_('Enter the teammate’s name.'))
@@ -48,40 +59,82 @@ class IamMember(models.Model):
         user = User.search([('login', '=ilike', email)], limit=1)
         password = None
         if user:
-            if not user.active or not user.share or user == self.env.user:
+            self.env.cr.execute('SELECT id FROM res_users WHERE id=%s FOR UPDATE', [user.id])
+            user.invalidate_recordset()
+            if user.iam_managed_owner_id and user.iam_managed_owner_id != owner:
+                raise ValidationError(_('This account is managed by another customer. Invite the teammate to your projects instead.'))
+            if not user.share or user == self.env.user:
                 raise ValidationError(_('This account cannot be added as a teammate.'))
+            old = self.sudo().with_context(active_test=False).search([('owner_id', '=', owner.id), ('user_id', '=', user.id)], limit=1)
+            if old and old.active:
+                raise ValidationError(_('This teammate already has a profile.'))
+            if not user.active:
+                if not old or not old._can_manage_login():
+                    raise ValidationError(_('This account cannot be added as a teammate.'))
+                password = secrets.token_urlsafe(18)
+                user.write({'active': True, 'password': password, 'iam_initial_password': True})
         else:
             password = secrets.token_urlsafe(18)
             user = User.create({'name': name.strip(), 'login': email, 'email': email,
                 'phone': phone, 'password': password, 'iam_initial_password': True,
+                'iam_managed_owner_id': owner.id,
                 'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])]})
-        old = self.sudo().with_context(active_test=False).search([('owner_id', '=', owner.id), ('user_id', '=', user.id)], limit=1)
-        if old and old.active:
-            raise ValidationError(_('This teammate already has a profile.'))
-        values = {'owner_id': owner.id, 'user_id': user.id, 'name': name.strip(), 'phone': phone,
-                  'active': True, 'email_verified': False, 'verified_email': False, 'phone_verified': False}
+            old = self.browse()
+        values = {'owner_id': owner.id, 'user_id': user.id, 'name': name.strip(), 'phone': phone, 'active': True}
         if old:
             old.write(values)
-            old.env['saas.iam.challenge'].sudo().search([('member_id', '=', old.id)]).unlink()
             member = old
         else:
             member = self.sudo().create(values)
         self.env['saas.iam']._audit('iam.member.create', detail='Profile %s' % member.id)
-        return {'id': member.id, 'email': email, 'temporary_password': password,
+        return member._credentials(password)
+
+    def _credentials(self, password):
+        self.ensure_one()
+        return {'id': self.id, 'email': self.sudo().user_id.login, 'temporary_password': password,
                 'login_url': self.env['ir.config_parameter'].sudo().get_param('web.base.url', '') + '/login'}
 
     @api.model
     def _phone(self, phone):
+        if phone in (None, False, ''):
+            return False
         phone = re.sub(r'[ ()-]', '', phone or '') if isinstance(phone, str) else ''
         if not re.fullmatch(r'\+[1-9][0-9]{7,14}', phone):
             raise ValidationError(_('Enter a phone number with its country code, for example +201012345678.'))
         return phone
 
-    def _delete_profile(self):
+    def _owner_profile(self):
+        if len(self) != 1:
+            raise AccessError(_('Teammate profile not found.'))
+        # Use the same lock order for create, reset, delete and password changes.
+        self.env.cr.execute('SELECT id FROM res_users WHERE id=%s FOR UPDATE', [self.sudo().user_id.id])
+        self.env.cr.execute('SELECT id FROM saas_iam_member WHERE id=%s FOR UPDATE', [self.id])
+        self.invalidate_recordset()
+        self.sudo().user_id.invalidate_recordset()
+        if not self.active or self.owner_id != self.env.user.partner_id:
+            raise AccessError(_('Only the customer owner can manage this profile.'))
+        return self.sudo()
+
+    def _reset_password(self):
+        member = self._owner_profile()
+        if not member._can_manage_login():
+            raise AccessError(_('This is an existing or shared account. Its password is managed by the account holder.'))
+        password = secrets.token_urlsafe(18)
+        member.user_id.sudo().write({'password': password, 'iam_initial_password': True})
+        member._invalidate_user_access()
+        self.env['saas.iam']._audit('iam.member.password.reset', detail='Profile %s' % member.id)
+        return member._credentials(password)
+
+    def _invalidate_user_access(self):
         self.ensure_one()
-        if self.owner_id != self.env.user.partner_id:
-            raise AccessError(_('Only the customer owner can remove this profile.'))
-        member = self.sudo()
+        grants = self.env['saas.iam.grant'].sudo().search([
+            '|', ('user_id', '=', self.sudo().user_id.id),
+            '&', ('group_id.active', '=', True), ('group_id.user_ids', 'in', self.sudo().user_id.ids)])
+        self.env['saas.iam']._invalidate_access(grants.mapped('project_id'))
+
+    def _delete_profile(self):
+        member = self._owner_profile()
+        disable_login = member._can_manage_login()
         grants = self.env['saas.iam.grant'].sudo().search([('owner_id', '=', member.owner_id.id), ('user_id', '=', member.user_id.id)])
         groups = self.env['saas.iam.group'].sudo().search([('owner_id', '=', member.owner_id.id), ('user_ids', 'in', member.user_id.ids)])
         projects = grants.mapped('project_id') | self.env['saas.iam.grant'].sudo().search([('group_id', 'in', groups.ids)]).mapped('project_id')
@@ -92,102 +145,53 @@ class IamMember(models.Model):
         invitations.mapped('grant_ids').write({'active': False})
         invitations.write({'state': 'revoked'})
         member.write({'active': False})
-        self.env['saas.iam.challenge'].sudo().search([('member_id', '=', member.id)]).unlink()
+        if disable_login:
+            member.user_id.sudo().write({'active': False})
         self.env['saas.iam']._invalidate_access(projects)
         self.env['saas.iam']._audit('iam.member.delete', detail='Profile %s' % member.id)
-
-    def _self_profile(self):
-        if len(self) != 1:
-            raise AccessError(_('Teammate profile not found.'))
-        self.env.cr.execute('SELECT id FROM saas_iam_member WHERE id=%s FOR UPDATE', [self.id])
-        self.invalidate_recordset()
-        if not self.active or self.user_id != self.env.user:
-            raise AccessError(_('Teammate profile not found.'))
-        return self.sudo()
-
-    def _send_code(self, channel, phone=None):
-        member = self._self_profile()
-        if channel not in ('email', 'phone'):
-            raise ValidationError(_('Select email or phone verification.'))
-        if channel == 'phone' and phone is not None:
-            phone = self._phone(phone)
-            if phone != member.phone:
-                member.write({'phone': phone, 'phone_verified': False})
-        identifier = member.user_id.login if channel == 'email' else member.phone
-        code = '%06d' % secrets.randbelow(1000000)
-        Challenge = self.env['saas.iam.challenge'].sudo()
-        # These challenges are separate from signup/password reset OTPs.
-        Challenge.search([('member_id', '=', member.id), ('channel', '=', channel)]).unlink()
-        Challenge.create({'member_id': member.id, 'channel': channel, 'identifier': identifier,
-            'code_hash': hashlib.sha256(code.encode()).hexdigest(),
-            'expires_at': fields.Datetime.now() + timedelta(minutes=10)})
-        if channel == 'email':
-            try:
-                self.env['mail.mail'].sudo().create({'subject': _('Verify your teammate email'),
-                    'email_to': identifier, 'body_html': '<p>%s</p><p><strong>%s</strong></p><p>%s</p>' % (
-                        escape(_('Your email verification code is:')), code, escape(_('This code expires in 10 minutes.')))}).send(raise_exception=True)
-            except Exception:
-                raise UserError(_('We could not send your email code. Contact the site administrator to check outgoing email.')) from None
-        else:
-            if 'sms.sms' not in self.env:
-                raise UserError(_('SMS verification is unavailable. Contact the site administrator to configure SMS delivery.'))
-            sms = self.env['sms.sms'].sudo().create({'number': identifier, 'body': _('Your phone verification code is: %s', code)})
-            try:
-                sms.send(unlink_sent=False, raise_exception=True)
-            except Exception:
-                raise UserError(_('The SMS provider could not send your code. Please contact the site administrator.')) from None
-            if sms.state not in ('sent', 'pending', 'process'):
-                raise UserError(_('The SMS provider could not send your code. Please contact the site administrator.'))
-        return {'sent': True}
-
-    def _verify_code(self, channel, code):
-        member = self._self_profile()
-        if channel not in ('email', 'phone') or not isinstance(code, str) or not re.fullmatch(r'[0-9]{6}', code):
-            return {'verified': False}
-        Challenge = self.env['saas.iam.challenge'].sudo()
-        challenge = Challenge.search([('member_id', '=', member.id), ('channel', '=', channel)], limit=1)
-        if not challenge:
-            return {'verified': False}
-        self.env.cr.execute('SELECT id FROM saas_iam_challenge WHERE id=%s FOR UPDATE', [challenge.id])
-        challenge.invalidate_recordset()
-        identifier = member.user_id.login if channel == 'email' else member.phone
-        if challenge.used or challenge.attempts >= 6 or challenge.expires_at < fields.Datetime.now() or challenge.identifier != identifier:
-            return {'verified': False}
-        challenge.attempts += 1
-        if not hmac.compare_digest(challenge.code_hash, hashlib.sha256(code.encode()).hexdigest()):
-            return {'verified': False}
-        challenge.used = True
-        member.write({channel + '_verified': True, **({'verified_email': identifier} if channel == 'email' else {})})
-        return {'verified': True}
-
-    def _finish(self, password=None):
-        member = self._self_profile()
-        if not member.email_verified or member.verified_email != member.user_id.login or not member.phone_verified:
-            raise ValidationError(_('Verify your email and phone first.'))
-        user = member.user_id.sudo()
-        if user.iam_initial_password:
-            if not isinstance(password, str) or len(password) < 12 or len(password) > 256:
-                raise ValidationError(_('Choose a new password with at least 12 characters.'))
-            user.write({'password': password, 'iam_initial_password': False})
-        return {'verified': True}
-
-
-class IamChallenge(models.Model):
-    _name = 'saas.iam.challenge'
-    _description = 'Account-bound teammate verification challenge'
-    member_id = fields.Many2one('saas.iam.member', required=True, index=True, ondelete='cascade')
-    channel = fields.Selection([('email', 'Email'), ('phone', 'Phone')], required=True)
-    identifier = fields.Char(required=True)
-    code_hash = fields.Char(required=True)
-    expires_at = fields.Datetime(required=True)
-    attempts = fields.Integer(default=0)
-    used = fields.Boolean(default=False)
-
-    @api.autovacuum
-    def _gc_expired(self):
-        self.sudo().search([('expires_at', '<', fields.Datetime.now())]).unlink()
+        return {'removed': True, 'account_disabled': disable_login}
 
 
 class IamUser(models.Model):
     _inherit = 'res.users'
     iam_initial_password = fields.Boolean(default=False, groups='base.group_system')
+    iam_managed_owner_id = fields.Many2one('res.partner', groups='base.group_system', ondelete='restrict', copy=False)
+
+    @api.model
+    def _change_initial_password(self, password):
+        user = self.env.user
+        self.env.cr.execute('SELECT id FROM res_users WHERE id=%s FOR UPDATE', [user.id])
+        user.invalidate_recordset()
+        if not user.active or user._is_public() or not user.sudo().iam_initial_password:
+            raise AccessError(_('No initial password change is required for this account.'))
+        if not isinstance(password, str) or len(password) < 12 or len(password) > 256 or password != password.strip():
+            raise ValidationError(_('Choose a new password with at least 12 characters, without leading or trailing spaces.'))
+        try:
+            user._check_credentials({'login': user.login, 'password': password, 'type': 'password'}, {'interactive': True})
+        except AccessDenied:
+            pass
+        else:
+            raise ValidationError(_('Choose a password different from your temporary password.'))
+        user.sudo().write({'password': password, 'iam_initial_password': False})
+        self.env['saas.iam']._audit('iam.member.password.change', detail='User %s' % user.id)
+        return {'changed': True}
+
+
+class IamPasswordGate(models.AbstractModel):
+    _inherit = 'ir.http'
+
+    @classmethod
+    def _dispatch(cls, endpoint):
+        from odoo.http import request
+        path = request.httprequest.path
+        allowed = {'/saas/api/v1/me', '/saas/api/v1/auth/login', '/saas/api/v1/auth/logout',
+                   '/saas/api/v1/iam/password/change', '/saas/api/v1/iam/verification/finish'}
+        pending = bool(request.env.uid and request.env.user.sudo().iam_initial_password)
+        if pending and (path == '/my' or path.startswith('/my/') or path in ('/hosting/order', '/services/order')) and path not in ('/my/change-password', '/my/verify-profile'):
+            return request.redirect('/my/change-password')
+        if pending and path.startswith('/saas/api/v1/') and path not in allowed:
+            message = _('Change your temporary password before accessing your workspace.')
+            if endpoint.routing.get('type') == 'json':
+                return {'ok': False, 'error': message, 'code': 'password_change_required'}
+            raise AccessError(message)
+        return super()._dispatch(endpoint)

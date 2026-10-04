@@ -33,7 +33,7 @@ import SqlPage from "./pages/portal/SqlPage";
 import Invoices from "./pages/portal/Invoices";
 import InvoiceDetail from "./pages/portal/InvoiceDetail";
 import ProjectAccess from "./pages/portal/ProjectAccess";
-import VerifyProfile from "./pages/portal/VerifyProfile";
+import PasswordSetup from "./pages/portal/PasswordSetup";
 import AcceptAccess from "./pages/portal/AcceptAccess";
 import Settings from "./pages/portal/Settings";
 
@@ -93,7 +93,8 @@ export default function App() {
           are served by Odoo as the SPA shell (see spa.py); ordering and
           checkout live on Odoo QWeb routes we navigate to directly. */}
       <Route element={<ProtectedRoute />}>
-        <Route path="/my/verify-profile" element={<VerifyProfile />} />
+        <Route path="/my/change-password" element={<PasswordSetup />} />
+        <Route path="/my/verify-profile" element={<PasswordSetup />} />
         <Route path="/my" element={<PortalLayout />}>
           {/* Overview merged into Projects — the projects list is the home. */}
           <Route index element={<Navigate to="/my/instances" replace />} />

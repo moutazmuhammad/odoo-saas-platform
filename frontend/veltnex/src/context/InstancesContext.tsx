@@ -27,14 +27,17 @@ interface InstancesContextValue {
 const InstancesContext = React.createContext<InstancesContextValue | null>(null);
 
 export function InstancesProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const workspaceReady = isAuthenticated && !user?.must_change_password;
   const [instances, setInstances] = React.useState<ApiInstance[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const reload = React.useCallback(async () => {
-    if (!isAuthenticated) {
+    if (!workspaceReady) {
       setInstances([]);
+      setError(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -47,7 +50,7 @@ export function InstancesProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [workspaceReady]);
 
   React.useEffect(() => {
     reload();
@@ -66,7 +69,7 @@ export function InstancesProvider({ children }: { children: React.ReactNode }) {
   // stay live. Running instances refresh more slowly than provisioning.
   const _hasTransitional = instances.some((i) => TRANSITIONAL.has(i.state));
   const _shouldPoll =
-    isAuthenticated &&
+    workspaceReady &&
     (_hasTransitional || instances.some((i) => i.state === "running"));
   usePolling(
     async () => {

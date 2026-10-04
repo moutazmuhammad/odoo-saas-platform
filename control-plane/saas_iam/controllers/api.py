@@ -17,44 +17,33 @@ def _response(operation):
 class IamApi(SaasApi):
     def _serialize_user(self, partner):
         data = super()._serialize_user(partner)
-        profiles = request.env['saas.iam.member'].sudo().search([('user_id', '=', request.env.uid)])
-        data['teammate_verification'] = [{'id': m.id, 'customer': m.owner_id.name,
-            'email': m.user_id.login, 'phone': m.phone, 'email_verified': m.email_verified and m.verified_email == m.user_id.login,
-            'phone_verified': m.phone_verified, 'needs_password': m.user_id.sudo().iam_initial_password}
-            for m in profiles if not m._ready()]
+        data['must_change_password'] = bool(request.env.user.sudo().iam_initial_password)
         return data
 
     @http.route('/saas/api/v1/iam/members', type='json', auth='user')
-    def iam_member(self, name=None, email=None, phone=None, member_id=None, delete=False):
+    def iam_member(self, name=None, email=None, phone=None, member_id=None, delete=False, reset_password=False):
         def change():
             Member = request.env['saas.iam.member']
-            if delete:
+            if delete or reset_password:
+                if delete and reset_password:
+                    raise ValidationError(_('Choose one action.'))
                 member = Member.sudo().browse(int(member_id or 0)).exists()
                 if not member:
                     raise ValidationError(_('Teammate profile not found.'))
-                member.with_user(request.env.user)._delete_profile()
-                return {'removed': True}
+                member = member.with_user(request.env.user)
+                return member._delete_profile() if delete else member._reset_password()
             return Member._create_profile(name, email, phone)
         limited = self._rate_limit('iam_member', 30, 3600)
         return limited or _response(change)
 
-    @http.route('/saas/api/v1/iam/verification/send', type='json', auth='user')
-    def iam_verification_send(self, member_id=None, channel=None, phone=None):
-        limited = self._rate_limit('iam_verification_send', 6, 600)
-        return limited or _response(lambda: request.env['saas.iam.member'].sudo().browse(int(member_id or 0)).exists().with_user(request.env.user)._send_code(channel, phone))
-
-    @http.route('/saas/api/v1/iam/verification/verify', type='json', auth='user')
-    def iam_verification_verify(self, member_id=None, channel=None, code=None):
-        limited = self._rate_limit('iam_verification_verify', 20, 600)
-        return limited or _response(lambda: request.env['saas.iam.member'].sudo().browse(int(member_id or 0)).exists().with_user(request.env.user)._verify_code(channel, code))
-
-    @http.route('/saas/api/v1/iam/verification/finish', type='json', auth='user')
-    def iam_verification_finish(self, member_id=None, password=None):
-        def finish():
-            result = request.env['saas.iam.member'].sudo().browse(int(member_id or 0)).exists().with_user(request.env.user)._finish(password)
+    @http.route(['/saas/api/v1/iam/password/change', '/saas/api/v1/iam/verification/finish'], type='json', auth='user')
+    def iam_password_change(self, password=None, **kw):
+        def change():
+            result = request.env['res.users']._change_initial_password(password)
             request.session.session_token = request.env.user._compute_session_token(request.session.sid)
             return result
-        return _response(finish)
+        limited = self._rate_limit('iam_password_change', 10, 600)
+        return limited or _response(change)
 
     def _serialize_env_child(self, inst):
         data = super()._serialize_env_child(inst)
@@ -172,7 +161,8 @@ class IamApi(SaasApi):
             'groups': [{'id': g.id, 'name': g.name, 'customer_id': g.owner_id.id, 'user_ids': g.user_ids.ids,
                         'editable': g.owner_id == request.env.user.partner_id} for g in groups],
             'profiles': [{'id': m.id, 'user_id': m.user_id.id, 'name': m.name, 'email': m.user_id.login,
-                          'phone': m.phone, 'customer_id': m.owner_id.id, 'verified': m._ready(),
+                          'phone': m.phone or '', 'customer_id': m.owner_id.id, 'ready': m._ready(),
+                          'can_reset_password': m.owner_id == request.env.user.partner_id and m._can_manage_login(),
                           'editable': m.owner_id == request.env.user.partner_id} for m in profiles],
             'members': [{'id': u.id, 'name': u.name, 'email': u.login,
                          'customer_ids': (accepted.filtered(lambda i: i.user_id == u).mapped('owner_id') | profiles.filtered(lambda m: m.user_id == u).mapped('owner_id')).ids} for u in members],

@@ -85,12 +85,8 @@ async function rpc<T = unknown>(
 
 /* ────────────────────────────── Types ────────────────────────────── */
 
-export interface TeammateVerification {
-  id: number; customer: string; email: string; phone: string;
-  email_verified: boolean; phone_verified: boolean; needs_password: boolean;
-}
 export interface ApiUser {
-  teammate_verification?: TeammateVerification[];
+  must_change_password?: boolean;
   id: number;
   name: string;
   email: string;
@@ -592,15 +588,13 @@ export interface IamData {
   projects: { id: number; name: string; customer_id: number; is_owner: boolean; assignable_roles: Record<string, string[]> }[];
   grants: { id: number; project_id: number; role: string; environment: string; user_id: number | null; group_id: number | null; name: string; email: string; pending: boolean; expired: boolean; editable: boolean }[];
   groups: { id: number; name: string; customer_id: number; user_ids: number[]; editable?: boolean }[];
-  profiles?: { id: number; user_id: number; name: string; email: string; phone: string; customer_id: number; verified: boolean; editable: boolean }[];
+  profiles?: { id: number; user_id: number; name: string; email: string; phone: string; customer_id: number; ready: boolean; can_reset_password: boolean; editable: boolean }[];
   members: { id: number; name: string; email: string; customer_ids?: number[] }[];
 }
 
 export const api = {
-  iamMember: (params: { name?: string; email?: string; phone?: string; member_id?: number; delete?: boolean }) => rpc<{ id: number; email: string; temporary_password?: string | null; login_url: string }>("/saas/api/v1/iam/members", params),
-  iamVerificationSend: (member_id: number, channel: string, phone?: string) => rpc<{ sent: boolean }>("/saas/api/v1/iam/verification/send", { member_id, channel, phone }),
-  iamVerificationVerify: (member_id: number, channel: string, code: string) => rpc<{ verified: boolean }>("/saas/api/v1/iam/verification/verify", { member_id, channel, code }),
-  iamVerificationFinish: (member_id: number, password?: string) => rpc("/saas/api/v1/iam/verification/finish", { member_id, password }),
+  iamMember: (params: { name?: string; email?: string; phone?: string; member_id?: number; delete?: boolean; reset_password?: boolean }) => rpc<{ id: number; email: string; temporary_password?: string | null; login_url: string }>("/saas/api/v1/iam/members", params),
+  iamPasswordChange: (password: string) => rpc<{ changed: boolean }>("/saas/api/v1/iam/password/change", { password }),
   iam: () => rpc<IamData>("/saas/api/v1/iam"),
   iamInvite: (params: { email: string; project_ids: number[]; roles: string[]; environments: string[]; group_id?: number }) => rpc<{ id: number; invite_url: string }>("/saas/api/v1/iam/invite", params),
   iamAccept: (token: string) => rpc<{ project_ids: number[] }>("/saas/api/v1/iam/accept", { token }),

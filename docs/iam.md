@@ -1,6 +1,6 @@
 # Customer project access
 
-Install `saas_iam` alongside the existing SaaS modules. The portal exposes **Project Access** at `/my/access` and on each hosting project's page. Existing customer owners retain their access automatically; teammates receive only explicitly assigned roles. Owner-created profiles require email and phone verification before assigned access activates.
+Install `saas_iam` alongside the existing SaaS modules. The portal exposes **Project Access** at `/my/access` and on each hosting project's page. Existing customer owners retain their access automatically; teammates receive only explicitly assigned roles. New owner-created accounts must replace their temporary password before assigned access activates.
 
 There are no custom roles, folders, or organization hierarchy. A grant selects a teammate or team group, one or several projects belonging to the same customer, fixed roles, and production, staging, development, or all environments. Roles combine within their assigned scopes. Every role includes access to the basic project/environment details in its scope. A project with only staging access remains discoverable while production details and operations are restricted.
 
@@ -29,13 +29,15 @@ Billing, payments, purchased capacity, and the unrestricted signed Database Mana
 
 ## Teammate profiles
 
-The customer owner selects **Add teammate** in Project Access and enters name, email, and a phone number in international format. Profiles appear immediately in the Teammates tab and in user/group selectors. New portal accounts receive a generated temporary password shown once to the owner. The owner shares the sign-in details privately. Existing accounts keep their password and contact data; the customer profile stores its own name and phone.
+The customer owner selects **Add teammate** in Project Access and enters a name and email; phone is optional. Profiles appear immediately in the Teammates tab and in user/group selectors. New portal accounts receive a generated temporary password shown once to the owner, who shares it privately with the teammate. Existing accounts keep their password and contact data.
 
-After signing in, the teammate must verify email and phone using account-bound, single-use, ten-minute codes. Newly created accounts also replace their temporary password with a password of at least twelve characters. Assigned direct/group permissions remain disabled until these steps complete, including direct backend API calls. Codes have attempt limits, send/verify endpoints are rate limited, and profile codes cannot be used for registration or password resets.
+At first login, a new teammate chooses their own password (at least twelve characters and different from the temporary password). No teammate email or phone verification is required. Until the password changes, the backend blocks project permissions and workspace APIs, including requests made outside the frontend. The password change retains the current session. Customer-owner registration remains unchanged.
 
-Verification requires working outgoing email and an Odoo SMS provider with sufficient credit. Delivery errors are shown to the teammate; this feature never returns verification codes in an API response or bypasses verification when delivery is unavailable.
+In the Teammates tab, the owner can reset passwords for accounts created and used exclusively for their team. A reset generates a new temporary password shown once, invalidates existing sessions and pending authorized work, and requires another password change at the next login. The owner cannot reset independently created logins or accounts shared with another customer, or take over users with their own projects or billing records. Those accounts manage their own passwords. Accounts managed by another customer join additional projects through an invitation accepted by the teammate, preventing unrelated customers from interfering with the original owner’s account controls.
 
-The owner can delete a profile. This removes their customer's direct roles and group membership, revokes their invitations, and invalidates pending work/terminal access. It preserves the global login and any access/projects belonging to other customers. Recreating a removed profile requires verification again and does not restore deleted grants.
+Deleting a teammate profile revokes the customer's direct roles, group membership and invitations, and invalidates terminal/pending-job access. Accounts owned exclusively by the team are disabled. Shared or independently owned accounts retain their login and other customers' access. Recreating a disabled team account generates a new temporary password and does not restore deleted roles.
+
+The migration identifies accounts created by their own customer owner in the previous profile flow, so those users gain the same management controls. It does not adopt existing independent logins. This flow needs no email or SMS provider.
 
 ## Invitations and teams
 
@@ -51,6 +53,6 @@ Removing a role or group membership closes terminals that are no longer authoriz
 
 ## Deployment
 
-Back up the platform and control-plane database, stop the Odoo and job services, copy the new module and changed website files, and install `saas_iam` while upgrading only `saas_website`. For an existing installation, upgrade only `saas_iam` for teammate-profile schema changes; its `sms` dependency must be installed. Deploy the rebuilt website bundle and restart both services. This installs the IAM tables and job authorization fields; it does not upgrade customer Odoo modules, recreate customer instances, or assign teammate roles automatically.
+Back up the platform and control-plane database, stop the Odoo and job services, copy the new module and changed website files, and install `saas_iam` while upgrading only `saas_website`. For an existing installation, upgrade only `saas_iam` for teammate-profile schema changes; Deploy the rebuilt website bundle and restart both services. This installs the IAM tables and job authorization fields; it does not upgrade customer Odoo modules, recreate customer instances, or assign teammate roles automatically.
 
 The regression suite covers role combinations, environment scopes, customer isolation, delegation limits, single-use invitations, group membership, direct model calls, status/billing redaction, permitted creation/deletion/restarts, backup download revocation, and frontend grants across multiple projects.

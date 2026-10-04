@@ -105,23 +105,44 @@ describe("Project Access", () => {
     await user.click(await screen.findByRole("button", { name: "Add teammate" }));
     await user.type(screen.getByLabelText("name"), "New Teammate");
     await user.type(screen.getByLabelText("email"), "new@example.com");
-    await user.type(screen.getByLabelText("Phone with country code"), "+201012345678");
+    await user.type(screen.getByLabelText("Phone with country code (optional)"), "+201012345678");
     expect(mocked.iamMember).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Create profile" }));
     await waitFor(() => expect(mocked.iamMember).toHaveBeenCalledWith({ name: "New Teammate", email: "new@example.com", phone: "+201012345678" }));
-    expect(await screen.findByRole("dialog", { name: "Teammate profile ready" })).toHaveTextContent("shown only once");
+    expect(await screen.findByRole("dialog", { name: "Teammate sign-in details" })).toHaveTextContent("shown only once");
     expect(screen.getByDisplayValue("temporary-secret")).toBeInTheDocument();
   });
   it("lists unverified profiles immediately and requires confirmation before deletion", async () => {
-    mocked.iam.mockResolvedValue({ ...fixture(), profiles: [{ id: 12, user_id: 4, name: "Ahmed", email: "ahmed@example.com", phone: "+201012345678", customer_id: 10, verified: false, editable: true }] });
+    mocked.iam.mockResolvedValue({ ...fixture(), profiles: [{ id: 12, user_id: 4, name: "Ahmed", email: "ahmed@example.com", phone: "+201012345678", customer_id: 10, ready: false, can_reset_password: true, editable: true }] });
     const user = userEvent.setup();
     renderWithProviders(<ProjectAccess />);
     await user.click(await screen.findByRole("tab", { name: /Teammates/ }));
-    expect(screen.getByText("Verification pending")).toBeInTheDocument();
+    expect(screen.getByText("Password change required")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Delete profile for Ahmed" }));
     expect(mocked.iamMember).not.toHaveBeenCalled();
     await user.click(within(screen.getByRole("dialog", { name: "Delete teammate profile?" })).getByRole("button", { name: "Delete profile" }));
     await waitFor(() => expect(mocked.iamMember).toHaveBeenCalledWith({ member_id: 12, delete: true }));
+  });
+
+  it("confirms an owner password reset and shows the new temporary password once", async () => {
+    mocked.iam.mockResolvedValue({ ...fixture(), profiles: [{ id: 12, user_id: 4, name: "Ahmed", email: "ahmed@example.com", phone: "", customer_id: 10, ready: true, can_reset_password: true, editable: true }] });
+    mocked.iamMember.mockResolvedValue({ id: 12, email: "ahmed@example.com", temporary_password: "new-temporary-password", login_url: "/login" });
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectAccess />);
+    await user.click(await screen.findByRole("tab", { name: /Teammates/ }));
+    await user.click(screen.getByRole("button", { name: "Reset password for Ahmed" }));
+    expect(mocked.iamMember).not.toHaveBeenCalled();
+    await user.click(within(screen.getByRole("dialog", { name: "Reset teammate password?" })).getByRole("button", { name: "Reset password" }));
+    await waitFor(() => expect(mocked.iamMember).toHaveBeenCalledWith({ member_id: 12, reset_password: true }));
+    expect(await screen.findByDisplayValue("new-temporary-password")).toBeInTheDocument();
+  });
+  it("does not allow customer password resets for shared accounts", async () => {
+    mocked.iam.mockResolvedValue({ ...fixture(), profiles: [{ id: 12, user_id: 4, name: "Ahmed", email: "ahmed@example.com", phone: "", customer_id: 10, ready: true, can_reset_password: false, editable: true }] });
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectAccess />);
+    await user.click(await screen.findByRole("tab", { name: /Teammates/ }));
+    expect(screen.getByRole("button", { name: "Reset password for Ahmed" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete profile for Ahmed" })).toBeEnabled();
   });
 
 });

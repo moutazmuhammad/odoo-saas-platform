@@ -67,9 +67,12 @@ class PublicDatabaseSelection(unittest.TestCase):
     def test_no_database_has_no_create_or_manager_controls(self):
         http.db_list.return_value = []
         html = self.controller.selector()
-        self.assertIn('contact the site owner', html)
+        self.assertIn('No database has been created yet', html)
+        self.assertIn('create or restore a database from the control panel', html)
+        self.assertNotIn('This website isn’t ready yet', html)
         self.assertNotIn('<a ', html)
-        self.assertNotIn('control panel', html)
+        self.assertNotIn('/web/database/create', html)
+        self.assertNotIn('master_pwd', html)
 
     def test_selection_opens_public_home_and_clears_previous_login(self):
         self.request.session.db = 'tenant_blog'

@@ -22,6 +22,7 @@ involved.
 import hmac
 import logging
 import re
+from datetime import datetime, timezone
 
 from odoo import http, fields, _
 from odoo.exceptions import AccessError, MissingError, UserError, ValidationError
@@ -32,6 +33,17 @@ from .main import SaasWebsite, _ACTIVE_STATES
 from ..models.res_config_settings import OTP_TEST_MODE_PARAM
 
 _logger = logging.getLogger(__name__)
+
+
+def _utc_datetime(value):
+    """Serialize Odoo's UTC datetimes with an explicit timezone for browsers."""
+    if not value:
+        return ''
+    if not isinstance(value, datetime):
+        value = fields.Datetime.to_datetime(value)
+    value = value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return value.isoformat(timespec='seconds').replace('+00:00', 'Z')
+
 
 # States shown in the customer's PROJECTS LIST and search. An instance still
 # awaiting its first payment isn't a real project yet — it's an incomplete
@@ -851,7 +863,7 @@ class SaasApi(http.Controller):
                 'commit': b.commit_short or '',
                 'commit_message': b.commit_message or '',
                 'author': b.author or '',
-                'at': fields.Datetime.to_string(b.date_start) if b.date_start else '',
+                'at': _utc_datetime(b.date_start) if b.date_start else '',
                 'duration_s': dur,
                 # Browser link to the commit on GitHub/GitLab (empty if unknown).
                 'commit_url': (b.repo_id._web_commit_url(b.commit_sha)
@@ -1515,7 +1527,7 @@ class SaasApi(http.Controller):
             'bonus_expiry': self._wallet_bonus_expiry(wallet),
             'transactions': [{
                 'id': t.id,
-                'date': fields.Datetime.to_string(t.create_date),
+                'date': _utc_datetime(t.create_date),
                 'amount': round(t.amount, 2),
                 'balance_after': round(t.balance_after, 2),
                 'kind': t.kind,
@@ -1959,7 +1971,7 @@ class SaasApi(http.Controller):
             'workers': plan.workers if plan else 0,
             'storage_gb': int(plan.storage_limit) if plan else 0,
             'billing_cycle': instance.billing_period or 'monthly',
-            'created': fields.Datetime.to_string(instance.create_date) if instance.create_date else '',
+            'created': _utc_datetime(instance.create_date) if instance.create_date else '',
             'is_hosting': instance.is_hosting,
             'is_trial': instance.is_trial,
             'usage': self._usage(instance),
@@ -2081,7 +2093,7 @@ class SaasApi(http.Controller):
             'is_cancelled': True,
             'has_retained_snapshot': has_retained,
             'retained_snapshot_date': (
-                fields.Datetime.to_string(retained.create_date)
+                _utc_datetime(retained.create_date)
                 if retained and retained.create_date else ''
             ),
             'restoration_fee': round(fee, 2),
@@ -2096,7 +2108,7 @@ class SaasApi(http.Controller):
             'label': b.name or _('Backup'),
             'type': 'manual' if b.ephemeral else 'automatic',
             'size_mb': round(b.size_mb or 0.0, 1),
-            'created': fields.Datetime.to_string(b.create_date) if b.create_date else '',
+            'created': _utc_datetime(b.create_date) if b.create_date else '',
             'status': _BACKUP_STATUS.get(b.state, 'available'),
             'download_url': b.download_url or '',
             'is_full_instance': b.is_full_instance,
@@ -2132,7 +2144,7 @@ class SaasApi(http.Controller):
             'number': inv.name or _('Draft'),
             'status': status,
             'issued': fields.Date.to_string(inv.invoice_date) if inv.invoice_date
-                else (fields.Datetime.to_string(inv.create_date) if inv.create_date else ''),
+                else (_utc_datetime(inv.create_date) if inv.create_date else ''),
             'due': fields.Date.to_string(inv.invoice_date_due) if inv.invoice_date_due else '',
             'total': round(inv.amount_total, 2),
             'residual': round(inv.amount_residual, 2),

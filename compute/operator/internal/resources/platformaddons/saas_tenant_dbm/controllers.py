@@ -216,9 +216,9 @@ var list = document.querySelector('.o_database_list'); if (list) { list.prepend(
             '<a href="%s">%s<span aria-hidden="true"> →</span></a>' % (
                 escape('/saas/db/select?' + urlencode({'db': name}), quote=True), escape(name))
             for name in databases)
-        heading = 'Choose your workspace' if databases else 'This website isn’t ready yet'
+        heading = 'Choose your workspace' if databases else 'No database has been created yet'
         description = ('Select a workspace to continue to its website.' if databases
-                       else 'Please contact the site owner for help.')
+                       else 'The site owner can create or restore a database from the control panel to get started.')
         html = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>%s</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f8fa;color:#202735;font-family:system-ui,sans-serif}

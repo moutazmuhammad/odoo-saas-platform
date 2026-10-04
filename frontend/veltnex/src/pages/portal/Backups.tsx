@@ -137,7 +137,7 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
             <InfoCard label="Snapshots" value={snapshots.length} icon={Archive} />
             <InfoCard
               label="Latest"
-              value={<span className="text-base">{lastDone ? formatDateTime(lastDone.created).split(",")[0] : "—"}</span>}
+              value={<span className="text-base">{lastDone ? formatDate(lastDone.created) : "—"}</span>}
               icon={ShieldCheck}
             />
           </div>

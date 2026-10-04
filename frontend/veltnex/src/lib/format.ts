@@ -1,6 +1,19 @@
+/** Odoo stores timestamps in UTC; older responses omit the timezone. */
+export function parseDate(value: string | Date): Date {
+  if (value instanceof Date) return value;
+  const text = value.trim();
+  // A calendar date (invoice/due date) must stay on that local calendar day.
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (day) return new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]));
+  const timestamp = text.replace(" ", "T");
+  const naive = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(timestamp);
+  return new Date(naive ? `${timestamp}Z` : timestamp);
+}
+
 export function formatDate(value: string | Date) {
-  const d = typeof value === "string" ? new Date(value) : value;
-  return d.toLocaleDateString("en-US", {
+  const d = parseDate(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -8,8 +21,9 @@ export function formatDate(value: string | Date) {
 }
 
 export function formatDateTime(value: string | Date) {
-  const d = typeof value === "string" ? new Date(value) : value;
-  return d.toLocaleString("en-US", {
+  const d = parseDate(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
     month: "short",
     day: "numeric",
     hour: "2-digit",

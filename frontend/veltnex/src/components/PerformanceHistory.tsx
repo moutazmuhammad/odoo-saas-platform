@@ -4,6 +4,7 @@ import { Activity } from "lucide-react";
 import { api, type LiveMetrics, type MetricsHistory, type MetricSample, type PackageSummary } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { parseDate, formatDateTime } from "@/lib/format";
 
 const RANGES: { key: string; label: string }[] = [
   { key: "1h", label: "1h" },
@@ -92,7 +93,7 @@ export function PerformanceHistory({
   // right edge and sparse/old samples sit at their true position (not stretched
   // across the width). End at now (or the latest sample, if the clock's ahead).
   const hours = data?.hours ?? RANGE_HOURS[range] ?? 24;
-  const lastMs = lastSample ? new Date(lastSample.t).getTime() : Date.now();
+  const lastMs = lastSample ? parseDate(lastSample.t).getTime() : Date.now();
   const endMs = Math.max(Date.now(), lastMs);
   const startMs = endMs - hours * 3600 * 1000;
 
@@ -243,7 +244,7 @@ function AreaChart({
   const PAD = 4;
   const isPct = unit !== "MB";
   const span = Math.max(1, endMs - startMs);
-  const tMs = (s: MetricSample) => new Date(s.t).getTime();
+  const tMs = (s: MetricSample) => parseDate(s.t).getTime();
   const values = samples.map(pick);
   const dataMax = Math.max(...values, 0);
   // Auto-scale the y-axis to the data (DigitalOcean-style) so small CPU values
@@ -381,7 +382,7 @@ function AreaChart({
         {hv != null && ht && (
           <div
             className="pointer-events-none absolute -top-1 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 text-[11px] shadow-lg"
-            style={{ left: `${((new Date(ht).getTime() - startMs) / span) * 100}%` }}
+            style={{ left: `${((parseDate(ht).getTime() - startMs) / span) * 100}%` }}
           >
             <div className="font-semibold tabular-nums">{fmt(hv)}</div>
             {hasDb && hover != null && (
@@ -508,12 +509,7 @@ function LiveStat({
 }
 
 function formatTime(iso: string): string {
-  const d = new Date(iso);
+  const d = parseDate(iso);
   if (isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(d);
 }

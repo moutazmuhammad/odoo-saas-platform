@@ -238,12 +238,18 @@ var list = document.querySelector('.o_database_list'); if (list) { list.prepend(
         heading = 'Choose your workspace' if databases else 'No database has been created yet'
         description = ('Select a workspace to continue to its website.' if databases
                        else 'The site owner can create or restore a database from the control panel to get started.')
+        icon = '' if databases else '''<div class="icon" aria-hidden="true">
+<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+</div>'''
+        branding = '' if databases else '<footer>Powered by <strong>VELTNEX</strong></footer>'
         html = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>%s</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f8fa;color:#202735;font-family:system-ui,sans-serif}
 main{width:min(440px,calc(100vw - 80px));padding:32px;background:white;border:1px solid #e6e9ee;border-radius:18px}
+.icon{display:grid;place-items:center;width:60px;height:60px;margin-bottom:24px;border-radius:18px;background:#f0eafa;color:#7953ba}
+footer{display:flex;align-items:center;gap:8px;margin-top:28px;padding-top:20px;border-top:1px solid #eeeaf3;font-size:12px;color:#9b93a6}footer strong{color:#635575;letter-spacing:1px;font-size:11px}
 h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justify-content:space-between;gap:16px;overflow-wrap:anywhere;margin-top:12px;padding:16px;border:1px solid #e6e9ee;border-radius:10px;color:#364152;text-decoration:none}a:hover,a:focus{background:#f1f4f9;border-color:#8492a6}</style>
-</head><body><main><h1>%s</h1><p>%s</p>%s</main></body></html>""" % (heading, heading, description, choices)
+</head><body><main>%s<h1>%s</h1><p>%s</p>%s%s</main></body></html>""" % (heading, icon, heading, description, choices, branding)
         return request.make_response(html, headers=[('Cache-Control', 'no-store')])
 
     def _public_databases(self):

@@ -260,12 +260,16 @@ class ImageBuildMixin:
                             {'name': 'fetch', 'image': git_image,
                              'command': ['sh', '/files/fetch.sh'],
                              'env': fetch_env, 'volumeMounts': mounts,
-                             'resources': {'limits': {'cpu': '1', 'memory': '512Mi'}}},
+                             # Without explicit requests Kubernetes reserves
+                             # the full CPU limit for the entire build pod.
+                             'resources': {'requests': {'cpu': '100m', 'memory': '128Mi'},
+                                           'limits': {'cpu': '1', 'memory': '512Mi'}}},
                             {'name': 'inspect', 'image': base_image,
                              'command': ['python3', '/files/inspect.py'],
                              'env': [{'name': 'REPO_DIRS', 'value': json.dumps([r['dir'] for r in repos])}],
                              'volumeMounts': mounts,
-                             'resources': {'limits': {'cpu': '500m', 'memory': '256Mi'}}},
+                             'resources': {'requests': {'cpu': '100m', 'memory': '128Mi'},
+                                           'limits': {'cpu': '500m', 'memory': '256Mi'}}},
                         ],
                         'containers': [{
                             'name': 'build', 'image': builder_image,

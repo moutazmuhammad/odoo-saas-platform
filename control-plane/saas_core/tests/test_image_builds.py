@@ -322,6 +322,15 @@ class TestImageBuildDriver(TransactionCase):
         self.assertFalse(spec['automountServiceAccountToken'])
         self.assertEqual(spec['securityContext']['fsGroup'], 1000)
         self.assertEqual(job['spec']['backoffLimit'], 0)
+        # Init containers run sequentially, but their largest request counts
+        # for the pod's entire lifetime. They must not reserve their CPU limits
+        # and prevent a build fitting into a node with 500m CPU available.
+        containers = spec['initContainers'] + spec['containers']
+        cpu_requests = [int(c['resources']['requests']['cpu'].rstrip('m'))
+                        for c in containers]
+        self.assertLessEqual(max(cpu_requests), 500)
+        for c in spec['initContainers']:
+            self.assertEqual(c['resources']['requests']['memory'], '128Mi')
         # The token-bearing URL only ever comes from the Secret.
         self.assertNotIn('https://t@g/x.git', json.dumps(job))
         secret = self.core.create_namespaced_secret.call_args.args[1]

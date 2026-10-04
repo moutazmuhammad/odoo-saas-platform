@@ -211,6 +211,33 @@ class TestIamApi(IamFixture, HttpCase):
         return self.url_open(path, data=json.dumps({'jsonrpc': '2.0', 'method': 'call', 'params': params or {}}),
                              headers={'Content-Type': 'application/json'}).json().get('result')
 
+    def test_account_without_projects_has_creation_empty_state(self):
+        self.authenticate(self.stranger.login, 'iam-test-pass')
+        result = self._rpc('/saas/api/v1/iam')
+        self.assertEqual(result['data']['projects'], [])
+        self.assertEqual(result['data']['empty_reason'], 'no_projects')
+
+    def test_viewer_has_permission_empty_state_not_creation_prompt(self):
+        self._grant('viewer')
+        self.authenticate(self.team.login, 'iam-test-pass')
+        result = self._rpc('/saas/api/v1/iam')
+        self.assertEqual(result['data']['projects'], [])
+        self.assertEqual(result['data']['empty_reason'], 'access_not_granted')
+
+    def test_platform_admin_lists_customer_projects_without_owning_them(self):
+        admin = self._make_user('iamplatformadmin@example.com')
+        admin.write({'groups_id': [(6, 0, [self.env.ref('base.group_system').id])]})
+        self.authenticate(admin.login, 'iam-test-pass')
+        result = self._rpc('/saas/api/v1/iam')
+        self.assertTrue(result['ok'])
+        self.assertTrue({self.project.id, self.project2.id, self.foreign.id}.issubset({p['id'] for p in result['data']['projects']}))
+
+    def test_owner_lists_only_own_projects_without_any_explicit_grant(self):
+        self.authenticate(self.owner.login, 'iam-test-pass')
+        result = self._rpc('/saas/api/v1/iam')
+        self.assertEqual({p['id'] for p in result['data']['projects']}, {self.project.id, self.project2.id})
+        self.assertTrue(all(p['is_owner'] for p in result['data']['projects']))
+
     def test_shared_projects_list_detail_and_billing_redaction(self):
         self._grant('viewer')
         self.authenticate(self.team.login, 'iam-test-pass')

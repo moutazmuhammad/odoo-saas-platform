@@ -580,6 +580,7 @@ export interface OtpSent {
 }
 
 export interface IamData {
+  empty_reason?: "no_projects" | "access_not_granted" | null;
   roles: { code: string; name: string; permissions: string[] }[];
   projects: { id: number; name: string; customer_id: number; is_owner: boolean; assignable_roles: Record<string, string[]> }[];
   grants: { id: number; project_id: number; role: string; environment: string; user_id: number | null; group_id: number | null; name: string; email: string; pending: boolean; expired: boolean; editable: boolean }[];

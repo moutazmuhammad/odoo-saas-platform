@@ -20,6 +20,19 @@ const fixture = (): IamData => ({
 });
 describe("Project Access", () => {
   beforeEach(() => { vi.clearAllMocks(); mocked.iam.mockResolvedValue(fixture()); });
+  it("prompts clients without projects to create their first project", async () => {
+    mocked.iam.mockResolvedValue({ ...fixture(), projects: [], empty_reason: "no_projects" });
+    renderWithProviders(<ProjectAccess />);
+    expect(await screen.findByText("No projects yet")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Create a project" })).toHaveAttribute("href", "/hosting");
+    expect(screen.queryByText(/Access management hasn’t been granted/)).not.toBeInTheDocument();
+  });
+  it("explains the required role for existing teammates without access management", async () => {
+    mocked.iam.mockResolvedValue({ ...fixture(), projects: [], empty_reason: "access_not_granted" });
+    renderWithProviders(<ProjectAccess />);
+    expect(await screen.findByText("Access management hasn’t been granted")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Create a project" })).not.toBeInTheDocument();
+  });
   it("combines fixed roles across selected projects and keeps production excluded", async () => {
     mocked.iamInvite.mockResolvedValue({ id: 1, invite_url: "/my/access/accept?token=test" });
     const user = userEvent.setup();

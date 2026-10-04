@@ -89,10 +89,12 @@ class IamApi(SaasApi):
     @http.route('/saas/api/v1/iam', type='json', auth='user')
     def iam_list(self):
         iam = request.env['saas.iam']
-        projects = request.env['saas.instance'].sudo().search([
-            ('parent_id', '=', False), '|', ('partner_id', '=', request.env.user.partner_id.id),
-            ('id', 'in', iam._visible_project_ids()),
-        ])
+        domain = [('parent_id', '=', False)]
+        if not iam._is_platform_admin(request.env.user):
+            domain += ['|', ('partner_id', '=', request.env.user.partner_id.id),
+                       ('id', 'in', iam._visible_project_ids())]
+        accessible = request.env['saas.instance'].sudo().search(domain)
+        projects = accessible
         projects = projects.filtered(lambda p: any(iam._allowed(p, 'iam.manage', environment=e) for e in ENVIRONMENTS))
         grants = request.env['saas.iam.grant'].sudo().search([('project_id', 'in', projects.ids), ('active', '=', True)])
         visible = grants.filtered(lambda g: any(iam._allowed(g.project_id, 'iam.manage', environment=e) for e in (ENVIRONMENTS if g.environment == 'all' else (g.environment,))))
@@ -109,6 +111,7 @@ class IamApi(SaasApi):
         ])
         members = accepted.mapped('user_id')
         return ok({
+            'empty_reason': ('no_projects' if not accessible else 'access_not_granted') if not projects else None,
             'roles': [{'code': code, 'name': label, 'permissions': sorted(perms)} for code, (label, perms) in ROLE_DEFINITIONS.items()],
             'projects': [{'id': p.id, 'name': p.project_name or p.subdomain or p.name,
                           'customer_id': p.partner_id.id, 'is_owner': iam._is_owner(p),

@@ -86,7 +86,17 @@ export default function ProjectAccess() {
     <div><h1 className="flex items-center gap-2 text-2xl font-bold"><ShieldCheck className="size-6 text-primary" />Project Access</h1>
       <p className="mt-2 text-sm text-muted">Give teammates fixed roles on selected projects and environments. Billing stays with the customer owner.</p></div>
     {error && <AlertBanner variant="danger" title="Project access" description={error} />}
-    {data && data.projects.length === 0 && <Card className="p-6"><p>You don’t have access-management permissions on any project.</p><Link className="mt-3 inline-block text-primary" to="/my/instances">Back to projects</Link></Card>}
+    {data && data.projects.length === 0 && <Card className="space-y-3 p-6">
+      {data.empty_reason === "no_projects" ? <>
+        <h2 className="font-semibold">No projects yet</h2>
+        <p className="text-sm text-muted">Create your first project to invite teammates and assign their roles. As the project owner, you can manage access automatically.</p>
+        <Link className="inline-block text-primary" to="/hosting">Create a project</Link>
+      </> : <>
+        <h2 className="font-semibold">Access management hasn’t been granted</h2>
+        <p className="text-sm text-muted">Ask the project owner to give you the Project Access Administrator role to manage teammates’ access.</p>
+        <Link className="inline-block text-primary" to="/my/instances">Back to projects</Link>
+      </>}
+    </Card>}
     {!!data?.projects.length && <>
     <Card className="space-y-5 p-6">
       <h2 className="flex items-center gap-2 text-lg font-semibold"><UserPlus className="size-5" />Grant project access</h2>

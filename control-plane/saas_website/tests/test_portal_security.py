@@ -1147,6 +1147,16 @@ class TestStaffApiReadOnly(_PortalTestBase):
                                  {'subscription': False})
         self.assertFalse(result['ok'])
 
+    def test_support_cannot_delete_another_customers_environment(self):
+        child = self.instance.copy({'subdomain': 'supportstage',
+                                    'environment': 'staging', 'parent_id': self.instance.id})
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        with patch.object(type(self.instance), 'action_delete_environment') as remove:
+            result = self._json_call('/saas/api/v1/instances/%d/environments/%d/delete'
+                                     % (self.instance.id, child.id))
+        self.assertFalse(result['ok'])
+        remove.assert_not_called()
+
     def test_staff_project_list_includes_customer_for_filtering(self):
         self.authenticate('portalintruder@example.com', 'intruderpass123')
         result = self._json_call('/saas/api/v1/instances')
@@ -1175,3 +1185,82 @@ class TestStaffApiReadOnly(_PortalTestBase):
         row = next(b for b in result['data'] if b['id'] == build.id)
         self.assertEqual(row['stage'], 'deploying')
         self.assertGreaterEqual(row['duration_s'], 90)
+
+
+@tagged('post_install', '-at_install')
+class TestAdminApiManagement(_PortalTestBase):
+    def setUp(self):
+        super().setUp()
+        self.admin = self.env['res.users'].sudo().create({
+            'name': 'Platform Manager', 'login': 'portalmanager@example.com',
+            'password': 'managerpass123',
+            'groups_id': [(6, 0, [self.env.ref('base.group_user').id,
+                                  self.env.ref('saas_core.group_saas_manager').id])],
+        })
+        self.child = self.instance.copy({'subdomain': 'adminstage',
+                                         'environment': 'staging', 'parent_id': self.instance.id})
+
+    def test_manager_can_restart_customer_instance(self):
+        self.authenticate('portalmanager@example.com', 'managerpass123')
+        with patch.object(type(self.instance), 'action_portal_restart') as restart, \
+             patch.object(type(self.instance), '_get_status_dict', return_value={'state': 'running'}):
+            result = self._json_call('/saas/api/v1/instances/%d/action' % self.instance.id,
+                                     {'action': 'restart'})
+        self.assertTrue(result['ok'])
+        restart.assert_called_once()
+
+    def test_manager_can_delete_customer_environment(self):
+        self.authenticate('portalmanager@example.com', 'managerpass123')
+        with patch.object(type(self.instance), 'action_delete_environment') as remove:
+            result = self._json_call('/saas/api/v1/instances/%d/environments/%d/delete'
+                                     % (self.instance.id, self.child.id), {'delete_branch': True})
+        self.assertTrue(result['ok'])
+        remove.assert_called_once_with(delete_branch=True)
+
+    def test_delete_requires_matching_parent_project(self):
+        other = self.instance.copy({'subdomain': 'otheradminproject'})
+        self.authenticate('portalmanager@example.com', 'managerpass123')
+        with patch.object(type(self.instance), 'action_delete_environment') as remove:
+            result = self._json_call('/saas/api/v1/instances/%d/environments/%d/delete'
+                                     % (other.id, self.child.id))
+        self.assertFalse(result['ok'])
+        remove.assert_not_called()
+
+    def test_manager_can_change_customer_instance_settings(self):
+        self.authenticate('portalmanager@example.com', 'managerpass123')
+        result = self._json_call('/saas/api/v1/instances/%d/auto-renew' % self.instance.id,
+                                 {'subscription': False})
+        self.assertTrue(result['ok'])
+        self.instance.invalidate_recordset()
+        self.assertFalse(self.instance.auto_renew_subscription)
+
+    def test_manager_can_create_customer_environment(self):
+        self.authenticate('portalmanager@example.com', 'managerpass123')
+        with patch.object(type(self.instance), 'action_create_environment',
+                          return_value={'auto_provisioned': True}) as create:
+            result = self._json_call('/saas/api/v1/instances/%d/environments/create'
+                                     % self.instance.id, {'type': 'staging', 'name': 'stage'})
+        self.assertTrue(result['ok'])
+        create.assert_called_once_with('staging', name='stage', branch=None)
+
+    def test_other_customer_cannot_restart_even_with_share_token(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        with patch.object(type(self.instance), 'action_portal_restart') as restart:
+            result = self._json_call('/saas/api/v1/instances/%d/action' % self.instance.id,
+                                     {'action': 'restart', 'access_token': self.instance.access_token})
+        self.assertFalse(result['ok'])
+        restart.assert_not_called()
+
+    def test_system_admin_can_manage_without_saas_manager_group(self):
+        admin = self.env['res.users'].sudo().create({
+            'name': 'System Admin', 'login': 'portalsysadmin@example.com',
+            'password': 'sysadminpass123',
+            'groups_id': [(6, 0, [self.env.ref('base.group_system').id])],
+        })
+        self.assertFalse(admin.has_group('saas_core.group_saas_manager'))
+        self.authenticate('portalsysadmin@example.com', 'sysadminpass123')
+        with patch.object(type(self.instance), 'action_delete_environment') as remove:
+            result = self._json_call('/saas/api/v1/instances/%d/environments/%d/delete'
+                                     % (self.instance.id, self.child.id))
+        self.assertTrue(result['ok'])
+        remove.assert_called_once_with(delete_branch=False)

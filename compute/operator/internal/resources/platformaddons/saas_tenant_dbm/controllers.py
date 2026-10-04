@@ -146,14 +146,28 @@ document.addEventListener('DOMContentLoaded', function () {
 """
 
 _PORTAL_ONLY = """<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Database Manager</title>
-<style>body{font-family:system-ui,sans-serif;max-width:520px;margin:15vh auto;padding:0 16px;color:#222}
-h1{font-size:1.4rem}p{color:#555;line-height:1.5}</style></head>
-<body><h1>Open the database manager from your control panel</h1>
-<p>For your security, the database manager opens only through the
-<b>Database Manager</b> button on your instance's Databases page. The link is valid for
-one hour.</p>%s</body></html>"""
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Secure access · Database Manager</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:32px 20px;background:#f6f5fb;color:#242033;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{width:min(100vw - 40px,540px);padding:40px;border:1px solid #e8e5f0;border-radius:24px;background:#fff;box-shadow:0 16px 48px #3422540d}
+.icon{display:grid;place-items:center;width:60px;height:60px;margin-bottom:24px;border-radius:18px;background:#f0eafa;color:#7953ba}
+.eyebrow{margin:0 0 10px;color:#7953ba;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+h1{margin:0;font-size:28px;line-height:1.25;letter-spacing:-.7px}p{font-size:15px;line-height:1.7;color:#70697d}
+.steps{margin:24px 0;padding:18px 20px;border:1px solid #e9e3f3;border-radius:14px;background:#faf8fe;font-size:14px;line-height:1.8;color:#554b65}
+.steps strong{color:#30263f}.expiry{display:flex;align-items:center;gap:8px;font-size:13px;color:#81758f}.notice:empty{display:none}.notice p{padding:12px 16px;border-radius:10px;background:#fff0f0;color:#a13737;font-size:13px}
+footer{display:flex;align-items:center;gap:8px;margin-top:32px;padding-top:20px;border-top:1px solid #eeeaf3;font-size:12px;color:#9b93a6}footer strong{color:#635575;letter-spacing:1px;font-size:11px}
+@media(max-width:480px){main{padding:28px 24px}h1{font-size:24px}}
+</style></head><body><main>
+<div class="icon" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div>
+<p class="eyebrow">Secure database access</p>
+<h1>Open Database Manager<br>from your control panel</h1>
+<p>For your security, Database Manager opens through a secure link from your instance's Databases page.</p>
+<div class="steps">Go to <strong>your control panel → your instance → Databases</strong>, then select <strong>Database Manager</strong>.</div>
+<div class="expiry"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Each secure link is valid for one hour.</div>
+<div class="notice" role="alert">%s</div>
+<footer>Powered by <strong>VELTNEX</strong></footer>
+</main></body></html>"""
 
 
 class SaasTenantDatabase(Database):

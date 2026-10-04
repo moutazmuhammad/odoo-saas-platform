@@ -87,7 +87,8 @@ class SaasApi(http.Controller):
     def _is_staff(self):
         """Internal users (base.group_user — the platform admin) and the
         dedicated SaaS Support group can READ every customer's project /
-        instance from the UI. Writes stay ownership-gated; read access is
+        instance from the UI. Managers can act across customers; other staff
+        writes stay ownership-gated. Read access is
         granted via the ir.rules in saas_website_security.xml plus this
         helper for the endpoints that list instances directly."""
         user = self._user()
@@ -96,20 +97,33 @@ class SaasApi(http.Controller):
         return user.has_group('base.group_user') or user.has_group(
             'saas_website.group_saas_support')
 
+    def _can_manage_instance(self, instance):
+        """Owners and platform administrators may manage an instance."""
+        user = self._user()
+        if not user:
+            return False
+        return (instance.sudo().partner_id == user.partner_id
+                or user.has_group('saas_core.group_saas_manager')
+                or user.has_group('base.group_system'))
+
     def _instance(self, instance_id, access_token=None, write=False):
         """Authorized sudo recordset for an instance the caller may act on.
 
         The ``access_token`` is a SHARE credential: it grants READ-ONLY
         visibility (status, metrics, builds) to anyone holding the link, and
         nothing more. Every state-changing or destructive operation must be
-        performed by the authenticated owner (record rules) — pass
-        ``write=True`` so the token is ignored and ownership is enforced.
+        performed by the authenticated owner or platform administrator — pass
+        ``write=True`` so the token is ignored and management access is enforced.
         Raises AccessError/MissingError on failure.
         """
         Instance = request.env['saas.instance']
         instance = Instance.browse(int(instance_id))
         if not instance.exists():
             raise MissingError(_("Instance not found."))
+        if write:
+            if not self._can_manage_instance(instance):
+                raise AccessError(_("Only the owner or an administrator can change this instance."))
+            return instance.sudo()
         # Constant-time compare so the token can't be recovered by timing.
         if (not write and access_token
                 and hmac.compare_digest(
@@ -118,8 +132,6 @@ class SaasApi(http.Controller):
         # Record-rule check: will raise AccessError if not the owner.
         instance.check_access_rights('read')
         instance.check_access_rule('read')
-        if write and instance.sudo().partner_id != self._partner():
-            raise AccessError(_("Only the owner can change this instance."))
         return instance.sudo()
 
     # ------------------------------------------------------------------
@@ -1546,7 +1558,7 @@ class SaasApi(http.Controller):
         if not partner:
             return err(_("Please sign in."), 'auth_required')
         instance = request.env['saas.instance'].sudo().browse(instance_id)
-        if not instance.exists() or instance.partner_id != partner:
+        if not instance.exists() or not self._can_manage_instance(instance):
             return err(_("Workspace not found."), 'not_found')
         try:
             invoice = instance.action_purchase_storage_block(int(qty or 1))
@@ -1567,7 +1579,7 @@ class SaasApi(http.Controller):
         if not partner:
             return err(_("Please sign in."), 'auth_required')
         instance = request.env['saas.instance'].sudo().browse(instance_id)
-        if not instance.exists() or instance.partner_id != partner:
+        if not instance.exists() or not self._can_manage_instance(instance):
             return err(_("Workspace not found."), 'not_found')
         try:
             instance.action_release_storage_block(int(qty or 1))
@@ -1636,7 +1648,7 @@ class SaasApi(http.Controller):
         if not partner:
             return err(_("Please sign in."), 'auth_required')
         instance = request.env['saas.instance'].sudo().browse(instance_id)
-        if not instance.exists() or instance.partner_id != partner:
+        if not instance.exists() or not self._can_manage_instance(instance):
             return err(_("Project not found."), 'not_found')
         prod = instance if instance.environment == 'production' \
             else instance.parent_id
@@ -1665,7 +1677,7 @@ class SaasApi(http.Controller):
         if not partner:
             return err(_("Please sign in."), 'auth_required')
         target = request.env['saas.instance'].sudo().browse(instance_id)
-        if not target.exists() or target.partner_id != partner:
+        if not target.exists() or not self._can_manage_instance(target):
             return err(_("Project not found."), 'not_found')
         if target.environment not in ('staging', 'development'):
             return err(_("Databases can only be copied onto a Staging or "
@@ -1675,7 +1687,7 @@ class SaasApi(http.Controller):
         except (TypeError, ValueError):
             return err(_("Invalid source server."), 'invalid')
         source = request.env['saas.instance'].sudo().browse(source_id)
-        if not source.exists() or source.partner_id != partner:
+        if not source.exists() or not self._can_manage_instance(source):
             return err(_("Source server not found."), 'not_found')
         if not isinstance(db_names, list) or not db_names:
             return err(_("Pick at least one database to copy."), 'invalid')
@@ -1698,7 +1710,7 @@ class SaasApi(http.Controller):
         if not partner:
             return None, err(_("Please sign in."), 'auth_required')
         instance = request.env['saas.instance'].sudo().browse(instance_id)
-        if not instance.exists() or instance.partner_id != partner:
+        if not instance.exists() or not self._can_manage_instance(instance):
             return None, err(_("Project not found."), 'not_found')
         prod = instance if instance.environment == 'production' \
             else instance.parent_id
@@ -1748,9 +1760,12 @@ class SaasApi(http.Controller):
         partner = self._partner()
         if not partner:
             return err(_("Please sign in."), 'auth_required')
+        prod, error = self._project_anchor(instance_id)
+        if error:
+            return error
         child = request.env['saas.instance'].sudo().browse(child_id)
-        if not child.exists() or child.partner_id != partner \
-                or child.environment == 'production':
+        if not child.exists() or not self._can_manage_instance(child) \
+                or child.environment == 'production' or child.parent_id != prod:
             return err(_("Environment not found."), 'not_found')
         try:
             child.action_delete_environment(delete_branch=bool(delete_branch))
@@ -1770,7 +1785,7 @@ class SaasApi(http.Controller):
         target = Inst.browse(int(target_id or 0))
         source = Inst.browse(int(source_id or 0))
         if not target.exists() or not source.exists() \
-                or target.partner_id != partner or source.partner_id != partner:
+                or not self._can_manage_instance(target) or not self._can_manage_instance(source):
             return err(_("Environment not found."), 'not_found')
         try:
             result = target.action_merge_environment(source.id)
@@ -1835,7 +1850,7 @@ class SaasApi(http.Controller):
         if not partner:
             return err(_("Please sign in."), 'auth_required')
         instance = request.env['saas.instance'].sudo().browse(instance_id)
-        if not instance.exists() or instance.partner_id != partner:
+        if not instance.exists() or not self._can_manage_instance(instance):
             return err(_("Instance not found."), 'not_found')
         vals = {}
         if subscription is not None:

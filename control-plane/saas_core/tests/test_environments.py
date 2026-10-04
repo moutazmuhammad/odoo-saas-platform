@@ -1,4 +1,7 @@
 from datetime import date, timedelta
+from unittest.mock import Mock, patch
+
+import requests
 
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests.common import TransactionCase, tagged
@@ -267,3 +270,39 @@ class TestEnvironments(TransactionCase):
         child = self._mk_child(prod)
         with self.assertRaisesRegex(UserError, 'valid database names'):
             child.hosting_db_copy_from(prod, [{}])
+
+
+    def _branch_delete_repo(self):
+        prod = self._mk_prod('branch-delete-root')
+        child = self._mk_child(prod)
+        return self.env['saas.instance.repo'].sudo().create({
+            'instance_id': child.id, 'repo_url': 'https://github.com/test/project.git',
+            'branch': 'stage',
+        })
+
+    def _delete_branch_responses(self, ref_status, repo_status=200):
+        response = Mock(status_code=422)
+        response.raise_for_status.side_effect = requests.HTTPError('422')
+        response.json.return_value = {'message': 'Reference does not exist'}
+        return response, [Mock(status_code=ref_status), Mock(status_code=repo_status)]
+
+    def test_delete_missing_github_branch_422_succeeds(self):
+        repo = self._branch_delete_repo()
+        response, reads = self._delete_branch_responses(404)
+        with patch.object(type(repo), '_branch_provider_context', return_value=(
+                'github', 'https://api.github.com', 'test', 'project', 'test-token')), \
+                patch('odoo.addons.saas_core.models.saas_instance_repo.http_requests.delete', return_value=response), \
+                patch('odoo.addons.saas_core.models.saas_instance_repo.http_requests.get', side_effect=reads) as get:
+            self.assertTrue(repo._delete_branch_on_provider('stage'))
+            self.assertEqual(get.call_count, 2)
+
+    def test_delete_github_branch_422_does_not_hide_existing_or_inaccessible(self):
+        repo = self._branch_delete_repo()
+        for reference_status, repository_status in [(200, 200), (404, 403), (404, 404)]:
+            response, reads = self._delete_branch_responses(reference_status, repository_status)
+            with patch.object(type(repo), '_branch_provider_context', return_value=(
+                    'github', 'https://api.github.com', 'test', 'project', 'test-token')), \
+                    patch('odoo.addons.saas_core.models.saas_instance_repo.http_requests.delete', return_value=response), \
+                    patch('odoo.addons.saas_core.models.saas_instance_repo.http_requests.get', side_effect=reads):
+                with self.assertRaisesRegex(UserError, 'uncheck'):
+                    repo._delete_branch_on_provider('stage')

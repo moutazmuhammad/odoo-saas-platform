@@ -834,11 +834,36 @@ class SaasInstanceRepo(models.Model):
                     timeout=15)
             else:
                 return False
+            if provider == 'github' and resp.status_code == 422:
+                # GitHub can report an already-deleted reference as 422.
+                # Confirm absence AND repository access, since a 404 can
+                # also hide a private repository from an unauthorized token.
+                reference = http_requests.get(
+                    '%s/repos/%s/%s/git/ref/heads/%s' % (
+                        base, owner, repo, branch),
+                    headers={'Authorization': 'token %s' % token,
+                             'Accept': 'application/vnd.github+json'},
+                    timeout=15)
+                if reference.status_code == 404:
+                    repository = http_requests.get(
+                        '%s/repos/%s/%s' % (base, owner, repo),
+                        headers={'Authorization': 'token %s' % token,
+                                 'Accept': 'application/vnd.github+json'},
+                        timeout=15)
+                    if repository.status_code == 200:
+                        _logger.info("Branch %s already absent on %s/%s", branch, owner, repo)
+                        return True
             if resp.status_code not in (404, 410):  # already gone is fine
                 resp.raise_for_status()
         except http_requests.HTTPError as e:
+            try:
+                detail = resp.json().get('message') or str(e)
+            except (ValueError, AttributeError):
+                detail = str(e)
             raise UserError(_(
-                "Failed to delete branch '%s' on %s: %s") % (branch, provider, e))
+                "Couldn't delete branch '%s' on %s: %s. "
+                "To remove only the environment, uncheck 'Also delete the Git branch'.")
+                % (branch, provider, detail))
         _logger.info("Deleted branch %s on %s/%s", branch, owner, repo)
         return True
 

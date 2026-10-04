@@ -4,9 +4,7 @@
 
 set -e
 
-VERSIONS="14.0 15.0 16.0 17.0 18.0 19.0"
-# Add 19.0 when the official image is available:
-# VERSIONS="$VERSIONS 19.0"
+VERSIONS="14.0 15.0 16.0 17.0 18.0 19.0 20.0"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 

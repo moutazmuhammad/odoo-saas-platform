@@ -2161,7 +2161,10 @@ finally:
         self._ensure_hosting_for_db_ops()
         prefix = self._hosting_db_prefix()
         script = (
-            "from odoo.service.db import list_dbs\n"
+            "try:\n"
+            "    from odoo.service.db import list_dbs\n"
+            "except ImportError:\n"
+            "    from odoo.modules.db import list_dbs\n"
             "from odoo.sql_db import db_connect\n"
             "prefix = os.environ.get('SAAS_DB_PREFIX', '')\n"
             "names = [d for d in list_dbs(force=True) if d.startswith(prefix)]\n"

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <record id="saas_odoo_version_20" model="saas.odoo.version">
+        <field name="name">20.0</field>
+        <field name="docker_image">docker.io/library/odoo</field>
+        <field name="docker_image_tag">20.0</field>
+        <field name="is_hosting_version">True</field>
+        <field name="nginx_template">new</field>
+    </record>
+</odoo>

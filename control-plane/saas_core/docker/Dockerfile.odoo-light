@@ -3,7 +3,7 @@
 # Usage:
 #   docker build --build-arg ODOO_VERSION=18.0 -t odoo-light:18.0 .
 #
-# Supports Odoo 14.0 through 18.0 (all official images)
+# Supports Odoo 14.0 through 20.0 (all official images)
 # The Odoo source is mounted read-only at /opt/odoo from the host:
 #   /opt/odoo-source/<version> -> /opt/odoo:ro
 #

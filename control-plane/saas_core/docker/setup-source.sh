@@ -8,9 +8,7 @@
 set -e
 
 BASE_DIR="/opt/odoo-source"
-VERSIONS="14.0 15.0 16.0 17.0 18.0 19.0"
-# Add 19.0 when available:
-# VERSIONS="$VERSIONS 19.0"
+VERSIONS="14.0 15.0 16.0 17.0 18.0 19.0 20.0"
 
 REPO="https://github.com/odoo/odoo.git"
 

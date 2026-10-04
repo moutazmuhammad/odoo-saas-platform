@@ -90,7 +90,7 @@ func main() {
 	flag.StringVar(&ingressClassName, "ingress-class-name", "", "IngressClassName used when --networking-provider=ingress.")
 	flag.StringVar(&backupToolImage, "backup-tool-image", "", "Overrides the default backup CronJob image.")
 	flag.StringVar(&restoreToolImage, "restore-tool-image", "", "Overrides the default restore-from-backup Job image.")
-	flag.StringVar(&supportedVersionsCSV, "supported-odoo-versions", "17.0,18.0,19.0",
+	flag.StringVar(&supportedVersionsCSV, "supported-odoo-versions", "17.0,18.0,19.0,20.0",
 		"Comma-separated list of Odoo versions instances may request. Empty disables the check.")
 	flag.BoolVar(&allowMutableTags, "allow-mutable-tags", false,
 		"Allow mutable image tags such as \"latest\" (development clusters only).")

@@ -2,6 +2,7 @@ package resources
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	networkingv1 "k8s.io/api/networking/v1"
@@ -9,12 +10,15 @@ import (
 )
 
 func TestRealtimeRoutingAcrossOdooVersionsAndWorkerModes(t *testing.T) {
-	for _, version := range []string{"14.0", "15.0", "16.0", "17.0", "18.0", "19.0"} {
+	for _, version := range []string{"13.0", "14.0", "15.0", "16.0", "17.0", "18.0", "19.0", "20.0"} {
 		for _, workers := range []int32{0, 2} {
 			t.Run(fmt.Sprintf("%s/workers=%d", version, workers), func(t *testing.T) {
 				instance := testInstance()
 				instance.Spec.Version = version
 				instance.Spec.Workers.Count = workers
+				if !strings.Contains(odooConf(instance), "http_interface = 0.0.0.0\n") {
+					t.Fatal("container HTTP must be reachable by the proxy, including Odoo 20's localhost default")
+				}
 				realtime := int32(8069)
 				if workers > 0 {
 					realtime = 8072

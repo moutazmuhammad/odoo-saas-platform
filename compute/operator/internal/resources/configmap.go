@@ -36,6 +36,7 @@ db_name = __DB_NAME__
 dbfilter = ^__DB_NAME__$
 list_db = False
 proxy_mode = True
+http_interface = 0.0.0.0
 without_demo = all
 data_dir = /var/lib/odoo
 `

@@ -28,10 +28,14 @@ from urllib.parse import urlencode, urlparse
 import odoo
 from odoo import http
 from odoo.http import request
-from odoo.service import db as db_service
+try:
+    from odoo.service import db as db_service
+except ImportError:  # Odoo 20 moved database management out of RPC services.
+    from odoo.modules import db as db_service
 from odoo.tools import config
 
 from odoo.addons.web.controllers.database import Database
+from odoo.addons.web.controllers import database as web_database
 
 _logger = logging.getLogger(__name__)
 
@@ -40,7 +44,8 @@ COOKIE_PATH = '/web/database'
 ACCESS_SECONDS = 3600
 
 _bypass = threading.local()
-_check_super = db_service.check_super
+_password_check_name = 'check_super' if hasattr(db_service, 'check_super') else 'verify_admin_password'
+_check_super = getattr(db_service, _password_check_name)
 
 
 def check_super(passwd):
@@ -51,7 +56,14 @@ def check_super(passwd):
 
 # dispatch() and the web controllers look check_super up on the module at
 # call time, so replacing the module attribute covers every path.
-db_service.check_super = check_super
+setattr(db_service, _password_check_name, check_super)
+
+
+def _db_list():
+    if hasattr(http, 'db_list'):
+        return http.db_list()
+    from odoo.http.router import db_list
+    return db_list()
 
 
 def _prefix():
@@ -183,11 +195,12 @@ class SaasTenantDatabase(Database):
         return response
 
     def _render_template(self, **d):
-        html = super()._render_template(**d)
+        render = getattr(super(), '_render_template', None) or web_database._render_template
+        html = render(**d)
         if d.get('manage', True) and _allowed():
             script = _HIDE_MASTER_PASSWORD % json.dumps(escape(_prefix()))
             limit = int(config.get('saas_dbm_max_databases') or 0)
-            if limit and len([name for name in http.db_list() if _own(name)]) >= limit:
+            if limit and len([name for name in _db_list() if _own(name)]) >= limit:
                 script += """<style>
 [data-bs-target=".o_database_create"],[data-bs-target=".o_database_duplicate"],[data-bs-target=".o_database_restore"]{display:none!important}
 </style><script>document.addEventListener('DOMContentLoaded', function () {
@@ -205,6 +218,12 @@ var list = document.querySelector('.o_database_list'); if (list) { list.prepend(
     def manager(self, **kw):
         if not _allowed():
             return request.make_response(_PORTAL_ONLY % '')
+        if not hasattr(Database, '_render_template'):
+            # Odoo 20 renders through a module function rather than an
+            # overridable method; keep our access controls and template edits.
+            if request.db:
+                request.env.cr.close()
+            return self._render_template()
         return super().manager(**kw)
 
     @http.route('/web/database/selector', type='http', auth='none')
@@ -230,7 +249,7 @@ h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justif
     def _public_databases(self):
         # db_list applies Odoo's hostname filter; the prefix additionally
         # prevents choosing another tenant's database on a shared server.
-        return sorted(name for name in http.db_list()
+        return sorted(name for name in _db_list()
                       if not _prefix() or _own(name))
 
     @http.route('/saas/db/select', type='http', auth='none', methods=['GET'])
@@ -238,7 +257,11 @@ h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justif
         if not db or db not in self._public_databases():
             return request.redirect('/web/database/selector')
         if request.session.db != db:
-            request.session.logout(keep_db=False)
+            if hasattr(request.session, 'logout'):
+                request.session.logout(keep_db=False)
+            else:
+                from odoo.http.session import logout
+                logout(request.session, keep_db=False)
             request.session.db = db
         # Selecting a workspace opens the public website, which can also
         # serve anonymous visitors, rather than forcing a backend login.
@@ -296,6 +319,17 @@ h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justif
         if not _own(name):
             return self._refuse("Database %r is not yours." % name)
         return self._guarded(lambda: super(SaasTenantDatabase, self).drop(master_pwd, name))
+
+    @http.route('/web/database/rename', type='http', auth='none', methods=['POST'], csrf=False)
+    def rename(self, master_pwd, name, new_name):
+        # Odoo 20 added this route. Never inherit an unguarded operation
+        # that could rename another database or remove our tenant prefix.
+        if not _own(name):
+            return self._refuse("Database %r is not yours." % name)
+        rename = getattr(super(), 'rename', None)
+        if not rename:
+            return self._refuse('Database renaming is unavailable in this Odoo version.')
+        return self._guarded(lambda: rename(master_pwd, name, _with_prefix(new_name)))
 
     @http.route('/web/database/backup', type='http', auth='none', methods=['POST'], csrf=False)
     def backup(self, master_pwd, name, backup_format='zip', **kw):

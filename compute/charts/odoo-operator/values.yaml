@@ -2,7 +2,7 @@
 
 image:
   repository: docker.io/moutazmuhammad/odoo-saas-operator
-  tag: "0.1.23"
+  tag: "0.1.24"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -71,6 +71,7 @@ supportedOdooVersions:
   - "17.0"
   - "18.0"
   - "19.0"
+  - "20.0"
 
 # Allows spec.image.tag values such as "latest". Leave false in production;
 # the platform's image pipeline should always produce immutable tags.

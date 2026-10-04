@@ -125,6 +125,74 @@ class PublicDatabaseSelection(unittest.TestCase):
             self.assertEqual(self.controller._guarded(operation), 'done')
 
 
+class Odoo20DatabaseCompatibility(unittest.TestCase):
+    def setUp(self):
+        config.clear()
+        config['saas_dbm_prefix'] = 'tenant_'
+        self.password_check = Mock(side_effect=PermissionError('master password required'))
+        self.router_list = Mock(return_value=['tenant_shop', 'tenant_blog', 'other_secret'])
+        self.logout = Mock()
+        self.render = Mock(return_value='<html><head></head><body>manager</body></html>')
+        self.rename = Mock(return_value='renamed')
+        base = type('Database20', (), {'rename': lambda _self, *args: self.rename(*args)})
+        request = Mock()
+        request.db = None
+        request.session = SimpleNamespace(db=None)
+        request.redirect.side_effect = lambda url: url
+        request.make_response.side_effect = lambda html, **kw: html
+        modules = {key: value for key, value in stubs.items() if key != 'odoo.service.db'}
+        modules.update({
+            'odoo.http': module('odoo.http', route=lambda *a, **kw: lambda fn: fn, request=request),
+            'odoo.modules': module('odoo.modules'),
+            'odoo.modules.db': module('odoo.modules.db', verify_admin_password=self.password_check),
+            'odoo.http.router': module('odoo.http.router', db_list=self.router_list),
+            'odoo.http.session': module('odoo.http.session', logout=self.logout),
+            'odoo.addons.web.controllers.database': module('odoo.addons.web.controllers.database',
+                                                          Database=base, _render_template=self.render),
+        })
+        modules['odoo'] = module('odoo', http=modules['odoo.http'])
+        self.patch = patch.dict(sys.modules, modules)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        spec = importlib.util.spec_from_file_location('tenant_dbm_20_test', path)
+        self.addon = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.addon)
+        self.controller = self.addon.SaasTenantDatabase()
+
+    def test_20_database_password_checks_only_bypass_inside_guard(self):
+        with self.assertRaises(PermissionError):
+            self.addon.db_service.verify_admin_password('incorrect')
+        with self.addon._Bypass():
+            self.addon.db_service.verify_admin_password('saas-portal')
+        with self.assertRaises(PermissionError):
+            self.addon.db_service.verify_admin_password('incorrect')
+
+    def test_20_router_and_session_selection_preserve_tenant_scope(self):
+        self.assertEqual(self.controller._public_databases(), ['tenant_blog', 'tenant_shop'])
+        self.assertEqual(self.controller.select_database('tenant_shop'), '/')
+        self.logout.assert_called_once_with(self.addon.request.session, keep_db=False)
+        self.assertEqual(self.addon.request.session.db, 'tenant_shop')
+
+    def test_20_module_template_retains_portal_controls(self):
+        with patch.object(self.addon, '_allowed', return_value=True):
+            html = self.controller.manager()
+        self.render.assert_called_once()
+        self.assertIn("input[name=\"master_pwd\"]", html)
+        self.assertIn('Saved as ', html)
+
+    def test_20_rename_cannot_escape_access_and_prefix_controls(self):
+        with patch.object(self.controller, '_refuse', return_value='refused'):
+            self.assertEqual(self.controller.rename('unused', 'other_secret', 'new'), 'refused')
+            self.rename.assert_not_called()
+        with patch.object(self.addon, '_allowed', return_value=False), \
+                patch.object(self.controller, '_render_template', return_value='locked'):
+            self.assertEqual(self.controller.rename('unused', 'tenant_shop', 'new'), 'locked')
+            self.rename.assert_not_called()
+        with patch.object(self.addon, '_allowed', return_value=True), \
+                patch.object(self.addon, '_same_origin', return_value=True):
+            self.assertEqual(self.controller.rename('unused', 'tenant_shop', 'new'), 'renamed')
+            self.rename.assert_called_once_with('unused', 'tenant_shop', 'tenant_new')
+
 
 if __name__ == '__main__':
     unittest.main()

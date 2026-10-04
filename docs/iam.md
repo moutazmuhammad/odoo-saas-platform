@@ -39,6 +39,10 @@ Deleting a teammate profile revokes the customer's direct roles, group membershi
 
 The migration identifies accounts created by their own customer owner in the previous profile flow, so those users gain the same management controls. It does not adopt existing independent logins. This flow needs no email or SMS provider.
 
+Managed logins remain teammates after changing their password: they cannot buy or create independent projects, access customer billing, or create their own teammate accounts. Their project list and actions depend on explicit grants, including for any historical project accidentally linked to their partner. Creating an authorized staging/development environment within an existing project remains possible with the Environment Creator role and reserved capacity.
+
+New teammate profiles and portal signups reject phones already used by another contact or teammate profile. Checks cover phone/mobile, inactive records, formatting variants, and national formats with a known country; a transaction lock serializes claims for the same normalized number. This does not verify phone ownership or change existing duplicate contact data. Frontend controls deny access when permission metadata is missing.
+
 ## Invitations and teams
 
 Invitations expire after seven days and can be accepted only by an active account whose login matches the invited email. The database stores a hash of the invitation token. The owner can copy the invitation link; email delivery uses the existing Odoo outgoing-mail queue and requires working mail configuration. Removing all pending grants invalidates an invitation's access. An accepted invitation establishes the teammate relationship for subsequent grants and group membership.

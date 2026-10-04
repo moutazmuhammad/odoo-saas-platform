@@ -48,6 +48,7 @@ class IamMember(models.Model):
 
     @api.model
     def _create_profile(self, name, email, phone=None):
+        self.env['saas.iam']._require_customer_owner()
         owner = self.env.user.partner_id
         if not isinstance(name, str) or not name.strip() or len(name) > 100:
             raise ValidationError(_('Enter the teammate’s name.'))
@@ -57,6 +58,7 @@ class IamMember(models.Model):
         email = email.strip().lower()
         User = self.env['res.users'].sudo().with_context(active_test=False, no_reset_password=True)
         user = User.search([('login', '=ilike', email)], limit=1)
+        self._check_unique_phone(phone, user.partner_id if user else None)
         password = None
         if user:
             self.env.cr.execute('SELECT id FROM res_users WHERE id=%s FOR UPDATE', [user.id])
@@ -103,7 +105,41 @@ class IamMember(models.Model):
             raise ValidationError(_('Enter a phone number with its country code, for example +201012345678.'))
         return phone
 
+    @api.model
+    def _check_unique_phone(self, phone, partner=None):
+        if not phone:
+            return
+        from odoo.addons.phone_validation.tools.phone_validation import phone_format
+        country = (partner and partner.country_id) or self.env.user.partner_id.country_id or self.env.company.country_id
+        def canonical(value, contact_country=None):
+            value = re.sub(r'[^0-9+]', '', value or '')
+            if value.startswith('00'):
+                value = '+' + value[2:]
+            c = contact_country or country
+            formatted = phone_format(value, c.code, c.phone_code, force_format='E164', raise_exception=False) if c else value
+            if formatted and formatted.startswith('+'):
+                return formatted
+            if c and c.phone_code and value:
+                prefix = str(c.phone_code)
+                if value.startswith(prefix):
+                    return '+' + value
+                national = value if c.code == 'IT' else value.lstrip('0')
+                return '+' + prefix + national
+            return value
+        key = canonical(phone)
+        self.env.cr.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', ['saas.phone:' + key])
+        contacts = self.env['res.partner'].sudo().with_context(active_test=False).search(['|', ('phone', '!=', False), ('mobile', '!=', False)])
+        for contact in contacts:
+            if partner and contact.id == partner.id:
+                continue
+            if any(value and canonical(value, contact.country_id) == key for value in (contact.phone, contact.mobile)):
+                raise ValidationError(_('This phone number is already in use.'))
+        profiles = self.sudo().with_context(active_test=False).search([('phone', '!=', False)])
+        if any((not partner or m.user_id.partner_id != partner) and canonical(m.phone, m.user_id.partner_id.country_id) == key for m in profiles):
+            raise ValidationError(_('This phone number is already in use.'))
+
     def _owner_profile(self):
+        self.env['saas.iam']._require_customer_owner()
         if len(self) != 1:
             raise AccessError(_('Teammate profile not found.'))
         # Use the same lock order for create, reset, delete and password changes.
@@ -157,6 +193,14 @@ class IamUser(models.Model):
     iam_initial_password = fields.Boolean(default=False, groups='base.group_system')
     iam_managed_owner_id = fields.Many2one('res.partner', groups='base.group_system', ondelete='restrict', copy=False)
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        users = super().create(vals_list)
+        for user in users.filtered('share'):
+            for phone in (user.partner_id.phone, user.partner_id.mobile):
+                self.env['saas.iam.member']._check_unique_phone(phone, user.partner_id)
+        return users
+
     @api.model
     def _change_initial_password(self, password):
         user = self.env.user
@@ -186,6 +230,14 @@ class IamPasswordGate(models.AbstractModel):
         path = request.httprequest.path
         allowed = {'/saas/api/v1/me', '/saas/api/v1/auth/login', '/saas/api/v1/auth/logout',
                    '/saas/api/v1/iam/password/change', '/saas/api/v1/iam/verification/finish'}
+        managed = bool(request.env.uid and request.env['saas.iam']._is_managed_user())
+        customer_paths = ('/hosting/order', '/services/order', '/services/custom-order',
+                          '/saas/api/v1/hosting/order', '/saas/api/v1/wallet',
+                          '/saas/api/v1/invoices', '/saas/api/v1/billing', '/my/billing')
+        if managed and any(path == p or path.startswith(p + '/') for p in customer_paths):
+            if endpoint.routing.get('type') == 'json':
+                return {'ok': False, 'error': _('Only the customer owner can create projects or manage billing.'), 'code': 'access_denied'}
+            raise AccessError(_('Only the customer owner can create projects or manage billing.'))
         pending = bool(request.env.uid and request.env.user.sudo().iam_initial_password)
         if pending and (path == '/my' or path.startswith('/my/') or path in ('/hosting/order', '/services/order')) and path not in ('/my/change-password', '/my/verify-profile'):
             return request.redirect('/my/change-password')

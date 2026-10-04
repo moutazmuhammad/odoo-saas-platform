@@ -17,6 +17,65 @@ class TestIamMembers(IamFixture, TransactionCase):
         result = self.env['saas.iam.member'].with_user(self.owner)._create_profile('New Teammate', 'iam-new-member@example.com')
         return self.env['saas.iam.member'].sudo().browse(result['id']), result
 
+    def test_phone_uniqueness_normalizes_mobile_and_inactive_contacts(self):
+        egypt = self.env.ref('base.eg')
+        self.owner.partner_id.country_id = egypt
+        self.other.partner_id.write({'country_id': egypt.id, 'mobile': '010 1234 5678'})
+        Member = self.env['saas.iam.member'].with_user(self.owner)
+        with self.assertRaises(ValidationError):
+            Member._create_profile('Duplicate Phone', 'duplicate-phone@example.com', '+20 (10) 1234-5678')
+        self.other.active = False
+        self.other.partner_id.write({'mobile': False, 'phone': '00201012345678', 'active': False})
+        with self.assertRaises(ValidationError):
+            Member._create_profile('Duplicate Phone', 'duplicate-phone@example.com', '+201012345678')
+
+    def test_normal_portal_signup_cannot_reuse_teammate_phone(self):
+        self.env['saas.iam.member'].with_user(self.owner)._create_profile('Phone Owner', 'phone-owner@example.com', '+201012345678')
+        with self.assertRaises(ValidationError), self.env.cr.savepoint():
+            self.env['res.users'].sudo().with_context(no_reset_password=True).create({
+                'name': 'Phone Duplicate', 'login': 'phone-duplicate@example.com',
+                'phone': '+20 10 1234 5678',
+                'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
+            })
+
+    def test_managed_user_cannot_become_customer_owner_after_password_change(self):
+        member, _ = self._new_profile()
+        user = member.user_id
+        self.env['res.users'].with_user(user)._change_initial_password('MyOwnStrongPassword123!')
+        self.assertTrue(self.iam._is_managed_user(user))
+        with self.assertRaises(AccessError):
+            self.project.with_user(user).sudo().copy({'subdomain': 'iamunauthorized', 'partner_id': user.partner_id.id})
+        with self.assertRaises(AccessError):
+            self.env['saas.iam.member'].with_user(user)._create_profile('Nested', 'nested@example.com')
+        # Legacy projects created through the old checkout bypass never imply ownership.
+        legacy = self.project.copy({'subdomain': 'iamlegacy', 'partner_id': user.partner_id.id})
+        self.assertFalse(self.iam._is_owner(legacy, user))
+        self.assertFalse(self.iam._allowed(legacy, 'db.delete', user))
+        self.assertFalse(self.iam._allowed(legacy, 'billing.manage', user))
+        self.assertEqual(self.iam.with_user(user)._project_domain(), [('id', 'in', [])])
+
+    def test_managed_roles_enforce_action_and_environment_boundaries(self):
+        member, _ = self._new_profile()
+        user = member.user_id
+        self.env['res.users'].with_user(user)._change_initial_password('MyOwnStrongPassword123!')
+        self._grant('viewer', 'staging', user=user)
+        grant = self._grant('sql', 'staging', user=user)
+        self.assertTrue(self.iam._allowed(self.stage, 'sql.execute', user))
+        self.assertFalse(self.iam._allowed(self.project, 'sql.execute', user))
+        self.assertFalse(self.iam._allowed(self.dev, 'sql.execute', user))
+        self.assertFalse(self.iam._allowed(self.stage, 'db.delete', user))
+        with self.assertRaises(AccessError):
+            self.project.with_user(user).sudo().hosting_sql_query('example', 'SELECT 1')
+        with self.assertRaises(AccessError):
+            self.stage.with_user(user).sudo().hosting_db_drop_async('example')
+        with self.assertRaises(AccessError):
+            self.stage.with_user(user).sudo().copy({'subdomain': 'iamdeniedchild'})
+        self._grant('environment_creator', 'staging', user=user)
+        child = self.stage.with_user(user).sudo().copy({'subdomain': 'iamallowedchild', 'parent_id': self.project.id, 'environment': 'staging', 'partner_id': self.owner.partner_id.id})
+        self.assertEqual(child.parent_id, self.project)
+        grant.active = False
+        self.assertFalse(self.iam._allowed(self.stage, 'sql.execute', user))
+
     def test_first_login_only_requires_own_password_and_blocks_temporary_password(self):
         member, result = self._new_profile()
         self.assertTrue(member.user_id.share)
@@ -175,6 +234,13 @@ class TestIamMemberApi(IamFixture, HttpCase):
         self.assertTrue(completed['ok'], completed)
         self.assertFalse(self._rpc('/saas/api/v1/me')['data']['must_change_password'])
         self.assertTrue(self._rpc('/saas/api/v1/instances/%s/status' % self.project.id)['ok'])
+        me = self._rpc('/saas/api/v1/me')['data']
+        self.assertTrue(me['is_managed_teammate'])
+        self.assertFalse(me['can_create_projects'])
+        for route in ('/saas/api/v1/hosting/order', '/saas/api/v1/wallet', '/saas/api/v1/invoices', '/saas/api/v1/iam/members', '/saas/api/v1/iam/groups'):
+            denied = self._rpc(route)
+            self.assertFalse(denied['ok'], denied)
+            self.assertEqual(denied['code'], 'access_denied')
         old_session = self.opener.cookies.copy()
         self.authenticate(self.other.login, 'iam-test-pass')
         self.assertFalse(self._rpc('/saas/api/v1/iam/members', member_id=profile.id, reset_password=True)['ok'])

@@ -742,7 +742,7 @@ class SaasApi(http.Controller):
             ('parent_id', '=', False),
         ]
         if not self._is_staff():
-            inst_domain += (['|', ('partner_id', '=', partner.id), ('id', 'in', request.env['saas.iam']._visible_project_ids())] if 'saas.iam' in request.env else [('partner_id', '=', partner.id)])
+            inst_domain += (request.env['saas.iam']._project_domain() if 'saas.iam' in request.env else [('partner_id', '=', partner.id)])
         instances = Instance.search(inst_domain, order='create_date desc')
         invoices = self._partner_invoices(partner)
         open_invoices = [i for i in invoices if i.payment_state not in ('paid', 'in_payment')
@@ -775,7 +775,7 @@ class SaasApi(http.Controller):
             ('parent_id', '=', False),
         ]
         if not self._is_staff():
-            domain += (['|', ('partner_id', '=', partner.id), ('id', 'in', request.env['saas.iam']._visible_project_ids())] if 'saas.iam' in request.env else [('partner_id', '=', partner.id)])
+            domain += (request.env['saas.iam']._project_domain() if 'saas.iam' in request.env else [('partner_id', '=', partner.id)])
         if itype == 'services':
             domain.append(('is_hosting', '=', False))
         elif itype == 'hosting':

@@ -18,6 +18,8 @@ class IamApi(SaasApi):
     def _serialize_user(self, partner):
         data = super()._serialize_user(partner)
         data['must_change_password'] = bool(request.env.user.sudo().iam_initial_password)
+        data['is_managed_teammate'] = request.env['saas.iam']._is_managed_user()
+        data['can_create_projects'] = not data['is_managed_teammate']
         return data
 
     @http.route('/saas/api/v1/iam/members', type='json', auth='user')
@@ -121,8 +123,7 @@ class IamApi(SaasApi):
         iam = request.env['saas.iam']
         domain = [('parent_id', '=', False), ('state', 'in', _LIST_STATES)]
         if not iam._is_platform_admin(request.env.user):
-            domain += ['|', ('partner_id', '=', request.env.user.partner_id.id),
-                       ('id', 'in', iam._visible_project_ids())]
+            domain += iam._project_domain()
         accessible = request.env['saas.instance'].sudo().search(domain)
         projects = accessible
         projects = projects.filtered(lambda p: any(iam._allowed(p, 'iam.manage', environment=e) for e in ENVIRONMENTS))
@@ -146,7 +147,7 @@ class IamApi(SaasApi):
         return ok({
             'current_customer_id': request.env.user.partner_id.id,
             'can_manage_groups': bool(projects.filtered(lambda p: p.partner_id == request.env.user.partner_id)),
-            'empty_reason': ('no_projects' if not accessible else 'access_not_granted') if not projects else None,
+            'empty_reason': ('no_projects' if not accessible and not iam._is_managed_user() else 'access_not_granted') if not projects else None,
             'roles': [{'code': code, 'name': label, 'permissions': sorted(perms)} for code, (label, perms) in ROLE_DEFINITIONS.items()],
             'projects': [{'id': p.id, 'name': p.project_name or p.subdomain or p.name,
                           'customer_id': p.partner_id.id, 'is_owner': iam._is_owner(p),
@@ -210,6 +211,7 @@ class IamApi(SaasApi):
     @http.route('/saas/api/v1/iam/groups', type='json', auth='user')
     def iam_group(self, name=None, group_id=None, user_ids=None, delete=False):
         def change():
+            request.env['saas.iam']._require_customer_owner()
             owner = request.env.user.partner_id
             Group = request.env['saas.iam.group'].sudo()
             group = Group.browse(int(group_id or 0)).exists()

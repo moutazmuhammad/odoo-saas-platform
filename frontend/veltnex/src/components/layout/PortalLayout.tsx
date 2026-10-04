@@ -209,7 +209,7 @@ export function PortalLayout() {
       )}
 
       {/* GLOBAL / account sections */}
-      {NAV.map((item) => (
+      {NAV.filter(item => !user?.is_managed_teammate || item.to !== "/my/billing").map((item) => (
         NavRow({ item, collapsed, active: pathname.startsWith(item.to) })
       ))}
       <div className="mx-3 my-2 border-t border-border" />

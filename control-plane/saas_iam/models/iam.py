@@ -66,13 +66,25 @@ class IamService(models.AbstractModel):
     def _is_platform_admin(self, user):
         return user.id == SUPERUSER_ID or user.has_group('base.group_system') or user.has_group('saas_core.group_saas_manager')
 
+    def _is_managed_user(self, user=None):
+        user = user or self.env.user
+        return bool(user.sudo().iam_managed_owner_id and not self._is_platform_admin(user))
+
+    def _require_customer_owner(self):
+        if self._is_managed_user():
+            raise AccessError(_('Only the customer owner can create projects or manage billing and teammate accounts.'))
+
+    def _project_domain(self):
+        shared = [('id', 'in', self._visible_project_ids())]
+        return shared if self._is_managed_user() else ['|', ('partner_id', '=', self.env.user.partner_id.id)] + shared
+
     def _is_owner(self, instance, user=None):
         user = user or self.env.user
         if user.id == SUPERUSER_ID:
             return True
         if user.sudo().iam_initial_password:
             return False
-        return bool(user.active and not user._is_public() and (self._is_platform_admin(user) or self._project(instance).partner_id == user.partner_id))
+        return bool(user.active and not user._is_public() and (self._is_platform_admin(user) or (not self._is_managed_user(user) and self._project(instance).partner_id == user.partner_id)))
 
     def _grants(self, project, user=None):
         user = user or self.env.user

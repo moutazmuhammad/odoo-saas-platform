@@ -23,7 +23,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
 const mockedApi = vi.mocked(api, { deep: true });
 
 // Only the fields Databases.tsx actually reads.
-const RUNNING_HOSTING_INSTANCE = { is_hosting: true } as unknown as ApiInstance;
+const RUNNING_HOSTING_INSTANCE = { is_hosting: true, permissions: ["db.view", "db.create", "db.delete", "db.restore", "backup.create", "backup.download"] } as unknown as ApiInstance;
 
 function mockLoaded(overrides: Partial<DbListData> = {}) {
   mockedApi.databases.mockResolvedValue({

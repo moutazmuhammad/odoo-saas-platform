@@ -59,6 +59,20 @@ class IamInstance(models.Model):
         locals()[_method] = _guard_method(_method, _permission)
     del _method, _permission
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        iam = self.env['saas.iam']
+        if iam._is_managed_user():
+            for values in vals_list:
+                parent = self.sudo().browse(values.get('parent_id', 0)).exists()
+                environment = values.get('environment', 'production')
+                if not parent or parent.parent_id or environment not in ('staging', 'development'):
+                    iam._require_customer_owner()
+                iam._require(parent, 'environment.create', environment=environment)
+                if values.get('partner_id') != parent.partner_id.id:
+                    raise AccessError('An environment must belong to its project customer.')
+        return super().create(vals_list)
+
     def write(self, values):
         transferred = self.filtered(lambda i: not i.parent_id and i.partner_id.id != values['partner_id']) if 'partner_id' in values else self.browse()
         result = super().write(values)

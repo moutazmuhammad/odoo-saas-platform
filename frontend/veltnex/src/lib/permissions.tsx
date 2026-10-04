@@ -12,8 +12,8 @@ export function usePermissions(id: number) {
     return () => { cancelled = true; };
   }, [id, context?.id]);
   const effective = context?.id === id ? context.permissions : permissions;
-  return (permission: string) => effective === undefined || effective.includes(permission);
+  return (permission: string) => !!effective?.includes(permission);
 }
 export function hasPermission(permissions: string[] | undefined, permission: string) {
-  return permissions === undefined || permissions.includes(permission);
+  return !!permissions?.includes(permission);
 }

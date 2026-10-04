@@ -55,6 +55,7 @@ function makeEnv(overrides: Partial<EnvChild>): EnvChild {
     state_label: "Running",
     access_token: "tok",
     is_production: true,
+    permissions: ["project.view", "logs.view", "deploy", "instance.operate", "db.view", "sql.execute", "terminal.open", "billing.manage", "environment.delete", "environment.create", "iam.manage"],
     pending_payment: false,
     pending_invoice_id: false,
     ...overrides,

@@ -87,6 +87,8 @@ async function rpc<T = unknown>(
 
 export interface ApiUser {
   must_change_password?: boolean;
+  is_managed_teammate?: boolean;
+  can_create_projects?: boolean;
   id: number;
   name: string;
   email: string;

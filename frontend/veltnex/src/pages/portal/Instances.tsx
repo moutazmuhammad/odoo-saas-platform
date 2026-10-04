@@ -22,6 +22,7 @@ const projectLink = (i: ApiInstance) =>
 export default function Instances() {
   const { instances, loading, error } = useInstances();
   const { user } = useAuth();
+  const canCreate = user?.can_create_projects !== false;
   const isStaff = !!(user?.is_staff || user?.is_internal);
   const [searchParams, setSearchParams] = useSearchParams();
   const customerId = searchParams.get("customer") || "";
@@ -79,7 +80,7 @@ export default function Instances() {
       <PageHeader
         title="Projects"
         subtitle={isStaff ? "Manage and monitor projects across all customers." : "Manage and monitor all your Odoo projects."}
-        actions={
+        actions={canCreate &&
           <Button onClick={() => navigate(createTo)}>
             <Plus className="size-4" />
             Create project
@@ -135,9 +136,9 @@ export default function Instances() {
             description={
               query || onlyRunning || (isStaff && customerId)
                 ? "Try a different search term or filter."
-                : "Create your first project to deploy an Odoo environment."
+                : canCreate ? "Create your first project to deploy an Odoo environment." : "Ask your customer owner to grant you access to a project."
             }
-            action={!query && !onlyRunning && (!isStaff || !customerId) && <Button onClick={() => navigate(createTo)}>Create project</Button>}
+            action={canCreate && !query && !onlyRunning && (!isStaff || !customerId) && <Button onClick={() => navigate(createTo)}>Create project</Button>}
           />
         }
         columns={columns}

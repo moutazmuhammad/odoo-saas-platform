@@ -6,9 +6,9 @@ payload is base64url JSON ``{"h": host, "e": expiry, "n": nonce}``. A
 valid link sets a signed cookie (path /web/database, one hour) during
 which the database manager works without the master password, limited to
 database names starting with ``saas_dbm_prefix``. Without it, the manager
-only shows a pointer to the portal — and so do ``/web/database/selector``
-and ``/web/database/list``, which database-manager mode (``list_db =
-True``) would otherwise expose to anyone.
+only shows a pointer to the portal. Public visitors can select a database
+limited by the hostname filter and tenant prefix, without administration
+controls. The JSON database list still requires a signed manager cookie.
 
 A cookie rather than the Odoo session: creating a database logs the
 browser into it, which resets the session. Every action also checks the
@@ -23,7 +23,7 @@ import logging
 import threading
 import time
 from html import escape
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import odoo
 from odoo import http
@@ -164,7 +164,6 @@ footer{display:flex;align-items:center;gap:8px;margin-top:32px;padding-top:20px;
 <h1>Open Database Manager<br>from your control panel</h1>
 <p>For your security, Database Manager opens through a secure link from your instance's Databases page.</p>
 <div class="steps">Go to <strong>your control panel → your instance → Databases</strong>, then select <strong>Database Manager</strong>.</div>
-<div class="expiry"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Each secure link is valid for one hour.</div>
 <div class="notice" role="alert">%s</div>
 <footer>Powered by <strong>VELTNEX</strong></footer>
 </main></body></html>"""
@@ -200,11 +199,40 @@ class SaasTenantDatabase(Database):
 
     @http.route('/web/database/selector', type='http', auth='none')
     def selector(self, **kw):
-        # With spec.databaseManager, list_db is on and the selector
-        # would otherwise publicly list the tenant's database names.
-        if not _allowed():
-            return request.make_response(_PORTAL_ONLY % '')
-        return super().selector(**kw)
+        databases = self._public_databases()
+        if len(databases) == 1:
+            return request.redirect('/saas/db/select?' + urlencode({'db': databases[0]}))
+        choices = ''.join(
+            '<a href="%s">%s<span aria-hidden="true"> →</span></a>' % (
+                escape('/saas/db/select?' + urlencode({'db': name}), quote=True), escape(name))
+            for name in databases)
+        heading = 'Choose your workspace' if databases else 'This website isn’t ready yet'
+        description = ('Select a workspace to continue to its website.' if databases
+                       else 'Please contact the site owner for help.')
+        html = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>%s</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f8fa;color:#202735;font-family:system-ui,sans-serif}
+main{width:min(440px,calc(100vw - 80px));padding:32px;background:white;border:1px solid #e6e9ee;border-radius:18px}
+h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justify-content:space-between;gap:16px;overflow-wrap:anywhere;margin-top:12px;padding:16px;border:1px solid #e6e9ee;border-radius:10px;color:#364152;text-decoration:none}a:hover,a:focus{background:#f1f4f9;border-color:#8492a6}</style>
+</head><body><main><h1>%s</h1><p>%s</p>%s</main></body></html>""" % (heading, heading, description, choices)
+        return request.make_response(html, headers=[('Cache-Control', 'no-store')])
+
+    def _public_databases(self):
+        # db_list applies Odoo's hostname filter; the prefix additionally
+        # prevents choosing another tenant's database on a shared server.
+        return sorted(name for name in http.db_list()
+                      if not _prefix() or _own(name))
+
+    @http.route('/saas/db/select', type='http', auth='none', methods=['GET'])
+    def select_database(self, db=None, **kw):
+        if not db or db not in self._public_databases():
+            return request.redirect('/web/database/selector')
+        if request.session.db != db:
+            request.session.logout(keep_db=False)
+            request.session.db = db
+        # Selecting a workspace opens the public website, which can also
+        # serve anonymous visitors, rather than forcing a backend login.
+        return request.redirect('/')
 
     # Inherit the upstream route type: Odoo 17/18 use json and 19 uses jsonrpc.
     @http.route()

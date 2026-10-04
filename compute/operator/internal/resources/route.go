@@ -17,7 +17,20 @@ import (
 func HTTPRoute(instance *saasv1alpha1.OdooInstance, gatewayNamespace, gatewayName string) *gatewayv1.HTTPRoute {
 	hostname := gatewayv1.Hostname(instance.Spec.Domain.Hostname)
 	ns := gatewayv1.Namespace(gatewayNamespace)
-	port := gatewayv1.PortNumber(OdooHTTPPort)
+	matchType := gatewayv1.PathMatchPathPrefix
+	var rules []gatewayv1.HTTPRouteRule
+	for _, path := range odooProxyPaths(instance) {
+		port := gatewayv1.PortNumber(path.port)
+		value := path.path
+		rules = append(rules, gatewayv1.HTTPRouteRule{
+			Matches: []gatewayv1.HTTPRouteMatch{{Path: &gatewayv1.HTTPPathMatch{Type: &matchType, Value: &value}}},
+			BackendRefs: []gatewayv1.HTTPBackendRef{{BackendRef: gatewayv1.BackendRef{
+				BackendObjectReference: gatewayv1.BackendObjectReference{
+					Name: gatewayv1.ObjectName(OdooServiceName(instance)), Port: &port,
+				},
+			}}},
+		})
+	}
 
 	return &gatewayv1.HTTPRoute{
 		TypeMeta: metav1.TypeMeta{APIVersion: gatewayv1.GroupVersion.String(), Kind: "HTTPRoute"},
@@ -37,20 +50,7 @@ func HTTPRoute(instance *saasv1alpha1.OdooInstance, gatewayNamespace, gatewayNam
 				},
 			},
 			Hostnames: []gatewayv1.Hostname{hostname},
-			Rules: []gatewayv1.HTTPRouteRule{
-				{
-					BackendRefs: []gatewayv1.HTTPBackendRef{
-						{
-							BackendRef: gatewayv1.BackendRef{
-								BackendObjectReference: gatewayv1.BackendObjectReference{
-									Name: gatewayv1.ObjectName(OdooServiceName(instance)),
-									Port: &port,
-								},
-							},
-						},
-					},
-				},
-			},
+			Rules:     rules,
 		},
 	}
 }
@@ -62,6 +62,15 @@ func HTTPRoute(instance *saasv1alpha1.OdooInstance, gatewayNamespace, gatewayNam
 // carries Ingress-specific annotation conventions.
 func Ingress(instance *saasv1alpha1.OdooInstance, ingressClassName *string) *networkingv1.Ingress {
 	pathType := networkingv1.PathTypePrefix
+	var paths []networkingv1.HTTPIngressPath
+	for _, path := range odooProxyPaths(instance) {
+		paths = append(paths, networkingv1.HTTPIngressPath{
+			Path: path.path, PathType: &pathType,
+			Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{
+				Name: OdooServiceName(instance), Port: networkingv1.ServiceBackendPort{Number: path.port},
+			}},
+		})
+	}
 	var tls []networkingv1.IngressTLS
 	if instance.Spec.Domain.TLS.Enabled {
 		tls = []networkingv1.IngressTLS{
@@ -88,23 +97,32 @@ func Ingress(instance *saasv1alpha1.OdooInstance, ingressClassName *string) *net
 					Host: instance.Spec.Domain.Hostname,
 					IngressRuleValue: networkingv1.IngressRuleValue{
 						HTTP: &networkingv1.HTTPIngressRuleValue{
-							Paths: []networkingv1.HTTPIngressPath{
-								{
-									Path:     "/",
-									PathType: &pathType,
-									Backend: networkingv1.IngressBackend{
-										Service: &networkingv1.IngressServiceBackend{
-											Name: OdooServiceName(instance),
-											Port: networkingv1.ServiceBackendPort{Number: OdooHTTPPort},
-										},
-									},
-								},
-							},
+							Paths: paths,
 						},
 					},
 				},
 			},
 		},
+	}
+}
+
+type odooProxyPath struct {
+	path string
+	port int32
+}
+
+func odooProxyPaths(instance *saasv1alpha1.OdooInstance) []odooProxyPath {
+	// Odoo <=15 uses /longpolling; >=16 uses /websocket. Route both so
+	// older clients and upgraded databases reach the evented worker.
+	// Threaded Odoo (workers=0) serves realtime requests on its HTTP port.
+	realtimePort := int32(OdooHTTPPort)
+	if instance.Spec.Workers.Count > 0 {
+		realtimePort = OdooLongpollingPort
+	}
+	return []odooProxyPath{
+		{path: "/websocket", port: realtimePort},
+		{path: "/longpolling", port: realtimePort},
+		{path: "/", port: OdooHTTPPort},
 	}
 }
 

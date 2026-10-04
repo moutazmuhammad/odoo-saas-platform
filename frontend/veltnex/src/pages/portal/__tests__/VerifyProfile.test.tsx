@@ -1,0 +1,41 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { renderWithProviders } from "@/test/renderWithProviders";
+import VerifyProfile from "../VerifyProfile";
+import { api } from "@/lib/api";
+const auth = vi.hoisted(() => ({ user: { teammate_verification: [{ id: 12, customer: "Acme", email: "ahmed@example.com", phone: "+201012345678", email_verified: false, phone_verified: false, needs_password: true }] }, refresh: vi.fn(), logout: vi.fn() }));
+vi.mock("@/context/AuthContext", () => ({ useAuth: () => auth }));
+vi.mock("@/lib/api", async original => ({ ...await original<typeof import("@/lib/api")>(), api: { iamVerificationSend: vi.fn(), iamVerificationVerify: vi.fn(), iamVerificationFinish: vi.fn() } }));
+const mocked = vi.mocked(api, { deep: true });
+describe("Teammate verification", () => {
+  beforeEach(() => { vi.clearAllMocks(); auth.user.teammate_verification[0].email_verified = false; auth.user.teammate_verification[0].phone_verified = false; });
+  it("binds email codes to the logged-in profile and explains invalid codes", async () => {
+    mocked.iamVerificationSend.mockResolvedValue({ sent: true });
+    mocked.iamVerificationVerify.mockResolvedValue({ verified: false });
+    const user = userEvent.setup();
+    renderWithProviders(<VerifyProfile />);
+    expect(screen.getByRole("button", { name: "Continue to projects" })).toBeDisabled();
+    await user.click(screen.getAllByRole("button", { name: "Send verification code" })[0]);
+    await waitFor(() => expect(mocked.iamVerificationSend).toHaveBeenCalledWith(12, "email", undefined));
+    await user.type(screen.getByLabelText("Six-digit code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+    expect(await screen.findByText(/incorrect or expired/)).toBeInTheDocument();
+    expect(auth.refresh).not.toHaveBeenCalled();
+    expect(mocked.iamVerificationVerify).toHaveBeenCalledWith(12, "email", "123456");
+  });
+  it("requires matching replacement passwords after both channels are verified", async () => {
+    auth.user.teammate_verification[0].email_verified = true;
+    auth.user.teammate_verification[0].phone_verified = true;
+    const user = userEvent.setup();
+    renderWithProviders(<VerifyProfile />);
+    const continueButton = screen.getByRole("button", { name: "Continue to projects" });
+    expect(continueButton).toBeDisabled();
+    await user.type(screen.getByLabelText("New password (at least 12 characters)"), "MyOwnPassword123!");
+    await user.type(screen.getByLabelText("Confirm password"), "MyOwnPassword123!");
+    expect(continueButton).toBeEnabled();
+    await user.click(continueButton);
+    await waitFor(() => expect(mocked.iamVerificationFinish).toHaveBeenCalledWith(12, "MyOwnPassword123!"));
+    expect(auth.refresh).toHaveBeenCalled();
+  });
+});

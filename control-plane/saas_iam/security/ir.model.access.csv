@@ -5,3 +5,5 @@ iam_invitation_portal,IAM invitation portal,model_saas_iam_invitation,base.group
 iam_grant_manager,IAM grant manager,model_saas_iam_grant,saas_core.group_saas_manager,1,0,0,0
 iam_group_manager,IAM group manager,model_saas_iam_group,saas_core.group_saas_manager,1,0,0,0
 iam_invitation_manager,IAM invitation manager,model_saas_iam_invitation,saas_core.group_saas_manager,1,0,0,0
+iam_member_portal,IAM profile portal,model_saas_iam_member,base.group_portal,1,0,0,0
+iam_member_manager,IAM profile manager,model_saas_iam_member,saas_core.group_saas_manager,1,0,0,0

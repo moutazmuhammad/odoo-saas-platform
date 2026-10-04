@@ -6,9 +6,10 @@ import ProjectAccess from "../ProjectAccess";
 import { api, type IamData } from "@/lib/api";
 
 vi.mock("@/lib/api", async (original) => ({ ...await original<typeof import("@/lib/api")>(),
-  api: { iam: vi.fn(), iamInvite: vi.fn(), iamGrant: vi.fn(), iamRevoke: vi.fn(), iamGroup: vi.fn() } }));
+  api: { iam: vi.fn(), iamInvite: vi.fn(), iamGrant: vi.fn(), iamRevoke: vi.fn(), iamGroup: vi.fn(), iamMember: vi.fn() } }));
 const mocked = vi.mocked(api, { deep: true });
 const fixture = (): IamData => ({
+  can_manage_groups: true, current_customer_id: 10,
   roles: [{ code: "viewer", name: "Project Viewer", permissions: ["project.view"] },
     { code: "logs", name: "Logs Viewer", permissions: ["logs.view"] },
     { code: "terminal", name: "Terminal Operator", permissions: ["terminal.open"] }],
@@ -97,4 +98,30 @@ describe("Project Access", () => {
     await user.click(screen.getByRole("button", { name: "Save group" }));
     await waitFor(() => expect(mocked.iamGroup).toHaveBeenCalledWith({ group_id: 8, name: "Developers", user_ids: [4] }));
   });
+  it("creates profiles before invitations and shows credentials only after creation", async () => {
+    mocked.iamMember.mockResolvedValue({ id: 12, email: "new@example.com", temporary_password: "temporary-secret", login_url: "/login" });
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectAccess />);
+    await user.click(await screen.findByRole("button", { name: "Add teammate" }));
+    await user.type(screen.getByLabelText("name"), "New Teammate");
+    await user.type(screen.getByLabelText("email"), "new@example.com");
+    await user.type(screen.getByLabelText("Phone with country code"), "+201012345678");
+    expect(mocked.iamMember).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Create profile" }));
+    await waitFor(() => expect(mocked.iamMember).toHaveBeenCalledWith({ name: "New Teammate", email: "new@example.com", phone: "+201012345678" }));
+    expect(await screen.findByRole("dialog", { name: "Teammate profile ready" })).toHaveTextContent("shown only once");
+    expect(screen.getByDisplayValue("temporary-secret")).toBeInTheDocument();
+  });
+  it("lists unverified profiles immediately and requires confirmation before deletion", async () => {
+    mocked.iam.mockResolvedValue({ ...fixture(), profiles: [{ id: 12, user_id: 4, name: "Ahmed", email: "ahmed@example.com", phone: "+201012345678", customer_id: 10, verified: false, editable: true }] });
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectAccess />);
+    await user.click(await screen.findByRole("tab", { name: /Teammates/ }));
+    expect(screen.getByText("Verification pending")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Delete profile for Ahmed" }));
+    expect(mocked.iamMember).not.toHaveBeenCalled();
+    await user.click(within(screen.getByRole("dialog", { name: "Delete teammate profile?" })).getByRole("button", { name: "Delete profile" }));
+    await waitFor(() => expect(mocked.iamMember).toHaveBeenCalledWith({ member_id: 12, delete: true }));
+  });
+
 });

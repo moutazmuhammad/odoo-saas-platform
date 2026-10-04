@@ -76,6 +76,10 @@ class IamService(models.AbstractModel):
         user = user or self.env.user
         if not user.active or user._is_public():
             return self.env['saas.iam.grant']
+        profiles = self.env['saas.iam.member'].sudo().with_context(active_test=False).search([
+            ('owner_id', '=', self._project(project).partner_id.id), ('user_id', '=', user.id)])
+        if profiles and not profiles._ready():
+            return self.env['saas.iam.grant']
         return self.env['saas.iam.grant'].sudo().search([
             ('project_id', '=', self._project(project).id), ('active', '=', True),
             '|', ('user_id', '=', user.id), '&', ('group_id.active', '=', True), ('group_id.user_ids', 'in', [user.id]),
@@ -122,7 +126,9 @@ class IamService(models.AbstractModel):
             ('active', '=', True), '|', ('user_id', '=', user.id),
             '&', ('group_id.active', '=', True), ('group_id.user_ids', 'in', [user.id]),
         ])
-        return grants.mapped('project_id').ids
+        profiles = self.env['saas.iam.member'].sudo().with_context(active_test=False).search([('user_id', '=', user.id)])
+        blocked = set(profiles.filtered(lambda m: not m._ready()).mapped('owner_id').ids)
+        return grants.filtered(lambda g: g.owner_id.id not in blocked).mapped('project_id').ids
 
     def _visible_instance_ids(self, user=None):
         user = user or self.env.user

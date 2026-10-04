@@ -4,7 +4,7 @@ import { Spinner } from "@/components/Spinner";
 
 /** Redirects unauthenticated visitors to /login, preserving intended path. */
 export function ProtectedRoute() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
 
   // Wait for the initial session check so we don't bounce a logged-in
@@ -19,6 +19,9 @@ export function ProtectedRoute() {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location.pathname + location.search }} replace />;
+  }
+  if (user?.teammate_verification?.length && location.pathname !== "/my/verify-profile") {
+    return <Navigate to="/my/verify-profile" state={{ from: location.pathname + location.search }} replace />;
   }
   return <Outlet />;
 }

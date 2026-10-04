@@ -32,7 +32,7 @@ class IamPortal(SaasPortalSpa):
                           'dismiss': 'db.view'}.get(path.rsplit('/', 1)[-1], 'database.manager')
         return request.env['saas.iam']._require(instance, permission)
 
-    @http.route(['/my/access', '/my/access/accept', '/my/instances/<int:instance_id>/access'], type='http', auth='user', website=True)
+    @http.route(['/my/access', '/my/access/accept', '/my/verify-profile', '/my/instances/<int:instance_id>/access'], type='http', auth='user', website=True)
     def project_access_page(self, instance_id=None, **kwargs):
         return spa_shell()
 

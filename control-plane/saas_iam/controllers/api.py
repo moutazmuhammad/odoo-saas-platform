@@ -15,6 +15,47 @@ def _response(operation):
 
 
 class IamApi(SaasApi):
+    def _serialize_user(self, partner):
+        data = super()._serialize_user(partner)
+        profiles = request.env['saas.iam.member'].sudo().search([('user_id', '=', request.env.uid)])
+        data['teammate_verification'] = [{'id': m.id, 'customer': m.owner_id.name,
+            'email': m.user_id.login, 'phone': m.phone, 'email_verified': m.email_verified and m.verified_email == m.user_id.login,
+            'phone_verified': m.phone_verified, 'needs_password': m.user_id.sudo().iam_initial_password}
+            for m in profiles if not m._ready()]
+        return data
+
+    @http.route('/saas/api/v1/iam/members', type='json', auth='user')
+    def iam_member(self, name=None, email=None, phone=None, member_id=None, delete=False):
+        def change():
+            Member = request.env['saas.iam.member']
+            if delete:
+                member = Member.sudo().browse(int(member_id or 0)).exists()
+                if not member:
+                    raise ValidationError(_('Teammate profile not found.'))
+                member.with_user(request.env.user)._delete_profile()
+                return {'removed': True}
+            return Member._create_profile(name, email, phone)
+        limited = self._rate_limit('iam_member', 30, 3600)
+        return limited or _response(change)
+
+    @http.route('/saas/api/v1/iam/verification/send', type='json', auth='user')
+    def iam_verification_send(self, member_id=None, channel=None, phone=None):
+        limited = self._rate_limit('iam_verification_send', 6, 600)
+        return limited or _response(lambda: request.env['saas.iam.member'].sudo().browse(int(member_id or 0)).exists().with_user(request.env.user)._send_code(channel, phone))
+
+    @http.route('/saas/api/v1/iam/verification/verify', type='json', auth='user')
+    def iam_verification_verify(self, member_id=None, channel=None, code=None):
+        limited = self._rate_limit('iam_verification_verify', 20, 600)
+        return limited or _response(lambda: request.env['saas.iam.member'].sudo().browse(int(member_id or 0)).exists().with_user(request.env.user)._verify_code(channel, code))
+
+    @http.route('/saas/api/v1/iam/verification/finish', type='json', auth='user')
+    def iam_verification_finish(self, member_id=None, password=None):
+        def finish():
+            result = request.env['saas.iam.member'].sudo().browse(int(member_id or 0)).exists().with_user(request.env.user)._finish(password)
+            request.session.session_token = request.env.user._compute_session_token(request.session.sid)
+            return result
+        return _response(finish)
+
     def _serialize_env_child(self, inst):
         data = super()._serialize_env_child(inst)
         iam = request.env['saas.iam']
@@ -109,7 +150,10 @@ class IamApi(SaasApi):
         accepted = request.env['saas.iam.invitation'].sudo().search([
             ('owner_id', 'in', customers.ids), ('state', '=', 'accepted'), ('user_id', '!=', False),
         ])
-        members = accepted.mapped('user_id')
+        profiles = request.env['saas.iam.member'].sudo().search([('owner_id', 'in', customers.ids)])
+        profiles_all = request.env['saas.iam.member'].sudo().with_context(active_test=False).search([('owner_id', 'in', customers.ids)])
+        accepted = accepted.filtered(lambda i: not profiles_all.filtered(lambda m: m.owner_id == i.owner_id and m.user_id == i.user_id and not m.active))
+        members = accepted.mapped('user_id') | profiles.mapped('user_id')
         return ok({
             'current_customer_id': request.env.user.partner_id.id,
             'can_manage_groups': bool(projects.filtered(lambda p: p.partner_id == request.env.user.partner_id)),
@@ -127,8 +171,11 @@ class IamApi(SaasApi):
                         'editable': editable(g)} for g in visible],
             'groups': [{'id': g.id, 'name': g.name, 'customer_id': g.owner_id.id, 'user_ids': g.user_ids.ids,
                         'editable': g.owner_id == request.env.user.partner_id} for g in groups],
+            'profiles': [{'id': m.id, 'user_id': m.user_id.id, 'name': m.name, 'email': m.user_id.login,
+                          'phone': m.phone, 'customer_id': m.owner_id.id, 'verified': m._ready(),
+                          'editable': m.owner_id == request.env.user.partner_id} for m in profiles],
             'members': [{'id': u.id, 'name': u.name, 'email': u.login,
-                         'customer_ids': accepted.filtered(lambda i: i.user_id == u).mapped('owner_id').ids} for u in members],
+                         'customer_ids': (accepted.filtered(lambda i: i.user_id == u).mapped('owner_id') | profiles.filtered(lambda m: m.user_id == u).mapped('owner_id')).ids} for u in members],
         })
 
     @http.route('/saas/api/v1/iam/invite', type='json', auth='user')
@@ -155,11 +202,9 @@ class IamApi(SaasApi):
                 subject = {'group_id': group.id}
             else:
                 user = request.env['res.users'].sudo().browse(int(user_id)).exists()
-                accepted = request.env['saas.iam.invitation'].sudo().search_count([
-                    ('owner_id', '=', projects[0].partner_id.id), ('user_id', '=', user.id), ('state', '=', 'accepted'),
-                ]) if user else 0
-                if not user or not user.active or not accepted:
-                    raise AccessError(_('Invite this teammate before granting access.'))
+                eligible = request.env['saas.iam.member']._eligible_ids(projects[0].partner_id)
+                if not user or not user.active or user.id not in eligible:
+                    raise AccessError(_('Create a teammate profile or invite this teammate before granting access.'))
                 subject = {'user_id': user.id}
             iam._assign(projects, roles, environments, **subject)
             return {'saved': True}
@@ -192,12 +237,10 @@ class IamApi(SaasApi):
                     values['name'] = name.strip()
                 if user_ids is not None:
                     if not isinstance(user_ids, list):
-                        raise ValidationError(_('Select accepted teammates.'))
-                    accepted_ids = request.env['saas.iam.invitation'].sudo().search([
-                        ('owner_id', '=', owner.id), ('state', '=', 'accepted'), ('user_id', '!=', False),
-                    ]).mapped('user_id').ids
+                        raise ValidationError(_('Select teammates.'))
+                    accepted_ids = request.env['saas.iam.member']._eligible_ids(owner)
                     if any(int(uid) not in accepted_ids for uid in user_ids):
-                        raise AccessError(_('Invite teammates before adding them to a team group.'))
+                        raise AccessError(_('Create teammate profiles before adding them to a team group.'))
                     values['user_ids'] = [(6, 0, user_ids)]
                 if group:
                     group.write(values)

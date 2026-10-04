@@ -3,12 +3,39 @@ import re
 
 from odoo import http, _
 from odoo.http import request
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 
 _logger = logging.getLogger(__name__)
 
 EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 PHONE_RE = re.compile(r'^\+?[\d\s\-\(\)]{7,20}$')
+
+
+def _registration_identity_error(env, email, phone, country_id):
+    """Reserve identifiers for login accounts, including disabled accounts.
+
+    A historical CRM/billing contact without a login does not own an account
+    identifier. Registration always creates a separate partner; matching an
+    old contact never grants access to that contact's billing records.
+    """
+    duplicate = _("We can't create an account with these details. If you already have one, please sign in instead.")
+    Users = env['res.users'].sudo().with_context(active_test=False)
+    if Users.search_count(['|', ('login', '=ilike', email.strip()), ('partner_id.email', '=ilike', email.strip())]):
+        return duplicate
+    try:
+        country = env['res.country'].sudo().browse(int(country_id)).exists()
+    except (TypeError, ValueError):
+        country = env['res.country']
+    if not country:
+        return _('Please select a valid country.')
+    if 'saas.iam.member' in env:
+        try:
+            env['saas.iam.member']._check_unique_phone(phone, country=country)
+        except ValidationError:
+            return duplicate
+    elif Users.search_count(['|', ('partner_id.phone', '=', phone), ('partner_id.mobile', '=', phone)]):
+        return duplicate
+    return None
 
 
 class SaasRegistration(http.Controller):
@@ -83,20 +110,9 @@ class SaasRegistration(http.Controller):
         if password != confirm:
             return _("Passwords do not match.")
 
-        # Uniqueness is enforced, but the message must NOT reveal WHICH
-        # identifier already exists (account enumeration): a single generic
-        # line covers email (user or partner) and phone alike.
-        generic_dup = _(
-            "We can't create an account with these details. If you already "
-            "have one, please log in instead."
-        )
-        if request.env['res.users'].sudo().search_count([('login', '=', email)]):
-            return generic_dup
-        if request.env['res.partner'].sudo().search_count([
-                ('email', '=ilike', email)]):
-            return generic_dup
-        if request.env['res.partner'].sudo().search_count([('phone', '=', phone)]):
-            return generic_dup
+        error = _registration_identity_error(request.env, email, phone, country_id)
+        if error:
+            return error
 
         # Validate phone matches the selected country
         if country_id:
@@ -255,18 +271,13 @@ class SaasRegistration(http.Controller):
         password = post.get('password', '')
 
         try:
-            # Double-check email not taken (race condition guard)
-            existing = request.env['res.users'].sudo().search([
-                ('login', '=', email),
-            ], limit=1)
-            if existing:
+            # Recheck both identifiers after OTP verification and hold the
+            # phone claim lock through account creation.
+            error = _registration_identity_error(request.env, email, phone, country_id)
+            if error:
                 return request.render(
                     'saas_website.registration_form',
-                    self._registration_context(
-                        form_values=post,
-                        error=_("An account with this email was just created. "
-                                "Please log in."),
-                    ),
+                    self._registration_context(form_values=post, error=error),
                 )
 
             # Create partner with full contact details

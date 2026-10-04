@@ -106,11 +106,11 @@ class IamMember(models.Model):
         return phone
 
     @api.model
-    def _check_unique_phone(self, phone, partner=None):
+    def _check_unique_phone(self, phone, partner=None, country=None):
         if not phone:
             return
         from odoo.addons.phone_validation.tools.phone_validation import phone_format
-        country = (partner and partner.country_id) or self.env.user.partner_id.country_id or self.env.company.country_id
+        country = country or (partner and partner.country_id) or self.env.user.partner_id.country_id or self.env.company.country_id
         def canonical(value, contact_country=None):
             value = re.sub(r'[^0-9+]', '', value or '')
             if value.startswith('00'):
@@ -128,7 +128,7 @@ class IamMember(models.Model):
             return value
         key = canonical(phone)
         self.env.cr.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', ['saas.phone:' + key])
-        contacts = self.env['res.partner'].sudo().with_context(active_test=False).search(['|', ('phone', '!=', False), ('mobile', '!=', False)])
+        contacts = self.env['res.partner'].sudo().with_context(active_test=False).search([('user_ids', '!=', False), '|', ('phone', '!=', False), ('mobile', '!=', False)])
         for contact in contacts:
             if partner and contact.id == partner.id:
                 continue
@@ -195,11 +195,14 @@ class IamUser(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        users = super().create(vals_list)
-        for user in users.filtered('share'):
-            for phone in (user.partner_id.phone, user.partner_id.mobile):
-                self.env['saas.iam.member']._check_unique_phone(phone, user.partner_id)
-        return users
+        # A caller may catch validation errors and still commit its request.
+        # Never leave a newly created login behind after a rejected phone claim.
+        with self.env.cr.savepoint():
+            users = super().create(vals_list)
+            for user in users.filtered('share'):
+                for phone in (user.partner_id.phone, user.partner_id.mobile):
+                    self.env['saas.iam.member']._check_unique_phone(phone, user.partner_id)
+            return users
 
     @api.model
     def _change_initial_password(self, password):

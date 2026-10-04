@@ -30,6 +30,7 @@ from odoo.http import request
 
 from odoo.addons.saas_core.models.saas_instance import SUBDOMAIN_RE
 from .main import SaasWebsite, _ACTIVE_STATES
+from .registration import _registration_identity_error
 from ..models.res_config_settings import OTP_TEST_MODE_PARAM
 
 _logger = logging.getLogger(__name__)
@@ -243,19 +244,7 @@ class SaasApi(http.Controller):
             return _("City is required.")
         if len(password) < 8:
             return _("Password must be at least 8 characters.")
-        # Uniqueness is enforced, but the message must NOT reveal which
-        # identifier already exists (account enumeration): one generic line
-        # for email (user OR partner) and one for phone.
-        Users = request.env['res.users'].sudo()
-        Partner = request.env['res.partner'].sudo()
-        if (Users.search_count([('login', '=', email)])
-                or Partner.search_count([('email', '=ilike', email)])):
-            return _("We can't create an account with these details. If you "
-                     "already have one, please sign in instead.")
-        if Partner.search_count([('phone', '=', phone)]):
-            return _("We can't create an account with these details. If you "
-                     "already have one, please sign in instead.")
-        return None
+        return _registration_identity_error(request.env, email, phone, p.get('country_id'))
 
     def _otp_sent_payload(self, otp):
         """Sign-up OTP response. With Settings > SaaS Manager > "Show

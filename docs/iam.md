@@ -41,7 +41,7 @@ The migration identifies accounts created by their own customer owner in the pre
 
 Managed logins remain teammates after changing their password: they cannot buy or create independent projects, access customer billing, or create their own teammate accounts. Their project list and actions depend on explicit grants, including for any historical project accidentally linked to their partner. Creating an authorized staging/development environment within an existing project remains possible with the Environment Creator role and reserved capacity.
 
-New teammate profiles and portal signups reject phones already used by another contact or teammate profile. Checks cover phone/mobile, inactive records, formatting variants, and national formats with a known country; a transaction lock serializes claims for the same normalized number. This does not verify phone ownership or change existing duplicate contact data. Frontend controls deny access when permission metadata is missing.
+New teammate profiles and portal signups reject phones already used by another login account or teammate profile. Checks cover phone/mobile, inactive login accounts, formatting variants, and national formats with a known country; a transaction lock serializes claims for the same normalized number. Contacts without a login do not reserve registration identifiers. Registration creates a new contact after phone verification and never attaches its new login to a matching historical billing contact. This does not verify teammate phone ownership or change existing duplicate contact data. Frontend controls deny access when permission metadata is missing.
 
 ## Invitations and teams
 

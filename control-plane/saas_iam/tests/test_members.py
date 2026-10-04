@@ -31,12 +31,13 @@ class TestIamMembers(IamFixture, TransactionCase):
 
     def test_normal_portal_signup_cannot_reuse_teammate_phone(self):
         self.env['saas.iam.member'].with_user(self.owner)._create_profile('Phone Owner', 'phone-owner@example.com', '+201012345678')
-        with self.assertRaises(ValidationError), self.env.cr.savepoint():
+        with self.assertRaises(ValidationError):
             self.env['res.users'].sudo().with_context(no_reset_password=True).create({
                 'name': 'Phone Duplicate', 'login': 'phone-duplicate@example.com',
                 'phone': '+20 10 1234 5678',
                 'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
             })
+        self.assertFalse(self.env['res.users'].sudo().search_count([('login', '=', 'phone-duplicate@example.com')]))
 
     def test_managed_user_cannot_become_customer_owner_after_password_change(self):
         member, _ = self._new_profile()
@@ -263,3 +264,61 @@ class TestIamMemberApi(IamFixture, HttpCase):
         self.assertEqual(self._rpc('/saas/api/v1/iam')['data']['profiles'], [])
         profile.user_id.invalidate_recordset()
         self.assertFalse(profile.user_id.active)
+
+
+@tagged('post_install', '-at_install')
+class TestRegistrationAccountIdentity(IamFixture, HttpCase):
+    def _rpc(self, path, **params):
+        return self.url_open(path, data=json.dumps({'jsonrpc': '2.0', 'method': 'call', 'params': params, 'id': 1}),
+            headers={'Content-Type': 'application/json'}).json()['result']
+
+    def _details(self):
+        return {'name': 'New Customer', 'email': 'registration-orphan@example.com',
+                'phone': '+201012345678', 'country_id': self.env.ref('base.eg').id,
+                'city': 'Cairo', 'password': 'RegistrationPassword123!', 'confirm_password': 'RegistrationPassword123!'}
+
+    def test_registration_reuses_identifiers_but_not_an_orphan_customer_identity(self):
+        from types import SimpleNamespace
+        from odoo.addons.saas_website.controllers.api import SaasApi
+        from odoo.addons.saas_website.controllers.registration import SaasRegistration
+        details = self._details()
+        orphan = self.env['res.partner'].create({'name': 'Historical Customer', 'email': details['email'],
+            'phone': details['phone'], 'country_id': details['country_id']})
+        order = self.env['sale.order'].create({'partner_id': orphan.id})
+        request = SimpleNamespace(env=self.env)
+        with patch('odoo.addons.saas_website.controllers.api.request', request):
+            self.assertFalse(SaasApi()._validate_registration(details))
+        with patch('odoo.addons.saas_website.controllers.registration.request', request):
+            self.assertFalse(SaasRegistration()._validate_registration_fields(details))
+        OTP = type(self.env['saas.registration.otp'])
+        with patch.object(OTP, '_generate_and_send_phone', return_value=SimpleNamespace(code='123456')):
+            started = self._rpc('/saas/api/v1/auth/register/start', **details)
+        self.assertTrue(started['ok'], started)
+        # No account is created before a verified phone code.
+        with patch.object(OTP, '_verify', return_value=False):
+            rejected = self._rpc('/saas/api/v1/auth/register/verify', otp='000000', **details)
+        self.assertEqual(rejected['code'], 'otp_invalid')
+        self.assertFalse(self.env['res.users'].search_count([('login', '=', details['email'])]))
+        with patch.object(OTP, '_verify', return_value=True):
+            registered = self._rpc('/saas/api/v1/auth/register/verify', otp='123456', **details)
+        self.assertTrue(registered['ok'], registered)
+        user = self.env['res.users'].search([('login', '=', details['email'])])
+        self.assertTrue(user)
+        self.assertNotEqual(user.partner_id, orphan)
+        self.assertEqual(order.partner_id, orphan)
+        self.assertFalse(user.iam_managed_owner_id)
+
+    def test_registration_blocks_inactive_login_and_normalized_account_phone(self):
+        from odoo.addons.saas_website.controllers.registration import _registration_identity_error
+        details = self._details()
+        self.other.partner_id.write({'country_id': details['country_id'], 'mobile': '010 1234 5678'})
+        self.other.active = False
+        self.assertTrue(_registration_identity_error(self.env, details['email'], details['phone'], details['country_id']))
+        self.assertTrue(_registration_identity_error(self.env, self.other.login.upper(), '+201099988877', details['country_id']))
+        denied = self._rpc('/saas/api/v1/auth/register/start', **details)
+        self.assertFalse(denied['ok'], denied)
+
+    def test_registration_blocks_account_email_when_login_is_different(self):
+        from odoo.addons.saas_website.controllers.registration import _registration_identity_error
+        self.other.partner_id.email = 'account-contact@example.com'
+        self.assertTrue(_registration_identity_error(self.env, 'ACCOUNT-CONTACT@example.com', '+201099988877', self.env.ref('base.eg').id))

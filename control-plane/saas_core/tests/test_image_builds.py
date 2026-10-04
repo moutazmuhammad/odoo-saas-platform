@@ -163,6 +163,80 @@ class TestImageBuildPipeline(TransactionCase):
             'base': '18.0.1.0', 'sale': '18.0.1.0'})
         self.assertEqual(modules, [])
 
+    def test_only_source_changed_module_is_upgraded_without_version_bump(self):
+        versions = {
+            'sale_custom': {'version': '18.0.1.0', 'sha256': 'old-source'},
+            'stock_custom': {'version': '18.0.1.0', 'sha256': 'unchanged-source'},
+        }
+        self._build(state='success', module_versions=json.dumps(versions))
+        build = self._build()
+        current = {**versions, 'sale_custom': {'version': '18.0.1.0', 'sha256': 'new-source'}}
+        self.assertEqual(self.instance._modules_to_update(build, current), ['sale_custom'])
+        self.assertEqual(self.instance._modules_to_update(build, versions), [])
+
+    def test_legacy_build_compares_serving_source_before_upgrading(self):
+        from ..drivers.base import ExecResult
+        self._build(state='success', addons_paths='["/opt/tenant-addons/app"]',
+                    module_versions=json.dumps({'sale_custom': '18.0.1.0', 'stock_custom': '18.0.1.0'}))
+        self.driver.exec.return_value = ExecResult(
+            rc=0, stdout=json.dumps({'sale_custom': 'old', 'stock_custom': 'same'}), stderr='')
+        build = self._build()
+        versions = {'sale_custom': {'version': '18.0.1.0', 'sha256': 'new'},
+                    'stock_custom': {'version': '18.0.1.0', 'sha256': 'same'}}
+        self.assertEqual(self.instance._modules_to_update(build, versions), ['sale_custom'])
+        self.assertIn('module_fingerprint', self.driver.exec.call_args.args[1])
+
+    def test_upgrade_fingerprint_skips_logic_assets_and_bytecode(self):
+        import tempfile
+        from pathlib import Path
+        from ..models.saas_instance_build import _BUILD_TEMPLATES
+        namespace = {}
+        exec(_BUILD_TEMPLATES.get_template('module_fingerprint.py').render(), namespace)
+        fingerprint = namespace['module_fingerprint']
+        with tempfile.TemporaryDirectory() as temp:
+            module = Path(temp)
+            (module / '__manifest__.py').write_text("{'version': '18.0.1.0', 'data': ['views.xml']}")
+            (module / 'models.py').write_text('value = 1')
+            original = fingerprint(temp)
+            (module / '__pycache__').mkdir()
+            (module / '__pycache__' / 'models.pyc').write_bytes(b'generated')
+            self.assertEqual(fingerprint(temp), original)
+            (module / 'models.py').write_text('value = 2')
+            self.assertEqual(fingerprint(temp), original)
+            (module / 'static').mkdir()
+            (module / 'static' / 'app.js').write_text('console.log(1)')
+            self.assertEqual(fingerprint(temp), original)
+            (module / 'models.py').write_text(
+                "from odoo import models, fields\nclass Record(models.Model):\n"
+                "    _inherit = 'sale.order'\n    custom_name = fields.Char()\n"
+                "    def business_logic(self):\n        return 1\n")
+            changed = fingerprint(temp)
+            self.assertNotEqual(changed, original)
+            (module / 'models.py').write_text((module / 'models.py').read_text().replace('return 1', 'return 2'))
+            self.assertEqual(fingerprint(temp), changed)
+            (module / 'views.xml').write_text('<odoo/>')
+            self.assertNotEqual(fingerprint(temp), changed)
+
+    def test_upgrade_fingerprint_detects_field_changes_and_migrations(self):
+        import tempfile
+        from pathlib import Path
+        from ..models.saas_instance_build import _BUILD_TEMPLATES
+        namespace = {}
+        exec(_BUILD_TEMPLATES.get_template('module_fingerprint.py').render(), namespace)
+        fingerprint = namespace['module_fingerprint']
+        with tempfile.TemporaryDirectory() as temp:
+            module = Path(temp)
+            (module / '__manifest__.py').write_text("{'version': '18.0.1.0'}")
+            model = module / 'models.py'
+            model.write_text("from odoo import fields as f\nclass Model:\n    value = f.Char()")
+            previous = fingerprint(temp)
+            model.write_text(model.read_text().replace('f.Char()', 'f.Integer()'))
+            changed = fingerprint(temp)
+            self.assertNotEqual(changed, previous)
+            (module / 'migrations').mkdir()
+            (module / 'migrations' / 'post.py').write_text('def migrate(cr, version):\n    pass')
+            self.assertNotEqual(fingerprint(temp), changed)
+
     def test_nothing_to_bake_deploys_the_plain_version_image(self):
         self.repo.unlink()
         build = self._build(repo_id=False)

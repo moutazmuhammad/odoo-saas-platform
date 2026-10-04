@@ -213,6 +213,7 @@ class ImageBuildMixin:
                     'requirements.txt': requirements or '',
                     'fetch.sh': _template('fetch.sh'),
                     'inspect.py': _template('inspect.py'),
+                    'module_fingerprint.py': _template('module_fingerprint.py'),
                     'build.sh': _template('build.sh'),
                     'buildkitd.toml': (
                         # Odoo's extracted layers exceed BuildKit's small

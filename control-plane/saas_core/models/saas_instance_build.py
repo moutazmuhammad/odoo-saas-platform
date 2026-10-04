@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import subprocess
 
 from jinja2 import Environment, FileSystemLoader
@@ -382,7 +383,7 @@ class SaasInstance(models.Model):
             idempotent=True, on_error='_on_build_job_error', on_error_args=(build.id,))
 
     def _modules_to_update(self, build, versions):
-        """Modules whose manifest version changed since the last successful
+        """Modules whose Odoo upgrade inputs changed since the last successful
         build (all of them when there is none — e.g. the first build on a
         database that already has these modules). Uninstalled ones are
         ignored by ``odoo -u``."""
@@ -396,7 +397,45 @@ class SaasInstance(models.Model):
             old = json.loads(previous.module_versions or '{}')
         except ValueError:
             old = {}
-        return sorted(m for m, v in versions.items() if old.get(m) != v)
+        # Old builds only recorded manifest versions. Compare their serving
+        # image once to seed upgrade fingerprints without upgrading everything.
+        legacy = [m for m, v in versions.items()
+                  if isinstance(v, dict) and isinstance(old.get(m), str)]
+        baseline = self._deployed_module_fingerprints(previous, legacy) if legacy else {}
+        changed = []
+        for module, current in versions.items():
+            prior = old.get(module)
+            if isinstance(current, dict) and isinstance(prior, str):
+                same = (current.get('version') == prior
+                        and current.get('sha256') == baseline.get(module))
+            else:
+                same = current == prior
+            if not same:
+                changed.append(module)
+        return sorted(changed)
+
+    def _deployed_module_fingerprints(self, previous, modules):
+        """Read a legacy build's source from the image still serving traffic."""
+        try:
+            paths = json.loads(previous.addons_paths or '[]')
+            if not paths:
+                return {}
+            helper = _BUILD_TEMPLATES.get_template('module_fingerprint.py').render()
+            script = helper + '\nimport json\nresult = {}\n'
+            script += 'for path in %r:\n    for module in %r:\n' % (paths, modules)
+            script += '        target = os.path.join(path, module)\n'
+            script += '        if os.path.isfile(os.path.join(target, "__manifest__.py")):\n'
+            script += '            result[module] = module_fingerprint(target)\n'
+            script += 'print(json.dumps(result))\n'
+            result = self._compute_driver().exec(
+                self._compute_handle(), 'python3 -c %s' % shlex.quote(script), timeout=60)
+            if result.ok:
+                return json.loads(result.stdout)
+        except (ValueError, TypeError, RuntimeError):
+            _logger.warning('Could not fingerprint the legacy image for %s', self.subdomain)
+        # No trustworthy baseline: only the explicitly named repo modules can
+        # require an upgrade; never request Odoo's blanket "all" upgrade.
+        return {}
 
     def _supersede_running_builds(self, build):
         older = self.env['saas.build'].sudo().search([

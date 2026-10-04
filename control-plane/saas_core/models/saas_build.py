@@ -38,9 +38,8 @@ class SaasBuild(models.Model):
         string='Addons Paths', help='JSON list of the addons paths baked into '
         'this build\'s image (needed to redeploy it on rollback).')
     module_versions = fields.Text(
-        string='Module Versions', help='JSON {module: manifest version} of the '
-        'repos in this build — the next build upgrades the modules whose '
-        'version changed.')
+        string='Module Versions', help='JSON of module manifest versions and '
+        'source fingerprints. The next build upgrades only changed modules.')
     state = fields.Selection([
         ('running', 'Building'),
         ('success', 'Success'),

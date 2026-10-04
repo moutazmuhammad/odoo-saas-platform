@@ -6,6 +6,7 @@ repo's root requirements.txt). Writes
 import ast
 import json
 import os
+from module_fingerprint import module_fingerprint
 
 ROOT = '/workspace/addons'
 
@@ -53,9 +54,11 @@ def main():
             try:
                 with open(mf) as fh:
                     manifest = ast.literal_eval(fh.read())
-                modules[mod] = str(manifest.get('version') or '')
+                version = str(manifest.get('version') or '')
             except (SyntaxError, ValueError):
-                modules[mod] = ''
+                version = ''
+            modules[mod] = {'version': version,
+                            'sha256': module_fingerprint(os.path.dirname(mf))}
         req = os.path.join(path, 'requirements.txt')
         if os.path.isfile(req):
             with open(req) as fh:

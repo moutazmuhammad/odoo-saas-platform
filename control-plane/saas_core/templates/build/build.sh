@@ -7,12 +7,17 @@ output="type=image,name=${IMAGE_REF},push=true"
 if [ "${REGISTRY_INSECURE:-}" = "1" ]; then
   output="${output},registry.insecure=true"
 fi
-buildctl-daemonless.sh build \
+set --
+if [ -n "${CACHE_IMAGE_REF:-}" ]; then
+  set -- --import-cache "type=registry,ref=${CACHE_IMAGE_REF}"
+fi
+buildctl-daemonless.sh build "$@" \
   --frontend dockerfile.v0 \
   --local context=/workspace \
   --local dockerfile=/files \
   --opt filename=Dockerfile \
   --output "$output" \
+  --export-cache type=inline \
   --metadata-file /workspace/meta/build.json
 digest=$(grep -o '"containerimage.digest": *"[^"]*"' /workspace/meta/build.json | sed 's/.*"\(sha256:[^"]*\)"/\1/')
 echo "SAAS_BUILD_DIGEST ${digest}"

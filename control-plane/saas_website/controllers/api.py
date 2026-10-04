@@ -827,12 +827,14 @@ class SaasApi(http.Controller):
         out = []
         for b in builds:
             dur = None
-            if b.date_start and b.date_done:
-                dur = int((b.date_done - b.date_start).total_seconds())
+            if b.date_start:
+                end = b.date_done or fields.Datetime.now()
+                dur = max(0, int((end - b.date_start).total_seconds()))
             out.append({
                 'id': b.id,
                 'source': b.source,            # initial | push | redeploy | merge
                 'state': b.state,              # running | success | failed
+                'stage': b.stage or 'queued',
                 'branch': b.branch or '',
                 'commit': b.commit_short or '',
                 'commit_message': b.commit_message or '',

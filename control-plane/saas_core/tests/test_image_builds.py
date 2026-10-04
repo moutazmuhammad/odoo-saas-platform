@@ -128,6 +128,27 @@ class TestImageBuildPipeline(TransactionCase):
             'base': '18.0.1.0', 'sale': '18.0.2.0', 'stock': '18.0.1.0'})
         self.assertEqual(modules, ['sale'])
 
+    def test_cache_uses_successful_image_via_push_host(self):
+        self._build(state='success', image_digest='localhost:32000/acme/tenant-bldinst@sha256:abc')
+        build = self._build()
+        self.instance._job_start_build(build.id)
+        self.assertEqual(self.driver.start_image_build.call_args.kwargs['cache_ref'],
+                         'registry.container-registry.svc:5000/acme/tenant-bldinst@sha256:abc')
+
+    def test_new_environment_can_import_parent_cache(self):
+        self._build(state='success', image_digest='localhost:32000/acme/tenant-bldinst@sha256:abc')
+        child = self.instance.copy({'subdomain': 'bldstage', 'environment': 'staging',
+                                    'parent_id': self.instance.id})
+        self.assertEqual(child._build_cache_ref(child._build_registry()),
+                         'registry.container-registry.svc:5000/acme/tenant-bldinst@sha256:abc')
+        child.docker_server_id = self.server.copy({'name': 'Different cluster'})
+        self.assertEqual(child._build_cache_ref(child._build_registry()), '')
+
+    def test_cache_does_not_import_failed_or_foreign_registry_images(self):
+        self._build(state='failed', image_digest='localhost:32000/acme/tenant-bldinst@sha256:abc')
+        self._build(state='success', image_digest='foreign.example/tenant@sha256:def')
+        self.assertEqual(self.instance._build_cache_ref(self.instance._build_registry()), '')
+
     def test_modules_to_update_empty_when_unchanged(self):
         """Identical module_versions as the last success → no module
         upgrade, the tenant updates just pick the new image."""
@@ -313,7 +334,8 @@ class TestImageBuildDriver(TransactionCase):
             builder_image='moby/buildkit:rootless', git_image='alpine/git',
             registry_host='reg', registry_push_host='reg.ns.svc:5000',
             registry_username='u', registry_password='p',
-            tenant_key='Acme-Test')
+            tenant_key='Acme-Test', registry_insecure=True,
+            cache_ref='reg.ns.svc:5000/tenant-acme@sha256:abc')
         ns, job = self.batch.create_namespaced_job.call_args.args
         self.assertEqual(ns, 'odoo-builds')
         spec = job['spec']['template']['spec']
@@ -322,6 +344,15 @@ class TestImageBuildDriver(TransactionCase):
         self.assertFalse(spec['automountServiceAccountToken'])
         self.assertEqual(spec['securityContext']['fsGroup'], 1000)
         self.assertEqual(job['spec']['backoffLimit'], 0)
+        build_env = {e['name']: e['value'] for e in spec['containers'][0]['env']}
+        self.assertEqual(build_env['CACHE_IMAGE_REF'], 'reg.ns.svc:5000/tenant-acme@sha256:abc')
+        config = self.core.create_namespaced_config_map.call_args.args[1].data
+        import tomllib
+        settings = tomllib.loads(config['buildkitd.toml'])
+        self.assertEqual(settings['registry']['reg.ns.svc:5000']['http'], True)
+        self.assertEqual(settings['root'], '/home/user/.local/share/buildkit')
+        self.assertEqual(settings['worker']['oci']['gckeepstorage'], '8GB')
+        self.assertIn('--export-cache type=inline', config['build.sh'])
         # Init containers run sequentially, but their largest request counts
         # for the pod's entire lifetime. They must not reserve their CPU limits
         # and prevent a build fitting into a node with 500m CPU available.

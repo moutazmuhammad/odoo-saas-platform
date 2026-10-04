@@ -1161,3 +1161,17 @@ class TestStaffApiReadOnly(_PortalTestBase):
         self.assertTrue(result['ok'])
         self.assertTrue(result['data'])
         self.assertTrue(all('customer' not in project for project in result['data']))
+
+    def test_build_history_reports_live_stage_and_elapsed_time(self):
+        import datetime
+        build = self.env['saas.build'].sudo().create({
+            'instance_id': self.instance.id, 'source': 'redeploy',
+            'state': 'running', 'stage': 'deploying',
+            'date_start': fields.Datetime.now() - datetime.timedelta(seconds=90),
+        })
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        result = self._json_call('/saas/api/v1/instances/%d/builds' % self.instance.id)
+        self.assertTrue(result['ok'])
+        row = next(b for b in result['data'] if b['id'] == build.id)
+        self.assertEqual(row['stage'], 'deploying')
+        self.assertGreaterEqual(row['duration_s'], 90)

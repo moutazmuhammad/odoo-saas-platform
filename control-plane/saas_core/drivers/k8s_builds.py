@@ -178,7 +178,7 @@ class ImageBuildMixin:
                           registry_insecure: bool = False,
                           registry_push_host: Optional[str] = None,
                           deadline_seconds: int = 1800,
-                          tenant_key: str = '') -> str:
+                          tenant_key: str = '', cache_ref: str = '') -> str:
         """Create the build Job ``name`` and return it. ``repos`` is a list
         of ``{'url', 'ref', 'branch', 'dir'}`` (url may embed a token).
         ``image_ref`` is the full push reference (push host).
@@ -214,6 +214,14 @@ class ImageBuildMixin:
                     'fetch.sh': _template('fetch.sh'),
                     'inspect.py': _template('inspect.py'),
                     'build.sh': _template('build.sh'),
+                    'buildkitd.toml': (
+                        # Odoo's extracted layers exceed BuildKit's small
+                        # default GC budget. Keep them on the 20Gi cache PVC.
+                        'root = "/home/user/.local/share/buildkit"\n'
+                        '[worker.oci]\n  gckeepstorage = "8GB"\n' + (
+                        '[registry.%s]\n  http = true\n'
+                        % json.dumps(registry_push_host or registry_host)
+                        if registry_insecure and (registry_push_host or registry_host) else '')),
                 }))
 
         fetch_env = [{'name': 'REPO_COUNT', 'value': str(len(repos))}]
@@ -235,7 +243,8 @@ class ImageBuildMixin:
         build_env = [
             {'name': 'IMAGE_REF', 'value': image_ref},
             {'name': 'REGISTRY_INSECURE', 'value': '1' if registry_insecure else ''},
-            {'name': 'BUILDKITD_FLAGS', 'value': '--oci-worker-no-process-sandbox'},
+            {'name': 'CACHE_IMAGE_REF', 'value': cache_ref},
+            {'name': 'BUILDKITD_FLAGS', 'value': '--oci-worker-no-process-sandbox --config /files/buildkitd.toml'},
         ]
         if registry_username:
             volumes.append({'name': 'docker-config', 'secret': {

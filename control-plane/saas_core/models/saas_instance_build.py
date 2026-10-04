@@ -216,6 +216,7 @@ class SaasInstance(models.Model):
             builder_image=reg['builder_image'], git_image=reg['git_image'],
             registry_host=reg['host'], registry_push_host=reg['push_host'],
             registry_username=reg['username'], registry_password=reg['password'],
+            cache_ref=self._build_cache_ref(reg),
             registry_insecure=reg['insecure'], deadline_seconds=_BUILD_DEADLINE_SECONDS)
         build.write({
             'stage': 'building', 'job_name': job_name,
@@ -341,6 +342,29 @@ class SaasInstance(models.Model):
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
+    def _build_cache_ref(self, registry):
+        """Import only this tenant's or its parent's successful image cache.
+
+        A new environment has an empty PVC; the production image can still
+        supply unchanged base/dependency layers without sharing customer data
+        with unrelated tenants. BuildKit validates each layer against inputs.
+        """
+        self.ensure_one()
+        candidates = self | self.parent_id.filtered(
+            lambda p: p.partner_id == self.partner_id
+            and p.docker_server_id == self.docker_server_id
+            and p.odoo_version_id == self.odoo_version_id)
+        for instance in candidates:
+            previous = self.env['saas.build'].sudo().search([
+                ('instance_id', '=', instance.id), ('state', '=', 'success'),
+                ('image_digest', '!=', False),
+            ], order='id desc', limit=1)
+            ref = previous.image_digest or ''
+            prefix = registry['host'] + '/'
+            if ref.startswith(prefix):
+                return registry['push_host'] + '/' + ref[len(prefix):]
+        return ''
+
     def _schedule_build_step(self, method, build):
         now = fields.Datetime.now()
         # During the first minute a build is most likely close to finishing
@@ -350,6 +374,8 @@ class SaasInstance(models.Model):
         recent = False
         if build.date_start:
             recent = (now - build.date_start).total_seconds() < 60
+        if method == '_job_poll_rollout':
+            recent = True  # Each phase gets fast completion detection.
         self.env['saas.job'].enqueue(
             self, method, args=(build.id,), channel='deploy',
             eta=now + datetime.timedelta(seconds=(5 if recent else _POLL_SECONDS)),

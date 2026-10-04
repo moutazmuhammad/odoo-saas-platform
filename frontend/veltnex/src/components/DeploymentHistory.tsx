@@ -49,11 +49,11 @@ export function DeploymentHistory({
   const [open, setOpen] = React.useState<number | null>(null);
 
   const load = React.useCallback(() => {
-    api.instanceBuilds(instanceId, accessToken).then(setBuilds).catch(() => setBuilds([]));
+    return api.instanceBuilds(instanceId, accessToken).then(setBuilds);
   }, [instanceId, accessToken]);
 
   React.useEffect(() => {
-    load();
+    load().catch(() => setBuilds([]));
   }, [load]);
   // Refresh while a build is running so the status flips live (resilient:
   // backs off on error, pauses on a hidden tab, stops on auth-expiry).
@@ -119,10 +119,15 @@ export function DeploymentHistory({
                         )}
                         {running && (
                           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                            Building…
+                            {b.stage === "queued" ? "Queued…" : b.stage === "deploying" ? "Deploying…" : "Building image…"}
                           </span>
                         )}
                       </div>
+                      {running && (
+                        <p className="mt-1 text-xs text-muted" role="status">
+                          {b.stage === "queued" ? "Waiting for a build slot." : b.stage === "deploying" ? "Starting the new version and checking it is ready." : "Preparing your code and dependencies."}
+                        </p>
+                      )}
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
                         <span>{SOURCE_LABEL[b.source]}</span>
                         {b.branch && (

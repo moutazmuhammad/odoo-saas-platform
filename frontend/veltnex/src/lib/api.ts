@@ -520,6 +520,7 @@ export interface Build {
   id: number;
   source: "initial" | "push" | "redeploy" | "merge";
   state: "running" | "success" | "failed";
+  stage?: "queued" | "building" | "deploying" | "done";
   branch: string;
   commit: string;
   commit_message: string;
@@ -887,4 +888,3 @@ export function logStreamUrl(instanceId: number, tail = 100) {
 export function terminalOutputUrl(sessionId: string) {
   return `/saas/terminal/instance/output/${sessionId}`;
 }
-

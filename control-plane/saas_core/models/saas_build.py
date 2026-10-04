@@ -1,3 +1,6 @@
+import datetime
+import json
+
 from odoo import api, fields, models
 
 
@@ -70,3 +73,64 @@ class SaasBuild(models.Model):
             vals['log'] = (log or '')[:8000]
         self.write(vals)
         return self
+
+
+    @api.model
+    def _history_retention_policy(self):
+        params = self.env['ir.config_parameter'].sudo()
+        def positive(key, default):
+            try:
+                value = int(params.get_param(key, default))
+            except (TypeError, ValueError):
+                return default
+            return value if value > 0 else default
+        return (positive('saas_master.build_history_days', 30),
+                positive('saas_master.build_history_limit', 50))
+
+    @api.model
+    def _cron_cleanup_history(self):
+        """Bound completed deployment records and logs per environment.
+
+        Keep active builds, builds referenced by pending workers, the two
+        latest successful image deployments (current plus rollback), and the
+        latest module fingerprint baseline. Image registry data is untouched.
+        """
+        days, limit = self._history_retention_policy()
+        cutoff = fields.Datetime.now() - datetime.timedelta(days=days)
+        Build = self.sudo()
+        instances = self.env['saas.instance'].sudo().search([('build_ids', '!=', False)])
+        removed = 0
+        for instance in instances:
+            domain = [('instance_id', '=', instance.id), ('state', 'in', ['success', 'failed'])]
+            keep = Build.search(domain, order='id desc', limit=limit)
+            # Preserve both the current successful image and its predecessor.
+            protected = Build.search([
+                ('instance_id', '=', instance.id), ('state', '=', 'success'),
+                ('image_digest', '!=', False)], order='id desc', limit=1)
+            if protected:
+                protected |= Build.search([
+                    ('instance_id', '=', instance.id), ('state', '=', 'success'),
+                    ('image_digest', '!=', False),
+                    ('image_digest', '!=', protected.image_digest)], order='id desc', limit=1)
+            protected |= Build.search([
+                ('instance_id', '=', instance.id), ('state', '=', 'success'),
+                ('module_versions', '!=', False)], order='id desc', limit=1)
+            jobs = self.env['saas.job'].sudo().search([
+                ('model', '=', 'saas.instance'), ('res_id', '=', instance.id),
+                ('state', 'in', ['pending', 'running']),
+                ('method', 'in', ['_job_start_build', '_job_poll_build', '_job_poll_rollout'])])
+            for job in jobs:
+                try:
+                    args = json.loads(job.args_json or '[]')
+                    if args and isinstance(args[0], int):
+                        protected |= Build.browse(args[0]).exists()
+                except (ValueError, TypeError, KeyError):
+                    continue
+            stale = Build.search(domain + [
+                ('id', 'not in', protected.ids), '|',
+                ('date_done', '<', cutoff),
+                '&', ('date_done', '=', False), ('date_start', '<', cutoff)])
+            excess = Build.search(domain + [('id', 'not in', (keep | protected).ids)])
+            (stale | excess).unlink()
+            removed += len(stale | excess)
+        return removed

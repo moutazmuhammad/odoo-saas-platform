@@ -1,6 +1,8 @@
+import datetime
 import json
 from unittest.mock import MagicMock, patch
 
+from odoo import fields
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase, tagged
 
@@ -381,6 +383,43 @@ class TestImageBuildPipeline(TransactionCase):
                 self.instance._validate_repo_before_change(
                     'https://github.com/acme/app.git', 'main', 'tok')
         self.assertNotIn('tok', str(cm.exception).replace('token', ''))
+
+
+    def test_history_retention_removes_old_records_but_keeps_rollback_and_active(self):
+        Build = self.env['saas.build'].sudo()
+        old = fields.Datetime.now() - datetime.timedelta(days=40)
+        expired = self._build(state='failed', date_done=old)
+        baseline = self._build(state='success', date_done=old, image_digest='registry@sha256:previous', module_versions='{}')
+        current = self._build(state='success', date_done=old, image_digest='registry@sha256:current', module_versions='{}')
+        repeated = self._build(state='success', date_done=old, image_digest='registry@sha256:current')
+        active = self._build(date_start=old)
+        Build._cron_cleanup_history()
+        self.assertFalse(expired.exists())
+        self.assertTrue(current.exists())  # Latest module fingerprint baseline.
+        self.assertTrue(baseline.exists())
+        self.assertTrue(repeated.exists())
+        self.assertTrue(active.exists())
+
+    def test_history_retention_caps_completed_records_per_instance(self):
+        self.env['ir.config_parameter'].sudo().set_param('saas_master.build_history_limit', 3)
+        builds = [self._build(state='failed', date_done=fields.Datetime.now()) for _ in range(6)]
+        self.env['saas.build']._cron_cleanup_history()
+        self.assertFalse(any(build.exists() for build in builds[:3]))
+        self.assertTrue(all(build.exists() for build in builds[3:]))
+        self.assertEqual(self.env['saas.build']._cron_cleanup_history(), 0)
+
+    def test_history_retention_preserves_pending_worker_references(self):
+        old = fields.Datetime.now() - datetime.timedelta(days=40)
+        build = self._build(state='failed', date_done=old)
+        self.env['saas.job'].enqueue(self.instance, '_job_poll_rollout', args=(build.id,), run_now=False)
+        self.env['saas.build']._cron_cleanup_history()
+        self.assertTrue(build.exists())
+
+    def test_history_retention_invalid_settings_use_safe_defaults(self):
+        params = self.env['ir.config_parameter'].sudo()
+        params.set_param('saas_master.build_history_days', '-1')
+        params.set_param('saas_master.build_history_limit', 'invalid')
+        self.assertEqual(self.env['saas.build']._history_retention_policy(), (30, 50))
 
 
 @tagged('post_install', '-at_install')

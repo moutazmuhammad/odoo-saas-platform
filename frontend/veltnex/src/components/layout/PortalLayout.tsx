@@ -1,6 +1,7 @@
 import * as React from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
+  ShieldCheck,
   Receipt,
   Settings,
   LogOut,
@@ -29,6 +30,7 @@ import { cn } from "@/lib/utils";
 // Projects are reached via the top-bar project switcher (GCP-style), so the
 // left menu carries the account sections only — no duplicate Projects entry.
 const NAV = [
+  { to: "/my/access", label: "Project Access", icon: ShieldCheck },
   { to: "/my/billing", label: "Billing", icon: Receipt },
   // Account "Settings" lives in the avatar dropdown — no duplicate in the rail.
 ];
@@ -49,6 +51,7 @@ function instanceSections(id: number, isHosting: boolean): NavItem[] {
     // entry (Overview) and the project-wide Project settings.
     return [
       { to: env, label: "Overview", icon: Layers, tab: "overview" },
+      { to: `${base}/access`, label: "Project Access", icon: ShieldCheck },
       { to: `${env}?tab=code`, label: "Project settings", icon: Settings, tab: "code" },
     ];
   }

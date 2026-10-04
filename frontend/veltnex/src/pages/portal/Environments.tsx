@@ -1,4 +1,6 @@
 import * as React from "react";
+import { Link } from "react-router-dom";
+import { PermissionContext, hasPermission } from "@/lib/permissions";
 import { usePolling } from "@/hooks/usePolling";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -114,13 +116,15 @@ function asTab(v: string | null): SectionTab {
 function SectionTabBar({
   tab,
   setTab,
+  permissions,
 }: {
+  permissions?: string[];
   tab: SectionTab;
   setTab: (t: SectionTab) => void;
 }) {
   return (
     <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-3">
-      {SECTION_TABS.map((t) => {
+      {SECTION_TABS.filter(t => hasPermission(permissions, ({ overview: 'project.view', metrics: 'project.view', databases: 'db.view', shell: 'terminal.open', sql: 'sql.execute', logs: 'logs.view', snapshots: 'backup.view' } as Record<string, string>)[t.key])).map((t) => {
         const active = tab === t.key;
         return (
           <button
@@ -211,10 +215,10 @@ export default function Environments() {
       const d = await api.environments(instanceId);
       setData(d);
       setSelectedId((cur) => {
-        const all = [d.production, ...d.environments];
+        const all = [d.production, ...d.environments].filter(e => hasPermission(e.permissions, "project.view"));
         if (cur && all.some((e) => e.id === cur)) return cur;
         if (envParam && all.some((e) => e.id === envParam)) return envParam;
-        return d.production.id;
+        return all[0]?.id || d.production.id;
       });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not load this project.");
@@ -226,20 +230,20 @@ export default function Environments() {
   }, [load]);
 
   const hasTransient = !!data?.environments.some((c) => TRANSIENT.has(c.state));
-  usePolling(load, { interval: 5000, enabled: hasTransient });
+  usePolling(load, { interval: hasTransient ? 5000 : 30000, enabled: true });
 
   const allEnvs = React.useMemo<EnvChild[]>(
-    () => (data ? [data.production, ...data.environments] : []),
+    () => (data ? [data.production, ...data.environments].filter(e => hasPermission(e.permissions, "project.view")) : []),
     [data],
   );
-  const selected = allEnvs.find((e) => e.id === selectedId) || data?.production || null;
+  const selected = allEnvs.find((e) => e.id === selectedId) || allEnvs[0] || null;
   const canCreate = !!data?.has_repo;
 
   const doMerge = (target: EnvChild) => {
     const source = allEnvs.find((e) => e.id === draggingId) || null;
     setDraggingId(null);
     setDragOverId(null);
-    if (source && source.id !== target.id) setMergePrompt({ source, target });
+    if (source && hasPermission(target.permissions, "deploy") && source.id !== target.id) setMergePrompt({ source, target });
   };
 
   if (error) {
@@ -249,7 +253,7 @@ export default function Environments() {
       </div>
     );
   }
-  if (!data || !selected) {
+  if (!data) {
     return (
       <div className="mt-20 flex justify-center">
         <Spinner size="lg" label="Loading project…" />
@@ -257,11 +261,22 @@ export default function Environments() {
     );
   }
 
+  if (!selected) {
+    return <div className="space-y-4">
+      <h1 className="text-2xl font-bold">{data.project_name}</h1>
+      <p className="text-sm text-muted">No environments are available in your assigned scopes yet.</p>
+      {data.can_manage_access && <Link className="inline-block text-primary" to={`/my/instances/${instanceId}/access`}>Manage project access</Link>}
+      <div className="flex gap-3">{(["staging", "development"] as const).map(type => data.can_create?.[type] && <Button key={type} disabled={!canCreate} onClick={() => setCreateType(type)}>Create {type} environment</Button>)}</div>
+      <CreateEnvDialog instanceId={instanceId} type={createType} onClose={() => setCreateType(null)} onCreated={(_auto, childId) => { setCreateType(null); if (childId) selectEnv(childId); load(); }} />
+    </div>;
+  }
+
   const staging = data.environments.filter((e) => e.environment === "staging");
   const development = data.environments.filter((e) => e.environment === "development");
 
   return (
     <div className="animate-fade-in">
+      {data.can_manage_access && <Link className="mb-4 inline-block text-sm font-medium text-primary" to={`/my/instances/${instanceId}/access`}>Manage project access →</Link>}
       <div className="flex flex-col gap-5 lg:flex-row">
         {/* ───────── Left sidebar: branches (sticky per-project bar) ───── */}
         <aside className="lg:sticky lg:top-20 lg:max-h-[calc(100dvh-14.5rem)] lg:w-64 lg:shrink-0 lg:self-start lg:overflow-y-auto">
@@ -287,7 +302,7 @@ export default function Environments() {
                 )}
               </div>
 
-              <SidebarSection title="Production">
+              {hasPermission(data.production.permissions, "project.view") && <SidebarSection title="Production">
                 <BranchItem
                   env={data.production}
                   filter={filter}
@@ -295,11 +310,11 @@ export default function Environments() {
                   onSelect={() => selectEnv(data.production.id)}
                   drag={dragHandlers(data.production)}
                 />
-              </SidebarSection>
+              </SidebarSection>}
 
               <SidebarSection
                 title="Staging"
-                onAdd={() => setCreateType("staging")}
+                onAdd={data.can_create?.staging === false ? undefined : () => setCreateType("staging")}
               >
                 <BranchList
                   envs={staging}
@@ -312,7 +327,7 @@ export default function Environments() {
 
               <SidebarSection
                 title="Development"
-                onAdd={() => setCreateType("development")}
+                onAdd={data.can_create?.development === false ? undefined : () => setCreateType("development")}
               >
                 <BranchList
                   envs={development}
@@ -393,7 +408,7 @@ export default function Environments() {
 
   function dragHandlers(env: EnvChild) {
     return {
-      draggable: canCreate,
+      draggable: canCreate && hasPermission(env.permissions, "project.view"),
       isDragging: draggingId === env.id,
       isDropTarget: dragOverId === env.id && draggingId !== null && draggingId !== env.id,
       onDragStart: () => setDraggingId(env.id),
@@ -402,7 +417,7 @@ export default function Environments() {
         setDragOverId(null);
       },
       onDragOver: (e: React.DragEvent) => {
-        if (draggingId !== null && draggingId !== env.id) {
+        if (hasPermission(env.permissions, "deploy") && draggingId !== null && draggingId !== env.id) {
           e.preventDefault();
           setDragOverId(env.id);
         }
@@ -801,6 +816,7 @@ function MainPanel({
   onMergeInto: () => void;
   onChanged: () => void;
 }) {
+  const can = (permission: string) => hasPermission(env.permissions, permission);
   const navigate = useNavigate();
   const toast = useToast();
   const [status, setStatus] = React.useState<StatusData | null>(null);
@@ -857,7 +873,7 @@ function MainPanel({
   const bounded = tab === "logs" || tab === "shell" || tab === "sql";
 
   return (
-    <Card
+    <PermissionContext.Provider value={{ id: env.id, permissions: env.permissions }}><Card
       className={cn(
         "flex flex-col",
         bounded
@@ -904,24 +920,25 @@ function MainPanel({
               Open app
             </Button>
           )}
-          {isRunning && (
+          {isRunning && can("instance.operate") && (
             <ActionButton
               icon={RotateCw}
               loading={pending === "restart"}
-              loadingText="Re-deploying…"
+              loadingText="Restarting…"
               disabled={!!pending}
-              onClick={() => run("restart", "Re-deploying")}
+              onClick={() => run("restart", "Restarted")}
             >
-              Re-deploy
+              Restart
             </ActionButton>
           )}
-          {isRunning && env.environment !== "production" && (
+          {isRunning && can("deploy") && <ActionButton loading={pending === "deploy"} disabled={!!pending} onClick={() => run("deploy", "Deployment queued")}>Build &amp; deploy</ActionButton>}
+          {isRunning && can("db.restore") && env.environment !== "production" && (
             <Button size="sm" variant="secondary" onClick={() => setCopyOpen(true)}>
               <Database className="size-4" />
               Copy databases
             </Button>
           )}
-          {isStopped && (
+          {isStopped && can("instance.operate") && (
             <ActionButton
               icon={Play}
               loading={pending === "start"}
@@ -932,7 +949,7 @@ function MainPanel({
               Start
             </ActionButton>
           )}
-          {isRunning && (
+          {isRunning && can("instance.operate") && (
             <ActionButton
               variant="secondary"
               icon={Square}
@@ -944,7 +961,7 @@ function MainPanel({
               Stop
             </ActionButton>
           )}
-          {onDelete && (
+          {onDelete && can("environment.delete") && (
             <Button size="sm" variant="danger" onClick={onDelete}>
               <Trash2 className="size-4" />
               Delete
@@ -956,14 +973,14 @@ function MainPanel({
       {/* Section tabs — every tool (Metrics / Databases / Code / Shell / SQL /
           Logs / Snapshots) swaps in place below, so the workspace never
           navigates away from the environment. */}
-      <SectionTabBar tab={tab} setTab={setTab} />
+      <SectionTabBar tab={tab} setTab={setTab} permissions={env.permissions} />
 
       {/* Body — for console sections this flex-fills the bounded card (only this
           area scrolls); for content sections it flows so the page scrolls and
           nothing is clipped under the tabs. */}
       <div className={cn("flex min-h-0 flex-1 flex-col", bounded && "overflow-hidden")}>
       <div className={cn("min-h-0 flex-1 p-5", bounded && "overflow-y-auto")}>
-        {pendingPay ? (
+        {!can(({ overview: 'project.view', metrics: 'project.view', databases: 'db.view', code: 'project.configure', shell: 'terminal.open', sql: 'sql.execute', logs: 'logs.view', snapshots: 'backup.view' } as Record<string, string>)[tab]) ? <AlertBanner variant="info" title="Access restricted" description="Ask your project owner for the role needed to use this tool." /> : pendingPay ? (
           <AlertBanner
             variant="warning"
             title="Payment pending"
@@ -994,7 +1011,7 @@ function MainPanel({
           // plus the Code & packages (repo) panel. Both are project-wide (bound
           // to Production) and inherited by Staging/Development.
           <>
-            <ScaleCard project={project} onChanged={onChanged} />
+            {project.is_project_owner !== false && <ScaleCard project={project} onChanged={onChanged} />}
             <Code embedId={project.production.id} />
           </>
         ) : tab === "shell" ? (
@@ -1011,11 +1028,11 @@ function MainPanel({
       <CopyDbsDialog
         open={copyOpen}
         target={env}
-        allEnvs={[project.production, ...(project.environments || [])]}
+        allEnvs={[project.production, ...(project.environments || [])].filter(e => hasPermission(e.permissions, "backup.download"))}
         onClose={() => setCopyOpen(false)}
         onCopied={() => toast.success("Database copy started", `Databases will be copied to ${env.name} shortly. Check its logs for progress.`)}
       />
-    </Card>
+    </Card></PermissionContext.Provider>
   );
 }
 

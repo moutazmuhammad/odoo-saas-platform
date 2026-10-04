@@ -1,4 +1,5 @@
 import * as React from "react";
+import { usePermissions } from "@/lib/permissions";
 import { usePolling } from "@/hooks/usePolling";
 import { useNavigate, useParams } from "react-router-dom";
 import { Archive, RotateCcw, Clock, ShieldCheck, ShieldAlert } from "lucide-react";
@@ -21,6 +22,7 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
   const routeParams = useParams();
   const id = embedId != null ? String(embedId) : (routeParams.id ?? "");
   const instanceId = Number(id);
+  const can = usePermissions(instanceId);
   const embedded = embedId != null;
   const navigate = useNavigate();
   const toast = useToast();
@@ -115,7 +117,7 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
         />
       ) : (
         <>
-          {instance && (
+          {instance && can("billing.manage") && (
             <DailyBackupCard
               instance={instance}
               enabling={enabling}
@@ -170,10 +172,11 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
                   </div>
                   <div className="flex items-center gap-2 sm:justify-end">
                     <StatusBadge status={b.status} />
+                    {can("backup.download") && b.download_url && <a className="text-sm text-primary" href={b.download_url}>Download</a>}
                     <Button
                       size="sm"
                       variant="secondary"
-                      disabled={b.status !== "available"}
+                      disabled={!can("db.restore") || b.status !== "available"}
                       onClick={() => setRestoreTarget(b)}
                     >
                       <RotateCcw className="size-4" />

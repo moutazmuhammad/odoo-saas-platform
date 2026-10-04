@@ -1,0 +1,20 @@
+<odoo>
+    <record id="grant_portal_rule" model="ir.rule">
+        <field name="name">IAM: own grants and customer-owned grants</field>
+        <field name="model_id" ref="model_saas_iam_grant"/>
+        <field name="groups" eval="[(4, ref('base.group_portal'))]"/>
+        <field name="domain_force">['|', ('owner_id', '=', user.partner_id.id), ('user_id', '=', user.id)]</field>
+    </record>
+    <record id="group_portal_rule" model="ir.rule">
+        <field name="name">IAM: own or joined team groups</field>
+        <field name="model_id" ref="model_saas_iam_group"/>
+        <field name="groups" eval="[(4, ref('base.group_portal'))]"/>
+        <field name="domain_force">['|', ('owner_id', '=', user.partner_id.id), ('user_ids', 'in', [user.id])]</field>
+    </record>
+    <record id="invitation_portal_rule" model="ir.rule">
+        <field name="name">IAM: customer-owned invitations</field>
+        <field name="model_id" ref="model_saas_iam_invitation"/>
+        <field name="groups" eval="[(4, ref('base.group_portal'))]"/>
+        <field name="domain_force">[('owner_id', '=', user.partner_id.id)]</field>
+    </record>
+</odoo>

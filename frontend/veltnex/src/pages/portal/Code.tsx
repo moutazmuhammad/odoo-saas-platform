@@ -1,4 +1,5 @@
 import * as React from "react";
+import { hasPermission } from "@/lib/permissions";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { GitBranch, Package, Plus, X, Unplug, Boxes, CheckCircle2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -59,7 +60,7 @@ export default function Code({ embedId }: { embedId?: number } = {}) {
     );
   }
 
-  const canDeploy = instance.state === "running" || instance.state === "stopped";
+  const canDeploy = hasPermission(instance.permissions, "project.configure") && (instance.state === "running" || instance.state === "stopped");
 
   return (
     <div className="animate-fade-in">

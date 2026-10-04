@@ -1,4 +1,5 @@
 import * as React from "react";
+import { usePermissions } from "@/lib/permissions";
 import { usePolling } from "@/hooks/usePolling";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -37,6 +38,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
   const routeParams = useParams();
   const id = embedId != null ? String(embedId) : (routeParams.id ?? "");
   const instanceId = Number(id);
+  const can = usePermissions(instanceId);
   const embedded = embedId != null;
   const navigate = useNavigate();
   const toast = useToast();
@@ -221,7 +223,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
           <Button
             variant="secondary"
             onClick={openDatabaseManager}
-            disabled={!data?.ready || openingManager}
+            disabled={!can("database.manager") || !data?.ready || openingManager}
             title={data?.ready ? "Odoo's database manager, without the master password." : "Available once your instance is running."}
           >
             {openingManager ? <Loader2 className="size-4 animate-spin" /> : <Settings2 className="size-4" />}
@@ -230,7 +232,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
           <Button
             variant="secondary"
             onClick={() => setRestoreOpen(true)}
-            disabled={!data?.ready}
+            disabled={!can("db.restore") || !data?.ready}
             title={data?.ready ? undefined : "Available once your instance is running."}
           >
             <UploadCloud className="size-4" />
@@ -238,7 +240,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
           </Button>
           <Button
             onClick={() => setCreateOpen(true)}
-            disabled={!data?.ready || isCreating || capacityReached}
+            disabled={!can("db.create") || !data?.ready || isCreating || capacityReached}
             title={capacityReached ? "Production allows one database. Restore or manage the existing database." : isCreating ? "A database is already being created on this instance." : undefined}
           >
             {isCreating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
@@ -269,7 +271,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
           icon={Database}
           title="No databases yet"
           description="Create your first database to start using this instance."
-          action={<Button onClick={() => setCreateOpen(true)}>Create database</Button>}
+          action={can("db.create") ? <Button onClick={() => setCreateOpen(true)}>Create database</Button> : undefined}
         />
       ) : data ? (
         <Card className="mt-6 overflow-hidden">
@@ -366,12 +368,13 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                                   className="fixed z-40 w-44 overflow-hidden rounded-lg border border-border bg-card shadow-card animate-scale-in"
                                   style={{ top: menuPos.top, right: menuPos.right }}
                                 >
-                                  <MenuItem icon={Download} label="Download backup" onClick={() => { setOpenMenu(null); setBackupsTarget(db.name); }} />
-                                  <MenuItem icon={CopyPlus} label="Duplicate" disabled={capacityReached} onClick={() => { setOpenMenu(null); setDuplicateTarget(db.name); }} />
-                                  <MenuItem icon={RefreshCw} label="Upgrade modules" onClick={() => { setOpenMenu(null); setUpgradeTarget(db.name); }} />
-                                  <MenuItem icon={KeyRound} label="Reset password" onClick={() => { setOpenMenu(null); setResetTarget(db.name); }} />
+                                  <MenuItem icon={Archive} label="Create backup" disabled={!can("backup.create")} onClick={async () => { setOpenMenu(null); try { await api.dbBackup(instanceId, db.name, "zip"); await load(true); toast.success("Backup queued"); } catch (e) { toast.error("Could not create backup", e instanceof ApiError ? e.message : "Please try again."); } }} />
+                                  <MenuItem disabled={!can("backup.download")} icon={Download} label="Download backup" onClick={() => { setOpenMenu(null); setBackupsTarget(db.name); }} />
+                                  <MenuItem icon={CopyPlus} label="Duplicate" disabled={capacityReached || !can("db.create") || !can("backup.download")} onClick={() => { setOpenMenu(null); setDuplicateTarget(db.name); }} />
+                                  <MenuItem disabled={!can("db.upgrade")} icon={RefreshCw} label="Upgrade modules" onClick={() => { setOpenMenu(null); setUpgradeTarget(db.name); }} />
+                                  <MenuItem disabled={!can("db.password")} icon={KeyRound} label="Reset password" onClick={() => { setOpenMenu(null); setResetTarget(db.name); }} />
                                   <div className="border-t border-border" />
-                                  <MenuItem icon={Trash2} label="Delete" danger onClick={() => { setOpenMenu(null); setDropTarget(db.name); }} />
+                                  <MenuItem disabled={!can("db.delete")} icon={Trash2} label="Delete" danger onClick={() => { setOpenMenu(null); setDropTarget(db.name); }} />
                                 </div>
                               </>
                             )}
@@ -449,6 +452,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
       />
 
       <DatabaseBackupsDialog
+        canCreate={can("backup.create")}
         dbName={backupsTarget}
         backups={backupsTarget ? backupsFor(backupsTarget) : []}
         onDownload={downloadBackup}
@@ -473,11 +477,13 @@ function triggerBrowserDownload(url: string) {
 }
 
 function DatabaseBackupsDialog({
+  canCreate,
   dbName,
   backups,
   onDownload,
   onClose,
 }: {
+  canCreate: boolean;
   dbName: string | null;
   backups: ApiBackup[];
   onDownload: (name: string, format: "zip" | "dump") => Promise<void>;
@@ -521,7 +527,7 @@ function DatabaseBackupsDialog({
       open={!!dbName}
       onClose={onClose}
       title="Download backup"
-      description={dbName ? `Take a fresh backup of “${dbName}” and download it.` : undefined}
+      description={dbName ? `Download an available backup of “${dbName}”.` : undefined}
     >
       {error && <AlertBanner className="mb-4" variant="danger" title="Backup" description={error} />}
       {done && !error && (
@@ -579,7 +585,7 @@ function DatabaseBackupsDialog({
         ) : (
           <span className="text-sm text-muted">No backup yet.</span>
         )}
-        <ActionButton loading={loading} loadingText="Preparing…" onClick={start}>
+        <ActionButton disabled={!canCreate} loading={loading} loadingText="Preparing…" onClick={start}>
           <Archive className="size-4" />
           Download backup
         </ActionButton>

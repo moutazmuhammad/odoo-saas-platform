@@ -1,3 +1,4 @@
+import { PermissionContext } from "@/lib/permissions";
 import { Outlet, useParams, Link } from "react-router-dom";
 import { GitBranch, Globe, ExternalLink, ArrowLeft } from "lucide-react";
 import { useInstances } from "@/context/InstancesContext";
@@ -82,7 +83,7 @@ export default function InstanceLayout() {
         </div>
       )}
 
-      <Outlet />
+      <PermissionContext.Provider value={inst ? { id: instanceId, permissions: inst.permissions } : null}><Outlet /></PermissionContext.Provider>
     </div>
   );
 }

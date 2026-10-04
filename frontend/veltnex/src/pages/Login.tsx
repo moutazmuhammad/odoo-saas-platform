@@ -135,7 +135,7 @@ export default function Login() {
 
           <p className="mt-6 text-center text-sm text-muted">
             New to VELTNEX?{" "}
-            <Link to={registerTo} className="font-medium text-primary hover:underline">
+            <Link to={registerTo} state={{ from: fromState }} className="font-medium text-primary hover:underline">
               Create an account
             </Link>
           </p>

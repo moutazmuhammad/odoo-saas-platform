@@ -320,6 +320,7 @@ export interface WalletData {
 export type EnvironmentType = "production" | "staging" | "development";
 
 export interface EnvChild {
+  permissions?: string[];
   id: number;
   name: string;
   domain: string;
@@ -337,6 +338,9 @@ export interface EnvChild {
 }
 
 export interface ProjectEnvironments {
+  can_create?: { staging: boolean; development: boolean };
+  can_manage_access?: boolean;
+  is_project_owner?: boolean;
   project_id: number;
   project_name: string;
   production: EnvChild;
@@ -370,6 +374,9 @@ export interface ProjectPriceResult extends PriceResult {
 }
 
 export interface ApiInstance {
+  permissions?: string[];
+  can_manage_access?: boolean;
+  is_project_owner?: boolean;
   /** Project owner, available only to staff. */
   customer?: { id: number; name: string };
   id: number;
@@ -572,7 +579,21 @@ export interface OtpSent {
   test_otp?: string;
 }
 
+export interface IamData {
+  roles: { code: string; name: string; permissions: string[] }[];
+  projects: { id: number; name: string; customer_id: number; is_owner: boolean; assignable_roles: Record<string, string[]> }[];
+  grants: { id: number; project_id: number; role: string; environment: string; user_id: number | null; group_id: number | null; name: string; email: string; pending: boolean; expired: boolean; editable: boolean }[];
+  groups: { id: number; name: string; customer_id: number; user_ids: number[] }[];
+  members: { id: number; name: string; email: string; customer_ids?: number[] }[];
+}
+
 export const api = {
+  iam: () => rpc<IamData>("/saas/api/v1/iam"),
+  iamInvite: (params: { email: string; project_ids: number[]; roles: string[]; environments: string[]; group_id?: number }) => rpc<{ id: number; invite_url: string }>("/saas/api/v1/iam/invite", params),
+  iamAccept: (token: string) => rpc<{ project_ids: number[] }>("/saas/api/v1/iam/accept", { token }),
+  iamGrant: (params: { project_ids: number[]; roles: string[]; environments: string[]; user_id?: number; group_id?: number }) => rpc("/saas/api/v1/iam/grant", params),
+  iamRevoke: (grant_ids: number[]) => rpc("/saas/api/v1/iam/revoke", { grant_ids }),
+  iamGroup: (params: { name?: string; group_id?: number; user_ids?: number[]; delete?: boolean }) => rpc("/saas/api/v1/iam/groups", params),
   // session / account
   me: () => rpc<ApiUser>("/saas/api/v1/me"),
   login: (login: string, password: string) =>

@@ -109,16 +109,18 @@ class SaasApi(http.Controller):
         return user.has_group('base.group_user') or user.has_group(
             'saas_website.group_saas_support')
 
-    def _can_manage_instance(self, instance):
+    def _can_manage_instance(self, instance, permission='billing.manage', environment=None):
         """Owners and platform administrators may manage an instance."""
         user = self._user()
         if not user:
             return False
+        if 'saas.iam' in request.env:
+            return request.env['saas.iam']._allowed(instance, permission, environment=environment)
         return (instance.sudo().partner_id == user.partner_id
                 or user.has_group('saas_core.group_saas_manager')
                 or user.has_group('base.group_system'))
 
-    def _instance(self, instance_id, access_token=None, write=False):
+    def _instance(self, instance_id, access_token=None, write=False, permission=None):
         """Authorized sudo recordset for an instance the caller may act on.
 
         The ``access_token`` is a SHARE credential: it grants READ-ONLY
@@ -132,6 +134,12 @@ class SaasApi(http.Controller):
         instance = Instance.browse(int(instance_id))
         if not instance.exists():
             raise MissingError(_("Instance not found."))
+        if 'saas.iam' in request.env:
+            required = permission or ('project.configure' if write else 'project.view')
+            # Sharing a URL never grants database, log, terminal or management access.
+            if not write and required in ('project.view', 'project.discover', 'build.view') and access_token and hmac.compare_digest(instance.sudo().access_token or '', access_token):
+                return instance.sudo()
+            return request.env['saas.iam']._require(instance, required)
         if write:
             if not self._can_manage_instance(instance):
                 raise AccessError(_("Only the owner or an administrator can change this instance."))
@@ -734,7 +742,7 @@ class SaasApi(http.Controller):
             ('parent_id', '=', False),
         ]
         if not self._is_staff():
-            inst_domain.append(('partner_id', '=', partner.id))
+            inst_domain += (['|', ('partner_id', '=', partner.id), ('id', 'in', request.env['saas.iam']._visible_project_ids())] if 'saas.iam' in request.env else [('partner_id', '=', partner.id)])
         instances = Instance.search(inst_domain, order='create_date desc')
         invoices = self._partner_invoices(partner)
         open_invoices = [i for i in invoices if i.payment_state not in ('paid', 'in_payment')
@@ -767,7 +775,7 @@ class SaasApi(http.Controller):
             ('parent_id', '=', False),
         ]
         if not self._is_staff():
-            domain.append(('partner_id', '=', partner.id))
+            domain += (['|', ('partner_id', '=', partner.id), ('id', 'in', request.env['saas.iam']._visible_project_ids())] if 'saas.iam' in request.env else [('partner_id', '=', partner.id)])
         if itype == 'services':
             domain.append(('is_hosting', '=', False))
         elif itype == 'hosting':
@@ -780,7 +788,7 @@ class SaasApi(http.Controller):
     @http.route('/saas/api/v1/instances/<int:instance_id>', type='json', auth='public')
     def instance_detail(self, instance_id, access_token=None):
         try:
-            instance = self._instance(instance_id, access_token)
+            instance = self._instance(instance_id, access_token, permission='project.discover')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         return ok(self._serialize_instance(instance, detail=True))
@@ -789,7 +797,7 @@ class SaasApi(http.Controller):
                 type='json', auth='public')
     def instance_status(self, instance_id, access_token=None):
         try:
-            instance = self._instance(instance_id, access_token)
+            instance = self._instance(instance_id, access_token, permission='project.view')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         status = instance._get_status_dict()
@@ -804,7 +812,7 @@ class SaasApi(http.Controller):
         (cached a few seconds per instance, so polling every few seconds
         from many tabs costs one query)."""
         try:
-            instance = self._instance(instance_id, access_token)
+            instance = self._instance(instance_id, access_token, permission='project.view')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         live = instance.sudo()._get_live_metrics()
@@ -828,7 +836,7 @@ class SaasApi(http.Controller):
         Tenant-isolated via ``self._instance`` (only the authenticated
         owner's instance resolves)."""
         try:
-            instance = self._instance(instance_id, access_token)
+            instance = self._instance(instance_id, access_token, permission='project.view')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         ranges = {'1h': 1, '6h': 6, '24h': 24, '7d': 24 * 7, '14d': 24 * 14}
@@ -842,7 +850,7 @@ class SaasApi(http.Controller):
         the chronological list of builds/deploys (initial / push / redeploy /
         merge), each with its commit, author, branch, status and timing."""
         try:
-            instance = self._instance(instance_id, access_token)
+            instance = self._instance(instance_id, access_token, permission='build.view')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         builds = request.env['saas.build'].sudo().search(
@@ -878,10 +886,11 @@ class SaasApi(http.Controller):
                 type='json', auth='public')
     def instance_action(self, instance_id, action=None, access_token=None):
         try:
-            instance = self._instance(instance_id, access_token, write=True)
+            instance = self._instance(instance_id, access_token, write=True, permission='deploy' if action == 'deploy' else 'instance.operate')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         handlers = {
+            'deploy': instance.action_redeploy,
             'start': instance.action_portal_start,
             'stop': instance.action_portal_stop,
             'restart': instance.action_portal_restart,
@@ -914,7 +923,7 @@ class SaasApi(http.Controller):
         redeploy. Empty repo_url disconnects (unlinks) the repo. Reuses
         action_redeploy (clone pending repos, re-render config, restart)."""
         try:
-            instance = self._hosting(instance_id, access_token, write=True)
+            instance = self._hosting(instance_id, access_token, write=True, permission='project.configure')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         # The repository + token are configured ONCE per PROJECT (on the
@@ -1002,8 +1011,8 @@ class SaasApi(http.Controller):
                        'deploy_failed')
         return ok(instance._get_status_dict())
 
-    def _hosting(self, instance_id, access_token=None, write=False):
-        instance = self._instance(instance_id, access_token, write=write)
+    def _hosting(self, instance_id, access_token=None, write=False, permission=None):
+        instance = self._instance(instance_id, access_token, write=write, permission=permission)
         if not instance.is_hosting:
             raise AccessError(_("Database management is only available for hosting."))
         return instance
@@ -1042,7 +1051,7 @@ class SaasApi(http.Controller):
                 type='json', auth='public')
     def db_list(self, instance_id, access_token=None):
         try:
-            instance = self._hosting(instance_id, access_token)
+            instance = self._hosting(instance_id, access_token, permission='db.view')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         if instance.state != 'running':
@@ -1079,7 +1088,7 @@ class SaasApi(http.Controller):
         """A short-lived link that opens Odoo's own database manager on the
         instance without the master password."""
         try:
-            instance = self._hosting(instance_id, access_token, write=True)
+            instance = self._hosting(instance_id, access_token, write=True, permission='database.manager')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1097,7 +1106,7 @@ class SaasApi(http.Controller):
         """Odoo.sh-style read-only SQL console. ``db`` selects which of
         the instance's databases to run against (multi-DB aware)."""
         try:
-            instance = self._hosting(instance_id, access_token, write=True)
+            instance = self._hosting(instance_id, access_token, write=True, permission='sql.execute')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1120,7 +1129,7 @@ class SaasApi(http.Controller):
     def db_create(self, instance_id, name=None, login=None, password=None,
                   access_token=None, **kw):
         try:
-            instance = self._hosting(instance_id, access_token, write=True)
+            instance = self._hosting(instance_id, access_token, write=True, permission='db.create')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1140,7 +1149,7 @@ class SaasApi(http.Controller):
         """Duplicate an existing database into a new name. Runs async
         (same in-flight tracking as create) and returns the new DB name."""
         try:
-            instance = self._hosting(instance_id, access_token, write=True)
+            instance = self._hosting(instance_id, access_token, write=True, permission='db.create')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1160,7 +1169,7 @@ class SaasApi(http.Controller):
         the browser uploads the local backup straight to the bucket
         (bypassing Odoo — no timeout, large files OK)."""
         try:
-            instance = self._hosting(instance_id, access_token, write=True)
+            instance = self._hosting(instance_id, access_token, write=True, permission='db.restore')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1189,7 +1198,7 @@ class SaasApi(http.Controller):
         The archive is validated (real, intact Odoo backup) on the host
         BEFORE the database is touched, so a bad file changes nothing."""
         try:
-            instance = self._hosting(instance_id, access_token, write=True)
+            instance = self._hosting(instance_id, access_token, write=True, permission='db.restore')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         backup = request.env['saas.instance.backup'].sudo().browse(
@@ -1212,7 +1221,7 @@ class SaasApi(http.Controller):
                 type='json', auth='public')
     def db_drop(self, instance_id, name=None, access_token=None, **kw):
         try:
-            instance = self._hosting(instance_id, access_token, write=True)
+            instance = self._hosting(instance_id, access_token, write=True, permission='db.delete')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1231,7 +1240,7 @@ class SaasApi(http.Controller):
         Runs async (same in-flight tracking as create/duplicate) and
         returns the op id so the client can poll its result/report."""
         try:
-            instance = self._hosting(instance_id, access_token, write=True)
+            instance = self._hosting(instance_id, access_token, write=True, permission='db.upgrade')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1249,7 +1258,7 @@ class SaasApi(http.Controller):
         """Poll a database operation's state + captured report (used by
         the no-downtime module upgrade so the customer sees the result)."""
         try:
-            instance = self._hosting(instance_id, access_token)
+            instance = self._hosting(instance_id, access_token, permission='db.view')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         op = request.env['saas.instance.db.operation'].sudo().browse(op_id)
@@ -1273,7 +1282,7 @@ class SaasApi(http.Controller):
         hosting and managed-services instances (snapshots are the one
         app-level add-on a service gets)."""
         try:
-            instance = self._instance(instance_id, access_token, write=True)
+            instance = self._instance(instance_id, access_token, write=True, permission='billing.manage')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1302,7 +1311,7 @@ class SaasApi(http.Controller):
         backend — the model method itself enforces this.
         """
         try:
-            instance = self._instance(instance_id, access_token, write=True)
+            instance = self._instance(instance_id, access_token, write=True, permission='billing.manage')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1327,7 +1336,7 @@ class SaasApi(http.Controller):
         the invoice (and, if the instance was never deployed, the instance
         too). Mandatory invoices can't be cancelled here."""
         try:
-            instance = self._instance(instance_id, access_token, write=True)
+            instance = self._instance(instance_id, access_token, write=True, permission='billing.manage')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         invoice = instance._get_cancellable_unpaid_invoice()
@@ -1349,7 +1358,7 @@ class SaasApi(http.Controller):
     def db_backup(self, instance_id, name=None, format=None,
                   access_token=None, **kw):
         try:
-            instance = self._hosting(instance_id, access_token, write=True)
+            instance = self._hosting(instance_id, access_token, write=True, permission='backup.create')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1376,7 +1385,7 @@ class SaasApi(http.Controller):
         if limited:
             return limited
         try:
-            instance = self._hosting(instance_id, access_token, write=True)
+            instance = self._hosting(instance_id, access_token, write=True, permission='db.password')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         if not new_password or len(new_password) < 6:
@@ -1399,7 +1408,7 @@ class SaasApi(http.Controller):
                 type='json', auth='public')
     def backups(self, instance_id, access_token=None):
         try:
-            instance = self._instance(instance_id, access_token)
+            instance = self._instance(instance_id, access_token, permission='backup.view')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         # Stopped / suspended / not-yet-running: no snapshot access.
@@ -1422,7 +1431,7 @@ class SaasApi(http.Controller):
                 type='json', auth='public')
     def backup_create(self, instance_id, access_token=None, **kw):
         try:
-            instance = self._instance(instance_id, access_token, write=True)
+            instance = self._instance(instance_id, access_token, write=True, permission='backup.create')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1445,7 +1454,7 @@ class SaasApi(http.Controller):
         background; the instance flips to ``provisioning`` and the UI
         polls its status."""
         try:
-            instance = self._instance(instance_id, access_token, write=True)
+            instance = self._instance(instance_id, access_token, write=True, permission='db.restore')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         try:
@@ -1609,7 +1618,7 @@ class SaasApi(http.Controller):
     def environments(self, instance_id, access_token=None):
         """The project view: Production + its Staging/Development servers."""
         try:
-            instance = self._instance(instance_id, access_token)
+            instance = self._instance(instance_id, access_token, permission='project.discover')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         prod = instance if instance.environment == 'production' else (
@@ -1661,7 +1670,7 @@ class SaasApi(http.Controller):
         if not partner:
             return err(_("Please sign in."), 'auth_required')
         instance = request.env['saas.instance'].sudo().browse(instance_id)
-        if not instance.exists() or not self._can_manage_instance(instance):
+        if not instance.exists() or not self._can_manage_instance(instance, 'environment.create', environment=type):
             return err(_("Project not found."), 'not_found')
         prod = instance if instance.environment == 'production' \
             else instance.parent_id
@@ -1690,7 +1699,7 @@ class SaasApi(http.Controller):
         if not partner:
             return err(_("Please sign in."), 'auth_required')
         target = request.env['saas.instance'].sudo().browse(instance_id)
-        if not target.exists() or not self._can_manage_instance(target):
+        if not target.exists() or not self._can_manage_instance(target, 'db.restore'):
             return err(_("Project not found."), 'not_found')
         if target.environment not in ('staging', 'development'):
             return err(_("Databases can only be copied onto a Staging or "
@@ -1700,7 +1709,7 @@ class SaasApi(http.Controller):
         except (TypeError, ValueError):
             return err(_("Invalid source server."), 'invalid')
         source = request.env['saas.instance'].sudo().browse(source_id)
-        if not source.exists() or not self._can_manage_instance(source):
+        if not source.exists() or not self._can_manage_instance(source, 'backup.download'):
             return err(_("Source server not found."), 'not_found')
         if not isinstance(db_names, list) or not db_names:
             return err(_("Pick at least one database to copy."), 'invalid')
@@ -1716,14 +1725,14 @@ class SaasApi(http.Controller):
                          "Please try again."), 'error')
         return ok({})
 
-    def _project_anchor(self, instance_id):
+    def _project_anchor(self, instance_id, permission='billing.manage'):
         """Return the owned Production anchor for ``instance_id`` (or its
         parent), or ``(None, err_envelope)``."""
         partner = self._partner()
         if not partner:
             return None, err(_("Please sign in."), 'auth_required')
         instance = request.env['saas.instance'].sudo().browse(instance_id)
-        if not instance.exists() or not self._can_manage_instance(instance):
+        if not instance.exists() or not self._can_manage_instance(instance, permission):
             return None, err(_("Project not found."), 'not_found')
         prod = instance if instance.environment == 'production' \
             else instance.parent_id
@@ -1773,11 +1782,11 @@ class SaasApi(http.Controller):
         partner = self._partner()
         if not partner:
             return err(_("Please sign in."), 'auth_required')
-        prod, error = self._project_anchor(instance_id)
+        prod, error = self._project_anchor(instance_id, permission='project.discover')
         if error:
             return error
         child = request.env['saas.instance'].sudo().browse(child_id)
-        if not child.exists() or not self._can_manage_instance(child) \
+        if not child.exists() or not self._can_manage_instance(child, 'environment.delete') \
                 or child.environment == 'production' or child.parent_id != prod:
             return err(_("Environment not found."), 'not_found')
         try:
@@ -1798,7 +1807,7 @@ class SaasApi(http.Controller):
         target = Inst.browse(int(target_id or 0))
         source = Inst.browse(int(source_id or 0))
         if not target.exists() or not source.exists() \
-                or not self._can_manage_instance(target) or not self._can_manage_instance(source):
+                or not self._can_manage_instance(target, 'deploy') or not self._can_manage_instance(source, 'project.view'):
             return err(_("Environment not found."), 'not_found')
         try:
             result = target.action_merge_environment(source.id)
@@ -1819,7 +1828,7 @@ class SaasApi(http.Controller):
     def instance_branches(self, instance_id, access_token=None):
         """Remote branch list for the Staging branch picker."""
         try:
-            instance = self._instance(instance_id, access_token)
+            instance = self._instance(instance_id, access_token, permission='project.discover')
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         prod = instance if instance.environment == 'production' else (

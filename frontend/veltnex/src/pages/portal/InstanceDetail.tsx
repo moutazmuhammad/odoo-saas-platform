@@ -1,4 +1,5 @@
 import * as React from "react";
+import { hasPermission } from "@/lib/permissions";
 import { usePolling } from "@/hooks/usePolling";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -211,7 +212,7 @@ export default function InstanceDetail() {
                 icon={RotateCw}
                 loading={pending === "restart"}
                 loadingText="Restarting…"
-                disabled={!!pending}
+                disabled={!hasPermission(instance.permissions, "instance.operate") || !!pending}
                 onClick={() => run("restart", "Instance restarted")}
               >
                 Restart
@@ -221,7 +222,7 @@ export default function InstanceDetail() {
                 icon={Square}
                 loading={pending === "stop"}
                 loadingText="Stopping…"
-                disabled={!!pending}
+                disabled={!hasPermission(instance.permissions, "instance.operate") || !!pending}
                 onClick={() => run("stop", "Instance stopped")}
               >
                 Stop
@@ -232,7 +233,7 @@ export default function InstanceDetail() {
               icon={Play}
               loading={pending === "start" || isBusy}
               loadingText={isBusy ? "Provisioning…" : "Starting…"}
-              disabled={!!pending || isBusy || isSuspended || awaitingPayment}
+              disabled={!hasPermission(instance.permissions, "instance.operate") || !!pending || isBusy || isSuspended || awaitingPayment}
               onClick={() => run("start", "Instance started")}
             >
               Start
@@ -255,9 +256,9 @@ export default function InstanceDetail() {
           title="This instance is suspended"
           description="Suspended instances can't be started until billing is resolved."
           action={
-            <Button size="sm" variant="secondary" onClick={() => navigate("/my/billing")}>
+            hasPermission(instance.permissions, "billing.manage") ? <Button size="sm" variant="secondary" onClick={() => navigate("/my/billing")}>
               View invoices
-            </Button>
+            </Button> : undefined
           }
         />
       )}
@@ -277,7 +278,7 @@ export default function InstanceDetail() {
           }
         />
       )}
-      {!instance.has_unpaid_invoice && instance.is_cancelled && (
+      {hasPermission(instance.permissions, "billing.manage") && !instance.has_unpaid_invoice && instance.is_cancelled && (
         <AlertBanner
           className="mt-6"
           variant="warning"
@@ -352,7 +353,7 @@ export default function InstanceDetail() {
         <InfoCard label="Storage" value={formatBytes(instance.storage_gb)} hint={instance.created ? `Since ${formatDate(instance.created)}` : undefined} />
       </div>
 
-      <Card className="mt-4 flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+      {hasPermission(instance.permissions, "billing.manage") && <Card className="mt-4 flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm text-muted">Current plan</p>
           <p className="mt-0.5 text-base font-semibold">{instance.plan_name || `${instance.workers} workers`}</p>
@@ -380,9 +381,9 @@ export default function InstanceDetail() {
           <ArrowUpCircle className="size-4" />
           {instance.is_trial ? "Upgrade plan" : "Change plan"}
         </Button>
-      </Card>
+      </Card>}
 
-      {instance.compute_driver === "kubernetes" && (
+      {hasPermission(instance.permissions, "billing.manage") && instance.compute_driver === "kubernetes" && (
         <ComputeTierCard
           instance={instance}
           changingTier={changingTier}
@@ -391,7 +392,7 @@ export default function InstanceDetail() {
         />
       )}
 
-      {!instance.is_trial && <BillingPanel instance={instance} onChange={load} />}
+      {hasPermission(instance.permissions, "billing.manage") && !instance.is_trial && <BillingPanel instance={instance} onChange={load} />}
 
       <Dialog
         open={confirmCancel}
@@ -567,4 +568,3 @@ function Sparkline({ data, className }: { data: number[]; className?: string }) 
     </svg>
   );
 }
-

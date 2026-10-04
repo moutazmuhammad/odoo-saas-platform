@@ -84,6 +84,17 @@ describe("Environments", () => {
     vi.clearAllMocks();
   });
 
+  it("lets a scoped creator create the first environment without exposing production", async () => {
+    mockProject({ production: makeEnv({ permissions: [], state: "restricted", domain: "", url: "" }),
+      environments: [], can_create: { staging: true, development: false }, is_project_owner: false });
+    renderWithProviders(<Environments />, { route: "/i/1", path: "/i/:id" });
+    expect(await screen.findByText(/No environments are available/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create staging environment" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Create development environment" })).not.toBeInTheDocument();
+    expect(screen.queryByText("acme-prod")).not.toBeInTheDocument();
+    expect(screen.queryByText(/loading project/i)).not.toBeInTheDocument();
+  });
+
   it("shows a loading state, then the project once it loads", async () => {
     mockProject();
     renderWithProviders(<Environments />, { route: "/i/1", path: "/i/:id" });

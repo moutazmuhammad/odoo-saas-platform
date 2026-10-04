@@ -32,6 +32,8 @@ import ShellPage from "./pages/portal/ShellPage";
 import SqlPage from "./pages/portal/SqlPage";
 import Invoices from "./pages/portal/Invoices";
 import InvoiceDetail from "./pages/portal/InvoiceDetail";
+import ProjectAccess from "./pages/portal/ProjectAccess";
+import AcceptAccess from "./pages/portal/AcceptAccess";
 import Settings from "./pages/portal/Settings";
 
 // Hard guard: a disabled section's pages aren't reachable even by typing
@@ -99,6 +101,7 @@ export default function App() {
               with the section content swapping in place below it. */}
           <Route path="instances/:id" element={<InstanceLayout />}>
             <Route index element={<InstanceHome />} />
+            <Route path="access" element={<ProjectAccess />} />
             <Route path="metrics" element={<Metrics />} />
             <Route path="environments" element={<Environments />} />
             <Route path="databases" element={<Databases />} />
@@ -108,6 +111,8 @@ export default function App() {
             <Route path="logs" element={<Logs />} />
             <Route path="backups" element={<Backups />} />
           </Route>
+          <Route path="access" element={<ProjectAccess />} />
+          <Route path="access/accept" element={<AcceptAccess />} />
           <Route path="billing" element={<Invoices />} />
           <Route path="billing/:id" element={<InvoiceDetail />} />
           <Route path="settings" element={<Settings />} />

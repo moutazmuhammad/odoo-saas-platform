@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Mail,
   Lock,
@@ -49,6 +49,8 @@ export default function Register() {
   const { registerStart, registerVerify, registerResend } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const invitationReturn = (location.state as { from?: string } | null)?.from;
   const [searchParams] = useSearchParams();
 
   // Where to go after sign-up. Mirrors the backend's _build_redirect_url
@@ -56,6 +58,7 @@ export default function Register() {
   // hosting/service configure page — instead of dumping them on the
   // dashboard. Plain sign-ups (no funnel params) land on home.
   const postRegisterUrl = React.useCallback(() => {
+    if (invitationReturn?.startsWith("/my/access/accept?")) return invitationReturn;
     const p = searchParams;
     if (p.get("hosting") === "1") {
       const parts: string[] = [];
@@ -72,7 +75,7 @@ export default function Register() {
       return `/services/${productId}/plans/${planId}/configure${p.get("is_trial") === "1" ? "?trial=1" : ""}`;
     }
     return "/";
-  }, [searchParams]);
+  }, [searchParams, invitationReturn]);
 
   // After sign-up: for the hosting funnel, place the order immediately
   // (no Review page) and go straight to payment, carrying every order

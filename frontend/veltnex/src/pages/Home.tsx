@@ -40,7 +40,7 @@ const STATS = [
   { value: "24/7", label: "Expert support" },
 ];
 
-const ODOO_VERSIONS = ["13", "14", "15", "16", "17", "18", "19"];
+const ODOO_VERSIONS = ["13", "14", "15", "16", "17", "18", "19", "20"];
 
 const HOW_IT_WORKS = [
   {

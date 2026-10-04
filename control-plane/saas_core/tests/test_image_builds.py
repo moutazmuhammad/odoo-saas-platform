@@ -343,6 +343,7 @@ class TestImageBuildDriver(TransactionCase):
         self.assertEqual(spec['containers'][0]['name'], 'build')
         self.assertFalse(spec['automountServiceAccountToken'])
         self.assertEqual(spec['securityContext']['fsGroup'], 1000)
+        self.assertEqual(spec['securityContext']['fsGroupChangePolicy'], 'OnRootMismatch')
         self.assertEqual(job['spec']['backoffLimit'], 0)
         build_env = {e['name']: e['value'] for e in spec['containers'][0]['env']}
         self.assertEqual(build_env['CACHE_IMAGE_REF'], 'reg.ns.svc:5000/tenant-acme@sha256:abc')

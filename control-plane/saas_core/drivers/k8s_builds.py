@@ -264,7 +264,10 @@ class ImageBuildMixin:
                         'restartPolicy': 'Never',
                         'automountServiceAccountToken': False,
                         'enableServiceLinks': False,
-                        'securityContext': {'fsGroup': 1000},
+                        # Avoid recursively chowning gigabytes of cached Odoo
+                        # layers every time the build PVC is mounted.
+                        'securityContext': {'fsGroup': 1000,
+                                            'fsGroupChangePolicy': 'OnRootMismatch'},
                         'initContainers': [
                             {'name': 'fetch', 'image': git_image,
                              'command': ['sh', '/files/fetch.sh'],

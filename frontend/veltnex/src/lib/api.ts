@@ -580,11 +580,13 @@ export interface OtpSent {
 }
 
 export interface IamData {
+  current_customer_id?: number;
+  can_manage_groups?: boolean;
   empty_reason?: "no_projects" | "access_not_granted" | null;
   roles: { code: string; name: string; permissions: string[] }[];
   projects: { id: number; name: string; customer_id: number; is_owner: boolean; assignable_roles: Record<string, string[]> }[];
   grants: { id: number; project_id: number; role: string; environment: string; user_id: number | null; group_id: number | null; name: string; email: string; pending: boolean; expired: boolean; editable: boolean }[];
-  groups: { id: number; name: string; customer_id: number; user_ids: number[] }[];
+  groups: { id: number; name: string; customer_id: number; user_ids: number[]; editable?: boolean }[];
   members: { id: number; name: string; email: string; customer_ids?: number[] }[];
 }
 

@@ -27,9 +27,9 @@ import { useInstances } from "@/context/InstancesContext";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
 
-// Projects are reached via the top-bar project switcher (GCP-style), so the
-// left menu carries the account sections only — no duplicate Projects entry.
+// Keep a direct route to the project list from account pages as well as project pages.
 const NAV = [
+  { to: "/my/instances", label: "Projects", icon: LayoutGrid },
   { to: "/my/access", label: "Project Access", icon: ShieldCheck },
   { to: "/my/billing", label: "Billing", icon: Receipt },
   // Account "Settings" lives in the avatar dropdown — no duplicate in the rail.
@@ -51,7 +51,6 @@ function instanceSections(id: number, isHosting: boolean): NavItem[] {
     // entry (Overview) and the project-wide Project settings.
     return [
       { to: env, label: "Overview", icon: Layers, tab: "overview" },
-      { to: `${base}/access`, label: "Project Access", icon: ShieldCheck },
       { to: `${env}?tab=code`, label: "Project settings", icon: Settings, tab: "code" },
     ];
   }
@@ -203,7 +202,7 @@ export function PortalLayout() {
             </div>
           )}
           {instanceSections(instId, inst.is_hosting).map((item) => (
-            <NavRow key={item.to} item={item} collapsed={collapsed} active={isActive(item)} />
+            NavRow({ item, collapsed, active: isActive(item) })
           ))}
           <div className="mx-3 my-2 border-t border-border" />
         </>
@@ -211,7 +210,7 @@ export function PortalLayout() {
 
       {/* GLOBAL / account sections */}
       {NAV.map((item) => (
-        <NavRow key={item.to} item={item} collapsed={collapsed} active={pathname.startsWith(item.to)} />
+        NavRow({ item, collapsed, active: pathname.startsWith(item.to) })
       ))}
       <div className="mx-3 my-2 border-t border-border" />
       <button
@@ -340,7 +339,7 @@ export function PortalLayout() {
               hovered || !navCollapsed ? "w-64 shadow-2xl" : "w-16",
             )}
           >
-            <NavList collapsed={!(hovered || !navCollapsed)} />
+            {NavList({ collapsed: !(hovered || !navCollapsed) })}
           </div>
         </aside>
 
@@ -357,7 +356,7 @@ export function PortalLayout() {
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobileNav(false)} />
           <aside className="absolute inset-y-0 left-0 w-64 overflow-y-auto border-r border-border bg-card pt-2 shadow-2xl">
             <div className="flex h-14 items-center px-4"><Logo /></div>
-            <NavList collapsed={false} />
+            {NavList({ collapsed: false })}
           </aside>
         </div>
       )}

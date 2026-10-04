@@ -2,7 +2,7 @@ from odoo import http, _, fields
 from odoo.http import request
 from odoo.exceptions import AccessError, ValidationError, UserError
 from werkzeug.exceptions import Forbidden
-from odoo.addons.saas_website.controllers.api import SaasApi, ok, err
+from odoo.addons.saas_website.controllers.api import SaasApi, ok, err, _LIST_STATES
 from ..roles import ENVIRONMENTS, ROLE_DEFINITIONS, permissions_for
 
 
@@ -89,7 +89,7 @@ class IamApi(SaasApi):
     @http.route('/saas/api/v1/iam', type='json', auth='user')
     def iam_list(self):
         iam = request.env['saas.iam']
-        domain = [('parent_id', '=', False)]
+        domain = [('parent_id', '=', False), ('state', 'in', _LIST_STATES)]
         if not iam._is_platform_admin(request.env.user):
             domain += ['|', ('partner_id', '=', request.env.user.partner_id.id),
                        ('id', 'in', iam._visible_project_ids())]
@@ -111,6 +111,8 @@ class IamApi(SaasApi):
         ])
         members = accepted.mapped('user_id')
         return ok({
+            'current_customer_id': request.env.user.partner_id.id,
+            'can_manage_groups': bool(projects.filtered(lambda p: p.partner_id == request.env.user.partner_id)),
             'empty_reason': ('no_projects' if not accessible else 'access_not_granted') if not projects else None,
             'roles': [{'code': code, 'name': label, 'permissions': sorted(perms)} for code, (label, perms) in ROLE_DEFINITIONS.items()],
             'projects': [{'id': p.id, 'name': p.project_name or p.subdomain or p.name,
@@ -123,7 +125,8 @@ class IamApi(SaasApi):
                         'email': g.user_id.login or g.invitation_id.email or '',
                         'pending': bool(g.invitation_id), 'expired': bool(g.invitation_id and g.invitation_id.expires_at < fields.Datetime.now()),
                         'editable': editable(g)} for g in visible],
-            'groups': [{'id': g.id, 'name': g.name, 'customer_id': g.owner_id.id, 'user_ids': g.user_ids.ids} for g in groups],
+            'groups': [{'id': g.id, 'name': g.name, 'customer_id': g.owner_id.id, 'user_ids': g.user_ids.ids,
+                        'editable': g.owner_id == request.env.user.partner_id} for g in groups],
             'members': [{'id': u.id, 'name': u.name, 'email': u.login,
                          'customer_ids': accepted.filtered(lambda i: i.user_id == u).mapped('owner_id').ids} for u in members],
         })

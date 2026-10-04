@@ -238,6 +238,17 @@ class TestIamApi(IamFixture, HttpCase):
         self.assertEqual({p['id'] for p in result['data']['projects']}, {self.project.id, self.project2.id})
         self.assertTrue(all(p['is_owner'] for p in result['data']['projects']))
 
+    def test_iam_project_choices_match_dashboard_visibility_and_customer(self):
+        self.project2.state = 'failed'
+        self.authenticate(self.owner.login, 'iam-test-pass')
+        dashboard = self._rpc('/saas/api/v1/instances')['data']
+        projects = self._rpc('/saas/api/v1/iam')['data']['projects']
+        self.assertEqual({p['id'] for p in projects}, {p['id'] for p in dashboard})
+        self.assertEqual({p['id'] for p in projects}, {self.project.id})
+        self.project2.state = 'pending_payment'
+        projects = self._rpc('/saas/api/v1/iam')['data']['projects']
+        self.assertEqual({p['id'] for p in projects}, {self.project.id})
+
     def test_shared_projects_list_detail_and_billing_redaction(self):
         self._grant('viewer')
         self.authenticate(self.team.login, 'iam-test-pass')

@@ -186,6 +186,16 @@ class SaasTenantDatabase(Database):
         html = super()._render_template(**d)
         if d.get('manage', True) and _allowed():
             script = _HIDE_MASTER_PASSWORD % json.dumps(escape(_prefix()))
+            limit = int(config.get('saas_dbm_max_databases') or 0)
+            if limit and len([name for name in http.db_list() if _own(name)]) >= limit:
+                script += """<style>
+[data-bs-target=".o_database_create"],[data-bs-target=".o_database_duplicate"],[data-bs-target=".o_database_restore"]{display:none!important}
+</style><script>document.addEventListener('DOMContentLoaded', function () {
+var notice = document.createElement('p'); notice.className = 'alert alert-info';
+notice.textContent = 'Production allows one database. Use your control panel to restore a backup into the existing database, or delete it before creating a replacement.';
+var list = document.querySelector('.o_database_list'); if (list) { list.prepend(notice); }
+});</script>"""
+
             # The template renders to Markup, whose replace() would escape
             # the script; work on the plain string.
             html = str(html).replace('</head>', script + '</head>', 1)
@@ -242,13 +252,27 @@ h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justif
             return []
         return super().list()
 
-    def _guarded(self, call):
+    def _guarded(self, call, new_database=None):
         if not _allowed():
             return self._render_template(error="Open the database manager from your control panel.")
         if not _same_origin():
             return self._render_template(error="Request refused: it did not come from this page.")
-        with _Bypass():
-            return call()
+        limit = int(config.get('saas_dbm_max_databases') or 0)
+        if not new_database or not limit:
+            with _Bypass():
+                return call()
+        # Same PostgreSQL lock as portal CREATE DATABASE: multiple HTTP
+        # workers and control-panel jobs cannot claim the final slot twice.
+        with odoo.sql_db.db_connect('postgres').cursor() as cr:
+            cr.execute('SELECT pg_advisory_lock(7482910562)')
+            try:
+                existing = [name for name in db_service.list_dbs(force=True) if _own(name)]
+                if len(existing) >= limit:
+                    return self._refuse('Production allows one customer database. Restore the existing database from your control panel, or delete it before creating another.')
+                with _Bypass():
+                    return call()
+            finally:
+                cr.execute('SELECT pg_advisory_unlock(7482910562)')
 
     def _refuse(self, message):
         return self._render_template(error=message)
@@ -257,7 +281,7 @@ h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justif
     def create(self, master_pwd, name, lang, password, **post):
         name = _with_prefix(name)
         return self._guarded(lambda: super(SaasTenantDatabase, self).create(
-            master_pwd, name, lang, password, **post))
+            master_pwd, name, lang, password, **post), new_database=name)
 
     @http.route('/web/database/duplicate', type='http', auth='none', methods=['POST'], csrf=False)
     def duplicate(self, master_pwd, name, new_name, neutralize_database=False):
@@ -265,7 +289,7 @@ h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justif
             return self._refuse("Database %r is not yours." % name)
         new_name = _with_prefix(new_name)
         return self._guarded(lambda: super(SaasTenantDatabase, self).duplicate(
-            master_pwd, name, new_name, neutralize_database))
+            master_pwd, name, new_name, neutralize_database), new_database=new_name)
 
     @http.route('/web/database/drop', type='http', auth='none', methods=['POST'], csrf=False)
     def drop(self, master_pwd, name):
@@ -285,7 +309,7 @@ h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justif
     def restore(self, master_pwd, backup_file, name, copy=False, neutralize_database=False):
         name = _with_prefix(name)
         return self._guarded(lambda: super(SaasTenantDatabase, self).restore(
-            master_pwd, backup_file, name, copy, neutralize_database))
+            master_pwd, backup_file, name, copy, neutralize_database), new_database=name)
 
     @http.route('/web/database/change_password', type='http', auth='none', methods=['POST'], csrf=False)
     def change_password(self, master_pwd, master_pwd_new):

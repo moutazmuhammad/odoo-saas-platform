@@ -148,6 +148,9 @@ class SaasInstanceBackup(models.Model):
     download_url_expiry = fields.Datetime(
         string='Link Expires', readonly=True,
     )
+    restore_overwrite = fields.Boolean(
+        string='Replace Existing Database', default=False,
+        help='Explicit replacement confirmation for an uploaded restore.')
     ephemeral = fields.Boolean(
         string='On-Demand', default=False, index=True,
         help='True for on-demand backups requested by the customer. '

@@ -59,6 +59,7 @@ func odooConf(instance *saasv1alpha1.OdooInstance) string {
 		// from the admin Secret at pod start like the passwords above.
 		conf = strings.Replace(conf, "list_db = False", "list_db = True", 1)
 		conf += "saas_dbm_prefix = " + dbm.Prefix + "\n"
+		conf += fmt.Sprintf("saas_dbm_max_databases = %d\n", dbm.MaxDatabases)
 		conf += "saas_dbm_key = __DBM_KEY__\n"
 	}
 	return conf

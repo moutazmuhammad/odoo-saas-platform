@@ -95,6 +95,33 @@ class PublicDatabaseSelection(unittest.TestCase):
             self.assertNotIn('Each secure link is valid for one hour', html)
             self.assertEqual(self.controller.list(), [])
 
+    def test_manager_capacity_checks_run_under_shared_postgresql_lock(self):
+        config['saas_dbm_max_databases'] = 1
+        cursor = Mock()
+        context = Mock()
+        context.__enter__ = Mock(return_value=cursor)
+        context.__exit__ = Mock(return_value=False)
+        dbm.odoo.sql_db = SimpleNamespace(db_connect=Mock(return_value=SimpleNamespace(cursor=lambda: context)))
+        dbm.db_service.list_dbs = Mock(return_value=['tenant_shop', 'other_secret'])
+        operation = Mock(return_value='created')
+        with patch.object(dbm, '_allowed', return_value=True), patch.object(dbm, '_same_origin', return_value=True), \
+             patch.object(self.controller, '_refuse', return_value='full'):
+            self.assertEqual(self.controller._guarded(operation, new_database='tenant_new'), 'full')
+            operation.assert_not_called()
+            cursor.execute.assert_any_call('SELECT pg_advisory_lock(7482910562)')
+            cursor.execute.assert_any_call('SELECT pg_advisory_unlock(7482910562)')
+            dbm.db_service.list_dbs.return_value = ['other_secret']
+            self.assertEqual(self.controller._guarded(operation, new_database='tenant_new'), 'created')
+            operation.assert_called_once()
+
+    def test_unlimited_environments_and_delete_have_no_capacity_restriction(self):
+        operation = Mock(return_value='done')
+        with patch.object(dbm, '_allowed', return_value=True), patch.object(dbm, '_same_origin', return_value=True):
+            self.assertEqual(self.controller._guarded(operation, new_database='tenant_new'), 'done')
+            config['saas_dbm_max_databases'] = 1
+            self.assertEqual(self.controller._guarded(operation), 'done')
+
+
 
 if __name__ == '__main__':
     unittest.main()

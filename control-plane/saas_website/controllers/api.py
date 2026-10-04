@@ -1050,6 +1050,7 @@ class SaasApi(http.Controller):
             'databases': [{'name': d.get('name'), 'login': d.get('admin_login', '')}
                           for d in dbs],
             'ready': True,
+            'database_limit': instance._hosting_database_limit(),
             # Instance host (https://<sub>.<domain>). The SPA opens a
             # specific DB at <url>/web?db=<name> — all DBs share the
             # host, so the db must be selected via the query param.
@@ -1141,7 +1142,7 @@ class SaasApi(http.Controller):
 
     @http.route('/saas/api/v1/instances/<int:instance_id>/databases/restore/upload-url',
                 type='json', auth='public')
-    def db_restore_upload_url(self, instance_id, name=None,
+    def db_restore_upload_url(self, instance_id, name=None, overwrite=False,
                               access_token=None, **kw):
         """Step 1 of customer restore: hand back a presigned PUT URL so
         the browser uploads the local backup straight to the bucket
@@ -1153,7 +1154,7 @@ class SaasApi(http.Controller):
         try:
             self._require_running(instance)
             backup, upload_url = instance.hosting_db_restore_prepare_upload(
-                name=name or '',
+                name=name or '', overwrite=bool(overwrite),
             )
         except UserError as e:
             return err(str(e), 'restore_failed')

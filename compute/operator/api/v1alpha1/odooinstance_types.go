@@ -233,6 +233,11 @@ type DatabaseManagerSpec struct {
 	// +kubebuilder:validation:MaxLength=64
 	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9-]*_$`
 	Prefix string `json:"prefix"`
+
+	// MaxDatabases caps customer databases; zero means unlimited.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MaxDatabases int32 `json:"maxDatabases,omitempty"`
 }
 
 // WorkersSpec configures Odoo's internal process model. These are *not*
@@ -508,7 +513,7 @@ type OdooInstanceSpec struct {
 	// through a link the control plane signs with this instance's key
 	// (Secret odoo-admin-credentials, key dbmanager-key). Database
 	// names are limited to Prefix. Without it, saas_tenant_dbm still
-	// loads but hard-locks every /web/database/* endpoint.
+	// loads and keeps database administration locked.
 	// +optional
 	DatabaseManager *DatabaseManagerSpec `json:"databaseManager,omitempty"`
 

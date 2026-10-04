@@ -64,6 +64,8 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
   };
 
   const [data, setData] = React.useState<DbListData | null>(null);
+  const databaseLimit = data?.database_limit || 0;
+  const capacityReached = databaseLimit > 0 && (data?.databases.length || 0) >= databaseLimit;
   const [instance, setInstance] = React.useState<ApiInstance | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -236,14 +238,16 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
           </Button>
           <Button
             onClick={() => setCreateOpen(true)}
-            disabled={!data?.ready || isCreating}
-            title={isCreating ? "A database is already being created on this instance." : undefined}
+            disabled={!data?.ready || isCreating || capacityReached}
+            title={capacityReached ? "Production allows one database. Restore or manage the existing database." : isCreating ? "A database is already being created on this instance." : undefined}
           >
             {isCreating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
             {isCreating ? "Creating…" : "Create database"}
           </Button>
         </div>
       </div>
+
+      {databaseLimit === 1 && <p className="mt-4 text-sm text-muted">Production includes one database. You can restore a backup into it or delete it and create a replacement.</p>}
 
       {error && <AlertBanner className="mt-6" variant="danger" title="Database management" description={error} />}
 
@@ -363,7 +367,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                                   style={{ top: menuPos.top, right: menuPos.right }}
                                 >
                                   <MenuItem icon={Download} label="Download backup" onClick={() => { setOpenMenu(null); setBackupsTarget(db.name); }} />
-                                  <MenuItem icon={CopyPlus} label="Duplicate" onClick={() => { setOpenMenu(null); setDuplicateTarget(db.name); }} />
+                                  <MenuItem icon={CopyPlus} label="Duplicate" disabled={capacityReached} onClick={() => { setOpenMenu(null); setDuplicateTarget(db.name); }} />
                                   <MenuItem icon={RefreshCw} label="Upgrade modules" onClick={() => { setOpenMenu(null); setUpgradeTarget(db.name); }} />
                                   <MenuItem icon={KeyRound} label="Reset password" onClick={() => { setOpenMenu(null); setResetTarget(db.name); }} />
                                   <div className="border-t border-border" />
@@ -417,6 +421,8 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
         open={restoreOpen}
         instanceId={instanceId}
         existing={data?.databases.map((d) => d.name) || []}
+        prefix={data?.prefix || ""}
+        databaseLimit={databaseLimit}
         onClose={() => setRestoreOpen(false)}
         onDone={() => {
           // The target DB now shows a live "Restoring…" row; the instance
@@ -841,17 +847,23 @@ function RestoreDatabaseDialog({
   open,
   instanceId,
   existing,
+  prefix,
+  databaseLimit,
   onClose,
   onDone,
 }: {
   open: boolean;
   instanceId: number;
   existing: string[];
+  prefix: string;
+  databaseLimit: number;
   onClose: () => void;
   onDone: () => void;
 }) {
   const [file, setFile] = React.useState<File | null>(null);
   const [fileError, setFileError] = React.useState<string | null>(null);
+  const [overwrite, setOverwrite] = React.useState(false);
+  const [confirmation, setConfirmation] = React.useState("");
   const [target, setTarget] = React.useState("");
   const [phase, setPhase] = React.useState<"idle" | "uploading" | "starting" | "done">("idle");
   const [progress, setProgress] = React.useState(0);
@@ -862,6 +874,8 @@ function RestoreDatabaseDialog({
       setFile(null);
       setFileError(null);
       setTarget("");
+      setOverwrite(false);
+      setConfirmation("");
       setPhase("idle");
       setProgress(0);
       setError(null);
@@ -869,12 +883,13 @@ function RestoreDatabaseDialog({
   }, [open]);
 
   const busy = phase === "uploading" || phase === "starting";
-  const validName = /^[a-z][a-z0-9_]{2,40}$/.test(target);
-  // Restore always creates a NEW database, so reject a name already in
-  // use. (existing holds full names like "acme_prod"; the customer types
-  // a suffix.)
-  const nameTaken = !!target && existing.some((n) => n === target || n.endsWith("_" + target));
-  const canSubmit = !!file && !fileError && validName && !nameTaken && !busy;
+  const validName = /^[a-z][a-z0-9_]{2,40}$/.test(target) || (overwrite && existing.includes(target));
+  const fullTarget = target.startsWith(prefix) ? target : prefix + target;
+  const nameTaken = existing.includes(fullTarget);
+  const atLimit = databaseLimit > 0 && existing.length >= databaseLimit;
+  const replacementConfirmed = overwrite && nameTaken && confirmation.trim() === fullTarget;
+  const canSubmit = !!file && !fileError && validName && !busy &&
+    (overwrite ? replacementConfirmed : !nameTaken && !atLimit);
 
   const pickFile = async (f: File | null) => {
     setError(null);
@@ -893,7 +908,7 @@ function RestoreDatabaseDialog({
     try {
       setPhase("uploading");
       setProgress(0);
-      const { backup_id, upload_url } = await api.dbRestoreUploadUrl(instanceId, target);
+      const { backup_id, upload_url } = await api.dbRestoreUploadUrl(instanceId, target, overwrite);
       await uploadToBucket(upload_url, file, setProgress);
       setPhase("starting");
       await api.dbRestoreStart(instanceId, backup_id);
@@ -929,7 +944,11 @@ function RestoreDatabaseDialog({
       </div>
 
       <div className="mt-4 space-y-2">
-        <Label htmlFor="restore-target">New database name</Label>
+        {existing.length > 0 && <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={overwrite} disabled={busy} onChange={(e) => { setOverwrite(e.target.checked); setConfirmation(""); }} />
+          Replace an existing database
+        </label>}
+        <Label htmlFor="restore-target">{overwrite ? "Database to replace" : "New database name"}</Label>
         <Input
           id="restore-target"
           placeholder="e.g. production"
@@ -937,11 +956,12 @@ function RestoreDatabaseDialog({
           disabled={busy}
           onChange={(e) => setTarget(e.target.value.toLowerCase())}
         />
-        {nameTaken ? (
-          <p className="text-xs text-danger">That name is already in use. Pick a different one.</p>
-        ) : (
-          <p className="text-xs text-muted">Your backup is restored into a new database with this name.</p>
-        )}
+        {!overwrite && nameTaken && <p className="text-xs text-danger">That name is already in use. Select replacement to restore into it.</p>}
+        {!overwrite && atLimit && <p className="text-xs text-danger">Production allows one database. Select replacement to restore into your existing database.</p>}
+        {overwrite && <p className="text-xs text-danger">This permanently replaces the selected database and all its data. Download a backup before continuing.</p>}
+        {overwrite && <><Label htmlFor="restore-confirm">Type {fullTarget || "the database name"} to confirm replacement</Label>
+          <Input id="restore-confirm" value={confirmation} disabled={busy} onChange={(e) => setConfirmation(e.target.value)} autoComplete="off" /></>}
+        {!overwrite && !atLimit && !nameTaken && <p className="text-xs text-muted">Your backup is restored into a new database with this name.</p>}
       </div>
 
       {phase === "uploading" && (
@@ -1053,12 +1073,13 @@ function DeleteDatabaseDialog({
   );
 }
 
-function MenuItem({ icon: Icon, label, onClick, danger }: { icon: typeof KeyRound; label: string; onClick: () => void; danger?: boolean }) {
+function MenuItem({ icon: Icon, label, onClick, danger, disabled }: { icon: typeof KeyRound; label: string; onClick: () => void; danger?: boolean; disabled?: boolean }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors",
+        "disabled:opacity-40 disabled:cursor-not-allowed flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors",
         danger ? "text-danger hover:bg-danger/10" : "text-foreground hover:bg-border/50"
       )}
     >

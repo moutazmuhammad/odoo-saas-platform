@@ -316,7 +316,8 @@ class SaasInstanceDbOperation(models.Model):
         """
         self.ensure_one()
         try:
-            self.instance_id._do_restore_backup(backup_id)
+            self.instance_id._do_restore_backup(
+                backup_id, overwrite=bool(self.env['saas.instance.backup'].browse(backup_id).restore_overwrite))
             self.instance_id._ensure_hosting_access()
             self.write({'state': 'done'})
             try:

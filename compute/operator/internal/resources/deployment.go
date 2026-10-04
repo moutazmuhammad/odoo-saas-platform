@@ -473,6 +473,9 @@ func podTemplateAnnotations(instance *saasv1alpha1.OdooInstance) map[string]stri
 	if instance.Spec.DatabaseFilter != "" {
 		ann[AnnotationDatabaseFilter] = instance.Spec.DatabaseFilter
 	}
+	if dbm := instance.Spec.DatabaseManager; dbm != nil {
+		ann["saas.odoo.example.com/database-limit"] = strconv.FormatInt(int64(dbm.MaxDatabases), 10)
+	}
 	return ann
 }
 

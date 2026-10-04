@@ -1804,7 +1804,8 @@ class SaasInstance(models.Model):
         database_filter = self._k8s_database_filter()
         if database_filter:
             self._compute_driver().set_hosting_access(
-                self._compute_handle(), database_filter, self._hosting_db_prefix())
+                self._compute_handle(), database_filter, self._hosting_db_prefix(),
+                max_databases=self._hosting_database_limit())
 
     # Validity of a database-manager link; the tenant addon then grants
     # one hour of access.
@@ -1847,6 +1848,23 @@ class SaasInstance(models.Model):
         """
         sub = (self.subdomain or '').strip().lower()
         return '%s_' % sub if sub else ''
+
+    def _hosting_database_limit(self):
+        self.ensure_one()
+        return 1 if self.is_hosting and self.environment == 'production' else 0
+
+    def _check_hosting_database_capacity(self, name, existing=None, replacing=False):
+        limit = self._hosting_database_limit()
+        if not limit:
+            return
+        existing = existing if existing is not None else {d['name'] for d in self.hosting_db_list()}
+        if replacing and name in existing:
+            return
+        if len(existing) >= limit:
+            raise UserError(_(
+                "Production allows one customer database. Restore into the existing "
+                "database, or delete it before creating another. Staging and "
+                "Development databases are managed separately."))
 
     def _validate_db_name(self, name):
         """Validate a raw customer-typed DB name (without the instance
@@ -2050,7 +2068,7 @@ class SaasInstance(models.Model):
         "        '-U', o.get('db_user', 'odoo')]\n"
     )
 
-    def _docker_exec_sql(self, sql, db='postgres', timeout=60):
+    def _docker_exec_sql(self, sql, db='postgres', timeout=60, replace_database=False):
         """Run a single SQL statement via ``psql`` inside the pod,
         against this instance's own dedicated Postgres server.
 
@@ -2060,6 +2078,31 @@ class SaasInstance(models.Model):
         separately-configured ``psql_port`` (Phase 1 deleted it along
         with the rest of the ssh_docker host model).
         """
+        target = re.match(r'^CREATE DATABASE "([^"\n]+)"', sql)
+        if (target and self._hosting_database_limit()
+                and target.group(1).startswith(self._hosting_db_prefix())):
+            script = self._PSQL_CONN_PRELUDE + """
+import psycopg2
+connection = psycopg2.connect(host=o.get('db_host', 'localhost'), port=o.get('db_port', '5432'),
+                             user=o.get('db_user', 'odoo'), password=o.get('db_password', ''), dbname='postgres')
+connection.autocommit = True
+try:
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT pg_advisory_lock(7482910562)')
+        cursor.execute('SELECT datname FROM pg_database WHERE starts_with(datname, %s)', (%r,))
+        names = [row[0] for row in cursor.fetchall()]
+        if len(names) >= 1 and not (%r and %r in names):
+            raise SystemExit('Production allows one customer database.')
+        if %r:
+            cursor.execute(%r)
+        cursor.execute(%r)
+finally:
+    connection.close()
+""" % ('%s', self._hosting_db_prefix(), replace_database, target.group(1),
+           replace_database, 'DROP DATABASE IF EXISTS "%s" WITH (FORCE)' % target.group(1), sql)
+            command = "python3 - <<'SAAS_CAPACITY_EOF'\n%s\nSAAS_CAPACITY_EOF" % script
+            result = self._compute_driver().exec(self._compute_handle(), command, timeout=timeout)
+            return result.rc, result.stdout, result.stderr
         script = (
             self._PSQL_CONN_PRELUDE
             + "p = subprocess.run(['psql'] + conn + ['-d', %s, '-tA', '-c', %s],\n"
@@ -2317,6 +2360,7 @@ class SaasInstance(models.Model):
         if name in existing:
             raise UserError(_("Database '%s' already exists.") % name)
 
+        self._check_hosting_database_capacity(name, existing)
         template = self._hosting_ensure_template_db()
 
         self._append_log(
@@ -2363,6 +2407,7 @@ class SaasInstance(models.Model):
         existing = {r['name'] for r in self.hosting_db_list()}
         if full_name in existing:
             raise UserError(_("Database '%s' already exists.") % full_name)
+        self._check_hosting_database_capacity(full_name, existing)
         Op = self.env['saas.instance.db.operation']
         running_create = Op.search([
             ('instance_id', '=', self.id),
@@ -2406,6 +2451,7 @@ class SaasInstance(models.Model):
         if new_name in existing:
             raise UserError(_("Target database '%s' already exists.") % new_name)
 
+        self._check_hosting_database_capacity(new_name, existing)
         self._append_log("Duplicating '%s' to '%s'..." % (source, new_name))
         # Postgres copies only a database nobody is connected to: end the
         # source's sessions right before the copy (Odoo's own duplicate
@@ -2457,6 +2503,7 @@ class SaasInstance(models.Model):
             raise UserError(_("Source database '%s' does not exist.") % source_full)
         if new_full in existing:
             raise UserError(_("Target database '%s' already exists.") % new_full)
+        self._check_hosting_database_capacity(new_full, existing)
         Op = self.env['saas.instance.db.operation']
         if Op.search_count([
             ('instance_id', '=', self.id),
@@ -2694,17 +2741,19 @@ class SaasInstance(models.Model):
             lock_key='instance:%s' % self.id, idempotent=False, max_attempts=1)
         return op
 
-    def hosting_db_restore_prepare_upload(self, name):
+    def hosting_db_restore_prepare_upload(self, name, overwrite=False):
         """Create a placeholder backup record + a presigned PUT URL so
         the customer can upload their OWN local Odoo backup (.zip)
         straight to the bucket from the browser."""
         self._ensure_hosting_for_db_ops()
         full = self._hosting_db_full_name(name)
-        if full in {r['name'] for r in self.hosting_db_list()}:
+        existing = {r['name'] for r in self.hosting_db_list()}
+        if full in existing and not overwrite:
             raise UserError(_(
                 "A database named '%s' already exists. Choose a different "
                 "name — restore creates a new database from your backup."
             ) % full)
+        self._check_hosting_database_capacity(full, existing, replacing=overwrite)
         if self.plan_id and self.plan_id.is_trial_plan:
             raise UserError(_(
                 "Restore isn't available on trial plans. Please upgrade "
@@ -2718,6 +2767,7 @@ class SaasInstance(models.Model):
             'instance_id': self.id,
             'db_name': full,
             'name': 'Restore upload %s' % full,
+            'restore_overwrite': bool(overwrite),
             'state': 'running',
             'is_full_instance': False,
             'ephemeral': True,
@@ -3308,6 +3358,9 @@ class SaasInstance(models.Model):
                 _("Refusing to restore: invalid db name %r") % db_name
             )
 
+        if self.is_hosting:
+            self._check_hosting_database_capacity(db_name, replacing=overwrite)
+
         manifest = backup._read_manifest_safe()
         backup_version = (manifest or {}).get('odoo_version') if isinstance(manifest, dict) else None
         if backup_version and self.odoo_version_id and \
@@ -3383,7 +3436,7 @@ class SaasInstance(models.Model):
                 "extraction — aborting before any change."
             ))
 
-        if overwrite:
+        if overwrite and not self._hosting_database_limit():
             self._append_log("Dropping current database...")
             rc, out, err = self._docker_exec_sql(
                 'DROP DATABASE IF EXISTS "%s" WITH (FORCE)' % db_name, timeout=120)
@@ -3391,8 +3444,9 @@ class SaasInstance(models.Model):
                 raise UserError(_(
                     "dropdb failed for %s — aborting restore:\n%s"
                 ) % (db_name, err or out))
+        create_args = {'replace_database': bool(overwrite)} if self._hosting_database_limit() else {}
         rc, out, err = self._docker_exec_sql(
-            'CREATE DATABASE "%s"' % db_name, timeout=120)
+            'CREATE DATABASE "%s"' % db_name, timeout=120, **create_args)
         if rc != 0:
             raise UserError(_(
                 "createdb failed for %s — aborting restore:\n%s"
@@ -4632,6 +4686,7 @@ class SaasInstance(models.Model):
             'tls_issuer_kind': 'ClusterIssuer',
             'database_filter': self._k8s_database_filter(),
             'db_manager_prefix': self._hosting_db_prefix() if self.is_hosting else '',
+            'db_manager_max_databases': self._hosting_database_limit(),
             'shell': bool(self.is_hosting),
             **self._k8s_plan_resources(),
         }

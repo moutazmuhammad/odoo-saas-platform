@@ -541,6 +541,7 @@ export interface DbOperationStatus {
 }
 
 export interface DbListData {
+  database_limit?: number;
   databases: { name: string; login: string }[];
   ready: boolean;
   state?: InstanceState;
@@ -716,10 +717,10 @@ export const api = {
       source,
       name,
     }),
-  dbRestoreUploadUrl: (id: number, name: string) =>
+  dbRestoreUploadUrl: (id: number, name: string, overwrite = false) =>
     rpc<{ backup_id: number; upload_url: string; db_name: string }>(
       `/saas/api/v1/instances/${id}/databases/restore/upload-url`,
-      { name },
+      { name, overwrite },
     ),
   dbRestoreStart: (id: number, backupId: number) =>
     rpc(`/saas/api/v1/instances/${id}/databases/restore/start`, {

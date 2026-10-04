@@ -509,7 +509,8 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         if spec.env.get('quota'):
             body['spec']['tenancy'] = {'resourceQuota': dict(spec.env['quota'])}
         if spec.env.get('db_manager_prefix'):
-            body['spec']['databaseManager'] = {'prefix': spec.env['db_manager_prefix']}
+            body['spec']['databaseManager'] = {'prefix': spec.env['db_manager_prefix'],
+                                               'maxDatabases': int(spec.env.get('db_manager_max_databases') or 0)}
         if spec.env.get('shell'):
             body['spec']['shell'] = True
 
@@ -577,7 +578,7 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 'setting the database filter of %s failed: %s' % (name, e)) from e
 
     def set_hosting_access(self, handle: ComputeHandle, database_filter: str,
-                           db_manager_prefix: str) -> None:
+                           db_manager_prefix: str, max_databases: int = 0) -> None:
         """Hosting customers' access in one patch (one rollout): the
         databases Odoo serves, the database manager limited to
         ``db_manager_prefix``, and the secret-free ``shell`` container for
@@ -587,7 +588,7 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             self._custom_api().patch_cluster_custom_object(
                 _GROUP, _VERSION, _PLURAL, name, {'spec': {
                     'databaseFilter': database_filter or None,
-                    'databaseManager': {'prefix': db_manager_prefix} if db_manager_prefix else None,
+                    'databaseManager': {'prefix': db_manager_prefix, 'maxDatabases': max_databases} if db_manager_prefix else None,
                     'shell': True,
                 }})
         except ApiException as e:

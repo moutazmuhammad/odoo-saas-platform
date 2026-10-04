@@ -324,7 +324,8 @@ class TestHostingDbOps(TransactionCase):
 
     def _duplicate(self, clone_side_effect=None, fs_side_effect=None):
         Instance = type(self.instance)
-        with patch.object(Instance, 'hosting_db_list',
+        with patch.object(Instance, '_hosting_database_limit', return_value=0), \
+             patch.object(Instance, 'hosting_db_list',
                           return_value=[{'name': 'dbopsinst_prod', 'admin_login': ''}]), \
              patch.object(Instance, '_docker_exec_sql', return_value=(0, '', '')) as m_sql, \
              patch.object(Instance, '_pg_clone_db', side_effect=clone_side_effect) as m_clone, \
@@ -391,3 +392,53 @@ class TestHostingDbOps(TransactionCase):
         self.instance.state = 'stopped'
         with self.assertRaises(UserError):
             self.instance.hosting_database_manager_url()
+
+
+    def test_production_rejects_second_database_before_work(self):
+        Instance = type(self.instance)
+        with patch.object(Instance, 'hosting_db_list', return_value=[{'name': 'dbopsinst_prod'}]), \
+             patch.object(Instance, '_hosting_ensure_template_db') as template, \
+             patch.object(Instance, '_pg_clone_db') as clone:
+            for action in [lambda: self.instance.hosting_db_create('other', 'admin', 'secret'),
+                           lambda: self.instance.hosting_db_create_async('other', 'admin', 'secret'),
+                           lambda: self.instance.hosting_db_duplicate('prod', 'other'),
+                           lambda: self.instance.hosting_db_duplicate_async('prod', 'other'),
+                           lambda: self.instance.hosting_db_restore_prepare_upload('other')]:
+                with self.assertRaisesRegex(UserError, 'one customer database'):
+                    action()
+            template.assert_not_called()
+            clone.assert_not_called()
+
+    def test_production_capacity_allows_first_database_and_replacement(self):
+        self.instance._check_hosting_database_capacity('dbopsinst_new', existing=set())
+        self.instance._check_hosting_database_capacity('dbopsinst_prod', existing={'dbopsinst_prod'}, replacing=True)
+        with self.assertRaises(UserError):
+            self.instance._check_hosting_database_capacity('dbopsinst_new', existing={'dbopsinst_prod'}, replacing=True)
+
+    def test_uploaded_replacement_requires_confirmation_and_persists_it(self):
+        with patch.object(type(self.instance), 'hosting_db_list', return_value=[{'name': 'dbopsinst_prod'}]), \
+             patch.object(type(self.env['saas.instance.backup']), '_generate_presigned_put_url', return_value='https://upload.example.com'):
+            with self.assertRaises(UserError):
+                self.instance.hosting_db_restore_prepare_upload('prod')
+            backup, url = self.instance.hosting_db_restore_prepare_upload('prod', overwrite=True)
+            self.assertTrue(backup.restore_overwrite)
+            self.assertEqual(backup.db_name, 'dbopsinst_prod')
+
+    def test_stage_and_development_limits_are_unrestricted(self):
+        for kind in ('staging', 'development'):
+            child = self.instance.copy({'subdomain': 'dbops-' + kind, 'environment': kind, 'parent_id': self.instance.id})
+            self.assertEqual(child._hosting_database_limit(), 0)
+            child._check_hosting_database_capacity('another', existing={'one', 'two'})
+
+    def test_production_atomic_capacity_guard_and_replacement(self):
+        driver = self._driver()
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver):
+            self.instance._docker_exec_sql('CREATE DATABASE "dbopsinst_new"')
+            script = driver.exec.call_args.args[1]
+            self.assertIn('pg_advisory_lock(7482910562)', script)
+            self.assertIn("'dbopsinst_'", script)
+            compile(script.split('\n', 1)[1].rsplit('\n', 1)[0], '<capacity>', 'exec')
+            self.instance._docker_exec_sql('CREATE DATABASE "dbopsinst_prod"', replace_database=True)
+            script = driver.exec.call_args.args[1]
+            self.assertIn('DROP DATABASE IF EXISTS', script)
+            compile(script.split('\n', 1)[1].rsplit('\n', 1)[0], '<replacement>', 'exec')

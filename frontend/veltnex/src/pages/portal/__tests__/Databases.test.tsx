@@ -37,6 +37,27 @@ function mockLoaded(overrides: Partial<DbListData> = {}) {
 }
 
 describe("Databases", () => {
+  it("blocks a second production database but keeps restore and delete available", async () => {
+    mockLoaded({database_limit: 1});
+    const user = userEvent.setup();
+    renderWithProviders(<Databases embedId={1} />);
+    await screen.findByText("production");
+    expect(screen.getByRole("button", {name: /create database/i})).toBeDisabled();
+    expect(screen.getByRole("button", {name: /restore database/i})).toBeEnabled();
+    await user.click(screen.getByRole("button", {name: /restore database/i}));
+    expect(screen.getByRole("checkbox", {name: /replace an existing database/i})).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", {name: /replace an existing database/i}));
+    expect(screen.getByLabelText(/database to replace/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", {name: /upload.*restore/i})).toBeDisabled();
+  });
+
+  it("allows a first production database after the previous one is removed", async () => {
+    mockLoaded({database_limit: 1, databases: []});
+    renderWithProviders(<Databases embedId={1} />);
+    await screen.findByText(/no databases/i);
+    expect(screen.getAllByRole("button", {name: /create database/i})[0]).toBeEnabled();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });

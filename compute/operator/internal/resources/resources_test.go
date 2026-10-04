@@ -665,3 +665,18 @@ func TestBackupAndRestorePassHostingPrefix(t *testing.T) {
 		}
 	}
 }
+
+func TestDatabaseManagerCapacityConfig(t *testing.T) {
+	instance := dbmInstance()
+	instance.Spec.DatabaseManager.MaxDatabases = 1
+	if !strings.Contains(odooConf(instance), "saas_dbm_max_databases = 1") {
+		t.Fatal("production database limit missing from tenant configuration")
+	}
+	if podTemplateAnnotations(instance)["saas.odoo.example.com/database-limit"] != "1" {
+		t.Fatal("changing database limit must roll serving pods")
+	}
+	instance.Spec.DatabaseManager.MaxDatabases = 0
+	if !strings.Contains(odooConf(instance), "saas_dbm_max_databases = 0") {
+		t.Fatal("unlimited database configuration missing")
+	}
+}

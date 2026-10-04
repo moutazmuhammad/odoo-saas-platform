@@ -135,7 +135,7 @@ class TestKubernetesDriver(TransactionCase):
         for env, dbm, shell in (
                 ({'domain': 'acme.example.com'}, None, None),
                 ({'domain': 'acme.example.com', 'db_manager_prefix': 'acme_', 'shell': True},
-                 {'prefix': 'acme_'}, True)):
+                 {'prefix': 'acme_', 'maxDatabases': 0}, True)):
             driver.create(ComputeSpec(
                 container_name='odoo_acme', image='odoo:18.0', instance_path='/x',
                 http_port=8069, longpolling_port=8072, db_name='acme', db_host='db',
@@ -589,7 +589,15 @@ class TestKubernetesDriver(TransactionCase):
         driver.set_hosting_access(_handle(), '^acme_.+$', 'acme_')
         body = custom.patch_cluster_custom_object.call_args.args[4]
         self.assertEqual(body, {'spec': {
-            'databaseFilter': '^acme_.+$', 'databaseManager': {'prefix': 'acme_'}, 'shell': True}})
+            'databaseFilter': '^acme_.+$', 'databaseManager': {'prefix': 'acme_', 'maxDatabases': 0}, 'shell': True}})
+
+    def test_hosting_database_limit_is_passed_to_operator(self):
+        driver, _server = _make_driver()
+        custom = MagicMock()
+        driver._custom_api = MagicMock(return_value=custom)
+        driver.set_hosting_access(_handle(), '^acme_.+$', 'acme_', max_databases=1)
+        body = custom.patch_cluster_custom_object.call_args.args[4]
+        self.assertEqual(body['spec']['databaseManager']['maxDatabases'], 1)
 
     def test_database_manager_key_reads_the_operator_secret(self):
         import base64

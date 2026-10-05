@@ -4138,3 +4138,20 @@ html[lang^="ar"] body { font-family: 'Noto Sans Arabic', 'Inter', sans-serif; }
 html[dir="rtl"] body { text-align: start; }
 input:is([type="email"], [type="url"], [type="tel"], [type="password"]),
 pre, code, .co-logo-word { direction: ltr; unicode-bidi: isolate; }
+
+/* Header/footer positions stay fixed even when Bootstrap loads RTL utilities. */
+#top[dir="ltr"] .navbar-brand { margin-left: 0; }
+#top[dir="ltr"] .navbar-nav.me-auto {
+    margin-left: 0 !important;
+    margin-right: auto !important;
+}
+#top[dir="ltr"] .dropdown-menu-end {
+    left: auto !important;
+    right: 0 !important;
+}
+@media (min-width: 576px) {
+    #bottom[dir="ltr"] .co-footer-social {
+        margin-left: auto !important;
+        margin-right: 0 !important;
+    }
+}

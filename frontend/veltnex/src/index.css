@@ -261,3 +261,6 @@ html[dir="rtl"] svg.lucide-chevron-right { transform: scaleX(-1); }
 
 /* An element centered on logical start needs the opposite RTL translation. */
 html[dir="rtl"] .start-1\/2.-translate-x-1\/2 { --tw-translate-x: 50%; }
+
+/* Keep navigation chrome in the same order in both languages. */
+html[dir="rtl"] :is(header, footer)[dir="ltr"] svg:is(.lucide-arrow-left, .lucide-arrow-right, .lucide-chevron-left, .lucide-chevron-right) { transform: none; }

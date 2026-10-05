@@ -158,7 +158,7 @@
                t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_services_section', 'True') != 'False'"/>
             <t t-set="show_hosting_section"
                t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_hosting_section', 'True') != 'False'"/>
-            <header id="top" data-anchor="true">
+            <header id="top" dir="ltr" data-anchor="true">
                 <nav class="navbar navbar-expand-lg sticky-top co-navbar"
                      style="background: var(--bg-navbar, #ffffff) !important; border-bottom: 1px solid var(--border-color, #dadce0); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);">
                     <div class="container">
@@ -285,7 +285,7 @@
                t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_services_section', 'True') != 'False'"/>
             <t t-set="show_hosting_section"
                t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_hosting_section', 'True') != 'False'"/>
-            <footer id="bottom" data-anchor="true" class="co-footer">
+            <footer id="bottom" dir="ltr" data-anchor="true" class="co-footer">
                 <div class="container">
                     <!-- Mirrors the SPA Footer.tsx: logo + copyright · center links ·
                          social icons, on the page background. -->

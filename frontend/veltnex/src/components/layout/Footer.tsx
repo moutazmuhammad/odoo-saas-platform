@@ -17,7 +17,7 @@ export function Footer() {
   ].filter(Boolean) as { label: string; to: string }[];
 
   return (
-    <footer className="border-t border-border bg-background">
+    <footer dir="ltr" className="border-t border-border bg-background">
       <div className="mx-auto flex w-full flex-col items-center gap-3 px-4 py-5 text-xs text-muted sm:flex-row sm:px-6 lg:px-8">
         <div className="flex items-center gap-2.5">
           <Logo withWordmark={false} />

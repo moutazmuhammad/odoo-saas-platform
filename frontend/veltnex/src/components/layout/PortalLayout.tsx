@@ -246,7 +246,7 @@ export function PortalLayout() {
     <div className="min-h-screen bg-background">
       {/* Google Cloud-style top app bar: menu · product · project · search ·
           help/notifications/account. */}
-      <header className="sticky top-0 z-40 flex h-16 items-center gap-1 border-b border-border bg-card px-2 sm:px-4">
+      <header dir="ltr" className="sticky top-0 z-40 flex h-16 items-center gap-1 border-b border-border bg-card px-2 sm:px-4">
         <button
           onClick={() => { setNavCollapsed((c) => !c); setMobileNav((o) => !o); }}
           aria-label={i18nText("Toggle navigation")}

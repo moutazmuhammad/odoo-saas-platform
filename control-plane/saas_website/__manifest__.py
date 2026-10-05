@@ -1,6 +1,6 @@
 {
     'name': 'SaaS Website',
-    'version': '18.0.6.0.1',
+    'version': '18.0.6.0.2',
     'category': 'SaaS',
     'summary': 'Customer-facing website for SaaS plan selection, ordering, and instance management',
     'author': 'SaaS Platform',

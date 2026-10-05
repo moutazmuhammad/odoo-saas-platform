@@ -593,7 +593,7 @@ export interface IamData {
   projects: { id: number; name: string; customer_id: number; is_owner: boolean; assignable_roles: Record<string, string[]> }[];
   grants: { id: number; project_id: number; role: string; environment: string; user_id: number | null; group_id: number | null; name: string; email: string; pending: boolean; expired: boolean; editable: boolean }[];
   groups: { id: number; name: string; customer_id: number; user_ids: number[]; editable?: boolean }[];
-  profiles?: { id: number; user_id: number; name: string; email: string; phone: string; customer_id: number; ready: boolean; must_change_password?: boolean; must_verify_phone?: boolean; can_reset_password: boolean; editable: boolean }[];
+  profiles?: { id: number; user_id: number; name: string; email: string; phone: string; customer_id: number; ready: boolean; must_change_password?: boolean; must_verify_phone?: boolean; can_reset_password: boolean; can_disable_login?: boolean; editable: boolean }[];
   members: { id: number; name: string; email: string; customer_ids?: number[] }[];
 }
 

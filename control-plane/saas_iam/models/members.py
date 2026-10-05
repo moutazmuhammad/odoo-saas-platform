@@ -42,6 +42,10 @@ class IamMember(models.Model):
         invoices = self.env['account.move'].sudo().search_count([('partner_id', '=', user.partner_id.id)])
         return not (grants or invitations or owned_projects or orders or invoices)
 
+    def _can_disable_login(self):
+        self.ensure_one()
+        return self._can_manage_login() and not self.sudo().user_id.iam_account_verified
+
     @api.model
     def _eligible_ids(self, owner):
         profiles = self.sudo().with_context(active_test=False).search([('owner_id', '=', owner.id)])
@@ -231,7 +235,7 @@ class IamMember(models.Model):
 
     def _delete_profile(self):
         member = self._owner_profile()
-        disable_login = member._can_manage_login()
+        disable_login = member._can_disable_login()
         grants = self.env['saas.iam.grant'].sudo().search([('owner_id', '=', member.owner_id.id), ('user_id', '=', member.user_id.id)])
         groups = self.env['saas.iam.group'].sudo().search([('owner_id', '=', member.owner_id.id), ('user_ids', 'in', member.user_id.ids)])
         projects = grants.mapped('project_id') | self.env['saas.iam.grant'].sudo().search([('group_id', 'in', groups.ids)]).mapped('project_id')
@@ -253,6 +257,7 @@ class IamUser(models.Model):
     _inherit = 'res.users'
     iam_initial_password = fields.Boolean(default=False, groups='base.group_system')
     iam_managed_owner_id = fields.Many2one('res.partner', groups='base.group_system', ondelete='restrict', copy=False)
+    iam_account_verified = fields.Boolean(default=False, groups='base.group_system', copy=False)
     iam_verified_phone = fields.Char(groups='base.group_system', copy=False)
     iam_phone_pending = fields.Char(groups='base.group_system', copy=False)
     iam_phone_country_id = fields.Many2one('res.country', groups='base.group_system', copy=False)
@@ -322,7 +327,7 @@ class IamUser(models.Model):
         phone = user.iam_phone_pending
         with self.env.cr.savepoint():
             user.partner_id.write({'phone': phone, 'mobile': False, 'country_id': user.iam_phone_country_id.id})
-            user.write({'iam_verified_phone': phone, 'iam_phone_code': False,
+            user.write({'iam_verified_phone': phone, 'iam_account_verified': True, 'iam_phone_code': False,
                         'iam_phone_pending': False, 'iam_phone_code_expires': False})
             profiles = self.env['saas.iam.member'].sudo().search([('user_id', '=', user.id)])
             profiles.write({'phone': phone})

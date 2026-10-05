@@ -210,6 +210,7 @@ class IamApi(SaasApi):
                           'phone': m.phone or '', 'customer_id': m.owner_id.id, 'ready': m._ready(),
                           'must_change_password': bool(m.user_id.sudo().iam_initial_password),
                           'must_verify_phone': m.user_id.sudo()._needs_phone_verification(),
+                          'can_disable_login': m.owner_id == request.env.user.partner_id and m._can_disable_login(),
                           'can_reset_password': m.owner_id == request.env.user.partner_id and m._can_manage_login(),
                           'editable': m.owner_id == request.env.user.partner_id} for m in profiles],
             'members': [{'id': u.id, 'name': u.name, 'email': u.login,

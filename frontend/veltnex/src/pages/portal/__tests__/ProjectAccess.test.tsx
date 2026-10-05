@@ -149,9 +149,9 @@ describe("Project Access", () => {
     renderWithProviders(<ProjectAccess />);
     await user.click(await screen.findByRole("tab", { name: /Teammates/ }));
     expect(screen.getByText("Password change required")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Delete profile for Ahmed" }));
+    await user.click(screen.getByRole("button", { name: "Remove teammate Ahmed" }));
     expect(mocked.iamMember).not.toHaveBeenCalled();
-    await user.click(within(screen.getByRole("dialog", { name: "Delete teammate profile?" })).getByRole("button", { name: "Delete profile" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Remove teammate?" })).getByRole("button", { name: "Remove teammate" }));
     await waitFor(() => expect(mocked.iamMember).toHaveBeenCalledWith({ member_id: 12, delete: true }));
   });
 
@@ -167,13 +167,22 @@ describe("Project Access", () => {
     await waitFor(() => expect(mocked.iamMember).toHaveBeenCalledWith({ member_id: 12, reset_password: true }));
     expect(await screen.findByDisplayValue("new-temporary-password")).toBeInTheDocument();
   });
+  it("explains that removing a verified teammate preserves their login account", async () => {
+    mocked.iam.mockResolvedValue({ ...fixture(), profiles: [{ id: 12, user_id: 4, name: "Ahmed", email: "ahmed@example.com", phone: "+201012345678", customer_id: 10, ready: true, can_reset_password: true, can_disable_login: false, editable: true }] });
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectAccess />);
+    await user.click(await screen.findByRole("tab", { name: /Teammates/ }));
+    await user.click(screen.getByRole("button", { name: "Remove teammate Ahmed" }));
+    expect(screen.getByRole("dialog", { name: "Remove teammate?" })).toHaveTextContent("Their login account stays active.");
+    expect(mocked.iamMember).not.toHaveBeenCalled();
+  });
   it("does not allow customer password resets for shared accounts", async () => {
     mocked.iam.mockResolvedValue({ ...fixture(), profiles: [{ id: 12, user_id: 4, name: "Ahmed", email: "ahmed@example.com", phone: "", customer_id: 10, ready: true, can_reset_password: false, editable: true }] });
     const user = userEvent.setup();
     renderWithProviders(<ProjectAccess />);
     await user.click(await screen.findByRole("tab", { name: /Teammates/ }));
     expect(screen.getByRole("button", { name: "Reset password for Ahmed" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Delete profile for Ahmed" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Remove teammate Ahmed" })).toBeEnabled();
   });
 
 });

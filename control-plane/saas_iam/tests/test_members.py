@@ -361,6 +361,40 @@ class TestIamMembers(IamFixture, TransactionCase):
         self.assertFalse(self.iam._allowed(self.project, 'project.view', member.user_id))
         self.assertTrue(self.iam._allowed(self.foreign, 'project.view', member.user_id))
 
+    def test_verified_account_removal_revokes_access_but_preserves_login(self):
+        member, _ = self._new_profile()
+        self.env['res.users'].with_user(member.user_id)._change_initial_password('MyOwnStrongPassword123!')
+        self._verify_member_phone(member)
+        self.assertTrue(member.user_id.iam_account_verified)
+        self.assertFalse(member._can_disable_login())
+        self._grant('viewer', user=member.user_id)
+        group = self.env['saas.iam.group'].sudo().create({'owner_id': self.owner.partner_id.id,
+            'name': 'Verified Team', 'user_ids': [(4, member.user_id.id)]})
+        self._grant('deploy', group=group)
+        self.assertTrue(self.iam._allowed(self.project, 'project.view', member.user_id))
+        result = member.with_user(self.owner)._delete_profile()
+        self.assertFalse(result['account_disabled'])
+        self.assertTrue(member.user_id.active)
+        self.assertFalse(member.active)
+        self.assertNotIn(member.user_id.id, group.user_ids.ids)
+        self.assertFalse(self.iam._allowed(self.project, 'project.view', member.user_id))
+        member.user_id.with_user(member.user_id)._check_credentials(
+            {'login': member.user_id.login, 'password': 'MyOwnStrongPassword123!', 'type': 'password'}, {'interactive': True})
+        recreated = self.env['saas.iam.member'].with_user(self.owner)._create_profile('Returned teammate', member.user_id.login)
+        self.assertFalse(recreated['temporary_password'])
+        self.assertFalse(self.iam._allowed(self.project, 'project.view', member.user_id))
+
+    def test_owner_reset_cannot_remove_verified_account_protection(self):
+        member, _ = self._new_profile()
+        self.env['res.users'].with_user(member.user_id)._change_initial_password('MyOwnStrongPassword123!')
+        self._verify_member_phone(member)
+        member.with_user(self.owner)._reset_password()
+        self.assertTrue(member.user_id.iam_account_verified)
+        self.assertFalse(member._can_disable_login())
+        result = member.with_user(self.owner)._delete_profile()
+        self.assertFalse(result['account_disabled'])
+        self.assertTrue(member.user_id.active)
+
     def test_delete_managed_user_disables_login_and_recreation_issues_new_password(self):
         member, original = self._new_profile()
         self._grant('viewer', user=member.user_id)
@@ -493,10 +527,12 @@ class TestIamMemberApi(IamFixture, HttpCase):
         self.assertTrue(self._rpc('/saas/api/v1/iam/password/change', password='MyReplacementPassword123!')['ok'])
         self.authenticate(self.owner.login, 'iam-test-pass')
         removed = self._rpc('/saas/api/v1/iam/members', member_id=profile.id, delete=True)
-        self.assertTrue(removed['data']['account_disabled'], removed)
+        self.assertFalse(removed['data']['account_disabled'], removed)
         self.assertEqual(self._rpc('/saas/api/v1/iam')['data']['profiles'], [])
         profile.user_id.invalidate_recordset()
-        self.assertFalse(profile.user_id.active)
+        self.assertTrue(profile.user_id.active)
+        self.assertTrue(profile.user_id.iam_account_verified)
+        self.assertFalse(self.iam._allowed(self.project, 'project.view', profile.user_id))
 
 
 @tagged('post_install', '-at_install')

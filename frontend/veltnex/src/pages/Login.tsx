@@ -47,9 +47,11 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      await login(email, password);
+      const signedInUser = await login(email, password);
       toast.success("Welcome back", "You're signed in.");
-      if (fromState) navigate(fromState, { replace: true });
+      if (signedInUser.must_change_password || signedInUser.must_verify_phone) {
+        navigate("/my/change-password", { replace: true, state: { from: fromState || safeRedirect } });
+      } else if (fromState) navigate(fromState, { replace: true });
       else if (safeRedirect) window.location.assign(safeRedirect);
       else navigate("/", { replace: true });
     } catch (err) {

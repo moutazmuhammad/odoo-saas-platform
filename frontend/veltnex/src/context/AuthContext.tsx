@@ -18,7 +18,7 @@ interface AuthContextValue {
   user: ApiUser | null;
   loading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<ApiUser>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   // phone-OTP registration (mirrors the Odoo saas.registration.otp flow).
@@ -67,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = React.useCallback(async (email: string, password: string) => {
     const me = await api.login(email, password);
     setUser(me);
+    return me;
   }, []);
 
   const logout = React.useCallback(async () => {

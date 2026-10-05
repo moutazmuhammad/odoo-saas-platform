@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { api, ApiError, type ApiInstance } from "@/lib/api";
 import { useAuth } from "./AuthContext";
@@ -46,7 +47,7 @@ export function InstancesProvider({ children }: { children: React.ReactNode }) {
       const data = await api.instances();
       setInstances(data);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not load your instances.");
+      setError(e instanceof ApiError ? e.message : i18nText("Could not load your instances."));
     } finally {
       setLoading(false);
     }

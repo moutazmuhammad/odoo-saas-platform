@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/renderWithProviders";
 import ProjectAccess from "../ProjectAccess";
+import { loadLanguage } from "@/i18n";
 import { api, type IamData } from "@/lib/api";
 
 vi.mock("@/lib/api", async (original) => ({ ...await original<typeof import("@/lib/api")>(),
@@ -20,6 +21,20 @@ const fixture = (): IamData => ({
     name: "Ahmed", email: "ahmed@example.com", pending: false, expired: false, editable: true }],
 });
 describe("Project Access", () => {
+  afterEach(() => { document.cookie = "veltnex-language=; max-age=0; path=/"; });
+  it("keeps project, role and environment identifiers unchanged in Arabic", async () => {
+    document.cookie = "veltnex-language=ar; path=/";
+    await loadLanguage();
+    mocked.iamInvite.mockResolvedValue({ id: 1, invite_url: "/my/access/accept?token=test" });
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectAccess />);
+    await user.click(await screen.findByRole("button", { name: "منح الوصول" }));
+    await user.click(screen.getByRole("checkbox", { name: "Project 1" }));
+    await user.type(screen.getByLabelText("عنوان البريد الإلكتروني"), "ahmed@example.com");
+    await user.click(screen.getByRole("checkbox", { name: /قارئ السجلات/ }));
+    await user.click(screen.getByRole("button", { name: "حفظ" }));
+    await waitFor(() => expect(mocked.iamInvite).toHaveBeenCalledWith({ email: "ahmed@example.com", project_ids: [1], roles: ["viewer", "logs"], environments: ["staging", "development"] }));
+  });
   beforeEach(() => { vi.clearAllMocks(); mocked.iam.mockResolvedValue(fixture()); });
   it("prompts clients without projects to create their first project", async () => {
     mocked.iam.mockResolvedValue({ ...fixture(), projects: [], empty_reason: "no_projects" });
@@ -57,7 +72,7 @@ describe("Project Access", () => {
     await user.click(await screen.findByRole("button", { name: "Grant access" }));
     await user.click(screen.getByRole("checkbox", { name: "Project 1" }));
     await user.type(screen.getByLabelText("Email address"), "ahmed@example.com");
-    await user.click(screen.getByRole("checkbox", { name: "production" }));
+    await user.click(screen.getByRole("checkbox", { name: "Production" }));
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
   it("groups a teammate's roles into one row and confirms bulk removal", async () => {

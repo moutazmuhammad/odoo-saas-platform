@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 
 interface State {
@@ -28,7 +29,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     // Log to the console; surfacing a UI toast would be noisy for the
     // typical use case (background decorations).
     // eslint-disable-next-line no-console
-    console.error("ErrorBoundary caught:", error);
+    console.error(i18nText("ErrorBoundary caught:"), error);
   }
 
   render() {

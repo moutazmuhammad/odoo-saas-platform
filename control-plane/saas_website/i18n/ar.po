@@ -1,0 +1,3080 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 18.0\n"
+"Language: ar_001\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=6; plural=(n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 && n%100<=99 ? 4 : 5);\n"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "% off)"
+msgstr "٪ عن)"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid ""
+")\n"
+"                                    at the end of your billing cycle"
+msgstr ""
+")\n"
+"                                    في نهاية دورة الفوترة الخاصة بك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid ""
+".\n"
+"                                    Captures every database, your uploaded\n"
+"                                    files, your custom modules and your\n"
+"                                    instance settings on each run; keeps up to\n"
+"                                    7 most recent snapshots (the oldest is\n"
+"                                    dropped automatically). Billed as a\n"
+"                                    <strong>flat monthly fee</strong> with no\n"
+"                                    proration — the same amount is charged\n"
+"                                    whether you enable on the 1st or the\n"
+"                                    28th. Charged again on every renewal\n"
+"                                    while the feature is on."
+msgstr ""
+".\n"
+"                                    يلتقط كل قاعدة البيانات، التي تم تحميلها\n"
+"                                    الملفات والوحدات المخصصة الخاصة بك و\n"
+"                                    إعدادات الخادم في كل عملية تشغيل؛ يستمر حتى\n"
+"                                    أحدث 7 لقطات (الأقدم هو\n"
+"                                    سقط تلقائيا). وصفت بأنها أ\n"
+"                                    <strong> رسوم شهرية ثابتة </strong> بدون رقم\n"
+"                                    التناسب - يتم تحصيل نفس المبلغ\n"
+"                                    سواء قمت بالتمكين في الأول أو\n"
+"                                    الثامن والعشرون. يتم تحصيل الرسوم مرة أخرى عند كل تجديد\n"
+"                                    أثناء تشغيل الميزة."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid ""
+".\n"
+"                                    You can pay any time from"
+msgstr ""
+".\n"
+"                                    يمكنك الدفع في أي وقت من"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "/mo"
+msgstr "/شهر"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "/mo billed yearly"
+msgstr "/ شهر يتم إصدار فاتورة به سنويًا"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "/mo)"
+msgstr "/شهر)"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "/yr"
+msgstr "/ سنة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid ""
+"/yr\n"
+"                                        ("
+msgstr ""
+"/ سنة\n"
+"                                        ("
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "/yr ·"
+msgstr "/ سنة ·"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "14 days free, no credit card required"
+msgstr "14 يومًا مجانًا، دون الحاجة إلى بطاقة ائتمان"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+msgid ""
+":\n"
+"                                    more replicas means resilience (if one fails or is\n"
+"                                    being updated, the others keep serving your users\n"
+"                                    with no downtime) and extra capacity under higher\n"
+"                                    traffic. Billed as a <strong>flat monthly fee</strong>\n"
+"                                    with no proration — the same amount is charged\n"
+"                                    whether you upgrade on the 1st or the 28th. Charged\n"
+"                                    again on every renewal while you stay on this tier."
+msgstr ""
+":\n"
+"                                    المزيد من النسخ المتماثلة يعني المرونة (إذا فشل أحدها أو فشل\n"
+"                                    وبعد تحديثها، يستمر الآخرون في خدمة المستخدمين\n"
+"                                    مع عدم وجود توقف) وقدرة إضافية تحت أعلى\n"
+"                                    حركة المرور. تم إصدار فاتورة بها كرسوم شهرية ثابتة <strong></strong>\n"
+"                                    بدون تقسيم نسبي — يتم تحصيل نفس المبلغ\n"
+"                                    سواء قمت بالترقية في الأول أو الثامن والعشرين. مشحونة\n"
+"                                    مرة أخرى عند كل تجديد أثناء بقائك في هذا المستوى."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<i class=\"fas fa-arrow-left me-2\"/>Back to Hosting"
+msgstr "<i class=\"fas fa-arrow-left me-2\"/>العودة إلى الاستضافة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "<i class=\"fas fa-arrow-left me-2\"/>Back to Instance"
+msgstr "<i class=\"fas fa-arrow-left me-2\"/>العودة إلى الخادم"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "<i class=\"fas fa-arrow-left me-2\"/>Cancel and go back"
+msgstr "<i class=\"fas fa-arrow-left me-2\"/>إلغاء والعودة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid ""
+"<i class=\"fas fa-arrow-right mx-2\" style=\"font-size:0.7rem;\"/>\n"
+"                                            Your price:"
+msgstr ""
+"<i class=\"fas fa-arrow-right mx-2\" style=\"font-size:0.7rem;\"/>\n"
+"                                            السعر الخاص بك:"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "<i class=\"fas fa-arrow-up me-2\"/>Apply Changes"
+msgstr "<i class=\"fas fa-arrow-up me-2\"/>تطبيق التغييرات"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "<i class=\"fas fa-check text-success me-2\"/>Backups become available"
+msgstr ""
+"أصبحت النسخ الاحتياطية <i class=\"fas fa-check text-success me-2\"/> متاحة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid ""
+"<i class=\"fas fa-check text-success me-2\"/>Resources are upgraded "
+"instantly (zero downtime)"
+msgstr ""
+"<i class=\"fas fa-check text-success me-2\"/> تتم ترقية الموارد على الفور "
+"(بدون توقف عن العمل)"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid ""
+"<i class=\"fas fa-check text-success me-2\"/>Your data and configuration are"
+" preserved"
+msgstr ""
+"<i class=\"fas fa-check text-success me-2\"/> يتم الاحتفاظ ببياناتك "
+"وتكويناتك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "<i class=\"fas fa-check text-success me-2\"/>Your subdomain stays the same"
+msgstr "<i class=\"fas fa-check text-success me-2\"/>يظل نطاقك الفرعي كما هو"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "<i class=\"fas fa-check-circle me-1\"/>Paid"
+msgstr "<i class=\"fas fa-check-circle me-1\"/>مدفوعة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid ""
+"<i class=\"fas fa-clock me-1\"/>\n"
+"                                            Worker reduction will take effect at your next billing cycle"
+msgstr ""
+"<i class=\"fas fa-clock me-1\"/>\n"
+"                                            سيتم تفعيل تخفيض عدد عمليات التشغيل في دورة الفوترة التالية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "<i class=\"fas fa-clock me-1\"/>Partially Paid"
+msgstr "<i class=\"fas fa-clock me-1\"/>مدفوع جزئيًا"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid ""
+"<i class=\"fas fa-clock\"/>\n"
+"                                    <span>99.9% uptime SLA</span>"
+msgstr ""
+"<i class=\"fas fa-clock\"/>\n"
+"                                    <span> وقت تشغيل بنسبة 99.9% SLA</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "<i class=\"fas fa-cogs me-2\"/>Workers"
+msgstr "<i class=\"fas fa-cogs me-2\"/>عمليات التشغيل"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "<i class=\"fas fa-credit-card me-2\"/>Continue to Payment"
+msgstr "<i class=\"fas fa-credit-card me-2\"/> تابع الدفع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "<i class=\"fas fa-cubes me-2\"/>Service"
+msgstr "<i class=\"fas fa-cubes me-2\"/>الخدمة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "<i class=\"fas fa-download me-2\"/>Download PDF"
+msgstr "<i class=\"fas fa-download me-2\"/>تحميل PDF"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "<i class=\"fas fa-exclamation-circle me-1\"/>Not Paid"
+msgstr "<i class=\"fas fa-exclamation-circle me-1\"/>غير مدفوعة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<i class=\"fas fa-gift me-1\"/>No credit card required."
+msgstr "<i class=\"fas fa-gift me-1\"/> لا يلزم وجود بطاقة ائتمان."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "<i class=\"fas fa-hdd me-2\"/>Storage"
+msgstr "<i class=\"fas fa-hdd me-2\"/>التخزين"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid ""
+"<i class=\"fas fa-info-circle me-1\"/>\n"
+"                                    You can upgrade or downgrade anytime"
+msgstr ""
+"<i class=\"fas fa-info-circle me-1\"/>\n"
+"                                    يمكنك الترقية أو الرجوع إلى إصدار سابق في أي وقت"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<i class=\"fas fa-layer-group me-1\"/>Extra environments"
+msgstr "<i class=\"fas fa-layer-group me-1\"/> البيئات الإضافية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid "<i class=\"fas fa-lock me-1\"/>Minimum"
+msgstr "<i class=\"fas fa-lock me-1\"/>الحد الأدنى"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<i class=\"fas fa-lock me-1\"/>Secure checkout. Cancel anytime."
+msgstr "<i class=\"fas fa-lock me-1\"/>الخروج الآمن. إلغاء في أي وقت."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid ""
+"<i class=\"fas fa-lock me-1\"/>Storage cannot be reduced below current "
+"allocation ("
+msgstr ""
+"لا يمكن تقليل <i class=\"fas fa-lock me-1\"/>Storage إلى ما دون التخصيص "
+"الحالي ("
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_side_content
+msgid "<i class=\"fas fa-pencil-alt me-1\"/> Edit Information"
+msgstr "<i class=\"fas fa-pencil-alt me-1\"/> تحرير المعلومات"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid ""
+"<i class=\"fas fa-piggy-bank me-1\"/>\n"
+"                                                        You save <span id=\"upgrade-summary-yearly-savings\">$0</span> per year"
+msgstr ""
+"<i class=\"fas fa-piggy-bank me-1\"/>\n"
+"                                                        يمكنك توفير <span id=\"upgrade-summary-yearly-savings\"> 0</span> سنويًا"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid ""
+"<i class=\"fas fa-piggy-bank me-1\"/>\n"
+"                                                    You save"
+msgstr ""
+"<i class=\"fas fa-piggy-bank me-1\"/>\n"
+"                                                    قمت بحفظ"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid ""
+"<i class=\"fas fa-piggy-bank me-1\"/>\n"
+"                                                You save"
+msgstr ""
+"<i class=\"fas fa-piggy-bank me-1\"/>\n"
+"                                                قمت بحفظ"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid ""
+"<i class=\"fas fa-piggy-bank me-1\"/>\n"
+"                                            You're saving"
+msgstr ""
+"<i class=\"fas fa-piggy-bank me-1\"/>\n"
+"                                            أنت تقوم بالحفظ"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "<i class=\"fas fa-plus me-1\"/>New Hosting"
+msgstr "<i class=\"fas fa-plus me-1\"/>استضافة جديدة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "<i class=\"fas fa-plus me-1\"/>New Instance"
+msgstr "<i class=\"fas fa-plus me-1\"/> خادم جديد"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid "<i class=\"fas fa-redo me-2\"/>Reactivate Instance"
+msgstr "<i class=\"fas fa-redo me-2\"/>إعادة تنشيط الخادم"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "<i class=\"fas fa-redo me-2\"/>Resend Code"
+msgstr "<i class=\"fas fa-redo me-2\"/>إعادة إرسال الرمز"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "<i class=\"fas fa-rocket me-2\"/>Start Free Trial"
+msgstr "<i class=\"fas fa-rocket me-2\"/>بدء النسخة التجريبية المجانية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "<i class=\"fas fa-rocket me-2\"/>Upgrade Now"
+msgstr "<i class=\"fas fa-rocket me-2\"/>Uقم بالترقية الآن"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "<i class=\"fas fa-server me-2\"/>Hosting"
+msgstr "<i class=\"fas fa-server me-2\"/>استضافة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid ""
+"<i class=\"fas fa-server\"/>\n"
+"                                    <span>Isolated environments</span>"
+msgstr ""
+"<i class=\"fas fa-server\"/>\n"
+"                                    <span> البيئات المعزولة </span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<i class=\"fas fa-shield-alt me-1\"/>Add daily backups"
+msgstr "<i class=\"fas fa-shield-alt me-1\"/> إضافة نسخ احتياطية يومية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid ""
+"<i class=\"fas fa-shield-alt\"/>\n"
+"                                    <span>Enterprise-grade security</span>"
+msgstr ""
+"<i class=\"fas fa-shield-alt\"/>\n"
+"                                    <span>أمان على مستوى المؤسسات</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "<i class=\"fas fa-shopping-cart me-2\"/>Order Summary"
+msgstr "<i class=\"fas fa-shopping-cart me-2\"/>ملخص الطلب"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "<i class=\"fas fa-spinner me-1\"/>In Payment"
+msgstr "<i class=\"fas fa-spinner me-1\"/>في الدفع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<i class=\"fas fa-tag me-1\"/>SAVE"
+msgstr "<i class=\"fas fa-tag me-1\"/>SAVE"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "<i class=\"fas fa-times me-1\"/>Cancel Scheduled Change"
+msgstr "<i class=\"fas fa-times me-1\"/>إلغاء التغيير المجدول"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "<i class=\"fas fa-undo me-1\"/>Reversed"
+msgstr "<i class=\"fas fa-undo me-1\"/>معكوس"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "<option value=\"\">Select Country</option>"
+msgstr "<option value=\"\">اختر الدولة</option>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<option value=\"\">Select version...</option>"
+msgstr "<option value=\"\">اختر الإصدار...</option>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<span class=\"badge bg-success\">Free Trial</span>"
+msgstr "<span class=\"badge bg-success\">التجربة المجانية</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid ""
+"<span class=\"breakdown-label\">\n"
+"                                                    <i class=\"fas fa-cogs me-2\"/>Workers\n"
+"                                                </span>"
+msgstr ""
+"<span class=\"breakdown-label\">\n"
+"                                                    <i class=\"fas fa-cogs me-2\"/>عمليات التشغيل\n"
+"                                                </span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid ""
+"<span class=\"breakdown-label\">\n"
+"                                                    <i class=\"fas fa-cogs me-2\"/>Workers\n"
+"                                                </span>\n"
+"                                                <span class=\"breakdown-value\">\n"
+"                                                    <span id=\"upgrade-summary-workers\" style=\"font-weight:700;\">2</span>\n"
+"                                                </span>"
+msgstr ""
+"<span class=\"breakdown-label\">\n"
+"                                                    <i class=\"fas fa-cogs me-2\"/>عمليات التشغيل\n"
+"                                                </span>\n"
+"                                                <span class=\"breakdown-value\">\n"
+"                                                    <span id=\"upgrade-summary-workers\" style=\"font-weight:700;\">2</span>\n"
+"                                                </span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid ""
+"<span class=\"breakdown-label\">\n"
+"                                                    <i class=\"fas fa-hdd me-2\"/>Storage\n"
+"                                                </span>"
+msgstr ""
+"<span class=\"breakdown-label\">\n"
+"                                                    <i class=\"fas fa-hdd me-2\"/>التخزين\n"
+"                                                </span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid ""
+"<span class=\"breakdown-label\">\n"
+"                                                    <i class=\"fas fa-hdd me-2\"/>Storage\n"
+"                                                </span>\n"
+"                                                <span class=\"breakdown-value\">\n"
+"                                                    <span id=\"upgrade-summary-storage\" style=\"font-weight:700;\">5</span> GB\n"
+"                                                </span>"
+msgstr ""
+"<span class=\"breakdown-label\">\n"
+"                                                    <i class=\"fas fa-hdd me-2\"/>التخزين\n"
+"                                                </span>\n"
+"                                                <span class=\"breakdown-value\">\n"
+"                                                    <span id=\"upgrade-summary-storage\" style=\"font-weight:700;\">5</span> جيجابايت\n"
+"                                                </span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<span class=\"breakdown-label\"><i class=\"fas fa-cogs me-2\"/>Workers</span>"
+msgstr ""
+"<span class=\"breakdown-label\"><i class=\"fas fa-cogs me-2\"/>عمليات "
+"التشغيل</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<span class=\"breakdown-label\"><i class=\"fas fa-hdd me-2\"/>Storage</span>"
+msgstr "<span class=\"breakdown-label\"><i class=\"fas fa-hdd me-2\"/>التخزين</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid ""
+"<span class=\"breakdown-label\"><i class=\"fas fa-headset "
+"me-2\"/>Support</span>"
+msgstr "<span class=\"breakdown-label\"><i class=\"fas fa-headset me-2\"/>دعم</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<span class=\"breakdown-label\"><i class=\"fas fa-server me-2\"/>Plan</span>"
+msgstr "<span class=\"breakdown-label\"><i class=\"fas fa-server me-2\"/>Plan</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid ""
+"<span class=\"breakdown-label\"><i class=\"fas fa-shield-alt me-2\"/>Daily "
+"Backups</span>"
+msgstr ""
+"<span class=\"breakdown-label\"><i class=\"fas fa-shield-alt me-2\"/>النسخ "
+"الاحتياطي اليومي</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
+msgid "<span class=\"co-footer-copy\">© 2026 VELTNEX, Inc.</span>"
+msgstr "<span class=\"co-footer-copy\"> © 2026 VELTNEX, Inc.</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
+msgid ""
+"<span class=\"co-logo-word fw-bold\">VELT<span "
+"style=\"color:var(--primary);\">NEX</span></span>"
+msgstr ""
+"<span class=\"co-logo-word fw-bold\">VELT<span "
+"style=\"color:var(--primary);\">NEX</span></span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<span class=\"input-group-text\">https://</span>"
+msgstr "<span class=\"input-group-text\">https://</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "<span class=\"label\"><i class=\"fas fa-shield-alt me-2\"/>Backups</span>"
+msgstr ""
+"<span class=\"label\"><i class=\"fas fa-shield-alt me-2\"/>النسخ "
+"الاحتياطية</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid ""
+"<span class=\"mx-1\">·</span>\n"
+"                                        7 Backups"
+msgstr ""
+"<span class=\"mx-1\">·</span>\n"
+"                                        7 النسخ الاحتياطية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "<span class=\"mx-2\">|</span>"
+msgstr "<span class=\"mx-2\">|</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid ""
+"<span class=\"mx-2\">|</span>\n"
+"                                        <span>Due: </span>"
+msgstr ""
+"<span class=\"mx-2\">|</span>\n"
+"                                        <span>بسبب: </span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid ""
+"<span class=\"step-number\">1</span>\n"
+"                                            <span class=\"step-label\">Account Details</span>"
+msgstr ""
+"<span class=\"step-number\">1</span>\n"
+"                                            <span class=\"step-label\">تفاصيل الحساب</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid ""
+"<span class=\"step-number\">2</span>\n"
+"                                            <span class=\"step-label\">Verify Phone</span>"
+msgstr ""
+"<span class=\"step-number\">2</span>\n"
+"                                            <span class=\"step-label\">التحقق من الهاتف</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid ""
+"<span class=\"step-number\"><i class=\"fas fa-check\"/></span>\n"
+"                                            <span class=\"step-label\">Account Details</span>"
+msgstr ""
+"<span class=\"step-number\"><i class=\"fas fa-check\"/></span>\n"
+"                                            <span class=\"step-label\">تفاصيل الحساب</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "<span class=\"text-muted\">Daily backups</span>"
+msgstr "<span class=\"text-muted\">النسخ الاحتياطي اليومي</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "<span class=\"text-muted\">Production plan</span>"
+msgstr "<span class=\"text-muted\">خطة الإنتاج</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "<span class=\"text-muted\">Support</span>"
+msgstr "<span class=\"text-muted\">دعم</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Billing</span>"
+msgstr "<span class=\"vx-config-label\">Billing</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Compute Tier</span>"
+msgstr "<span class=\"vx-config-label\">مستوى الحوسبة</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Daily Backup</span>"
+msgstr "<span class=\"vx-config-label\">النسخ الاحتياطي اليومي</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Environments</span>"
+msgstr "<span class=\"vx-config-label\">البيئات</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Instance</span>"
+msgstr "<span class=\"vx-config-label\">خادم</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Odoo Version</span>"
+msgstr "إصدار <span class=\"vx-config-label\">Odoo</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Plan</span>"
+msgstr "<span class=\"vx-config-label\">Plan</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Region</span>"
+msgstr "<span class=\"vx-config-label\">المنطقة</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Service</span>"
+msgstr "<span class=\"vx-config-label\">الخدمة</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Storage</span>"
+msgstr "<span class=\"vx-config-label\">التخزين</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Support</span>"
+msgstr "<span class=\"vx-config-label\">دعم</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "<span class=\"vx-config-label\">Workers</span>"
+msgstr "<span class=\"vx-config-label\">عمليات التشغيل</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid ""
+"<span style=\"font-size:0.85rem;font-"
+"weight:600;color:var(--success);\">Switch to yearly billing</span>"
+msgstr ""
+"<span style=\"font-size:0.85rem;font-"
+"weight:600;color:var(--success);\">التبديل إلى الفوترة السنوية</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid ""
+"<span style=\"font-size:0.9rem;font-"
+"weight:600;color:var(--success);\">Annual billing discount applied!</span>"
+msgstr ""
+"<span style=\"font-size:0.9rem;font-weight:600;color:var(--success);\">تم "
+"تطبيق خصم الفواتير السنوية!</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<span><i class=\"fas fa-cogs me-2\"/>Workers</span>"
+msgstr "<span><i class=\"fas fa-cogs me-2\"/>عمليات التشغيل</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "<span><i class=\"fas fa-hdd me-2\"/>Storage</span>"
+msgstr "<span><i class=\"fas fa-hdd me-2\"/>التخزين</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "<span>Date: </span>"
+msgstr "<span>التاريخ: </span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "<span>GB</span>"
+msgstr "<span>GB</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid ""
+"<span>Monthly Total</span>\n"
+"                                                    <span class=\"total-amount\" id=\"upgrade-summary-monthly-total\">$0.00</span>"
+msgstr ""
+"<span>الإجمالي الشهري</span>\n"
+"                                                    <span class=\"total-amount\" id=\"upgrade-summary-monthly-total\">$0.00</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_form
+msgid "<span>Password</span>"
+msgstr "<span>كلمة المرور</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_form
+msgid ""
+"<span>Sign In</span>\n"
+"                    <i class=\"fas fa-arrow-right ms-2\"/>"
+msgstr ""
+"<span>تسجيل الدخول</span>\n"
+"                    <i class=\"fas fa-arrow-right ms-2\"/>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "<span>Total</span>"
+msgstr "<span>إجمالي</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid ""
+"<span>Yearly Total</span>\n"
+"                                                    <span class=\"total-amount\" id=\"upgrade-summary-yearly-total\">$0.00</span>"
+msgstr ""
+"<span>الإجمالي السنوي</span>\n"
+"                                                    <span class=\"total-amount\" id=\"upgrade-summary-yearly-total\">$0.00</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid "<span>© 2026 VELTNEX. All rights reserved.</span>"
+msgstr "<span> © 2026 VELTNEX. جميع الحقوق محفوظة.</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid "<strong>Billing will resume</strong>"
+msgstr "سيتم استئناف <strong>Billing</strong>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "<strong>Change Already Scheduled</strong>"
+msgstr "<strong>التغيير مجدول بالفعل</strong>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "<strong>DEBUG OTP:</strong>"
+msgstr "<strong>DEBUG OTP:</strong>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "<strong>Free Trial</strong>"
+msgstr "<strong>التجربة المجانية</strong>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "<strong>What happens when you upgrade?</strong>"
+msgstr "<strong>ماذا يحدث عند الترقية؟</strong>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid ""
+"A paid add-on: an automatic encrypted snapshot every day, last 7 days kept, "
+"so you can restore."
+msgstr ""
+"وظيفة إضافية مدفوعة: لقطة مشفرة تلقائيًا كل يوم، يتم الاحتفاظ بها لآخر 7 "
+"أيام، حتى تتمكن من استعادتها."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
+msgid "Account menu"
+msgstr "قائمة الحساب"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Activate Daily Backups"
+msgstr "تفعيل النسخ الاحتياطية اليومية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_folder_tree_items
+msgid "Add subfolder"
+msgstr "إضافة مجلد فرعي"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Address"
+msgstr "عنوان"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid ""
+"Adjust your resources. Upgrades take effect immediately.\n"
+"                            Worker reductions take effect at your next billing cycle."
+msgstr ""
+"ضبط الموارد الخاصة بك. تسري الترقيات على الفور.\n"
+"                            تسري تخفيضات عمليات التشغيل في دورة الفوترة التالية."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Already have an account?"
+msgstr "هل لديك حساب بالفعل؟"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Amount"
+msgstr "المبلغ"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Amount Due"
+msgstr "المبلغ المستحق"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
+msgid "Backend"
+msgstr "الخلفية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Branch"
+msgstr "فرع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "Browse Services"
+msgstr "تصفح الخدمات"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "Change Plan"
+msgstr "تغيير الخطة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "Charges"
+msgstr "رسوم"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "Choose your subdomain"
+msgstr "اختر المجال الفرعي الخاص بك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "City"
+msgstr "مدينة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Cloud Hosting"
+msgstr "الاستضافة السحابية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid ""
+"Code expires in\n"
+"                                                <span class=\"countdown-timer\" id=\"otp-timer\" data-seconds=\"600\">10:00</span>"
+msgstr ""
+"تنتهي صلاحية الرمز في\n"
+"                                                <span class=\"countdown-timer\" id=\"otp-timer\" data-seconds=\"600\">10:00</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Communication history"
+msgstr "تاريخ الاتصالات"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Company Name (optional)"
+msgstr "اسم الشركة (اختياري)"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "Complete Your Order"
+msgstr "أكمل طلبك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+msgid "Compute Tier:"
+msgstr "طبقة الحساب:"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "Configuration"
+msgstr "إعدادات"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "Configure"
+msgstr "تكوين"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "Configure Your Custom Instance"
+msgstr "قم بتكوين الخادم المخصص الخاص بك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Configure Your Hosting Instance"
+msgstr "قم بتكوين خادم الاستضافة الخاص بك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "Configure Your Instance"
+msgstr "تكوين الخادم الخاص بك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid ""
+"Configure your plan and pay the invoice to reactivate. Your instance will be redeployed empty\n"
+"                                — your most recent snapshot is kept safely. Once the instance is running, open the Snapshots\n"
+"                                page, re-enable Daily Backups (one-time activation invoice includes a small retention surcharge),\n"
+"                                and click Restore to bring your data back yourself. No support ticket needed."
+msgstr ""
+"قم بتكوين خطتك وادفع الفاتورة لإعادة التنشيط. سيتم إعادة نشر الخادم الخاص بك فارغًا\n"
+"                                - يتم الاحتفاظ بآخر لقطاتك بأمان. بمجرد تشغيل الخادم، افتح اللقطات\n"
+"                                الصفحة، أعد تمكين النسخ الاحتياطية اليومية (تتضمن فاتورة التنشيط لمرة واحدة رسومًا إضافية للاحتفاظ)،\n"
+"                                وانقر فوق \"استعادة\" لاستعادة بياناتك بنفسك. لا حاجة لتذكرة الدعم."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Confirm &amp; pay"
+msgstr "تأكيد والدفع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Confirm Password"
+msgstr "تأكيد كلمة المرور"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Confirm the details below, then continue to payment."
+msgstr "قم بتأكيد التفاصيل أدناه، ثم تابع الدفع."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Continue <i class=\"fas fa-arrow-right ms-2\"/>"
+msgstr "متابعة <i class=\"fas fa-arrow-right ms-2\"/>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Create Your Account"
+msgstr "قم بإنشاء حسابك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Create up to this many for free, any time."
+msgstr "أنشئ ما يصل إلى هذا العدد مجانًا، في أي وقت."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Credit Note"
+msgstr "مذكرة الائتمان"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "Custom Plan"
+msgstr "خطة مخصصة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid ""
+"Daily Backups Add-on\n"
+"                                                <span class=\"badge ms-2 bg-info\">Monthly</span>"
+msgstr ""
+"الوظيفة الإضافية للنسخ الاحتياطي اليومي\n"
+"                                                <span class=\"badge ms-2 bg-info\">شهريا</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Daily backups"
+msgstr "النسخ الاحتياطية اليومية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Daily snapshots of your full instance for"
+msgstr "لقطات يومية لخادمك الكامل لـ"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_folder_tree_items
+msgid "Delete"
+msgstr "حذف"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Description"
+msgstr "وصف"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Development servers"
+msgstr "خوادم التطوير"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Disc.%"
+msgstr "القرص%"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
+msgid "Docs"
+msgstr "التوثيق"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Document"
+msgstr "وثيقة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid "Don't have an account?"
+msgstr "ليس لديك حساب؟"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Email Address"
+msgstr "عنوان البريد الإلكتروني"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid "Enter your credentials to access your account"
+msgstr "أدخل بيانات الاعتماد الخاصة بك للوصول إلى حسابك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Environments (paid slots)"
+msgstr "البيئات (فتحات مدفوعة)"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid ""
+"Every database on this instance is dumped daily to encrypted\n"
+"                                                        cloud storage. Up to 7 most recent snapshots are kept; older\n"
+"                                                        ones roll off automatically. Restore any snapshot with one\n"
+"                                                        click from your portal. The price is included in your monthly total below."
+msgstr ""
+"يتم تفريغ كل قاعدة بيانات في هذا الخادم يوميًا لتشفيرها\n"
+"                                                        التخزين السحابي. يتم الاحتفاظ بما يصل إلى 7 لقطات حديثة؛ كبار السن\n"
+"                                                        تلك تتدحرج تلقائيا. استعادة أي لقطة مع واحدة\n"
+"                                                        انقر من البوابة الخاصة بك. يتم تضمين السعر في الإجمالي الشهري الخاص بك أدناه."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "Explore available cloud solutions"
+msgstr "اكتشف الحلول السحابية المتاحة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "FREE"
+msgstr "حر"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Faster response times for mission-critical workloads. Billed monthly."
+msgstr "أوقات استجابة أسرع لأحمال العمل ذات المهام الحرجة. تدفع شهريا."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+msgid ""
+"Flat monthly fee — no proration. Once applied, the next charge is one full "
+"month after today's payment."
+msgstr ""
+"رسوم شهرية ثابتة - بدون تقسيم. بمجرد تطبيقها، سيتم تحصيل الرسوم التالية بعد "
+"شهر كامل من دفع اليوم."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid ""
+"Flat monthly fee — no proration. Once enabled, the next charge is one full "
+"month after today's payment."
+msgstr ""
+"رسوم شهرية ثابتة - بدون تقسيم. بمجرد التمكين، سيتم تحصيل الرسوم التالية بعد "
+"شهر كامل من دفع اليوم."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_form
+msgid "Forgot password?"
+msgstr "هل نسيت كلمة السر؟"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Free trial — no charge today."
+msgstr "تجربة مجانية - بدون رسوم اليوم."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Full Name"
+msgstr "الاسم الكامل"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "GB"
+msgstr "غيغابايت"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid "GB (previous plan)"
+msgstr "جيجابايت (الخطة السابقة)"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "GB Storage"
+msgstr "تخزين جيجا بايت"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "GB)"
+msgstr "غيغابايت)"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
+msgid "Get started"
+msgstr "ابدأ الآن"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Get started in minutes"
+msgstr "ابدأ في دقائق"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Git repository"
+msgstr "مستودع جيت"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
+msgid "GitHub"
+msgstr "جيثب"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
+msgid "Help"
+msgstr "يساعد"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Hosting"
+msgstr "الاستضافة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid ""
+"How fast we promise to respond when you need help. Higher tiers = faster "
+"guaranteed response."
+msgstr ""
+"مدى سرعة وعدنا بالرد عندما تحتاج إلى المساعدة. المستويات الأعلى = استجابة "
+"مضمونة أسرع."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid ""
+"How many people can use your instance at the same time — more workers = more"
+" simultaneous users."
+msgstr ""
+"كم عدد الأشخاص الذين يمكنهم استخدام الخادم الخاص بك في نفس الوقت - المزيد من"
+" عمليات التشغيل = المزيد من المستخدمين المتزامنين."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "Included"
+msgstr "متضمنة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Instance Details"
+msgstr "تفاصيل الخادم"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Invoice"
+msgstr "الفاتورة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Invoice:"
+msgstr "فاتورة:"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "Invoices"
+msgstr "الفواتير"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Item"
+msgstr "غرض"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Job Title (optional)"
+msgstr "المسمى الوظيفي (اختياري)"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "Last 7 copies"
+msgstr "آخر 7 نسخ"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "Learn more"
+msgstr "يتعلم أكثر"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
+msgid "LinkedIn"
+msgstr "ينكدين"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_form
+msgid "Log in as superuser"
+msgstr "قم بتسجيل الدخول كمستخدم متميز"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "Manage your account, instances, and billing from here."
+msgstr "قم بإدارة حسابك والخوادم والفوترة من هنا."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "Manage your cloud instances"
+msgstr "إدارة خوادمك السحابية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "Monthly"
+msgstr "شهريا"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "Monthly Billing"
+msgstr "الفواتير الشهرية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Monthly Total"
+msgstr "المجموع الشهري"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "My Instances"
+msgstr "خوادمي"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "New Plan Configuration"
+msgstr "تكوين الخطة الجديدة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "Next billing"
+msgstr "الفواتير القادمة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "Not included"
+msgstr "غير متضمنة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Odoo"
+msgstr "Odoo"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Odoo Version"
+msgstr "نسخة اودو"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Odoo version"
+msgstr "نسخة اودو"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Order Summary"
+msgstr "ملخص الطلب"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Order summary"
+msgstr "ملخص الطلب"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "Orders"
+msgstr "طلبات"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "Password &amp; connection settings"
+msgstr "إعدادات كلمة المرور والاتصال"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Password (min 8 characters)"
+msgstr "كلمة المرور (8 أحرف على الأقل)"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "Pay"
+msgstr "يدفع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "Payment"
+msgstr "قسط"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Payment Method"
+msgstr "طريقة الدفع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Phone Number"
+msgstr "رقم التليفون"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "Plan"
+msgstr "يخطط"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid "Plan Configuration"
+msgstr "تكوين الخطة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Price"
+msgstr "سعر"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid ""
+"Production is always included. Add Staging and Development\n"
+"                                                servers (lowest spec) at"
+msgstr ""
+"يتم تضمين الإنتاج دائمًا. إضافة التدريج والتطوير\n"
+"                                                الخوادم (أدنى المواصفات) في"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Production specs"
+msgstr "مواصفات الإنتاج"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Project"
+msgstr "المشروع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Project name"
+msgstr "اسم المشروع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Quantity"
+msgstr "كمية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid "Reactivate"
+msgstr "إعادة التنشيط"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid "Reactivate Instance"
+msgstr "إعادة تنشيط الخادم"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Refund"
+msgstr "استرداد"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Region"
+msgstr "المنطقة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "Regular price:"
+msgstr "السعر العادي:"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_folder_tree_items
+msgid "Rename"
+msgstr "إعادة تسمية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Repository"
+msgstr "مستودع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Review &amp; pay"
+msgstr "المراجعة والدفع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Review your order"
+msgstr "قم بمراجعة طلبك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+msgid "Runs"
+msgstr "أشواط"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "SAVE"
+msgstr "يحفظ"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "Save"
+msgstr "حفظ"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "Secure payment powered by SSL encryption"
+msgstr "الدفع الآمن المدعوم بتشفير SSL"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "Security"
+msgstr "حماية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "Select your domain"
+msgstr "حدد المجال الخاص بك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Server location for this instance. Fixed once created."
+msgstr "موقع الخادم لهذا الخادم. تم إصلاحه بمجرد إنشائه."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "Services"
+msgstr "الخدمات"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
+msgid "Settings"
+msgstr "الإعدادات"
+
+#. module: saas_website
+#: model:ir.model.fields,field_description:saas_website.field_res_config_settings__saas_otp_test_mode
+#: model_terms:ir.ui.view,arch_db:saas_website.res_config_settings_view_form_website
+msgid "Show Sign-up Code On Screen"
+msgstr "إظهار رمز التسجيل على الشاشة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid "Sign In"
+msgstr "تسجيل الدخول"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Sign in"
+msgstr "تسجيل الدخول"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid ""
+"Sign in to manage your cloud instances, monitor performance, and scale your "
+"business."
+msgstr ""
+"قم بتسجيل الدخول لإدارة خوادمك السحابية ومراقبة الأداء وتوسيع نطاق أعمالك."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
+msgid "Sign out"
+msgstr "تسجيل الخروج"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid "Sign up"
+msgstr "اشتراك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Snapshots"
+msgstr "لقطات"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Staging servers"
+msgstr "خوادم التدريج"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Start free trial"
+msgstr "ابدأ النسخة التجريبية المجانية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Storage"
+msgstr "تخزين"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Subdomain"
+msgstr "النطاق الفرعي"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Subtotal"
+msgstr "المجموع الفرعي"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "Support"
+msgstr "الدعم"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Support plan"
+msgstr "خطة الدعم"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Switch to yearly &amp; save"
+msgstr "قم بالتبديل إلى السنوي وحفظه"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Tax"
+msgstr "ضريبة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.res_config_settings_view_form_website
+msgid ""
+"Testing only: the sign-up page shows the phone verification code, so no SMS "
+"provider is needed. Turn it off before going live."
+msgstr ""
+"للاختبار فقط: تعرض صفحة الاشتراك رمز التحقق من الهاتف، لذلك لا حاجة إلى مزود"
+" خدمة الرسائل القصيرة. قم بإيقاف تشغيله قبل البث المباشر."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid ""
+"The data-centre location your instance runs in. Pick the one closest to your"
+" users. Fixed after creation."
+msgstr ""
+"موقع مركز البيانات الذي يعمل فيه الخادم الخاص بك. اختر الموقع الأقرب إلى "
+"المستخدمين لديك. ثابت بعد الإنشاء."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid ""
+"The name in front of your instance's web address, e.g. \"acme\" in "
+"acme.example.com."
+msgstr ""
+"الاسم الموجود أمام عنوان الويب الخاص بخادمك، على سبيل المثال. \"acme\" في "
+"acme.example.com."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid "Toggle theme"
+msgstr "تبديل الموضوع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Total"
+msgstr "المجموع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Total Due Today"
+msgstr "إجمالي المستحق اليوم"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid ""
+"Total space for your database and files (documents, images, attachments). "
+"Backups are stored separately."
+msgstr ""
+"المساحة الإجمالية لقاعدة البيانات والملفات الخاصة بك (المستندات والصور "
+"والمرفقات). يتم تخزين النسخ الاحتياطية بشكل منفصل."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
+msgid "Twitter"
+msgstr "تغريد"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Unit Price"
+msgstr "سعر الوحدة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "Upgrade"
+msgstr "يرقي"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+msgid "Upgrade Compute Tier"
+msgstr "ترقية طبقة الحساب"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "Upgrade Your Plan"
+msgstr "قم بترقية خطتك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+msgid "Upgrade to the"
+msgstr "الترقية إلى"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid "VELTNEX"
+msgstr "VELTNEX"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
+msgid "Vendor Bill"
+msgstr "فاتورة البائع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Verify &amp; Create Account"
+msgstr "التحقق وإنشاء الحساب"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "Verify Your Phone Number"
+msgstr "التحقق من رقم هاتفك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "View and pay invoices"
+msgstr "عرض ودفع الفواتير"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "View your purchase history"
+msgstr "عرض تاريخ الشراء الخاص بك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.registration_form
+msgid "We sent a 6-digit code to"
+msgstr "لقد أرسلنا رمزًا مكونًا من 6 أرقام إلى"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
+msgid "Welcome Back"
+msgstr "مرحبًا بعودتك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+msgid "Welcome back,"
+msgstr "مرحبًا بعودتك،"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid ""
+"Which release of Odoo your instance runs (e.g. 17, 18, 19), Community or "
+"Enterprise."
+msgstr ""
+"ما هو إصدار Odoo الذي يعمل عليه خادمك (على سبيل المثال 17، 18، 19)، المجتمع "
+"أو المؤسسة."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "Workers"
+msgstr "عمليات التشغيل"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "Workers /"
+msgstr "عمليات التشغيل /"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "Yearly"
+msgstr "سنوي"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "Yearly Billing"
+msgstr "الفواتير السنوية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "Yearly Total"
+msgstr "المجموع السنوي"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "You save (vs monthly)"
+msgstr "الحفظ الذي تقوم به (مقابل شهريًا)"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "Your Current Plan"
+msgstr "خطتك الحالية"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "Your Custom Plan"
+msgstr "خطتك المخصصة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+msgid "Your plan will change to"
+msgstr "ستتغير خطتك إلى"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "Your trial instance"
+msgstr "المثال التجريبي الخاص بك"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+msgid "across"
+msgstr "عير"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "breadcrumb"
+msgstr "فتات الخبز"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "days"
+msgstr "أيام"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "days free."
+msgstr "أيام مجانية."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid ""
+"each — provision more any\n"
+"                                                time from your dashboard."
+msgstr ""
+"كل — توفير المزيد من أي\n"
+"                                                الوقت من لوحة القيادة الخاصة بك."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+msgid "for"
+msgstr "ل"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid "instead of"
+msgstr "بدلاً من"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid "is currently on the"
+msgstr "حاليا على"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "my-company"
+msgstr "شركتي"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "per year"
+msgstr "كل سنة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+msgid ""
+"per year\n"
+"                                                    ("
+msgstr ""
+"في السنة\n"
+"                                                    ("
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "per year ("
+msgstr "في السنة ("
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+msgid ""
+"plan (Free Trial).\n"
+"                            Configure your resources below to keep your data and instance running."
+msgstr ""
+"الخطة (تجربة مجانية).\n"
+"                            قم بتكوين مواردك أدناه للحفاظ على تشغيل بياناتك وخوادمك."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+msgid "pod replicas"
+msgstr "النسخ المتماثلة جراب"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "replica"
+msgstr "نسخة طبق الأصل"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+msgid ""
+"replicas)\n"
+"                                                <span class=\"badge ms-2 bg-info\">Monthly</span>"
+msgstr ""
+"النسخ المتماثلة)\n"
+"                                                <span class=\"badge ms-2 bg-info\">شهريا</span>"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+msgid "s"
+msgstr "ق"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "the invoice page"
+msgstr "صفحة الفاتورة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+msgid "tier"
+msgstr "الطبقة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "too."
+msgstr "أيضاً."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid "with the same subdomain and domain."
+msgstr "مع نفس المجال الفرعي والمجال."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+msgid "workers (previous plan)"
+msgstr "عمليات التشغيل (الخطة السابقة)"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "your-subdomain."
+msgstr "نطاقك الفرعي."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "× env server"
+msgstr "× خادم البيئة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+msgid "← Back to edit"
+msgstr "← الرجوع إلى التعديل"
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid " Please contact support."
+msgstr " يرجى التواصل مع الدعم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid " Please contact us at %s."
+msgstr " يرجى التواصل معنا على %s."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "'%s' is already taken."
+msgstr "الاسم '%s' مستخدم بالفعل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "'%s' is available!"
+msgstr "الاسم '%s' متاح!"
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid ""
+"'%s' is your own cancelled instance — reactivate it from My Instances "
+"instead of creating a new one."
+msgstr ""
+"الخادم '%s' ملغى ويخصك. أعد تفعيله من صفحة خوادمك بدلاً من إنشاء خادم جديد."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "A backup is already in progress."
+msgstr "يجري إنشاء نسخة احتياطية بالفعل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"A backup of '%s' is still in progress. Wait for it to finish before starting"
+" another."
+msgstr ""
+"النسخة الاحتياطية لقاعدة '%s' قيد الإنشاء. انتظر اكتمالها قبل إنشاء نسخة "
+"أخرى."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "A valid email address is required."
+msgstr "يجب إدخال بريد إلكتروني صالح."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "A valid phone number is required (7-20 digits)."
+msgstr "يجب إدخال رقم هاتف صالح يتكون من 7 إلى 20 رقماً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "A valid phone number is required."
+msgstr "يجب إدخال رقم هاتف صالح."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Access denied."
+msgstr "تم رفض الوصول."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Account creation failed. Please try again."
+msgstr "تعذر إنشاء الحساب. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "Account creation failed: %s"
+msgstr "تعذر إنشاء الحساب: %s"
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"Admin password reset for '%(db)s'. Sign in as '%(login)s' with your new "
+"password."
+msgstr ""
+"تم تغيير كلمة مرور المسؤول لقاعدة '%(db)s'. سجّل الدخول باسم '%(login)s' "
+"باستخدام كلمة المرور الجديدة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Backup"
+msgstr "النسخ الاحتياطي"
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Backup cancelled."
+msgstr "تم إلغاء النسخ الاحتياطي."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"Backup discarded. The slot will open up within a few minutes once cleanup "
+"runs."
+msgstr ""
+"تم حذف النسخة الاحتياطية. ستتوفر المساحة خلال دقائق بعد اكتمال التنظيف."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Backup not available."
+msgstr "النسخة الاحتياطية غير متاحة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Backup not found."
+msgstr "لم يتم العثور على النسخة الاحتياطية."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"Backup of '%s' started. Refresh in a minute — a download link valid for 24 "
+"hours will appear once ready."
+msgstr ""
+"بدأ النسخ الاحتياطي لقاعدة '%s'. حدّث الصفحة بعد دقيقة؛ سيظهر رابط تنزيل "
+"صالح لمدة 24 ساعة عندما تجهز النسخة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"Backup process appears to have died before completing — no status update for"
+" over %d minutes."
+msgstr ""
+"يبدو أن عملية النسخ الاحتياطي توقفت قبل الاكتمال؛ لم يُحدّث وضعها منذ أكثر "
+"من %d دقيقة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Backup started."
+msgstr "بدأ النسخ الاحتياطي."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Backups are not available on trial plans."
+msgstr "النسخ الاحتياطية غير متاحة في الخطط التجريبية."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Both database and module are required."
+msgstr "يجب تحديد قاعدة البيانات والوحدة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Cancelled by customer while still in progress."
+msgstr "ألغى العميل العملية أثناء تنفيذها."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"Cannot delete a folder that has subfolders. Delete or move the subfolders "
+"first."
+msgstr "لا يمكن حذف مجلد يحتوي على مجلدات فرعية. احذفها أو انقلها أولاً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Choose a password of at least 6 characters."
+msgstr "اختر كلمة مرور مكونة من 6 أحرف على الأقل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "City is required."
+msgstr "يجب إدخال المدينة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Client requested data restore. Note: %s"
+msgstr "طلب العميل استعادة البيانات. ملاحظة: %s"
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Couldn't apply the change. Please try again."
+msgstr "تعذر تطبيق التغيير. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Couldn't create the environment. Please try again."
+msgstr "تعذر إنشاء البيئة. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Couldn't release the slot. Please try again."
+msgstr "تعذر تحرير مساحة البيئة. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Couldn't resend the code. Please try again."
+msgstr "تعذر إعادة إرسال الرمز. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Couldn't reserve the slot. Please try again."
+msgstr "تعذر حجز مساحة البيئة. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Couldn't start the backup. Please try again."
+msgstr "تعذر بدء النسخ الاحتياطي. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Couldn't start the database copy. Please try again."
+msgstr "تعذر بدء نسخ قاعدة البيانات. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"Creating database '%s'… this takes about a minute. Refresh the page to see "
+"its progress."
+msgstr ""
+"جارٍ إنشاء قاعدة '%s'… يستغرق ذلك نحو دقيقة. حدّث الصفحة لمتابعة التقدم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Daily backups are already enabled."
+msgstr "النسخ الاحتياطية اليومية مفعّلة بالفعل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Daily backups are not available on trial plans."
+msgstr "النسخ الاحتياطية اليومية غير متاحة في الخطط التجريبية."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"Daily backups can't be disabled from the portal. Contact support if you need"
+" to make a change."
+msgstr ""
+"لا يمكن تعطيل النسخ الاحتياطية اليومية من البوابة. تواصل مع الدعم إذا أردت "
+"تغييرها."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Data Restore Request — %s"
+msgstr "طلب استعادة البيانات — %s"
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Data restoration declined."
+msgstr "تم رفض استعادة البيانات."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"Data restore request from client:\n"
+"\n"
+"Client: %s (%s)\n"
+"Instance: %s\n"
+"Subdomain: %s.%s\n"
+"Plan: %s (%s)\n"
+"Retained Snapshot: %s\n"
+"Client Note: %s\n"
+"\n"
+"Action: Open the instance in the backend and use 'Restore to Instance & Invoice' to create the restoration invoice and schedule the restore."
+msgstr ""
+"طلب استعادة من العميل:\n"
+"العميل: %s (%s)\n"
+"الخادم: %s\n"
+"النطاق الفرعي: %s.%s\n"
+"الخطة: %s (%s)\n"
+"النسخة المحتفظ بها: %s\n"
+"ملاحظة العميل: %s\n"
+"الإجراء: افتح الخادم في لوحة الإدارة واستخدم «استعادة إلى الخادم وإصدار فاتورة» لإنشاء الفاتورة وجدولة الاستعادة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Database '%s' does not exist on this instance."
+msgstr "قاعدة '%s' غير موجودة على هذا الخادم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Database management is only available for hosting instances."
+msgstr "إدارة قواعد البيانات متاحة لخوادم الاستضافة فقط."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Database management is only available for hosting."
+msgstr "إدارة قواعد البيانات متاحة للاستضافة فقط."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Databases can only be copied onto a Staging or Development server."
+msgstr "يمكن نسخ قواعد البيانات إلى خادم اختبار أو تطوير فقط."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Deleting database '%s'…"
+msgstr "جارٍ حذف قاعدة '%s'…"
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Draft"
+msgstr "مسودة"
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Duplicating to '%s'… refresh to see progress."
+msgstr "جارٍ إنشاء نسخة باسم '%s'… حدّث الصفحة لمتابعة التقدم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Email and password are required."
+msgstr "يجب إدخال البريد الإلكتروني وكلمة المرور."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Environment not found."
+msgstr "لم يتم العثور على البيئة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Environments are managed from the Production server."
+msgstr "تُدار البيئات من خادم الإنتاج."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "Failed to send verification code. Please try again."
+msgstr "تعذر إرسال رمز التحقق. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Folder name is required."
+msgstr "يجب إدخال اسم المجلد."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Folder not found."
+msgstr "لم يتم العثور على المجلد."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "Full name is required."
+msgstr "يجب إدخال الاسم الكامل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Instance must be Running or Stopped to restore."
+msgstr "يجب أن يكون الخادم مشغّلاً أو متوقفاً للاستعادة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Instance must be running to create a backup."
+msgstr "يجب تشغيل الخادم لإنشاء نسخة احتياطية."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Instance must be running."
+msgstr "يجب أن يكون الخادم قيد التشغيل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Instance not found."
+msgstr "لم يتم العثور على الخادم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Instance restart initiated."
+msgstr "بدأت إعادة تشغيل الخادم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Instance start initiated."
+msgstr "بدأ تشغيل الخادم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Instance stop initiated."
+msgstr "بدأ إيقاف الخادم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "Invalid format. Use lowercase letters, digits, and hyphens."
+msgstr "صيغة غير صالحة. استخدم أحرفاً إنجليزية صغيرة وأرقاماً وشرطات."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "Invalid or expired verification code. Please try again or resend."
+msgstr "رمز التحقق غير صالح أو منتهي الصلاحية. حاول مجدداً أو أعد الإرسال."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Invalid source server."
+msgstr "الخادم المصدر غير صالح."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid ""
+"Invalid subdomain. Use only lowercase letters, digits, and hyphens (max 63 "
+"chars, must start/end with alphanumeric)."
+msgstr ""
+"النطاق الفرعي غير صالح. استخدم أحرفاً إنجليزية صغيرة وأرقاماً وشرطات فقط، "
+"بحد أقصى 63 حرفاً، ويجب أن يبدأ وينتهي بحرف أو رقم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Invoice not found."
+msgstr "لم يتم العثور على الفاتورة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "New password and confirmation don't match."
+msgstr "كلمة المرور الجديدة وتأكيدها غير متطابقين."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "No Odoo version configured for this service."
+msgstr "لم يُحدّد إصدار Odoo لهذه الخدمة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "No backup available for restore."
+msgstr "لا توجد نسخة احتياطية متاحة للاستعادة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "No changes selected."
+msgstr "لم تُحدّد أي تغييرات."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "No instances found."
+msgstr "لم يتم العثور على خوادم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"No pending payment. If you just paid, daily backups should now be enabled."
+msgstr ""
+"لا توجد دفعة معلّقة. إذا دفعت للتو، يفترض أن النسخ الاحتياطية اليومية مفعّلة"
+" الآن."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"No pending payment. If you just paid, your compute tier should now be "
+"changing."
+msgstr ""
+"لا توجد دفعة معلّقة. إذا دفعت للتو، يفترض أن تغيير مستوى الحوسبة بدأ الآن."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "On-demand backups are available for hosting instances only."
+msgstr "النسخ الاحتياطية عند الطلب متاحة لخوادم الاستضافة فقط."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Only the owner or an administrator can change this instance."
+msgstr "المالك أو المسؤول وحده يستطيع تغيير هذا الخادم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Operation not found."
+msgstr "لم يتم العثور على العملية."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "Password must be at least 8 characters."
+msgstr "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "Passwords do not match."
+msgstr "كلمتا المرور غير متطابقتين."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Payment method not found."
+msgstr "لم يتم العثور على طريقة الدفع."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Payment received. Daily backups are now active."
+msgstr "تم استلام الدفع. النسخ الاحتياطية اليومية مفعّلة الآن."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"Payment received. Scaling to the %s tier — this can take a few minutes."
+msgstr "تم استلام الدفع. جارٍ الانتقال إلى مستوى %s؛ قد يستغرق ذلك بضع دقائق."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Pending payment cancelled. You can re-enable daily backups any time."
+msgstr ""
+"أُلغيت الدفعة المعلّقة. يمكنك إعادة تفعيل النسخ الاحتياطية اليومية في أي "
+"وقت."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Phone number is required."
+msgstr "يجب إدخال رقم الهاتف."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Pick a database to back up."
+msgstr "اختر قاعدة بيانات لنسخها احتياطياً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Pick a database to reset."
+msgstr "اختر قاعدة بيانات لإعادة ضبطها."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Pick at least one database to copy."
+msgstr "اختر قاعدة بيانات واحدة على الأقل لنسخها."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Please configure your plan."
+msgstr "يرجى إعداد خطتك."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "Please contact support."
+msgstr "يرجى التواصل مع الدعم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "Please contact us at %s."
+msgstr "يرجى التواصل معنا على %s."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Please enter a valid email address."
+msgstr "يرجى إدخال عنوان بريد إلكتروني صالح."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "Please enter the verification code."
+msgstr "يرجى إدخال رمز التحقق."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Please review your order."
+msgstr "يرجى مراجعة طلبك."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "Please select a valid country."
+msgstr "يرجى اختيار دولة صالحة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "Please select a valid domain."
+msgstr "يرجى اختيار نطاق صالح."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "Please select your country."
+msgstr "الرجاء تحديد بلدك."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Please sign in to continue."
+msgstr "سجّل الدخول للمتابعة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Please sign in."
+msgstr "يرجى تسجيل الدخول."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Project not found."
+msgstr "لم يتم العثور على المشروع."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"Repairing '%(module)s' on '%(db)s'… your instance will come back up "
+"automatically. This page auto-refreshes."
+msgstr ""
+"جارٍ إصلاح '%(module)s' على '%(db)s'… سيعود خادمك تلقائياً. تُحدّث هذه "
+"الصفحة تلقائياً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Replaced by a newer on-demand backup request."
+msgstr "استُبدل بطلب نسخ احتياطي أحدث."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Repository URL must start with https:// or git@."
+msgstr "يجب أن يبدأ رابط المستودع بـ https:// أو git@."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"Restore could not be started. Please try again or contact support if the "
+"problem continues."
+msgstr "تعذر بدء الاستعادة. حاول مجدداً أو تواصل مع الدعم إذا استمرت المشكلة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Restore started. Refresh in a moment."
+msgstr "بدأت الاستعادة. حدّث الصفحة بعد قليل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Saved card removed. Auto-renew is now off."
+msgstr "حُذفت البطاقة المحفوظة. التجديد التلقائي متوقف الآن."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Saved method"
+msgstr "طريقة محفوظة"
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "Service is temporarily unavailable."
+msgstr "الخدمة غير متاحة مؤقتاً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid ""
+"Service is temporarily unavailable. No infrastructure servers are "
+"configured. "
+msgstr "الخدمة غير متاحة مؤقتاً؛ لم تُعدّ خوادم البنية التحتية بعد. "
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Service not found."
+msgstr "لم يتم العثور على الخدمة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Sign-in failed. Please try again."
+msgstr "تعذر تسجيل الدخول. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Source server not found."
+msgstr "لم يتم العثور على خادم المصدر."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Storage cannot be reduced. Current storage: %d GB."
+msgstr "لا يمكن تقليل التخزين. المساحة الحالية: %d جيجابايت."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Support email is not configured. Please contact us directly."
+msgstr "بريد الدعم غير مُعدّ. يرجى التواصل معنا مباشرة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "That action couldn't be completed. Please try again."
+msgstr "تعذر إكمال هذا الإجراء. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "That code is invalid or expired. Please request a new one."
+msgstr "الرمز غير صالح أو منتهي الصلاحية. يرجى طلب رمز جديد."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "That code is invalid or expired. Please try again or resend."
+msgstr "الرمز غير صالح أو منتهي الصلاحية. حاول مجدداً أو أعد الإرسال."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "That snapshot isn't available to restore."
+msgstr "هذه النسخة غير متاحة للاستعادة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "That upload isn't available to restore."
+msgstr "هذا الملف المرفوع غير متاح للاستعادة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "The instance must be running or stopped to apply this change."
+msgstr "يجب أن يكون الخادم مشغّلاً أو متوقفاً لتطبيق هذا التغيير."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "The merge couldn't be completed. Please try again."
+msgstr "تعذر إكمال الدمج. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/registration.py:0
+msgid ""
+"The phone number '%s' is not valid for %s. Please enter a number that "
+"matches your country."
+msgstr "رقم الهاتف '%s' غير صالح لدولة %s. أدخل رقماً يطابق دولتك."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid ""
+"The repository is managed at the project level. Open the Production "
+"environment to change it."
+msgstr "يُدار المستودع على مستوى المشروع. افتح بيئة الإنتاج لتغييره."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "The restore couldn't be started. Please try again."
+msgstr "تعذر بدء الاستعادة. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "The subdomain '%s' is already taken."
+msgstr "النطاق الفرعي '%s' مستخدم بالفعل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "The subdomain '%s' is already taken. Please choose another."
+msgstr "النطاق الفرعي '%s' مستخدم بالفعل. اختر نطاقاً آخر."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "There's no cancellable invoice for this instance."
+msgstr "لا توجد فاتورة يمكن إلغاؤها لهذا الخادم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid ""
+"This instance is stopped. Start it to access backups, snapshots and logs."
+msgstr ""
+"هذا الخادم متوقف. شغّله للوصول إلى النسخ الاحتياطية والنسخ الكاملة والسجلات."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid ""
+"This instance is suspended. Settle the outstanding invoice to restore access"
+" to backups, snapshots and logs."
+msgstr ""
+"هذا الخادم معلّق. سدّد الفاتورة المستحقة لاستعادة الوصول إلى النسخ "
+"الاحتياطية والنسخ الكاملة والسجلات."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid ""
+"This instance isn't running yet. Backups, snapshots and logs are available "
+"once it's running."
+msgstr ""
+"هذا الخادم لم يبدأ التشغيل بعد. تتوفر النسخ الاحتياطية والنسخ الكاملة "
+"والسجلات بعد تشغيله."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "This plan is not available for free trial."
+msgstr "هذه الخطة غير متاحة كتجربة مجانية."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "This plan is only available as a free trial."
+msgstr "هذه الخطة متاحة كتجربة مجانية فقط."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Those credentials don't match an account. Please try again."
+msgstr "بيانات الدخول لا تطابق أي حساب. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/registration.py:0
+msgid "Too many attempts. Please wait a few minutes and try again."
+msgstr "محاولات كثيرة. انتظر بضع دقائق ثم حاول مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Too many attempts. Please wait about %d minute(s) and try again."
+msgstr "محاولات كثيرة. انتظر نحو %d دقيقة ثم حاول مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "Too many checks — please slow down and try again in a minute."
+msgstr "فحوصات كثيرة؛ يرجى الانتظار دقيقة ثم المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Type the database name exactly to confirm deletion."
+msgstr "اكتب اسم قاعدة البيانات مطابقاً تماماً لتأكيد الحذف."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Type the database name exactly to confirm restore."
+msgstr "اكتب اسم قاعدة البيانات مطابقاً تماماً لتأكيد الاستعادة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Type the instance name exactly to confirm the restore."
+msgstr "اكتب اسم الخادم مطابقاً تماماً لتأكيد الاستعادة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Unassigned"
+msgstr "غير معيّن"
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Unknown action."
+msgstr "إجراء غير معروف."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/registration.py:0
+msgid ""
+"We can't create an account with these details. If you already have one, "
+"please sign in instead."
+msgstr ""
+"لا يمكن إنشاء حساب بهذه البيانات. إذا كان لديك حساب بالفعل، يرجى تسجيل "
+"الدخول."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "We couldn't cancel that invoice. Please try again."
+msgstr "تعذر إلغاء هذه الفاتورة. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "We couldn't change your compute tier. Please try again."
+msgstr "تعذر تغيير مستوى الحوسبة. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"We couldn't deliver your request right now. Please email us directly at %s "
+"and we'll get back to you."
+msgstr "تعذر إرسال طلبك حالياً. راسلنا مباشرة على %s وسنتواصل معك."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"We couldn't deliver your request to support just now. Please email us "
+"directly at %s and we'll get back to you."
+msgstr "تعذر إرسال طلبك إلى الدعم حالياً. راسلنا مباشرة على %s وسنتواصل معك."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "We couldn't fetch live usage right now. Please try again in a moment."
+msgstr "تعذر جلب بيانات الاستخدام الحالية. حاول بعد قليل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"We couldn't generate the download link right now. Please try again in a "
+"moment, or contact support."
+msgstr "تعذر إنشاء رابط التنزيل حالياً. حاول بعد قليل أو تواصل مع الدعم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid ""
+"We couldn't list the installed packages right now. Please try again in a "
+"moment."
+msgstr "تعذر عرض الحزم المثبّتة حالياً. حاول بعد قليل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "We couldn't load your databases right now."
+msgstr "تعذر تحميل قواعد بياناتك حالياً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "We couldn't open the database manager right now."
+msgstr "تعذر فتح مدير قواعد البيانات حالياً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "We couldn't place your order. Please try again."
+msgstr "تعذر إنشاء طلبك. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "We couldn't reset that account. Please contact support."
+msgstr "تعذر إعادة ضبط هذا الحساب. يرجى التواصل مع الدعم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "We couldn't reset your password. Please try again."
+msgstr "تعذر إعادة ضبط كلمة المرور. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "We couldn't run your query right now."
+msgstr "تعذر تشغيل استعلامك حالياً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "We couldn't send your verification code. Please try again."
+msgstr "تعذر إرسال رمز التحقق. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "We couldn't start the daily-backup checkout. Please try again."
+msgstr "تعذر بدء طلب النسخ الاحتياطية اليومية. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "We couldn't start the restore. Please try again."
+msgstr "تعذر بدء الاستعادة. يرجى المحاولة مجدداً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "Workspace not found."
+msgstr "لم يتم العثور على مساحة العمل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid ""
+"You already have a paid service instance — the free trial is no longer "
+"available."
+msgstr "لديك خادم خدمة مدفوع بالفعل؛ التجربة المجانية لم تعد متاحة."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "You have already used your free trial."
+msgstr "استخدمت تجربتك المجانية بالفعل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid "You have reached the maximum number of instances (%d)."
+msgstr "وصلت إلى الحد الأقصى لعدد الخوادم (%d)."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/main.py:0
+msgid ""
+"You have reached the maximum number of instances (%d). Please delete or "
+"cancel an existing one first."
+msgstr ""
+"وصلت إلى الحد الأقصى لعدد الخوادم (%d). احذف أو ألغِ خادماً موجوداً أولاً."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/api.py:0
+msgid "You're already signed in."
+msgstr "أنت مسجّل الدخول بالفعل."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/controllers/portal.py:0
+msgid "Your request has been sent to support."
+msgstr "أُرسل طلبك إلى الدعم."
+
+#. module: saas_website
+#. odoo-python
+#: code:addons/saas_website/models/saas_instance_folder.py:0
+msgid "A folder cannot be its own parent."
+msgstr "لا يمكن أن يكون المجلد مجلداً رئيسياً لنفسه."

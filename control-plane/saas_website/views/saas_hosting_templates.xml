@@ -25,7 +25,7 @@
                     <h1 class="mb-2">Review your order</h1>
                     <p class="text-muted mb-4">Confirm the details below, then continue to payment.</p>
                     <t t-if="error">
-                        <div class="alert-banner alert-danger mb-4"><i class="fas fa-exclamation-circle"></i><div t-esc="error"/></div>
+                        <div class="alert-banner alert-danger mb-4"><i class="fas fa-exclamation-circle"></i><div t-esc="request.env['ir.http']._saas_display_text(error)"/></div>
                     </t>
                     <form action="/hosting/order" method="post">
                         <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
@@ -132,7 +132,7 @@
                     <t t-if="error">
                         <div class="alert-banner alert-danger mb-4">
                             <i class="fas fa-exclamation-circle"></i>
-                            <div t-esc="error"/>
+                            <div t-esc="request.env['ir.http']._saas_display_text(error)"/>
                         </div>
                     </t>
 

@@ -166,3 +166,52 @@ class TestSpaShellRoutes(HttpCase):
         self.assertFalse(
             location.startswith('/login'),
             "an already-authenticated GET must not be bounced to /login")
+
+    def test_arabic_shell_keeps_spa_urls_unprefixed(self):
+        self.opener.cookies.set('veltnex-language', 'ar')
+        self.opener.cookies.set('frontend_lang', 'ar_001')
+        with self._patched_shell_file(html='<html lang="en"><body>App</body></html>'):
+            response = self.url_open('/my/instances?category=shared', allow_redirects=False)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('lang="ar" dir="rtl"', response.text)
+
+    def test_language_switch_preserves_destination_and_sets_both_cookies(self):
+        response = self.url_open('/saas/language?lang=ar&redirect=%2Fmy%2Finstances%3Fcategory%3Dshared', allow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers['Location'], '/my/instances?category=shared')
+        self.assertEqual(response.cookies.get('veltnex-language'), 'ar')
+        self.assertEqual(response.cookies.get('frontend_lang'), 'ar_001')
+
+    def test_switch_to_english_removes_native_language_prefix(self):
+        response = self.url_open('/saas/language?lang=en&redirect=%2Far%2Fmy%2Finvoices%3Fpage%3D2', allow_redirects=False)
+        self.assertEqual(response.headers['Location'], '/my/invoices?page=2')
+        self.assertEqual(response.cookies.get('frontend_lang'), 'en_US')
+
+    def test_language_switch_rejects_external_redirects(self):
+        from odoo.addons.saas_website.controllers.language import SaasLanguage
+        for value in ('https://evil.example', '//evil.example/path', '/\\evil.example', '/\nevil.example', '/saas/language?lang=ar'):
+            self.assertEqual(SaasLanguage._destination(value), '/')
+
+    def test_arabic_cleanup_route_no_longer_exists(self):
+        response = self.url_open('/saas/cleanup-arabic', allow_redirects=False)
+        self.assertEqual(response.status_code, 404)
+
+    def test_native_hosting_review_is_translated_and_has_language_control(self):
+        user = self.env['res.users'].sudo().create({
+            'name': 'Arabic Portal User', 'login': 'arabic-portal@example.com',
+            'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])]})
+        user.password = 'arabic-portal-test-password'
+        self.authenticate(user.login, 'arabic-portal-test-password')
+        self.opener.cookies.set('veltnex-language', 'ar')
+        self.opener.cookies.set('frontend_lang', 'ar_001')
+        response = self.url_open('/hosting/configure?workers=2&storage=5&error=Database%20%27demo%27%20already%20exists.')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('dir="rtl"', response.text)
+        self.assertIn('ملخص الطلب', response.text)
+        self.assertIn('/saas/language?lang=en', response.text)
+        self.assertIn('veltnex-language-catalog', response.text)
+        from lxml import html
+        document = html.fromstring(response.content)
+        banner = ''.join(document.xpath("//div[contains(@class, 'alert')]//text()"))
+        self.assertIn("قاعدة البيانات 'demo' موجودة بالفعل.", banner)
+        self.assertNotIn('href="/ar/my/instances', response.text)

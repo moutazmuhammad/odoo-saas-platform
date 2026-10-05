@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -18,6 +19,7 @@ import {
   Layers,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { LanguageToggle } from "@/components/LanguageToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { CommandPalette } from "@/components/CommandPalette";
 import { NotificationsBell } from "@/components/NotificationsBell";
@@ -29,9 +31,9 @@ import { cn } from "@/lib/utils";
 
 // Keep a direct route to the project list from account pages as well as project pages.
 const NAV = [
-  { to: "/my/instances", label: "Projects", icon: LayoutGrid },
-  { to: "/my/access", label: "Team & permissions", icon: ShieldCheck },
-  { to: "/my/billing", label: "Billing", icon: Receipt },
+  { to: "/my/instances", label: i18nText("Projects"), icon: LayoutGrid },
+  { to: "/my/access", label: i18nText("Team & permissions"), icon: ShieldCheck },
+  { to: "/my/billing", label: i18nText("Billing"), icon: Receipt },
   // Account "Settings" lives in the avatar dropdown — no duplicate in the rail.
 ];
 
@@ -50,14 +52,14 @@ function instanceSections(id: number, isHosting: boolean): NavItem[] {
     // Environments workspace itself — so the rail only carries the workspace
     // entry (Overview) and the project-wide Project settings.
     return [
-      { to: env, label: "Overview", icon: Layers, tab: "overview" },
-      { to: `${env}?tab=code`, label: "Project settings", icon: Settings, tab: "code" },
+      { to: env, label: i18nText("Overview"), icon: Layers, tab: "overview" },
+      { to: `${env}?tab=code`, label: i18nText("Project settings"), icon: Settings, tab: "code" },
     ];
   }
   return [
-    { to: base, label: "Overview", icon: LayoutDashboard, end: true },
-    { to: `${base}/metrics`, label: "Metrics", icon: Activity },
-    { to: `${base}/backups`, label: "Snapshots", icon: Archive },
+    { to: base, label: i18nText("Overview"), icon: LayoutDashboard, end: true },
+    { to: `${base}/metrics`, label: i18nText("Metrics"), icon: Activity },
+    { to: `${base}/backups`, label: i18nText("Snapshots"), icon: Archive },
   ];
 }
 
@@ -100,7 +102,7 @@ function Dropdown({
           className={cn(
             "absolute z-50 mt-2 overflow-hidden rounded-xl border border-border bg-card p-1.5 shadow-2xl animate-fade-in",
             width,
-            align === "right" ? "right-0" : "left-0",
+            align === "right" ? "end-0" : "start-0",
           )}
         >
           {children(() => setOpen(false))}
@@ -151,7 +153,7 @@ export function PortalLayout() {
 
   const handleLogout = () => {
     logout();
-    toast.info("Signed out", "You've been securely logged out.");
+    toast.info(i18nText("Signed out"), i18nText("You've been securely logged out."));
     navigate("/");
   };
 
@@ -169,8 +171,8 @@ export function PortalLayout() {
       title={item.label}
       onClick={() => { setMobileNav(false); navigate(item.to); }}
       className={cn(
-        "flex items-center gap-4 rounded-r-full py-2.5 text-sm transition-colors",
-        collapsed ? "mx-2 justify-center rounded-lg px-0" : "pl-6 pr-4",
+        "flex items-center gap-4 rounded-e-full py-2.5 text-sm transition-colors",
+        collapsed ? "mx-2 justify-center rounded-lg px-0" : "ps-6 pe-4",
         active
           ? "bg-primary/10 font-medium text-primary"
           : "text-foreground/80 hover:bg-foreground/6",
@@ -192,7 +194,7 @@ export function PortalLayout() {
   };
 
   const NavList = ({ collapsed }: { collapsed: boolean }) => (
-    <nav className="flex flex-col gap-0.5 py-2 pr-2">
+    <nav className="flex flex-col gap-0.5 py-2 pe-2">
       {/* INSTANCE CONTEXT: every section of the current project, one click away */}
       {inst && instId != null && (
         <>
@@ -214,27 +216,27 @@ export function PortalLayout() {
       ))}
       <div className="mx-3 my-2 border-t border-border" />
       <button
-        title="Help & support"
+        title={i18nText("Help & support")}
         onClick={() => { setMobileNav(false); navigate("/docs"); }}
         className={cn(
-          "flex items-center gap-4 rounded-r-full py-2.5 text-sm text-foreground/80 transition-colors hover:bg-foreground/6",
-          collapsed ? "mx-2 justify-center rounded-lg px-0" : "pl-6 pr-4",
+          "flex items-center gap-4 rounded-e-full py-2.5 text-sm text-foreground/80 transition-colors hover:bg-foreground/6",
+          collapsed ? "mx-2 justify-center rounded-lg px-0" : "ps-6 pe-4",
         )}
       >
         <LifeBuoy className="size-5 shrink-0" />
-        {!collapsed && <span>Help &amp; support</span>}
+        {!collapsed && <span>{i18nText("Help & support")}</span>}
       </button>
       {user?.is_internal && (
         <a
           href="/odoo"
-          title="Backend"
+          title={i18nText("Backend")}
           className={cn(
-            "flex items-center gap-4 rounded-r-full py-2.5 text-sm text-foreground/80 transition-colors hover:bg-foreground/6",
-            collapsed ? "mx-2 justify-center rounded-lg px-0" : "pl-6 pr-4",
+            "flex items-center gap-4 rounded-e-full py-2.5 text-sm text-foreground/80 transition-colors hover:bg-foreground/6",
+            collapsed ? "mx-2 justify-center rounded-lg px-0" : "ps-6 pe-4",
           )}
         >
           <LayoutGrid className="size-5 shrink-0" />
-          {!collapsed && <span>Backend</span>}
+          {!collapsed && <span>{i18nText("Backend")}</span>}
         </a>
       )}
     </nav>
@@ -247,13 +249,13 @@ export function PortalLayout() {
       <header className="sticky top-0 z-40 flex h-16 items-center gap-1 border-b border-border bg-card px-2 sm:px-4">
         <button
           onClick={() => { setNavCollapsed((c) => !c); setMobileNav((o) => !o); }}
-          aria-label="Toggle navigation"
+          aria-label={i18nText("Toggle navigation")}
           className="rounded-full p-2.5 text-muted transition-colors hover:bg-foreground/6"
         >
           <Menu className="size-5" />
         </button>
         <Logo />
-        <ProjectSwitcher className="ml-1 hidden sm:block" />
+        <ProjectSwitcher className="ms-1 hidden sm:block" />
 
         {/* Center search (GCP hallmark) */}
         <button
@@ -261,26 +263,27 @@ export function PortalLayout() {
           className="mx-auto hidden h-11 w-full max-w-2xl items-center gap-3 rounded-lg bg-background px-4 text-sm text-muted transition-colors hover:bg-background/70 hover:ring-1 hover:ring-border md:flex"
         >
           <Search className="size-5" />
-          <span>Search resources, projects, and actions</span>
-          <kbd className="ml-auto rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px]">⌘K</kbd>
+          <span>{i18nText("Search resources, projects, and actions")}</span>
+          <kbd className="ms-auto rounded-sm border border-border bg-card px-1.5 py-0.5 text-[10px]">⌘K</kbd>
         </button>
 
-        <div className="ml-auto flex items-center gap-0.5">
+        <div className="ms-auto flex items-center gap-0.5">
           <button
             onClick={() => setPaletteOpen(true)}
-            aria-label="Search"
+            aria-label={i18nText("Search")}
             className="rounded-full p-2.5 text-muted transition-colors hover:bg-foreground/6 md:hidden"
           >
             <Search className="size-5" />
           </button>
           <button
             onClick={() => navigate("/docs")}
-            aria-label="Help"
+            aria-label={i18nText("Help")}
             className="rounded-full p-2.5 text-muted transition-colors hover:bg-foreground/6"
           >
             <HelpCircle className="size-5" />
           </button>
           <NotificationsBell />
+          <LanguageToggle />
           <ThemeToggle />
           <Dropdown
             align="right"
@@ -288,7 +291,7 @@ export function PortalLayout() {
             trigger={(open) => (
               <span
                 className={cn(
-                  "ml-0.5 flex size-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground ring-2 ring-transparent transition-all",
+                  "ms-0.5 flex size-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground ring-2 ring-transparent transition-all",
                   open && "ring-primary/30",
                 )}
               >
@@ -305,18 +308,14 @@ export function PortalLayout() {
                 <div className="my-1 border-t border-border" />
                 <button
                   onClick={() => { close(); navigate("/my/settings"); }}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-foreground/90 transition-colors hover:bg-foreground/6"
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start text-sm font-medium text-foreground/90 transition-colors hover:bg-foreground/6"
                 >
-                  <Settings className="size-4" />
-                  Settings
-                </button>
+                  <Settings className="size-4" />{i18nText("Settings")}</button>
                 <button
                   onClick={() => { close(); handleLogout(); }}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-danger transition-colors hover:bg-danger/10"
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start text-sm font-medium text-danger transition-colors hover:bg-danger/10"
                 >
-                  <LogOut className="size-4" />
-                  Sign out
-                </button>
+                  <LogOut className="size-4" />{i18nText("Sign out")}</button>
               </>
             )}
           </Dropdown>
@@ -335,7 +334,7 @@ export function PortalLayout() {
         >
           <div
             className={cn(
-              "absolute inset-y-0 left-0 overflow-y-auto overflow-x-hidden border-r border-border bg-card transition-[width] duration-200",
+              "absolute inset-y-0 start-0 overflow-y-auto overflow-x-hidden border-e border-border bg-card transition-[width] duration-200",
               hovered || !navCollapsed ? "w-64 shadow-2xl" : "w-16",
             )}
           >
@@ -354,7 +353,7 @@ export function PortalLayout() {
       {mobileNav && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobileNav(false)} />
-          <aside className="absolute inset-y-0 left-0 w-64 overflow-y-auto border-r border-border bg-card pt-2 shadow-2xl">
+          <aside className="absolute inset-y-0 start-0 w-64 overflow-y-auto border-e border-border bg-card pt-2 shadow-2xl">
             <div className="flex h-14 items-center px-4"><Logo /></div>
             {NavList({ collapsed: false })}
           </aside>

@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -11,15 +12,16 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
+import { LanguageToggle } from "@/components/LanguageToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/AuthContext";
 import { useSections } from "@/lib/useSections";
 import { cn } from "@/lib/utils";
 
 const ALL_LINKS = [
-  { to: "/services", label: "Services", section: "services" as const },
-  { to: "/hosting", label: "Hosting", section: "hosting" as const },
-  { to: "/docs", label: "Docs", section: null },
+  { to: "/services", label: i18nText("Services"), section: "services" as const },
+  { to: "/hosting", label: i18nText("Hosting"), section: "hosting" as const },
+  { to: "/docs", label: i18nText("Docs"), section: null },
 ];
 
 type MenuItem = { label: string; icon: LucideIcon; to: string; external: boolean };
@@ -28,15 +30,15 @@ type MenuItem = { label: string; icon: LucideIcon; to: string; external: boolean
 // experience is the same across every page. "Profile" is an Odoo portal
 // page, so it uses a full navigation; the rest are SPA routes.
 const MENU: MenuItem[] = [
-  { label: "Projects", icon: Server, to: "/my/instances", external: false },
-  { label: "Settings", icon: Settings, to: "/my/settings", external: false },
+  { label: i18nText("Projects"), icon: Server, to: "/my/instances", external: false },
+  { label: i18nText("Settings"), icon: Settings, to: "/my/settings", external: false },
 ];
 
 // Internal (backend) users also get a link into the Odoo backend, mirroring
 // the QWeb header's `t-if="has_group('base.group_user')"` Backend entry.
 // `/odoo` is the Odoo web client root, so it's a full navigation.
 const BACKEND_ITEM: MenuItem = {
-  label: "Backend",
+  label: i18nText("Backend"),
   icon: LayoutGrid,
   to: "/odoo",
   external: true,
@@ -93,11 +95,12 @@ export function PublicNav() {
         </div>
 
         <div className="hidden items-center gap-3 md:flex">
+          <LanguageToggle />
           <ThemeToggle />
           {isAuthenticated ? (
             <UserMenu
               initials={user?.initials || "U"}
-              name={user?.name || "Account"}
+              name={user?.name || i18nText("Account")}
               email={user?.email || ""}
               items={menuItems}
               onGo={go}
@@ -109,22 +112,19 @@ export function PublicNav() {
                 to="/login"
                 state={loginState}
                 className="text-sm font-medium text-muted transition-colors hover:text-foreground"
-              >
-                Sign in
-              </Link>
-              <Button size="sm" onClick={() => navigate(getStartedTo)}>
-                Get started
-              </Button>
+              >{i18nText("Sign in")}</Link>
+              <Button size="sm" onClick={() => navigate(getStartedTo)}>{i18nText("Get started")}</Button>
             </>
           )}
         </div>
 
         <div className="flex items-center gap-2 md:hidden">
+          <LanguageToggle />
           <ThemeToggle />
           <button
             className="rounded-md p-2 text-muted"
             onClick={() => setOpen((o) => !o)}
-            aria-label="Toggle menu"
+            aria-label={i18nText("Toggle menu")}
           >
             {open ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
@@ -161,7 +161,7 @@ export function PublicNav() {
                         setOpen(false);
                         go(item);
                       }}
-                      className="flex items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm font-medium text-muted hover:bg-card hover:text-foreground"
+                      className="flex items-center gap-2.5 rounded-md px-3 py-2.5 text-start text-sm font-medium text-muted hover:bg-card hover:text-foreground"
                     >
                       <item.icon className="size-4" />
                       {item.label}
@@ -172,20 +172,14 @@ export function PublicNav() {
                       setOpen(false);
                       handleLogout();
                     }}
-                    className="flex items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm font-medium text-danger hover:bg-danger/10"
+                    className="flex items-center gap-2.5 rounded-md px-3 py-2.5 text-start text-sm font-medium text-danger hover:bg-danger/10"
                   >
-                    <LogOut className="size-4" />
-                    Sign out
-                  </button>
+                    <LogOut className="size-4" />{i18nText("Sign out")}</button>
                 </>
               ) : (
                 <>
-                  <Button variant="secondary" onClick={() => navigate("/login", { state: loginState })}>
-                    Sign in
-                  </Button>
-                  <Button onClick={() => navigate(getStartedTo)}>
-                    Get started
-                  </Button>
+                  <Button variant="secondary" onClick={() => navigate("/login", { state: loginState })}>{i18nText("Sign in")}</Button>
+                  <Button onClick={() => navigate(getStartedTo)}>{i18nText("Get started")}</Button>
                 </>
               )}
             </div>
@@ -219,9 +213,9 @@ function UserMenu({
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        aria-label="Account"
+        aria-label={i18nText("Account")}
         className={cn(
-          "ml-0.5 flex size-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground ring-2 ring-transparent transition-all",
+          "ms-0.5 flex size-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground ring-2 ring-transparent transition-all",
           open && "ring-primary/30",
         )}
       >
@@ -231,7 +225,7 @@ function UserMenu({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-xl border border-border bg-card p-1.5 shadow-2xl animate-fade-in">
+          <div className="absolute end-0 z-20 mt-2 w-64 overflow-hidden rounded-xl border border-border bg-card p-1.5 shadow-2xl animate-fade-in">
             <div className="px-3 py-2">
               <p className="truncate text-sm font-medium">{name}</p>
               {email && <p className="truncate text-xs text-muted">{email}</p>}
@@ -244,7 +238,7 @@ function UserMenu({
                   setOpen(false);
                   onGo(item);
                 }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-foreground/90 transition-colors hover:bg-foreground/6"
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start text-sm font-medium text-foreground/90 transition-colors hover:bg-foreground/6"
               >
                 <item.icon className="size-4" />
                 {item.label}
@@ -256,11 +250,9 @@ function UserMenu({
                 setOpen(false);
                 onLogout();
               }}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-danger transition-colors hover:bg-danger/10"
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start text-sm font-medium text-danger transition-colors hover:bg-danger/10"
             >
-              <LogOut className="size-4" />
-              Sign out
-            </button>
+              <LogOut className="size-4" />{i18nText("Sign out")}</button>
           </div>
         </>
       )}

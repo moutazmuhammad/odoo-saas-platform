@@ -1,3 +1,4 @@
+import { getLocale } from "@/i18n";
 /** Odoo stores timestamps in UTC; older responses omit the timezone. */
 export function parseDate(value: string | Date): Date {
   if (value instanceof Date) return value;
@@ -13,7 +14,7 @@ export function parseDate(value: string | Date): Date {
 export function formatDate(value: string | Date) {
   const d = parseDate(value);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(getLocale(), {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -23,7 +24,7 @@ export function formatDate(value: string | Date) {
 export function formatDateTime(value: string | Date) {
   const d = parseDate(value);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString(getLocale(), {
     month: "short",
     day: "numeric",
     hour: "2-digit",

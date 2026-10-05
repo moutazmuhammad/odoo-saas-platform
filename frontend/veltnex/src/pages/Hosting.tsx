@@ -1,3 +1,5 @@
+import { getLocale } from "@/i18n";
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowRight, Check, ShieldCheck, Cpu, HardDrive, Globe, Sparkles, SlidersHorizontal, Users } from "lucide-react";
@@ -20,7 +22,7 @@ import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 
 function money(amount: number, currency = "USD") {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(getLocale(), {
     style: "currency",
     currency,
     maximumFractionDigits: 2,
@@ -65,7 +67,7 @@ function Stepper({
       <div className="flex items-center gap-3">
         <button
           type="button"
-          aria-label={`Decrease ${label}`}
+          aria-label={i18nText("Decrease {0}", [label])}
           onClick={() => onChange(Math.max(0, value - 1))}
           disabled={value <= 0}
           className="flex size-8 items-center justify-center rounded-md border border-border text-lg leading-none text-muted transition-colors hover:text-foreground disabled:opacity-40"
@@ -75,7 +77,7 @@ function Stepper({
         <span className="w-6 text-center text-sm font-semibold tabular-nums">{value}</span>
         <button
           type="button"
-          aria-label={`Increase ${label}`}
+          aria-label={i18nText("Increase {0}", [label])}
           onClick={() => onChange(value + 1)}
           className="flex size-8 items-center justify-center rounded-md border border-border text-lg leading-none text-muted transition-colors hover:text-foreground"
         >
@@ -87,19 +89,19 @@ function Stepper({
 }
 
 const INCLUDED = [
-  "Daily automated backups",
-  "Zero-downtime upgrades",
-  "Free SSL & custom domains",
+  i18nText("Daily automated backups"),
+  i18nText("Zero-downtime upgrades"),
+  i18nText("Free SSL & custom domains"),
   "99.99% uptime SLA",
-  "Streaming logs & metrics",
+  i18nText("Streaming logs & metrics"),
   "24/7 expert support",
 ];
 
 const SPECS = [
-  { icon: Cpu, title: "Dedicated compute", desc: "Isolated CPU and memory per instance — no noisy neighbors." },
-  { icon: HardDrive, title: "NVMe storage", desc: "Fast, redundant storage for databases and filestore." },
-  { icon: Globe, title: "Global regions", desc: "Deploy close to your users." },
-  { icon: ShieldCheck, title: "Hardened by default", desc: "Encrypted backups, audit logs, and IP allow-lists." },
+  { icon: Cpu, title: i18nText("Dedicated compute"), desc: i18nText("Isolated CPU and memory per instance — no noisy neighbors.") },
+  { icon: HardDrive, title: i18nText("NVMe storage"), desc: i18nText("Fast, redundant storage for databases and filestore.") },
+  { icon: Globe, title: i18nText("Global regions"), desc: i18nText("Deploy close to your users.") },
+  { icon: ShieldCheck, title: i18nText("Hardened by default"), desc: i18nText("Encrypted backups, audit logs, and IP allow-lists.") },
 ];
 
 export default function Hosting() {
@@ -169,7 +171,7 @@ export default function Hosting() {
         const chosen = recommended ?? cheapest;
         setRegionId(chosen ? chosen.id : null);
       })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Could not load hosting plans."));
+      .catch((e) => setError(e instanceof ApiError ? e.message : i18nText("Could not load hosting plans.")));
   }, []);
 
   // (Re)load published tiers whenever the chosen region changes — the prices
@@ -326,7 +328,7 @@ export default function Hosting() {
         window.location.href = `/register?${qs.toString()}`;
         return;
       }
-      setOrderError(e instanceof ApiError ? e.message : "Couldn't place your order.");
+      setOrderError(e instanceof ApiError ? e.message : i18nText("Couldn't place your order."));
       setOrdering(false);
     }
   };
@@ -383,35 +385,27 @@ export default function Hosting() {
   return (
     <div className="animate-fade-in">
       <section className="relative overflow-hidden border-b border-border">
-        <div className="pointer-events-none absolute left-1/2 top-0 h-72 w-[700px] -translate-x-1/2 rounded-full bg-primary/15 blur-[120px]" />
+        <div className="pointer-events-none absolute start-1/2 top-0 h-72 w-[700px] -translate-x-1/2 rounded-full bg-primary/15 blur-[120px]" />
         <div className="relative mx-auto max-w-7xl px-4 py-16 text-center sm:px-6 lg:px-8">
-          <p className="text-sm font-medium text-primary">Hosting</p>
-          <h1 className="mx-auto mt-2 max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl">
-            Pay for exactly what you run
-          </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-muted">
-            Move the sliders to shape your instance. One transparent total —
-            no per-resource math, no surprises on the invoice.
-          </p>
+          <p className="text-sm font-medium text-primary">{i18nText("Hosting")}</p>
+          <h1 className="mx-auto mt-2 max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl">{i18nText("Pay for exactly what you run")}</h1>
+          <p className="mx-auto mt-4 max-w-2xl text-muted">{i18nText("Move the sliders to shape your instance. One transparent total — no per-resource math, no surprises on the invoice.")}</p>
           {startingFrom != null && (
-            <p className="mt-6 text-sm text-muted">
-              Plans starting from{" "}
+            <p className="mt-6 text-sm text-muted">{i18nText("Plans starting from")}{" "}
               <span className="text-2xl font-bold text-foreground align-middle">
                 {money(startingFrom, currency)}
               </span>
               <span className="text-muted">/mo</span>
               {selectedRegion && showRegionPicker && (
-                <span className="text-muted"> in {selectedRegion.name}</span>
+                <span className="text-muted">{i18nText(" in ")}{selectedRegion.name}</span>
               )}
             </p>
           )}
           {!isTrial && meta?.trial.hosting_available && meta.trial.days > 0 && (
             <div className="mt-8 flex flex-col items-center gap-2">
               <Button size="lg" onClick={() => (window.location.href = "/hosting?trial=1")}>
-                <Sparkles className="size-4" />
-                Start your {meta.trial.days}-day free trial
-              </Button>
-              <span className="text-xs text-muted">No credit card required.</span>
+                <Sparkles className="size-4" />{i18nText("Start your ")}{meta.trial.days}{i18nText("-day free trial")}</Button>
+              <span className="text-xs text-muted">{i18nText("No credit card required.")}</span>
             </div>
           )}
         </div>
@@ -419,11 +413,11 @@ export default function Hosting() {
 
       <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
         {error && (
-          <AlertBanner className="mb-6" variant="danger" title="Couldn't load hosting plans" description={error} />
+          <AlertBanner className="mb-6" variant="danger" title={i18nText("Couldn't load hosting plans")} description={error} />
         )}
 
         {!config ? (
-          <p className="py-16 text-center text-sm text-muted">Loading plans…</p>
+          <p className="py-16 text-center text-sm text-muted">{i18nText("Loading plans…")}</p>
         ) : (
           <div className="mx-auto w-full max-w-5xl">
             {/* Trial badge — shown only in trial mode */}
@@ -431,8 +425,7 @@ export default function Hosting() {
               <div className="mb-6 flex justify-center">
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-3 py-1 text-sm font-medium text-success">
                   <Sparkles className="size-4" />
-                  {meta?.trial.days ? `${meta.trial.days}-day free trial` : "Free trial"} — no credit card, no payment
-                </span>
+                  {meta?.trial.days ? i18nText("{0}-day free trial", [meta.trial.days]) : i18nText("Free trial")}{i18nText(" — no credit card, no payment")}</span>
               </div>
             )}
 
@@ -441,9 +434,9 @@ export default function Hosting() {
             {!isTrial && (
             <ol className="mb-10 flex items-center justify-center gap-1 sm:gap-3">
               {[
-                { n: 1, label: "Production specs" },
-                { n: 2, label: "Project & code" },
-                { n: 3, label: "Region & environments" },
+                { n: 1, label: i18nText("Production specs") },
+                { n: 2, label: i18nText("Project & code") },
+                { n: 3, label: i18nText("Region & environments") },
               ].map((s, i, arr) => (
                 <li key={s.n} className="flex items-center gap-2">
                   <button
@@ -477,24 +470,16 @@ export default function Hosting() {
             {step === 1 && (
               <div className="space-y-8">
                 <div className="mx-auto max-w-2xl text-center">
-                  <h2 className="inline-flex items-center justify-center gap-1.5 text-lg font-semibold">
-                    Choose your Production specs
-                    <FieldHint text="Workers = CPU processes handling requests (more = more concurrent users). Storage = disk for your databases and files." />
+                  <h2 className="inline-flex items-center justify-center gap-1.5 text-lg font-semibold">{i18nText("Choose your Production specs")}<FieldHint text={i18nText("Workers = CPU processes handling requests (more = more concurrent users). Storage = disk for your databases and files.")} />
                   </h2>
-                  <p className="mt-1 text-sm text-muted">
-                    These are your{" "}
-                    <span className="font-medium text-foreground">Production</span>{" "}
-                    server's resources. Staging &amp; Development servers are added
-                    later at the lowest spec.
-                  </p>
+                  <p className="mt-1 text-sm text-muted">{i18nText("These are your")}{" "}
+                    <span className="font-medium text-foreground">{i18nText("Production")}</span>{" "}{i18nText("server's resources. Staging & Development servers are added later at the lowest spec.")}</p>
                 </div>
 
                 {/* Billing cycle + region — both drive the prices shown below */}
                 <div className="mx-auto flex max-w-2xl flex-col items-stretch justify-center gap-4 sm:flex-row">
                   <div className="w-full sm:max-w-xs">
-                    <div className="mb-1.5 flex items-center justify-center gap-1.5 text-xs font-medium text-muted">
-                      Billing cycle
-                      <FieldHint text="Pay monthly, or yearly to save. The yearly discount applies to infrastructure; support and backups are billed monthly ×12." />
+                    <div className="mb-1.5 flex items-center justify-center gap-1.5 text-xs font-medium text-muted">{i18nText("Billing cycle")}<FieldHint text={i18nText("Pay monthly, or yearly to save. The yearly discount applies to infrastructure; support and backups are billed monthly ×12.")} />
                     </div>
                     <div className="inline-flex w-full rounded-xl border border-border bg-card p-1">
                       {(["monthly", "yearly"] as const).map((c) => (
@@ -506,9 +491,9 @@ export default function Hosting() {
                             config.cycle === c ? "bg-primary/20 text-foreground ring-1 ring-primary/40" : "text-muted hover:text-foreground",
                           )}
                         >
-                          {c}
+                          {i18nText(c === "yearly" ? "Yearly" : "Monthly")}
                           {c === "yearly" && maxSave.amount > 0 && (
-                            <span className="rounded-sm bg-success/20 px-1.5 py-0.5 text-[10px] font-semibold text-success">Save</span>
+                            <span className="rounded-sm bg-success/20 px-1.5 py-0.5 text-[10px] font-semibold text-success">{i18nText("Save")}</span>
                           )}
                         </button>
                       ))}
@@ -518,8 +503,7 @@ export default function Hosting() {
                   {showRegionPicker && (
                     <div className="w-full sm:max-w-xs">
                       <div className="mb-1.5 flex items-center justify-center gap-1.5 text-xs font-medium text-muted">
-                        <Globe className="size-3.5 text-primary" /> Region
-                        <FieldHint text="Where your server runs. Price varies by region — pick the cheapest (Budget) or the one nearest your users (Recommended). The prices below update instantly." />
+                        <Globe className="size-3.5 text-primary" />{i18nText(" Region")}<FieldHint text={i18nText("Where your server runs. Price varies by region — pick the cheapest (Budget) or the one nearest your users (Recommended). The prices below update instantly.")} />
                       </div>
                       <select
                         value={regionId ?? ""}
@@ -528,8 +512,8 @@ export default function Hosting() {
                       >
                         {sortedRegions.map((r) => {
                           const tags: string[] = [];
-                          if (r.recommended || r.default) tags.push("Recommended");
-                          if (r.budget || (cheapestRegion && r.id === cheapestRegion.id)) tags.push("Cheapest");
+                          if (r.recommended || r.default) tags.push(i18nText("Recommended"));
+                          if (r.budget || (cheapestRegion && r.id === cheapestRegion.id)) tags.push(i18nText("Cheapest"));
                           const delta =
                             r.multiplier !== 1
                               ? ` (${r.multiplier > 1 ? "+" : ""}${Math.round((r.multiplier - 1) * 100)}%)`
@@ -551,16 +535,12 @@ export default function Hosting() {
                 {!customize && maxSave.amount > 0 && (
                   <p className="-mt-3 text-center text-sm text-muted">
                     {config.cycle === "monthly" ? (
-                      <>
-                        Switch to <span className="font-medium text-foreground">yearly</span> billing and save up to{" "}
+                      <>{i18nText("Switch to ")}<span className="font-medium text-foreground">{"yearly"}</span>{i18nText(" billing and save up to")}{" "}
                         <span className="font-semibold text-success">{money(maxSave.amount, maxSave.currency)}/yr</span>.
                       </>
                     ) : (
-                      <>
-                        You're saving up to{" "}
-                        <span className="font-semibold text-success">{money(maxSave.amount, maxSave.currency)}/yr</span>{" "}
-                        with yearly billing.
-                      </>
+                      <>{i18nText("You're saving up to")}{" "}
+                        <span className="font-semibold text-success">{money(maxSave.amount, maxSave.currency)}/yr</span>{" "}{i18nText("with yearly billing.")}</>
                     )}
                   </p>
                 )}
@@ -575,8 +555,8 @@ export default function Hosting() {
                         return (
                           <Card key={t.id} className={cn("relative flex flex-col p-6", t.recommended && "ring-2 ring-primary")}>
                             {t.recommended && (
-                              <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-white">
-                                {t.badge || "Most popular"}
+                              <span className="absolute -top-3 start-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-white">
+                                {t.badge || i18nText("Most popular")}
                               </span>
                             )}
                             <h3 className="text-lg font-semibold">{t.name}</h3>
@@ -585,12 +565,11 @@ export default function Hosting() {
                               <span className="text-base font-normal text-muted">{per}</span>
                             </p>
                             <ul className="mt-5 space-y-2 text-sm text-muted">
-                              <li className="flex items-center gap-2"><Cpu className="size-4 text-primary" /> {t.workers} dedicated workers</li>
-                              <li className="flex items-center gap-2"><Users className="size-4 text-primary" /> Recommended for {recommendedUsers(t.workers, usersPerWorkerMin, usersPerWorkerMax)} users</li>
-                              <li className="flex items-center gap-2"><HardDrive className="size-4 text-primary" /> {formatBytes(t.storage)} storage</li>
+                              <li className="flex items-center gap-2"><Cpu className="size-4 text-primary" /> {t.workers}{i18nText(" dedicated workers")}</li>
+                              <li className="flex items-center gap-2"><Users className="size-4 text-primary" />{i18nText(" Recommended for ")}{recommendedUsers(t.workers, usersPerWorkerMin, usersPerWorkerMax)}{i18nText(" users")}</li>
+                              <li className="flex items-center gap-2"><HardDrive className="size-4 text-primary" /> {formatBytes(t.storage)}{i18nText(" storage")}</li>
                             </ul>
-                            <Button className="mt-6 w-full" size="lg" variant={t.recommended ? "default" : "secondary"} onClick={() => { setCustomize(false); selectTier(t.workers, t.storage); }}>
-                              Choose {t.name} <ArrowRight />
+                            <Button className="mt-6 w-full" size="lg" variant={t.recommended ? "default" : "secondary"} onClick={() => { setCustomize(false); selectTier(t.workers, t.storage); }}>{i18nText("Choose ")}{t.name} <ArrowRight />
                             </Button>
                           </Card>
                         );
@@ -600,22 +579,21 @@ export default function Hosting() {
                         <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
                           <SlidersHorizontal className="size-5" />
                         </span>
-                        <h3 className="mt-3 text-lg font-semibold">Custom</h3>
-                        <p className="mt-3 text-sm text-muted">Build a plan with the exact workers and storage you need.</p>
+                        <h3 className="mt-3 text-lg font-semibold">{i18nText("Custom")}</h3>
+                        <p className="mt-3 text-sm text-muted">{i18nText("Build a plan with the exact workers and storage you need.")}</p>
                         <ul className="mt-5 space-y-2 text-sm text-muted">
-                          <li className="flex items-center gap-2"><Cpu className="size-4 text-primary" /> Choose your workers</li>
-                          <li className="flex items-center gap-2"><HardDrive className="size-4 text-primary" /> Choose your storage</li>
-                          <li className="flex items-center gap-2"><Check className="size-4 text-primary" /> Pay only for what you pick</li>
+                          <li className="flex items-center gap-2"><Cpu className="size-4 text-primary" />{i18nText(" Choose your workers")}</li>
+                          <li className="flex items-center gap-2"><HardDrive className="size-4 text-primary" />{i18nText(" Choose your storage")}</li>
+                          <li className="flex items-center gap-2"><Check className="size-4 text-primary" />{i18nText(" Pay only for what you pick")}</li>
                         </ul>
                         <Button className="mt-6 w-full" size="lg" variant={customize ? "default" : "secondary"} onClick={() => setCustomize(true)}>
-                          <SlidersHorizontal className="size-4" /> Build custom
-                        </Button>
+                          <SlidersHorizontal className="size-4" />{i18nText(" Build custom")}</Button>
                       </Card>
                     </div>
                     {/* Reveal the slider in place when the Custom card is chosen */}
                     {customize && (
                       <div className="mx-auto mt-8 max-w-5xl space-y-4 border-t border-border pt-8">
-                        <h3 className="text-center text-base font-semibold">Build your custom plan</h3>
+                        <h3 className="text-center text-base font-semibold">{i18nText("Build your custom plan")}</h3>
                         <PlanBuilder
                           config={config}
                           onChange={setConfig}
@@ -625,8 +603,7 @@ export default function Hosting() {
                           usersPerWorkerMin={usersPerWorkerMin}
                           usersPerWorkerMax={usersPerWorkerMax}
                           footer={
-                            <Button className="w-full" size="lg" onClick={() => setStep(2)}>
-                              Continue <ArrowRight />
+                            <Button className="w-full" size="lg" onClick={() => setStep(2)}>{i18nText("Continue ")}<ArrowRight />
                             </Button>
                           }
                         />
@@ -644,8 +621,7 @@ export default function Hosting() {
                       usersPerWorkerMin={usersPerWorkerMin}
                       usersPerWorkerMax={usersPerWorkerMax}
                       footer={
-                        <Button className="w-full" size="lg" onClick={() => setStep(2)}>
-                          Continue <ArrowRight />
+                        <Button className="w-full" size="lg" onClick={() => setStep(2)}>{i18nText("Continue ")}<ArrowRight />
                         </Button>
                       }
                     />
@@ -657,31 +633,24 @@ export default function Hosting() {
             {/* ── Step 2: project identity + code ── */}
             {step === 2 && (
               <Card className="mx-auto max-w-2xl p-6">
-                <h2 className="text-lg font-semibold">Project &amp; code</h2>
-                <p className="mt-1 text-sm text-muted">
-                  Name your project, choose its address and Odoo version, and
-                  optionally connect your repository.
-                </p>
+                <h2 className="text-lg font-semibold">{i18nText("Project & code")}</h2>
+                <p className="mt-1 text-sm text-muted">{i18nText("Name your project, choose its address and Odoo version, and optionally connect your repository.")}</p>
 
                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1">
-                    <label htmlFor="project-name" className="flex items-center gap-1.5 text-sm font-medium">
-                      Project name
-                      <FieldHint text="A friendly name for your project, shown in your dashboard. It does not affect your web address." />
+                    <label htmlFor="project-name" className="flex items-center gap-1.5 text-sm font-medium">{i18nText("Project name")}<FieldHint text={i18nText("A friendly name for your project, shown in your dashboard. It does not affect your web address.")} />
                     </label>
                     <input
                       id="project-name"
                       autoFocus
                       value={projectName}
                       onChange={(e) => setProjectName(e.target.value)}
-                      placeholder="My company ERP"
+                      placeholder={i18nText("My company ERP")}
                       className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="flex items-center gap-1.5 text-sm font-medium">
-                      Odoo version
-                      <FieldHint text="The Odoo release your instance runs (e.g. 17.0). Pick the version your apps and custom modules target." />
+                    <label className="flex items-center gap-1.5 text-sm font-medium">{i18nText("Odoo version")}<FieldHint text={i18nText("The Odoo release your instance runs (e.g. 17.0). Pick the version your apps and custom modules target.")} />
                     </label>
                     <select
                       value={versionId ?? ""}
@@ -694,23 +663,19 @@ export default function Hosting() {
                     </select>
                   </div>
                   <div className="space-y-1">
-                    <label htmlFor="subdomain" className="flex items-center gap-1.5 text-sm font-medium">
-                      Subdomain
-                      <FieldHint text="The address of your instance: subdomain.basedomain. Use lowercase letters, numbers and hyphens." />
+                    <label htmlFor="subdomain" className="flex items-center gap-1.5 text-sm font-medium">{i18nText("Subdomain")}<FieldHint text={i18nText("The address of your instance: subdomain.basedomain. Use lowercase letters, numbers and hyphens.")} />
                     </label>
                     <input
                       id="subdomain"
                       value={subdomain}
                       onChange={(e) => setSubdomain(toSubdomain(e.target.value))}
-                      placeholder="my-company-erp"
+                      placeholder={"my-company-erp"}
                       className="h-10 w-full rounded-lg border border-border bg-card px-3 font-mono text-sm outline-hidden ring-primary/40 focus:ring-1"
                     />
                   </div>
                   {(meta?.domains?.length ?? 0) >= 1 && (
                     <div className="space-y-1">
-                      <label className="flex items-center gap-1.5 text-sm font-medium">
-                        Domain
-                        <FieldHint text="The domain your instance lives under. Your full address becomes subdomain.domain — pick the one you want." />
+                      <label className="flex items-center gap-1.5 text-sm font-medium">{i18nText("Domain")}<FieldHint text={i18nText("The domain your instance lives under. Your full address becomes subdomain.domain — pick the one you want.")} />
                       </label>
                       <select
                         value={domainId ?? ""}
@@ -725,8 +690,7 @@ export default function Hosting() {
                   )}
                 </div>
                 {subdomain && (
-                  <p className="mt-2 text-xs text-muted">
-                    Your instance:{" "}
+                  <p className="mt-2 text-xs text-muted">{i18nText("Your instance:")}{" "}
                     <span className="font-mono text-foreground">
                       {subdomain}.{meta?.domains?.find((d) => d.id === domainId)?.name ?? ""}
                     </span>
@@ -741,9 +705,9 @@ export default function Hosting() {
                       onClick={() => setShowGit((v) => !v)}
                       className="text-sm font-medium text-primary underline-offset-2 hover:underline"
                     >
-                      {showGit ? "− Hide repository" : "+ Connect a Git repository (optional)"}
+                      {showGit ? i18nText("− Hide repository") : i18nText("+ Connect a Git repository (optional)")}
                     </button>
-                    <FieldHint text="Optional: your custom Odoo addons repository. Needed only to create Staging/Development environments — you can add it later." />
+                    <FieldHint text={i18nText("Optional: your custom Odoo addons repository. Needed only to create Staging/Development environments — you can add it later.")} />
                   </span>
                   {showGit && (
                     <div className="mt-3 space-y-3 rounded-lg border border-border p-3">
@@ -757,19 +721,17 @@ export default function Hosting() {
                         <input
                           value={repoBranch}
                           onChange={(e) => setRepoBranch(e.target.value)}
-                          placeholder="main"
+                          placeholder={"main"}
                           className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                         />
                         <input
                           value={gitToken}
                           onChange={(e) => setGitToken(e.target.value)}
-                          placeholder="Access token (private repos)"
+                          placeholder={i18nText("Access token (private repos)")}
                           className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                         />
                       </div>
-                      <p className="text-xs text-muted">
-                        A repo is only needed to create Staging/Development environments — you can add it later.
-                      </p>
+                      <p className="text-xs text-muted">{i18nText("A repo is only needed to create Staging/Development environments — you can add it later.")}</p>
                     </div>
                   )}
                 </div>
@@ -779,8 +741,7 @@ export default function Hosting() {
                 {isTrial && showRegionPicker && (
                   <div className="mt-5 space-y-1">
                     <label className="flex items-center gap-1.5 text-sm font-medium">
-                      <Globe className="size-3.5 text-primary" /> Region
-                      <FieldHint text="The data-center location your trial runs in. Pick the one closest to your users — you can change region when you upgrade to a paid plan." />
+                      <Globe className="size-3.5 text-primary" />{i18nText(" Region")}<FieldHint text={i18nText("The data-center location your trial runs in. Pick the one closest to your users — you can change region when you upgrade to a paid plan.")} />
                     </label>
                     <select
                       value={regionId ?? ""}
@@ -789,9 +750,9 @@ export default function Hosting() {
                     >
                       {sortedRegions.map((r) => {
                         const tag = (r.default || r.recommended)
-                          ? " — Recommended"
+                          ? i18nText(" — Recommended")
                           : (r.budget || (cheapestRegion && r.id === cheapestRegion.id))
-                            ? " — Budget"
+                            ? i18nText(" — Budget")
                             : r.multiplier !== 1 ? ` (×${r.multiplier.toFixed(2)})` : "";
                         return <option key={r.id} value={r.id}>{r.name}{tag}</option>;
                       })}
@@ -805,7 +766,7 @@ export default function Hosting() {
 
                 <div className="mt-6 flex items-center gap-3">
                   {!isTrial && (
-                    <Button variant="secondary" onClick={() => setStep(1)}>← Back</Button>
+                    <Button variant="secondary" onClick={() => setStep(1)}>{i18nText("← Back")}</Button>
                   )}
                   {isTrial ? (
                     <Button
@@ -814,19 +775,16 @@ export default function Hosting() {
                       disabled={!projectName.trim() || !subdomain || ordering}
                       onClick={placeOrder}
                     >
-                      {ordering ? "Starting trial…" : "Start free trial"} <ArrowRight />
+                      {ordering ? i18nText("Starting trial…") : i18nText("Start free trial")} <ArrowRight />
                     </Button>
                   ) : (
-                    <Button className="flex-1" size="lg" disabled={!projectName.trim() || !subdomain} onClick={() => setStep(3)}>
-                      Continue <ArrowRight />
+                    <Button className="flex-1" size="lg" disabled={!projectName.trim() || !subdomain} onClick={() => setStep(3)}>{i18nText("Continue ")}<ArrowRight />
                     </Button>
                   )}
                 </div>
                 {isTrial && (
                   <p className="mt-3 text-center text-xs text-muted">
-                    {meta?.trial.days ? `Free for ${meta.trial.days} days · ` : ""}
-                    no credit card · upgrade any time
-                  </p>
+                    {meta?.trial.days ? i18nText("Free for {0} days · ", [meta.trial.days]) : ""}{i18nText("no credit card · upgrade any time")}</p>
                 )}
               </Card>
             )}
@@ -836,18 +794,14 @@ export default function Hosting() {
               <div className="grid items-start gap-6 lg:grid-cols-[1fr_20rem]">
                 {/* Left: region, support, backup & environments */}
                 <Card className="p-5">
-                  <h2 className="text-lg font-semibold">Region, support &amp; environments</h2>
-                  <p className="mt-1 text-xs text-muted">
-                    Choose where it runs, your support level, and how many extra
-                    environments to buy.
-                  </p>
+                  <h2 className="text-lg font-semibold">{i18nText("Region, support & environments")}</h2>
+                  <p className="mt-1 text-xs text-muted">{i18nText("Choose where it runs, your support level, and how many extra environments to buy.")}</p>
 
                   <div className="mt-4 grid gap-4 sm:grid-cols-2">
                     {showRegionPicker && (
                       <div className="space-y-1">
                         <label className="flex items-center gap-1.5 text-sm font-medium">
-                          <Globe className="size-3.5 text-primary" /> Region
-                          <FieldHint text="The data-center location your server runs in. Pick the one closest to your users; price can vary by region." />
+                          <Globe className="size-3.5 text-primary" />{i18nText(" Region")}<FieldHint text={i18nText("The data-center location your server runs in. Pick the one closest to your users; price can vary by region.")} />
                         </label>
                         <select
                           value={regionId ?? ""}
@@ -856,9 +810,9 @@ export default function Hosting() {
                         >
                           {sortedRegions.map((r) => {
                             const tag = (r.default || r.recommended)
-                              ? " — Recommended"
+                              ? i18nText(" — Recommended")
                               : (r.budget || (cheapestRegion && r.id === cheapestRegion.id))
-                                ? " — Budget"
+                                ? i18nText(" — Budget")
                                 : r.multiplier !== 1 ? ` (×${r.multiplier.toFixed(2)})` : "";
                             return <option key={r.id} value={r.id}>{r.name}{tag}</option>;
                           })}
@@ -867,9 +821,7 @@ export default function Hosting() {
                     )}
                     {!isTrial && (meta?.support_plans?.length ?? 0) > 1 && (
                       <div className="space-y-1">
-                        <label className="flex items-center gap-1.5 text-sm font-medium">
-                          Support plan
-                          <FieldHint text="Your level of help: Free is best-effort; paid tiers add priority response and channels. Billed as a flat monthly fee." />
+                        <label className="flex items-center gap-1.5 text-sm font-medium">{i18nText("Support plan")}<FieldHint text={i18nText("Your level of help: Free is best-effort; paid tiers add priority response and channels. Billed as a flat monthly fee.")} />
                         </label>
                         <select
                           value={supportCode}
@@ -878,7 +830,7 @@ export default function Hosting() {
                         >
                           {(meta?.support_plans || []).map((s) => (
                             <option key={s.code} value={s.code}>
-                              {s.name}{s.monthly_price > 0 ? ` (+${money(s.monthly_price, currency)}/mo)` : " — included"}
+                              {s.name}{s.monthly_price > 0 ? ` (+${money(s.monthly_price, currency)}/mo)` : i18nText(" — included")}
                             </option>
                           ))}
                         </select>
@@ -890,14 +842,12 @@ export default function Hosting() {
                   {!isTrial && (
                     <>
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <Stepper label="Staging" value={stagingCount} onChange={setStagingCount}
-                          hint="A copy of your app to test changes safely before they reach Production. Runs on its own Git branch." />
-                        <Stepper label="Development" value={devCount} onChange={setDevCount}
-                          hint="A lightweight environment for building and testing new features, on its own Git branch." />
+                        <Stepper label={i18nText("Staging")} value={stagingCount} onChange={setStagingCount}
+                          hint={i18nText("A copy of your app to test changes safely before they reach Production. Runs on its own Git branch.")} />
+                        <Stepper label={i18nText("Development")} value={devCount} onChange={setDevCount}
+                          hint={i18nText("A lightweight environment for building and testing new features, on its own Git branch.")} />
                       </div>
-                      <p className="mt-1.5 text-xs text-muted">
-                        Create up to the number you buy for free, any time.
-                      </p>
+                      <p className="mt-1.5 text-xs text-muted">{i18nText("Create up to the number you buy for free, any time.")}</p>
                     </>
                   )}
 
@@ -911,9 +861,9 @@ export default function Hosting() {
                         className="size-4"
                       />
                       <span className="text-sm">
-                        <span className="font-medium">Daily off-site backups</span>
-                        <FieldHint className="ml-1" text="Automatic daily backups of your databases, stored off-site. Priced by the amount of storage actually used." />
-                        <span className="ml-1 text-muted">— from {money(meta?.daily_backup_price ?? 0, currency)}/mo</span>
+                        <span className="font-medium">{i18nText("Daily off-site backups")}</span>
+                        <FieldHint className="ms-1" text={i18nText("Automatic daily backups of your databases, stored off-site. Priced by the amount of storage actually used.")} />
+                        <span className="ms-1 text-muted">{i18nText("— from ")}{money(meta?.daily_backup_price ?? 0, currency)}/mo</span>
                       </span>
                     </label>
                   )}
@@ -921,38 +871,36 @@ export default function Hosting() {
 
                 {/* Right: sticky summary — live price, or "Free" for trials */}
                 <Card className="self-start p-5 lg:sticky lg:top-24">
-                  <h3 className="text-sm font-semibold">{isTrial ? "Your free trial" : "Order summary"}</h3>
+                  <h3 className="text-sm font-semibold">{isTrial ? i18nText("Your free trial") : i18nText("Order summary")}</h3>
                   {isTrial ? (
                     <div className="mt-3 space-y-3 text-sm">
                       <ul className="space-y-2 text-muted">
-                        <li className="flex items-center gap-2"><Check className="size-4 text-success" /> Full Production instance</li>
-                        <li className="flex items-center gap-2"><Check className="size-4 text-success" /> Your subdomain &amp; chosen Odoo version</li>
-                        <li className="flex items-center gap-2"><Check className="size-4 text-success" /> No credit card required</li>
+                        <li className="flex items-center gap-2"><Check className="size-4 text-success" />{i18nText(" Full Production instance")}</li>
+                        <li className="flex items-center gap-2"><Check className="size-4 text-success" />{i18nText(" Your subdomain & chosen Odoo version")}</li>
+                        <li className="flex items-center gap-2"><Check className="size-4 text-success" />{i18nText(" No credit card required")}</li>
                       </ul>
                       <div className="flex items-baseline justify-between border-t border-border pt-3">
-                        <span className="font-semibold">Total today</span>
-                        <span className="text-2xl font-bold text-success">Free</span>
+                        <span className="font-semibold">{i18nText("Total today")}</span>
+                        <span className="text-2xl font-bold text-success">{i18nText("Free")}</span>
                       </div>
                       {meta?.trial.days ? (
-                        <p className="text-xs text-muted">
-                          Free for {meta.trial.days} days. Upgrade to a paid plan any time — no charge until you do.
-                        </p>
+                        <p className="text-xs text-muted">{i18nText("Free for ")}{meta.trial.days}{i18nText(" days. Upgrade to a paid plan any time — no charge until you do.")}</p>
                       ) : null}
                     </div>
                   ) : (
                     <div className="mt-3 space-y-1.5 text-sm">
-                      <div className="flex justify-between"><span className="text-muted">Production plan</span><span className="font-medium">{money(price?.total ?? 0, currency)}{perLabel}</span></div>
+                      <div className="flex justify-between"><span className="text-muted">{i18nText("Production plan")}</span><span className="font-medium">{money(price?.total ?? 0, currency)}{perLabel}</span></div>
                       {projectQuote && (stagingCount + devCount) > 0 && (
-                        <div className="flex justify-between"><span className="text-muted">{stagingCount + devCount} × env server</span><span className="font-medium">{money(projectQuote.env_total, currency)}{perLabel}</span></div>
+                        <div className="flex justify-between"><span className="text-muted">{stagingCount + devCount}{i18nText(" × env server")}</span><span className="font-medium">{money(projectQuote.env_total, currency)}{perLabel}</span></div>
                       )}
                       {supportLine > 0 && (
-                        <div className="flex justify-between"><span className="text-muted">Support — {selSupport?.name}</span><span className="font-medium">{money(supportLine, currency)}{perLabel}</span></div>
+                        <div className="flex justify-between"><span className="text-muted">{i18nText("Support — ")}{selSupport?.name}</span><span className="font-medium">{money(supportLine, currency)}{perLabel}</span></div>
                       )}
                       {backupLine > 0 && (
-                        <div className="flex justify-between"><span className="text-muted">Daily backups</span><span className="font-medium">{money(backupLine, currency)}{perLabel}</span></div>
+                        <div className="flex justify-between"><span className="text-muted">{i18nText("Daily backups")}</span><span className="font-medium">{money(backupLine, currency)}{perLabel}</span></div>
                       )}
                       <div className="flex justify-between border-t border-border pt-2 text-base font-semibold">
-                        <span>Total</span>
+                        <span>{i18nText("Total")}</span>
                         <span>{money(grandTotal, currency)}{perLabel}</span>
                       </div>
                     </div>
@@ -962,10 +910,10 @@ export default function Hosting() {
                   )}
                   <Button className="mt-4 w-full" size="lg" disabled={!subdomain || ordering} onClick={placeOrder}>
                     {ordering
-                      ? (isTrial ? "Starting trial…" : "Placing order…")
-                      : (isTrial ? "Start free trial" : "Continue to payment")} <ArrowRight />
+                      ? (isTrial ? i18nText("Starting trial…") : i18nText("Placing order…"))
+                      : (isTrial ? i18nText("Start free trial") : i18nText("Continue to payment"))} <ArrowRight />
                   </Button>
-                  <Button variant="secondary" className="mt-2 w-full" onClick={() => setStep(2)}>← Back</Button>
+                  <Button variant="secondary" className="mt-2 w-full" onClick={() => setStep(2)}>{i18nText("← Back")}</Button>
                 </Card>
               </div>
             )}
@@ -990,7 +938,7 @@ export default function Hosting() {
       </section>
 
       <section className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
-        <h2 className="text-center text-2xl font-bold tracking-tight">Every plan includes</h2>
+        <h2 className="text-center text-2xl font-bold tracking-tight">{i18nText("Every plan includes")}</h2>
         <div className="mt-8 grid gap-3 sm:grid-cols-2">
           {INCLUDED.map((item) => (
             <div key={item} className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 text-sm">

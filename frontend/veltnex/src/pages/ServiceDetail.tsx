@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Check, PackageX, Server, Sparkles } from "lucide-react";
@@ -25,7 +26,7 @@ export default function ServiceDetail() {
     api
       .service(Number(id))
       .then(setService)
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Service not found."));
+      .catch((e) => setError(e instanceof ApiError ? e.message : i18nText("Service not found.")));
   }, [id]);
 
   // Ordering stays on Odoo (configure → checkout). Full navigation.
@@ -39,9 +40,9 @@ export default function ServiceDetail() {
       <div className="mx-auto max-w-3xl px-4 py-24">
         <EmptyState
           icon={PackageX}
-          title="Service not found"
-          description="The service you're looking for doesn't exist or has moved."
-          action={<Button onClick={() => navigate("/services")}>Back to services</Button>}
+          title={i18nText("Service not found")}
+          description={i18nText("The service you're looking for doesn't exist or has moved.")}
+          action={<Button onClick={() => navigate("/services")}>{i18nText("Back to services")}</Button>}
         />
       </div>
     );
@@ -50,7 +51,7 @@ export default function ServiceDetail() {
   if (!service) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Spinner size="lg" label="Loading service…" />
+        <Spinner size="lg" label={i18nText("Loading service…")} />
       </div>
     );
   }
@@ -62,15 +63,13 @@ export default function ServiceDetail() {
   return (
     <div className="animate-fade-in">
       <section className="relative overflow-hidden border-b border-border">
-        <div className="pointer-events-none absolute left-1/2 top-0 h-72 w-[700px] -translate-x-1/2 rounded-full bg-primary/15 blur-[120px]" />
+        <div className="pointer-events-none absolute start-1/2 top-0 h-72 w-[700px] -translate-x-1/2 rounded-full bg-primary/15 blur-[120px]" />
         <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <Link
             to="/services"
             className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="size-4" />
-            All services
-          </Link>
+            <ArrowLeft className="size-4" />{i18nText("All services")}</Link>
           <div className="mt-8 max-w-2xl">
             <span className="flex size-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
               <ServiceIcon icon={service.icon} className="size-7" />
@@ -82,10 +81,8 @@ export default function ServiceDetail() {
             {canTrial && (
               <div className="mt-6">
                 <Button onClick={() => configure(service.trial_plan_id!, true)}>
-                  <Sparkles className="size-4" />
-                  Start your {trial?.days}-day free trial
-                </Button>
-                <p className="mt-2 text-xs text-muted">No credit card required.</p>
+                  <Sparkles className="size-4" />{i18nText("Start your ")}{trial?.days}{i18nText("-day free trial")}</Button>
+                <p className="mt-2 text-xs text-muted">{i18nText("No credit card required.")}</p>
               </div>
             )}
           </div>
@@ -103,7 +100,7 @@ export default function ServiceDetail() {
 
       {service.features && service.features.length > 0 && (
         <section className="mx-auto max-w-7xl px-4 pb-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl font-bold tracking-tight">What's included</h2>
+          <h2 className="text-2xl font-bold tracking-tight">{i18nText("What's included")}</h2>
           <div className="mt-8 grid gap-5 md:grid-cols-3">
             {service.features.map((f, i) => (
               <Card key={i} className="p-6">
@@ -117,11 +114,10 @@ export default function ServiceDetail() {
       )}
 
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-        <h2 className="text-2xl font-bold tracking-tight">Choose a plan</h2>
+        <h2 className="text-2xl font-bold tracking-tight">{i18nText("Choose a plan")}</h2>
         {realPlans.length === 0 ? (
-          <p className="mt-4 text-muted">
-            Plans for this service are configured at checkout.{" "}
-            {canTrial && "Start a free trial above to get going."}
+          <p className="mt-4 text-muted">{i18nText("Plans for this service are configured at checkout.")}{" "}
+            {canTrial && i18nText("Start a free trial above to get going.")}
           </p>
         ) : (
           <div className="mt-8 grid gap-5 md:grid-cols-3">
@@ -131,12 +127,9 @@ export default function ServiceDetail() {
                 <ul className="mt-4 space-y-2 text-sm text-muted">
                   <li className="flex items-center gap-2">
                     <Server className="size-4 text-primary" />
-                    {p.workers} workers · {p.storage_gb} GB storage
-                  </li>
+                    {p.workers}{i18nText(" workers · ")}{p.storage_gb}{i18nText(" GB storage")}</li>
                 </ul>
-                <Button className="mt-6 w-full" onClick={() => configure(p.id)}>
-                  Get started
-                  <ArrowRight />
+                <Button className="mt-6 w-full" onClick={() => configure(p.id)}>{i18nText("Get started")}<ArrowRight />
                 </Button>
               </Card>
             ))}

@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +14,7 @@ export function Spinner({ size = "md", className, label }: SpinnerProps) {
   return (
     <span
       role="status"
-      aria-label={label ?? "Loading"}
+      aria-label={label ?? i18nText("Loading")}
       className={cn("inline-flex items-center gap-2 text-muted", className)}
     >
       <Loader2 className={cn("animate-spin text-primary", sizeMap[size])} />

@@ -1,3 +1,5 @@
+import { getLocale } from "@/i18n";
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -23,7 +25,7 @@ import { api, ApiError, type DashboardData, type ApiInstance } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 function money(n: number, c = "USD") {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: c }).format(n);
+  return new Intl.NumberFormat(getLocale(), { style: "currency", currency: c }).format(n);
 }
 
 interface ActionItem {
@@ -66,7 +68,7 @@ export default function Dashboard() {
     api
       .dashboard()
       .then(setData)
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Could not load your dashboard."));
+      .catch((e) => setError(e instanceof ApiError ? e.message : i18nText("Could not load your dashboard.")));
   }, []);
 
   React.useEffect(() => {
@@ -83,7 +85,7 @@ export default function Dashboard() {
       setData(null);
       load();
     } catch (e) {
-      setCancelError(e instanceof ApiError ? e.message : "Couldn't cancel the order. Please try again.");
+      setCancelError(e instanceof ApiError ? e.message : i18nText("Couldn't cancel the order. Please try again."));
     } finally {
       setCancelling(false);
     }
@@ -110,19 +112,19 @@ export default function Dashboard() {
       if (inv.status === "open" || inv.status === "overdue") {
         items.push({
           id: `inv-${inv.id}`,
-          text: `Invoice ${inv.number} ${inv.status}`,
-          cta: "Pay",
+          text: i18nText("Invoice {0} {1}", [inv.number, inv.status]),
+          cta: i18nText("Pay"),
           to: `/my/billing/${inv.id}`,
         });
       }
     }
     for (const i of customerProjects) {
       if (i.state === "suspended")
-        items.push({ id: `s-${i.id}`, text: `${i.name} is suspended`, cta: "Resolve", to: projectLink(i) });
+        items.push({ id: `s-${i.id}`, text: `${i.name} is suspended`, cta: i18nText("Resolve"), to: projectLink(i) });
       else if (i.state === "failed")
-        items.push({ id: `f-${i.id}`, text: `${i.name} failed to deploy`, cta: "View", to: projectLink(i) });
+        items.push({ id: `f-${i.id}`, text: i18nText("{0} failed to deploy", [i.name]), cta: i18nText("View"), to: projectLink(i) });
       else if (i.state === "pending_payment")
-        items.push({ id: `p-${i.id}`, text: `${i.name} is awaiting payment`, cta: "Checkout", to: `/my/instances/${i.id}/checkout`, cancelId: i.id, cancelName: i.name });
+        items.push({ id: `p-${i.id}`, text: i18nText("{0} is awaiting payment", [i.name]), cta: i18nText("Checkout"), to: `/my/instances/${i.id}/checkout`, cancelId: i.id, cancelName: i.name });
     }
     return items.slice(0, 6);
   }, [data, customerProjects]);
@@ -131,18 +133,15 @@ export default function Dashboard() {
     <div className="animate-fade-in">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            Welcome back{user ? `, ${user.name.split(" ")[0]}` : ""}
+          <h1 className="text-2xl font-bold tracking-tight">{i18nText("Welcome back")}{user ? `, ${user.name.split(" ")[0]}` : ""}
           </h1>
-          <p className="mt-1 text-sm text-muted">Everything across your account at a glance.</p>
+          <p className="mt-1 text-sm text-muted">{i18nText("Everything across your account at a glance.")}</p>
         </div>
         <Button onClick={() => navigate(createTo)}>
-          <Plus className="size-4" />
-          New project
-        </Button>
+          <Plus className="size-4" />{i18nText("New project")}</Button>
       </div>
 
-      {error && <AlertBanner className="mt-6" variant="danger" title="Couldn't load dashboard" description={error} />}
+      {error && <AlertBanner className="mt-6" variant="danger" title={i18nText("Couldn't load dashboard")} description={error} />}
 
       {!data && !error ? (
         <div className="mt-8 space-y-6">
@@ -167,15 +166,12 @@ export default function Dashboard() {
                   <AlertTriangle className="size-5" />
                 </span>
                 <div>
-                  <p className="text-lg font-semibold">{money(outstanding, currency)} due</p>
+                  <p className="text-lg font-semibold">{money(outstanding, currency)}{i18nText(" due")}</p>
                   <p className="text-sm text-muted">
-                    {openInvoices} open invoice{openInvoices === 1 ? "" : "s"} awaiting payment.
-                  </p>
+                    {openInvoices}{i18nText(" open invoice")}{openInvoices === 1 ? "" : "s"}{i18nText(" awaiting payment.")}</p>
                 </div>
               </div>
-              <Button className="shrink-0" onClick={() => navigate("/my/billing")}>
-                Pay now
-              </Button>
+              <Button className="shrink-0" onClick={() => navigate("/my/billing")}>{i18nText("Pay now")}</Button>
             </Card>
           ) : (
             <Card className="mt-6 flex items-center gap-3 border-success/30 bg-success/5 p-5">
@@ -183,8 +179,8 @@ export default function Dashboard() {
                 <CheckCircle2 className="size-5" />
               </span>
               <div>
-                <p className="font-semibold">You're all paid up</p>
-                <p className="text-sm text-muted">No outstanding invoices.</p>
+                <p className="font-semibold">{i18nText("You're all paid up")}</p>
+                <p className="text-sm text-muted">{i18nText("No outstanding invoices.")}</p>
               </div>
             </Card>
           )}
@@ -193,14 +189,12 @@ export default function Dashboard() {
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <Card className="p-5">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-muted">Fleet health</p>
-                <Link to={isStaff && customerId ? `/my/instances?customer=${encodeURIComponent(customerId)}` : "/my/instances"} className="text-xs text-primary hover:underline">
-                  View projects
-                </Link>
+                <p className="text-sm font-medium text-muted">{i18nText("Fleet health")}</p>
+                <Link to={isStaff && customerId ? `/my/instances?customer=${encodeURIComponent(customerId)}` : "/my/instances"} className="text-xs text-primary hover:underline">{i18nText("View projects")}</Link>
               </div>
               <p className="mt-2 text-2xl font-bold tracking-tight">
                 {running}
-                <span className="text-base font-medium text-muted"> / {total} running</span>
+                <span className="text-base font-medium text-muted"> / {total}{i18nText(" running")}</span>
               </p>
               <div className="mt-3 flex gap-1">
                 {Array.from({ length: Math.max(total, 1) }).map((_, i) => (
@@ -217,13 +211,11 @@ export default function Dashboard() {
 
             <Card className="flex items-center justify-between p-5">
               <div>
-                <p className="text-sm font-medium text-muted">Wallet balance</p>
+                <p className="text-sm font-medium text-muted">{i18nText("Wallet balance")}</p>
                 <p className="mt-2 text-2xl font-bold tracking-tight">{money(wallet, currency)}</p>
               </div>
               <Button variant="secondary" onClick={() => navigate("/my/billing")}>
-                <Wallet className="size-4" />
-                Top up
-              </Button>
+                <Wallet className="size-4" />{i18nText("Top up")}</Button>
             </Card>
           </div>
 
@@ -231,7 +223,7 @@ export default function Dashboard() {
           {actions.length > 0 && (
             <Card className="mt-6">
               <div className="border-b border-border p-5">
-                <h2 className="font-semibold">Needs your attention</h2>
+                <h2 className="font-semibold">{i18nText("Needs your attention")}</h2>
               </div>
               <ul className="divide-y divide-border">
                 {actions.map((a) => (
@@ -246,11 +238,9 @@ export default function Dashboard() {
                           size="sm"
                           variant="ghost"
                           className="text-danger hover:bg-danger/10"
-                          onClick={() => setCancelTarget({ id: a.cancelId!, name: a.cancelName || "this order" })}
+                          onClick={() => setCancelTarget({ id: a.cancelId!, name: a.cancelName || i18nText("this order") })}
                         >
-                          <Ban className="size-4" />
-                          Don't complete
-                        </Button>
+                          <Ban className="size-4" />{i18nText("Don't complete")}</Button>
                       )}
                       <Button size="sm" variant="secondary" onClick={() => navigate(a.to)}>
                         {a.cta}
@@ -264,18 +254,17 @@ export default function Dashboard() {
 
           {/* Projects */}
           <div className="mt-8 flex items-center justify-between">
-            <h2 className="font-semibold">{isStaff ? "Customer projects" : "Your projects"}</h2>
-            <Link to={isStaff && customerId ? `/my/instances?customer=${encodeURIComponent(customerId)}` : "/my/instances"} className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
-              View all <ArrowRight className="size-3.5" />
+            <h2 className="font-semibold">{isStaff ? i18nText("Customer projects") : i18nText("Your projects")}</h2>
+            <Link to={isStaff && customerId ? `/my/instances?customer=${encodeURIComponent(customerId)}` : "/my/instances"} className="inline-flex items-center gap-1 text-sm text-primary hover:underline">{i18nText("View all ")}<ArrowRight className="size-3.5" />
             </Link>
           </div>
           {visibleProjects.length === 0 ? (
             <Card className="mt-3 p-5">
               <EmptyState
                 icon={Server}
-                title={customerId ? "No matching projects" : "No projects yet"}
-                description={customerId ? "This customer has no active projects." : "Create your first project to deploy an Odoo environment."}
-                action={<Button onClick={() => navigate(createTo)}>Create project</Button>}
+                title={customerId ? i18nText("No matching projects") : i18nText("No projects yet")}
+                description={customerId ? i18nText("This customer has no active projects.") : i18nText("Create your first project to deploy an Odoo environment.")}
+                action={<Button onClick={() => navigate(createTo)}>{i18nText("Create project")}</Button>}
               />
             </Card>
           ) : (
@@ -291,7 +280,7 @@ export default function Dashboard() {
                       </div>
                       <StatusBadge status={i.state} label={i.state_label} />
                     </div>
-                    <p className="mt-4 text-xs text-muted">{i.is_hosting ? "Hosting project" : "Managed service"}</p>
+                    <p className="mt-4 text-xs text-muted">{i.is_hosting ? i18nText("Hosting project") : i18nText("Managed service")}</p>
                   </Card>
                 </Link>
               ))}
@@ -299,9 +288,7 @@ export default function Dashboard() {
                 onClick={() => navigate(createTo)}
                 className="flex min-h-28 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted transition-colors hover:border-primary/40 hover:text-foreground"
               >
-                <Plus className="mr-2 size-4" />
-                New project
-              </button>
+                <Plus className="me-2 size-4" />{i18nText("New project")}</button>
             </div>
           )}
         </>
@@ -311,16 +298,14 @@ export default function Dashboard() {
       <Dialog
         open={!!cancelTarget}
         onClose={() => { if (!cancelling) { setCancelTarget(null); setCancelError(null); } }}
-        title="Don't complete this order?"
-        description={cancelTarget ? `${cancelTarget.name} will be cancelled and its subdomain released. This can't be undone.` : ""}
+        title={i18nText("Don't complete this order?")}
+        description={cancelTarget ? i18nText("{0} will be cancelled and its subdomain released. This can't be undone.", [cancelTarget.name]) : ""}
       >
-        {cancelError && <AlertBanner className="mb-4" variant="danger" title="Couldn't cancel" description={cancelError} />}
+        {cancelError && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't cancel")} description={cancelError} />}
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" disabled={cancelling} onClick={() => { setCancelTarget(null); setCancelError(null); }}>
-            Keep order
-          </Button>
+          <Button variant="secondary" disabled={cancelling} onClick={() => { setCancelTarget(null); setCancelError(null); }}>{i18nText("Keep order")}</Button>
           <Button variant="danger" disabled={cancelling} onClick={confirmCancel}>
-            {cancelling ? "Cancelling…" : "Yes, don't complete"}
+            {cancelling ? i18nText("Cancelling…") : i18nText("Yes, don't complete")}
           </Button>
         </div>
       </Dialog>

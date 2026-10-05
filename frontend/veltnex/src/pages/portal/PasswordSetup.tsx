@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { KeyRound } from "lucide-react";
@@ -8,6 +9,7 @@ import { Input, Label } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ActionButton } from "@/components/ActionButton";
 import { AlertBanner } from "@/components/AlertBanner";
+import { LanguageToggle } from "@/components/LanguageToggle";
 import PhoneVerification from "./PhoneVerification";
 
 export default function PasswordSetup() {
@@ -25,17 +27,17 @@ export default function PasswordSetup() {
   const save = async () => {
     setBusy(true); setError("");
     try { await api.iamPasswordChange(password); await refresh(); }
-    catch (e) { setError(e instanceof ApiError ? e.message : "Could not change your password. Please try again."); }
+    catch (e) { setError(e instanceof ApiError ? e.message : i18nText("Could not change your password. Please try again.")); }
     finally { setBusy(false); }
   };
   if (!user?.must_change_password && !user?.must_verify_phone) return null;
   return <main className="flex min-h-screen items-center justify-center bg-background p-5"><Card className="w-full max-w-lg space-y-6 p-7">
-    <Link to="/" className="text-sm font-semibold text-primary">Veltnex</Link>
-    {user.must_change_password ? <><div><KeyRound className="mb-3 size-8 text-primary" /><p className="mb-2 text-xs font-medium text-muted">{user.must_verify_phone ? "Step 1 of 2" : "Password setup"}</p><h1 className="text-2xl font-bold">Choose your own password</h1><p className="mt-2 text-sm text-muted">{user.must_verify_phone ? "Replace the temporary password provided by your team owner, then verify your mobile number." : "Replace the temporary password provided by your team owner to access your projects."}</p><p className="mt-3 text-sm font-medium">{user.email}</p></div>
-    {error && <AlertBanner variant="danger" title="Password change" description={error} />}
-    <div className="space-y-3"><Label htmlFor="own-password">New password (at least 12 characters)</Label><Input id="own-password" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} /><Label htmlFor="confirm-password">Confirm password</Label><Input id="confirm-password" type="password" autoComplete="new-password" value={confirmation} onChange={e => setConfirmation(e.target.value)} />{confirmation && password !== confirmation && <p className="text-sm text-warning">Passwords don’t match.</p>}</div>
-    <ActionButton className="w-full" loading={busy} disabled={password.length < 12 || password !== confirmation || password !== password.trim()} onClick={save}>Save password and continue</ActionButton>
+    <div className="flex items-center justify-between"><Link to="/" className="text-sm font-semibold text-primary">{i18nText("Veltnex")}</Link><LanguageToggle /></div>
+    {user.must_change_password ? <><div><KeyRound className="mb-3 size-8 text-primary" /><p className="mb-2 text-xs font-medium text-muted">{user.must_verify_phone ? i18nText("Step 1 of 2") : i18nText("Password setup")}</p><h1 className="text-2xl font-bold">{i18nText("Choose your own password")}</h1><p className="mt-2 text-sm text-muted">{user.must_verify_phone ? i18nText("Replace the temporary password provided by your team owner, then verify your mobile number.") : i18nText("Replace the temporary password provided by your team owner to access your projects.")}</p><p className="mt-3 text-sm font-medium">{user.email}</p></div>
+    {error && <AlertBanner variant="danger" title={i18nText("Password change")} description={error} />}
+    <div className="space-y-3"><Label htmlFor="own-password">{i18nText("New password (at least 12 characters)")}</Label><Input id="own-password" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} /><Label htmlFor="confirm-password">{i18nText("Confirm password")}</Label><Input id="confirm-password" type="password" autoComplete="new-password" value={confirmation} onChange={e => setConfirmation(e.target.value)} />{confirmation && password !== confirmation && <p className="text-sm text-warning">{i18nText("Passwords don’t match.")}</p>}</div>
+    <ActionButton className="w-full" loading={busy} disabled={password.length < 12 || password !== confirmation || password !== password.trim()} onClick={save}>{i18nText("Save password and continue")}</ActionButton>
     </> : <PhoneVerification />}
-    <Button variant="ghost" className="w-full" disabled={busy} onClick={() => logout()}>Sign out</Button>
+    <Button variant="ghost" className="w-full" disabled={busy} onClick={() => logout()}>{i18nText("Sign out")}</Button>
   </Card></main>;
 }

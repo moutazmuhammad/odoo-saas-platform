@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { ArrowUp, ArrowDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -77,7 +78,7 @@ export function DataTable<T>({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border text-left text-xs text-muted">
+            <tr className="border-b border-border text-start text-xs text-muted">
               {columns.map((c) => (
                 <th
                   key={c.key}
@@ -85,7 +86,7 @@ export function DataTable<T>({
                   onClick={() => toggleSort(c)}
                   className={cn(
                     "px-4 py-3 font-medium transition-colors",
-                    c.align === "right" && "text-right",
+                    c.align === "right" && "text-end",
                     c.align === "center" && "text-center",
                     c.sortValue && "cursor-pointer select-none hover:text-foreground",
                     c.sortValue && sortKey === c.key && "text-foreground",
@@ -135,7 +136,7 @@ export function DataTable<T>({
                       key={c.key}
                       className={cn(
                         "px-4 py-3.5 align-middle",
-                        c.align === "right" && "text-right",
+                        c.align === "right" && "text-end",
                         c.align === "center" && "text-center",
                         hideClass(c),
                         c.className,

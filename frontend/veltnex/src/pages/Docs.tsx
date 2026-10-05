@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Link } from "react-router-dom";
 import { Search, FileText, Clock, BookOpen, ArrowRight } from "lucide-react";
@@ -24,17 +25,15 @@ export default function Docs() {
         <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
           <BookOpen className="size-6" />
         </span>
-        <h1 className="mt-5 text-4xl font-bold tracking-tight">Documentation</h1>
-        <p className="mt-3 text-muted">
-          Guides and references to get the most out of VELTNEX.
-        </p>
+        <h1 className="mt-5 text-4xl font-bold tracking-tight">{i18nText("Documentation")}</h1>
+        <p className="mt-3 text-muted">{i18nText("Guides and references to get the most out of VELTNEX.")}</p>
       </div>
 
       <div className="relative mx-auto mt-8 max-w-xl">
-        <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+        <Search className="absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
         <Input
-          className="h-12 pl-10"
-          placeholder="Search the docs…"
+          className="h-12 ps-10"
+          placeholder={i18nText("Search the docs…")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -44,8 +43,8 @@ export default function Docs() {
         <EmptyState
           className="mt-12"
           icon={FileText}
-          title="No articles found"
-          description={`Nothing matches "${query}". Try a different search term.`}
+          title={i18nText("No articles found")}
+          description={i18nText("Nothing matches \"{0}\". Try a different search term.", [query])}
         />
       ) : (
         <div className="mt-12 grid gap-6 md:grid-cols-2">
@@ -56,7 +55,7 @@ export default function Docs() {
               <ul className="mt-4 divide-y divide-border">
                 {folder.articles.map((a) => (
                   <li key={a.id}>
-                    <Link to={`/docs/${a.id}`} className="group flex w-full items-center justify-between gap-3 py-3 text-left">
+                    <Link to={`/docs/${a.id}`} className="group flex w-full items-center justify-between gap-3 py-3 text-start">
                       <span className="flex items-center gap-3">
                         <FileText className="size-4 text-muted" />
                         <span className="text-sm transition-colors group-hover:text-primary">
@@ -66,8 +65,7 @@ export default function Docs() {
                       <span className="flex items-center gap-3 text-xs text-muted">
                         <span className="hidden items-center gap-1 sm:flex">
                           <Clock className="size-3" />
-                          {a.readMinutes} min
-                        </span>
+                          {a.readMinutes}{i18nText(" min")}</span>
                         <ArrowRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
                       </span>
                     </Link>

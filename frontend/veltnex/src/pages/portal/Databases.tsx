@@ -1,3 +1,5 @@
+import { menuPosition } from "@/lib/menuPosition";
+import { i18nText, getLanguage } from "@/i18n";
 import * as React from "react";
 import { usePermissions } from "@/lib/permissions";
 import { usePolling } from "@/hooks/usePolling";
@@ -59,7 +61,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
       }
     } catch (err) {
       tab?.close();
-      toast.error("Database manager", err instanceof ApiError ? err.message : "Couldn't open the database manager.");
+      toast.error(i18nText("Database manager"), err instanceof ApiError ? err.message : i18nText("Couldn't open the database manager."));
     } finally {
       setOpeningManager(false);
     }
@@ -82,7 +84,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
   // The actions menu is rendered at fixed viewport coords (anchored to
   // the trigger button) so it isn't clipped by the table/card overflow
   // — which happened when a single short row left no room below it.
-  const [menuPos, setMenuPos] = React.useState<{ top: number; right: number }>({ top: 0, right: 0 });
+  const [menuPos, setMenuPos] = React.useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   // `background` = a poll/refresh (not the first load). On a background
   // failure we keep what's already on screen and retry silently — a
@@ -99,7 +101,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
       setError(null);
     } catch (e) {
       if (!background) {
-        setError(e instanceof ApiError ? e.message : "Could not load databases.");
+        setError(e instanceof ApiError ? e.message : i18nText("Could not load databases."));
       }
     }
   }, [instanceId]);
@@ -186,16 +188,16 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
           misses = 0;
         } catch {
           if (++misses > 20) {
-            throw new ApiError("Lost connection while preparing the backup. Please try again.");
+            throw new ApiError(i18nText("Lost connection while preparing the backup. Please try again."));
           }
           continue; // transient blip — keep polling
         }
         if (!b) {
           // The record vanished (e.g. a newer backup wiped this slot).
-          throw new ApiError("This backup is no longer available. Please try again.");
+          throw new ApiError(i18nText("This backup is no longer available. Please try again."));
         }
         if (b.status === "failed") {
-          throw new ApiError("The backup couldn't be created. Please try again.");
+          throw new ApiError(i18nText("The backup couldn't be created. Please try again."));
         }
         if (b.status === "available" && b.download_url) {
           triggerBrowserDownload(b.download_url);
@@ -205,7 +207,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
         // status is still "in_progress" — keep waiting.
       }
       throw new ApiError(
-        "Your backup is taking longer than expected — it'll be ready shortly. Try Download again in a moment.",
+        i18nText("Your backup is taking longer than expected — it'll be ready shortly. Try Download again in a moment."),
       );
     },
     [instanceId, load],
@@ -216,73 +218,69 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Databases<HelpHint anchor="create-database" className="ml-1.5" /></h1>
-          <p className="mt-1 text-sm text-muted">Create, back up, and manage your databases.</p>
+          <h1 className="text-2xl font-bold tracking-tight">{i18nText("Databases")}<HelpHint anchor="create-database" className="ms-1.5" /></h1>
+          <p className="mt-1 text-sm text-muted">{i18nText("Create, back up, and manage your databases.")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="secondary"
             onClick={openDatabaseManager}
             disabled={!can("database.manager") || !data?.ready || openingManager}
-            title={data?.ready ? "Odoo's database manager, without the master password." : "Available once your instance is running."}
+            title={data?.ready ? i18nText("Odoo's database manager, without the master password.") : i18nText("Available once your instance is running.")}
           >
-            {openingManager ? <Loader2 className="size-4 animate-spin" /> : <Settings2 className="size-4" />}
-            Database manager
-          </Button>
+            {openingManager ? <Loader2 className="size-4 animate-spin" /> : <Settings2 className="size-4" />}{i18nText("Database manager")}</Button>
           <Button
             variant="secondary"
             onClick={() => setRestoreOpen(true)}
             disabled={!can("db.restore") || !data?.ready}
-            title={data?.ready ? undefined : "Available once your instance is running."}
+            title={data?.ready ? undefined : i18nText("Available once your instance is running.")}
           >
-            <UploadCloud className="size-4" />
-            Restore database
-          </Button>
+            <UploadCloud className="size-4" />{i18nText("Restore database")}</Button>
           <Button
             onClick={() => setCreateOpen(true)}
             disabled={!can("db.create") || !data?.ready || isCreating || capacityReached}
-            title={capacityReached ? "Production allows one database. Restore or manage the existing database." : isCreating ? "A database is already being created on this instance." : undefined}
+            title={capacityReached ? i18nText("Production allows one database. Restore or manage the existing database.") : isCreating ? i18nText("A database is already being created on this instance.") : undefined}
           >
             {isCreating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-            {isCreating ? "Creating…" : "Create database"}
+            {isCreating ? i18nText("Creating…") : i18nText("Create database")}
           </Button>
         </div>
       </div>
 
-      {databaseLimit === 1 && <p className="mt-4 text-sm text-muted">Production includes one database. You can restore a backup into it or delete it and create a replacement.</p>}
+      {databaseLimit === 1 && <p className="mt-4 text-sm text-muted">{i18nText("Production includes one database. You can restore a backup into it or delete it and create a replacement.")}</p>}
 
-      {error && <AlertBanner className="mt-6" variant="danger" title="Database management" description={error} />}
+      {error && <AlertBanner className="mt-6" variant="danger" title={i18nText("Database management")} description={error} />}
 
       {!data && !error ? (
         <div className="mt-20 flex justify-center">
-          <Spinner size="lg" label="Loading databases…" />
+          <Spinner size="lg" label={i18nText("Loading databases…")} />
         </div>
       ) : data && !data.ready ? (
         <EmptyState
           className="mt-8"
           icon={Database}
-          title="Instance not ready"
-          description="Database management becomes available once your instance is running."
-          action={<Button variant="secondary" onClick={() => navigate(`/my/instances/${id}`)}>Back to instance</Button>}
+          title={i18nText("Instance not ready")}
+          description={i18nText("Database management becomes available once your instance is running.")}
+          action={<Button variant="secondary" onClick={() => navigate(`/my/instances/${id}`)}>{i18nText("Back to instance")}</Button>}
         />
       ) : data && data.databases.length === 0 && !isCreating ? (
         <EmptyState
           className="mt-8"
           icon={Database}
-          title="No databases yet"
-          description="Create your first database to start using this instance."
-          action={can("db.create") ? <Button onClick={() => setCreateOpen(true)}>Create database</Button> : undefined}
+          title={i18nText("No databases yet")}
+          description={i18nText("Create your first database to start using this instance.")}
+          action={can("db.create") ? <Button onClick={() => setCreateOpen(true)}>{i18nText("Create database")}</Button> : undefined}
         />
       ) : data ? (
         <Card className="mt-6 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
-                  <th className="px-5 py-3 font-medium">Name</th>
-                  <th className="hidden px-5 py-3 font-medium sm:table-cell">Admin login</th>
-                  <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 text-right font-medium">Actions</th>
+                <tr className="border-b border-border text-start text-xs uppercase tracking-wide text-muted">
+                  <th className="px-5 py-3 font-medium">{i18nText("Name")}</th>
+                  <th className="hidden px-5 py-3 font-medium sm:table-cell">{i18nText("Admin login")}</th>
+                  <th className="px-5 py-3 font-medium">{i18nText("Status")}</th>
+                  <th className="px-5 py-3 text-end font-medium">{i18nText("Actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -297,7 +295,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                     <td className="hidden px-5 py-4 text-muted sm:table-cell">—</td>
                     <td className="px-5 py-4">
                       <span className="inline-flex items-center gap-1.5 text-xs text-info">
-                        <Loader2 className="size-3.5 animate-spin" /> {op.operation === "duplicate" ? "Duplicating…" : op.operation === "restore" ? "Restoring…" : "Creating…"}
+                        <Loader2 className="size-3.5 animate-spin" /> {op.operation === "duplicate" ? i18nText("Duplicating…") : op.operation === "restore" ? i18nText("Restoring…") : i18nText("Creating…")}
                       </span>
                     </td>
                     <td className="px-5 py-4" />
@@ -318,10 +316,10 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                       <td className="px-5 py-4">
                         {pending ? (
                           <span className="inline-flex items-center gap-1.5 text-xs text-info">
-                            <Loader2 className="size-3.5 animate-spin" /> {op === "drop" ? "Deleting…" : op === "duplicate" ? "Duplicating…" : op === "upgrade" ? "Upgrading…" : op === "restore" ? "Restoring…" : "Creating…"}
+                            <Loader2 className="size-3.5 animate-spin" /> {op === "drop" ? i18nText("Deleting…") : op === "duplicate" ? i18nText("Duplicating…") : op === "upgrade" ? i18nText("Upgrading…") : op === "restore" ? i18nText("Restoring…") : i18nText("Creating…")}
                           </span>
                         ) : (
-                          <StatusBadge status="running" label="Active" />
+                          <StatusBadge status="running" label={i18nText("Active")} />
                         )}
                       </td>
                       <td className="px-5 py-4">
@@ -330,7 +328,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                             size="sm"
                             variant="ghost"
                             disabled={pending || !data?.url}
-                            title={data?.url ? undefined : "Instance URL unavailable"}
+                            title={data?.url ? undefined : i18nText("Instance URL unavailable")}
                             onClick={() =>
                               data?.url &&
                               window.open(
@@ -341,21 +339,21 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                             }
                           >
                             <ExternalLink className="size-4" />
-                            <span className="hidden lg:inline">Open</span>
+                            <span className="hidden lg:inline">{i18nText("Open")}</span>
                           </Button>
                           <div className="relative">
                             <Button
                               size="icon"
                               variant="ghost"
                               disabled={pending}
-                              aria-label="More actions"
+                              aria-label={i18nText("More actions")}
                               onClick={(e) => {
                                 if (openMenu === db.name) {
                                   setOpenMenu(null);
                                   return;
                                 }
                                 const r = e.currentTarget.getBoundingClientRect();
-                                setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+                                setMenuPos(menuPosition(r, window.innerWidth, getLanguage() === "ar"));
                                 setOpenMenu(db.name);
                               }}
                             >
@@ -366,15 +364,15 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                                 <div className="fixed inset-0 z-30" onClick={() => setOpenMenu(null)} />
                                 <div
                                   className="fixed z-40 w-44 overflow-hidden rounded-lg border border-border bg-card shadow-card animate-scale-in"
-                                  style={{ top: menuPos.top, right: menuPos.right }}
+                                  style={{ top: menuPos.top, left: menuPos.left }}
                                 >
-                                  <MenuItem icon={Archive} label="Create backup" disabled={!can("backup.create")} onClick={async () => { setOpenMenu(null); try { await api.dbBackup(instanceId, db.name, "zip"); await load(true); toast.success("Backup queued"); } catch (e) { toast.error("Could not create backup", e instanceof ApiError ? e.message : "Please try again."); } }} />
-                                  <MenuItem disabled={!can("backup.download")} icon={Download} label="Download backup" onClick={() => { setOpenMenu(null); setBackupsTarget(db.name); }} />
-                                  <MenuItem icon={CopyPlus} label="Duplicate" disabled={capacityReached || !can("db.create") || !can("backup.download")} onClick={() => { setOpenMenu(null); setDuplicateTarget(db.name); }} />
-                                  <MenuItem disabled={!can("db.upgrade")} icon={RefreshCw} label="Upgrade modules" onClick={() => { setOpenMenu(null); setUpgradeTarget(db.name); }} />
-                                  <MenuItem disabled={!can("db.password")} icon={KeyRound} label="Reset password" onClick={() => { setOpenMenu(null); setResetTarget(db.name); }} />
+                                  <MenuItem icon={Archive} label={i18nText("Create backup")} disabled={!can("backup.create")} onClick={async () => { setOpenMenu(null); try { await api.dbBackup(instanceId, db.name, "zip"); await load(true); toast.success(i18nText("Backup queued")); } catch (e) { toast.error(i18nText("Could not create backup"), e instanceof ApiError ? e.message : i18nText("Please try again.")); } }} />
+                                  <MenuItem disabled={!can("backup.download")} icon={Download} label={i18nText("Download backup")} onClick={() => { setOpenMenu(null); setBackupsTarget(db.name); }} />
+                                  <MenuItem icon={CopyPlus} label={i18nText("Duplicate")} disabled={capacityReached || !can("db.create") || !can("backup.download")} onClick={() => { setOpenMenu(null); setDuplicateTarget(db.name); }} />
+                                  <MenuItem disabled={!can("db.upgrade")} icon={RefreshCw} label={i18nText("Upgrade modules")} onClick={() => { setOpenMenu(null); setUpgradeTarget(db.name); }} />
+                                  <MenuItem disabled={!can("db.password")} icon={KeyRound} label={i18nText("Reset password")} onClick={() => { setOpenMenu(null); setResetTarget(db.name); }} />
                                   <div className="border-t border-border" />
-                                  <MenuItem disabled={!can("db.delete")} icon={Trash2} label="Delete" danger onClick={() => { setOpenMenu(null); setDropTarget(db.name); }} />
+                                  <MenuItem disabled={!can("db.delete")} icon={Trash2} label={i18nText("Delete")} danger onClick={() => { setOpenMenu(null); setDropTarget(db.name); }} />
                                 </div>
                               </>
                             )}
@@ -440,7 +438,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
         onClose={() => setResetTarget(null)}
         onReset={async (name, password, targetLogin) => {
           const { login } = await api.dbResetPassword(instanceId, name, password, targetLogin);
-          toast.success("Password reset", `New admin password set for ${name}.`);
+          toast.success(i18nText("Password reset"), `New admin password set for ${name}.`);
           return login;
         }}
       />
@@ -516,7 +514,7 @@ function DatabaseBackupsDialog({
       await onDownload(dbName, format);
       setDone(true);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't prepare the backup.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't prepare the backup."));
     } finally {
       setLoading(false);
     }
@@ -526,24 +524,24 @@ function DatabaseBackupsDialog({
     <Dialog
       open={!!dbName}
       onClose={onClose}
-      title="Download backup"
-      description={dbName ? `Download an available backup of “${dbName}”.` : undefined}
+      title={i18nText("Download backup")}
+      description={dbName ? i18nText("Download an available backup of “{0}”.", [dbName]) : undefined}
     >
-      {error && <AlertBanner className="mb-4" variant="danger" title="Backup" description={error} />}
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Backup")} description={error} />}
       {done && !error && (
         <AlertBanner
           className="mb-4"
           variant="success"
-          title="Your download has started"
-          description="If it didn't begin automatically, use the link below. The file is removed from our storage shortly after."
+          title={i18nText("Your download has started")}
+          description={i18nText("If it didn't begin automatically, use the link below. The file is removed from our storage shortly after.")}
         />
       )}
       <div className="space-y-2">
-        <Label>Format</Label>
+        <Label>{i18nText("Format")}</Label>
         <div className="grid grid-cols-2 gap-2">
           {([
-            { v: "zip", title: "ZIP", hint: "Database + files" },
-            { v: "dump", title: "Dump", hint: "Database only" },
+            { v: "zip", title: "ZIP", hint: i18nText("Database + files") },
+            { v: "dump", title: i18nText("Dump"), hint: i18nText("Database only") },
           ] as const).map((o) => (
             <button
               key={o.v}
@@ -551,7 +549,7 @@ function DatabaseBackupsDialog({
               disabled={loading}
               onClick={() => setFormat(o.v)}
               className={cn(
-                "rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-50",
+                "rounded-lg border px-3 py-2 text-start transition-colors disabled:opacity-50",
                 format === o.v ? "border-primary bg-primary/10" : "border-border hover:bg-border/40",
               )}
             >
@@ -562,10 +560,7 @@ function DatabaseBackupsDialog({
         </div>
       </div>
 
-      <p className="mt-4 text-xs text-muted">
-        We build the backup, then your download starts automatically. Larger
-        databases take a little longer — keep this window open.
-      </p>
+      <p className="mt-4 text-xs text-muted">{i18nText("We build the backup, then your download starts automatically. Larger databases take a little longer — keep this window open.")}</p>
 
       <div className="mt-4 flex items-center justify-between gap-3">
         {ready && ready.download_url ? (
@@ -574,25 +569,21 @@ function DatabaseBackupsDialog({
               href={ready.download_url}
               className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-2 hover:underline"
             >
-              <Download className="size-4" />
-              Download last backup
-            </a>
+              <Download className="size-4" />{i18nText("Download last backup")}</a>
             <p className="mt-0.5 text-xs text-muted">
               {formatDateTime(ready.created)}
               {ready.size_mb > 0 && <> · {formatSizeMb(ready.size_mb)}</>}
             </p>
           </div>
         ) : (
-          <span className="text-sm text-muted">No backup yet.</span>
+          <span className="text-sm text-muted">{i18nText("No backup yet.")}</span>
         )}
-        <ActionButton disabled={!canCreate} loading={loading} loadingText="Preparing…" onClick={start}>
-          <Archive className="size-4" />
-          Download backup
-        </ActionButton>
+        <ActionButton disabled={!canCreate} loading={loading} loadingText={i18nText("Preparing\u2026")} onClick={start}>
+          <Archive className="size-4" />{i18nText("Download backup")}</ActionButton>
       </div>
 
       <div className="mt-6 flex justify-end">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>Close</Button>
+        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Close")}</Button>
       </div>
     </Dialog>
   );
@@ -624,13 +615,13 @@ function DuplicateDatabaseDialog({
   const submit = async () => {
     if (!source) return;
     if (!/^[a-z][a-z0-9_]{2,40}$/.test(name)) {
-      return setError("Use 3–41 lowercase letters, numbers, or underscores, starting with a letter.");
+      return setError(i18nText("Use 3–41 lowercase letters, numbers, or underscores, starting with a letter."));
     }
     // existing holds full DB names (e.g. "acme_staging"); the customer
     // types the new suffix. Catch the common collision client-side; the
     // backend is the authoritative check.
     if (existing.some((n) => n === name || n.endsWith("_" + name))) {
-      return setError("A database with that name already exists.");
+      return setError(i18nText("A database with that name already exists."));
     }
     setError(null);
     setLoading(true);
@@ -638,7 +629,7 @@ function DuplicateDatabaseDialog({
       await onDuplicate(source, name);
       onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't duplicate the database.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't duplicate the database."));
     } finally {
       setLoading(false);
     }
@@ -648,33 +639,31 @@ function DuplicateDatabaseDialog({
     <Dialog
       open={!!source}
       onClose={onClose}
-      title="Duplicate database"
-      description={source ? `Create an exact copy of “${source}” under a new name.` : undefined}
+      title={i18nText("Duplicate database")}
+      description={source ? i18nText("Create an exact copy of “{0}” under a new name.", [source]) : undefined}
     >
-      {error && <AlertBanner className="mb-4" variant="danger" title="Couldn't duplicate" description={error} />}
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't duplicate")} description={error} />}
       <AlertBanner
         variant="info"
-        title="This copies everything"
-        description="The new database starts as a full copy of the source — its data, users, and files. The original is left untouched."
+        title={i18nText("This copies everything")}
+        description={i18nText("The new database starts as a full copy of the source — its data, users, and files. The original is left untouched.")}
       />
       <div className="mt-4 space-y-2">
-        <Label htmlFor="dup-name">New database name</Label>
+        <Label htmlFor="dup-name">{i18nText("New database name")}</Label>
         <Input
           id="dup-name"
-          placeholder="staging"
+          placeholder={"staging"}
           value={name}
           autoFocus
           onChange={(e) => { setName(e.target.value.toLowerCase()); setError(null); }}
           onKeyDown={(e) => e.key === "Enter" && submit()}
         />
-        <p className="text-xs text-muted">A short suffix — your instance prefix is added automatically.</p>
+        <p className="text-xs text-muted">{i18nText("A short suffix — your instance prefix is added automatically.")}</p>
       </div>
       <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>Cancel</Button>
-        <ActionButton loading={loading} loadingText="Starting…" onClick={submit}>
-          <CopyPlus className="size-4" />
-          Duplicate
-        </ActionButton>
+        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
+        <ActionButton loading={loading} loadingText={i18nText("Starting\u2026")} onClick={submit}>
+          <CopyPlus className="size-4" />{i18nText("Duplicate")}</ActionButton>
       </div>
     </Dialog>
   );
@@ -715,7 +704,7 @@ function UpgradeModulesDialog({
       const res = await api.dbUpgrade(instanceId, dbName, modules);
       opId = res.op_id;
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't start the upgrade.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't start the upgrade."));
       setPhase("idle");
       return;
     }
@@ -727,7 +716,7 @@ function UpgradeModulesDialog({
     let misses = 0;
     for (;;) {
       if (Date.now() - startedAt > DEADLINE_MS) {
-        setError("This is taking longer than expected — it may still be finishing in the background. Check back shortly.");
+        setError(i18nText("This is taking longer than expected — it may still be finishing in the background. Check back shortly."));
         setPhase("failed");
         return;
       }
@@ -738,7 +727,7 @@ function UpgradeModulesDialog({
         misses = 0;
       } catch {
         if (++misses > 20) {
-          setError("Lost connection while upgrading. The upgrade may still be running.");
+          setError(i18nText("Lost connection while upgrading. The upgrade may still be running."));
           setPhase("failed");
           return;
         }
@@ -752,7 +741,7 @@ function UpgradeModulesDialog({
       }
       if (op.state === "failed") {
         setReport(op.output || "");
-        setError(op.error || "The upgrade didn't complete.");
+        setError(op.error || i18nText("The upgrade didn't complete."));
         setPhase("failed");
         onDone();
         return;
@@ -767,14 +756,14 @@ function UpgradeModulesDialog({
     <Dialog
       open={!!dbName}
       onClose={onClose}
-      title="Upgrade modules"
-      description={dbName ? `Update installed modules on “${dbName}”.` : undefined}
+      title={i18nText("Upgrade modules")}
+      description={dbName ? i18nText("Update installed modules on “{0}”.", [dbName]) : undefined}
     >
       {error && (
         <AlertBanner
           className="mb-4"
           variant={phase === "failed" ? "danger" : "warning"}
-          title="Upgrade"
+          title={i18nText("Upgrade")}
           description={error}
         />
       )}
@@ -782,39 +771,34 @@ function UpgradeModulesDialog({
         <AlertBanner
           className="mb-4"
           variant="success"
-          title="Upgrade complete"
-          description="Your modules were upgraded and your instance stayed online the whole time."
+          title={i18nText("Upgrade complete")}
+          description={i18nText("Your modules were upgraded and your instance stayed online the whole time.")}
         />
       )}
 
       <AlertBanner
         variant="info"
-        title="No downtime"
-        description="The upgrade runs live — your site stays up. You may notice a brief slowdown while it finishes."
+        title={i18nText("No downtime")}
+        description={i18nText("The upgrade runs live — your site stays up. You may notice a brief slowdown while it finishes.")}
       />
 
       <div className="mt-4 space-y-2">
-        <Label htmlFor="upg-mods">Modules to upgrade</Label>
+        <Label htmlFor="upg-mods">{i18nText("Modules to upgrade")}</Label>
         <Input
           id="upg-mods"
-          placeholder="e.g. sale, stock, account"
+          placeholder={i18nText("e.g. sale, stock, account")}
           value={modules}
           autoFocus
           disabled={busy || phase === "done"}
           onChange={(e) => setModules(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !busy && phase !== "done" && start()}
         />
-        <p className="text-xs text-muted">
-          Separate several with commas. Use the module's technical name
-          (e.g. <code className="rounded-sm bg-border/60 px-1 font-mono">sale</code>),
-          or <code className="rounded-sm bg-border/60 px-1 font-mono">all</code> to
-          upgrade everything installed.
-        </p>
+        <p className="text-xs text-muted">{i18nText("Separate several with commas. Use the module's technical name (e.g. ")}<code className="rounded-sm bg-border/60 px-1 font-mono">{"sale"}</code>{i18nText("), or ")}<code className="rounded-sm bg-border/60 px-1 font-mono">{"all"}</code>{i18nText(" to upgrade everything installed.")}</p>
       </div>
 
       {report && (
         <div className="mt-4 space-y-2">
-          <Label>Report</Label>
+          <Label>{i18nText("Report")}</Label>
           <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-xs text-muted">
             {report}
           </pre>
@@ -823,13 +807,11 @@ function UpgradeModulesDialog({
 
       <div className="mt-6 flex justify-end gap-2">
         <Button variant="secondary" onClick={onClose} disabled={busy}>
-          {phase === "done" || phase === "failed" ? "Close" : "Cancel"}
+          {phase === "done" || phase === "failed" ? i18nText("Close") : i18nText("Cancel")}
         </Button>
         {phase !== "done" && (
-          <ActionButton loading={busy} loadingText="Upgrading…" onClick={start}>
-            <RefreshCw className="size-4" />
-            Upgrade
-          </ActionButton>
+          <ActionButton loading={busy} loadingText={i18nText("Upgrading\u2026")} onClick={start}>
+            <RefreshCw className="size-4" />{i18nText("Upgrade")}</ActionButton>
         )}
       </div>
     </Dialog>
@@ -903,7 +885,7 @@ function RestoreDatabaseDialog({
     setFile(f);
     if (f) {
       if (!f.name.toLowerCase().endsWith(".zip") || !(await looksLikeZip(f))) {
-        setFileError("That doesn't look like a .zip backup. Choose an Odoo backup file (.zip).");
+        setFileError(i18nText("That doesn't look like a .zip backup. Choose an Odoo backup file (.zip)."));
       }
     }
   };
@@ -921,7 +903,7 @@ function RestoreDatabaseDialog({
       setPhase("done");
       onDone();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "The restore couldn't be started.");
+      setError(e instanceof ApiError ? e.message : i18nText("The restore couldn't be started."));
       setPhase("idle");
     }
   };
@@ -932,13 +914,13 @@ function RestoreDatabaseDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Restore from file"
-      description="Upload one of your own Odoo backups and restore it into a database."
+      title={i18nText("Restore from file")}
+      description={i18nText("Upload one of your own Odoo backups and restore it into a database.")}
     >
-      {error && <AlertBanner className="mb-4" variant="danger" title="Restore" description={error} />}
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Restore")} description={error} />}
 
       <div className="space-y-2">
-        <Label htmlFor="restore-file">Backup file (.zip)</Label>
+        <Label htmlFor="restore-file">{i18nText("Backup file (.zip)")}</Label>
         <Input
           id="restore-file"
           type="file"
@@ -951,29 +933,27 @@ function RestoreDatabaseDialog({
 
       <div className="mt-4 space-y-2">
         {existing.length > 0 && <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={overwrite} disabled={busy} onChange={(e) => { setOverwrite(e.target.checked); setConfirmation(""); }} />
-          Replace an existing database
-        </label>}
-        <Label htmlFor="restore-target">{overwrite ? "Database to replace" : "New database name"}</Label>
+          <input type="checkbox" checked={overwrite} disabled={busy} onChange={(e) => { setOverwrite(e.target.checked); setConfirmation(""); }} />{i18nText("Replace an existing database")}</label>}
+        <Label htmlFor="restore-target">{overwrite ? i18nText("Database to replace") : i18nText("New database name")}</Label>
         <Input
           id="restore-target"
-          placeholder="e.g. production"
+          placeholder={i18nText("e.g. production")}
           value={target}
           disabled={busy}
           onChange={(e) => setTarget(e.target.value.toLowerCase())}
         />
-        {!overwrite && nameTaken && <p className="text-xs text-danger">That name is already in use. Select replacement to restore into it.</p>}
-        {!overwrite && atLimit && <p className="text-xs text-danger">Production allows one database. Select replacement to restore into your existing database.</p>}
-        {overwrite && <p className="text-xs text-danger">This permanently replaces the selected database and all its data. Download a backup before continuing.</p>}
-        {overwrite && <><Label htmlFor="restore-confirm">Type {fullTarget || "the database name"} to confirm replacement</Label>
+        {!overwrite && nameTaken && <p className="text-xs text-danger">{i18nText("That name is already in use. Select replacement to restore into it.")}</p>}
+        {!overwrite && atLimit && <p className="text-xs text-danger">{i18nText("Production allows one database. Select replacement to restore into your existing database.")}</p>}
+        {overwrite && <p className="text-xs text-danger">{i18nText("This permanently replaces the selected database and all its data. Download a backup before continuing.")}</p>}
+        {overwrite && <><Label htmlFor="restore-confirm">{i18nText("Type ")}{fullTarget || i18nText("the database name")}{i18nText(" to confirm replacement")}</Label>
           <Input id="restore-confirm" value={confirmation} disabled={busy} onChange={(e) => setConfirmation(e.target.value)} autoComplete="off" /></>}
-        {!overwrite && !atLimit && !nameTaken && <p className="text-xs text-muted">Your backup is restored into a new database with this name.</p>}
+        {!overwrite && !atLimit && !nameTaken && <p className="text-xs text-muted">{i18nText("Your backup is restored into a new database with this name.")}</p>}
       </div>
 
       {phase === "uploading" && (
         <div className="mt-4">
           <div className="mb-1 flex justify-between text-xs text-muted">
-            <span>Uploading…</span>
+            <span>{i18nText("Uploading…")}</span>
             <span>{pct}%</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-border">
@@ -982,20 +962,18 @@ function RestoreDatabaseDialog({
         </div>
       )}
       {phase === "starting" && (
-        <p className="mt-4 text-sm text-muted">Upload complete — verifying and starting the restore…</p>
+        <p className="mt-4 text-sm text-muted">{i18nText("Upload complete — verifying and starting the restore…")}</p>
       )}
 
       <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button variant="secondary" onClick={onClose} disabled={busy}>{i18nText("Cancel")}</Button>
         <ActionButton
           loading={busy}
-          loadingText={phase === "starting" ? "Starting…" : "Uploading…"}
+          loadingText={phase === "starting" ? i18nText("Starting…") : i18nText("Uploading…")}
           disabled={!canSubmit}
           onClick={start}
         >
-          <UploadCloud className="size-4" />
-          Upload &amp; restore
-        </ActionButton>
+          <UploadCloud className="size-4" />{i18nText("Upload & restore")}</ActionButton>
       </div>
     </Dialog>
   );
@@ -1032,33 +1010,27 @@ function DeleteDatabaseDialog({
       await onConfirm(dbName);
       onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't delete the database.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't delete the database."));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={!!dbName} onClose={onClose} title="Delete database">
-      {error && <AlertBanner className="mb-4" variant="danger" title="Couldn't delete" description={error} />}
+    <Dialog open={!!dbName} onClose={onClose} title={i18nText("Delete database")}>
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't delete")} description={error} />}
       <div className="flex gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger/10 text-danger">
           <Trash2 className="size-5" />
         </span>
         <div className="text-sm">
-          <p className="font-medium text-foreground">
-            Delete database “{dbName}”?
+          <p className="font-medium text-foreground">{i18nText("Delete database “")}{dbName}”?
           </p>
-          <p className="mt-1 text-muted">
-            This permanently removes the database and all of its data. This action
-            cannot be undone.
-          </p>
+          <p className="mt-1 text-muted">{i18nText("This permanently removes the database and all of its data. This action cannot be undone.")}</p>
         </div>
       </div>
       <div className="mt-5 space-y-2">
-        <Label htmlFor="confirm-name">
-          Type <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{dbName}</code> to confirm
-        </Label>
+        <Label htmlFor="confirm-name">{i18nText("Type ")}<code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{dbName}</code>{i18nText(" to confirm")}</Label>
         <Input
           id="confirm-name"
           autoFocus
@@ -1070,10 +1042,8 @@ function DeleteDatabaseDialog({
         />
       </div>
       <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>Cancel</Button>
-        <ActionButton variant="danger" loading={loading} loadingText="Deleting…" disabled={!confirmed} onClick={submit}>
-          Delete database
-        </ActionButton>
+        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
+        <ActionButton variant="danger" loading={loading} loadingText={i18nText("Deleting\u2026")} disabled={!confirmed} onClick={submit}>{i18nText("Delete database")}</ActionButton>
       </div>
     </Dialog>
   );
@@ -1085,7 +1055,7 @@ function MenuItem({ icon: Icon, label, onClick, danger, disabled }: { icon: type
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "disabled:opacity-40 disabled:cursor-not-allowed flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors",
+        "disabled:opacity-40 disabled:cursor-not-allowed flex w-full items-center gap-2.5 px-3 py-2.5 text-start text-sm transition-colors",
         danger ? "text-danger hover:bg-danger/10" : "text-foreground hover:bg-border/50"
       )}
     >
@@ -1124,42 +1094,42 @@ function CreateDatabaseDialog({
 
   const submit = async () => {
     if (!/^[a-z][a-z0-9_]{2,40}$/.test(name)) {
-      return setError("Use 3–41 lowercase letters, numbers, or underscores, starting with a letter.");
+      return setError(i18nText("Use 3–41 lowercase letters, numbers, or underscores, starting with a letter."));
     }
-    if (existing.includes(name)) return setError("A database with that name already exists.");
-    if (password.length < 6) return setError("Choose an admin password of at least 6 characters.");
+    if (existing.includes(name)) return setError(i18nText("A database with that name already exists."));
+    if (password.length < 6) return setError(i18nText("Choose an admin password of at least 6 characters."));
     setError(null);
     setLoading(true);
     try {
       await onCreate(name, login, password);
       onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't create the database.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't create the database."));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="Create database" description="Spin up a new Odoo database on this instance.">
-      {error && <AlertBanner className="mb-4" variant="danger" title="Couldn't create database" description={error} />}
+    <Dialog open={open} onClose={onClose} title={i18nText("Create database")} description={i18nText("Spin up a new Odoo database on this instance.")}>
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't create database")} description={error} />}
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="db-name">Database name</Label>
-          <Input id="db-name" placeholder="production" value={name} autoFocus onChange={(e) => { setName(e.target.value.toLowerCase()); setError(null); }} />
+          <Label htmlFor="db-name">{i18nText("Database name")}</Label>
+          <Input id="db-name" placeholder={"production"} value={name} autoFocus onChange={(e) => { setName(e.target.value.toLowerCase()); setError(null); }} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="db-login">Admin login</Label>
-          <Input id="db-login" placeholder="admin" value={login} onChange={(e) => setLogin(e.target.value)} />
+          <Label htmlFor="db-login">{i18nText("Admin login")}</Label>
+          <Input id="db-login" placeholder={"admin"} value={login} onChange={(e) => setLogin(e.target.value)} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="db-pass">Admin password</Label>
+          <Label htmlFor="db-pass">{i18nText("Admin password")}</Label>
           <Input id="db-pass" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
       </div>
       <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>Cancel</Button>
-        <ActionButton loading={loading} loadingText="Creating…" onClick={submit}>Create database</ActionButton>
+        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
+        <ActionButton loading={loading} loadingText={i18nText("Creating\u2026")} onClick={submit}>{i18nText("Create database")}</ActionButton>
       </div>
     </Dialog>
   );
@@ -1202,7 +1172,7 @@ function ResetPasswordDialog({
 
   const submit = async () => {
     if (!dbName) return;
-    if (password.length < 6) return setError("Choose a password of at least 6 characters.");
+    if (password.length < 6) return setError(i18nText("Choose a password of at least 6 characters."));
     setError(null);
     setLoading(true);
     try {
@@ -1210,57 +1180,57 @@ function ResetPasswordDialog({
       setAdminLogin(login);
       setDone(true);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't reset the password.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't reset the password."));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={!!dbName} onClose={onClose} title="Reset admin password" description={dbName ? `Set a new admin password for ${dbName}.` : undefined}>
+    <Dialog open={!!dbName} onClose={onClose} title={i18nText("Reset admin password")} description={dbName ? i18nText("Set a new admin password for {0}.", [dbName]) : undefined}>
       {!done ? (
         <>
-          {error && <AlertBanner className="mb-4" variant="danger" title="Couldn't reset password" description={error} />}
-          <AlertBanner variant="warning" title="This rotates the admin password" description="The admin user will need the new password to sign in." />
+          {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't reset password")} description={error} />}
+          <AlertBanner variant="warning" title={i18nText("This rotates the admin password")} description={i18nText("The admin user will need the new password to sign in.")} />
           <div className="mt-4 space-y-2">
-            <Label htmlFor="reset-login">Administrator login <span className="font-normal text-muted">(optional)</span></Label>
-            <Input id="reset-login" placeholder="Leave blank to reset the main administrator" value={targetLogin} onChange={(e) => setTargetLogin(e.target.value)} />
-            <p className="text-xs text-muted">If you replaced the default admin with your own user, enter that login. Otherwise leave this blank.</p>
+            <Label htmlFor="reset-login">{i18nText("Administrator login ")}<span className="font-normal text-muted">{i18nText("(optional)")}</span></Label>
+            <Input id="reset-login" placeholder={i18nText("Leave blank to reset the main administrator")} value={targetLogin} onChange={(e) => setTargetLogin(e.target.value)} />
+            <p className="text-xs text-muted">{i18nText("If you replaced the default admin with your own user, enter that login. Otherwise leave this blank.")}</p>
           </div>
           <div className="mt-4 space-y-2">
-            <Label htmlFor="new-pass">New password</Label>
+            <Label htmlFor="new-pass">{i18nText("New password")}</Label>
             <Input id="new-pass" type="password" placeholder="••••••••" value={password} autoFocus onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} />
           </div>
           <div className="mt-6 flex justify-end gap-2">
-            <Button variant="secondary" onClick={onClose} disabled={loading}>Cancel</Button>
-            <ActionButton variant="danger" loading={loading} loadingText="Resetting…" onClick={submit}>Reset password</ActionButton>
+            <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
+            <ActionButton variant="danger" loading={loading} loadingText={i18nText("Resetting\u2026")} onClick={submit}>{i18nText("Reset password")}</ActionButton>
           </div>
         </>
       ) : (
         <>
-          <AlertBanner variant="success" title="Password reset" description="The admin password has been updated. Use the login below to sign in — handy if you forgot which user is the admin." />
+          <AlertBanner variant="success" title={i18nText("Password reset")} description={i18nText("The admin password has been updated. Use the login below to sign in — handy if you forgot which user is the admin.")} />
           <div className="mt-4">
-            <Label>Admin login</Label>
+            <Label>{i18nText("Admin login")}</Label>
             <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background p-2.5">
               <code className="flex-1 truncate font-mono text-sm">{adminLogin || "admin"}</code>
               <Button size="sm" variant="ghost" onClick={() => copy("login", adminLogin || "admin")}>
                 {copiedField === "login" ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
-                {copiedField === "login" ? "Copied" : "Copy"}
+                {copiedField === "login" ? i18nText("Copied") : i18nText("Copy")}
               </Button>
             </div>
           </div>
           <div className="mt-4">
-            <Label>New password</Label>
+            <Label>{i18nText("New password")}</Label>
             <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-background p-2.5">
               <code className="flex-1 truncate font-mono text-sm">{password}</code>
               <Button size="sm" variant="ghost" onClick={() => copy("password", password)}>
                 {copiedField === "password" ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
-                {copiedField === "password" ? "Copied" : "Copy"}
+                {copiedField === "password" ? i18nText("Copied") : i18nText("Copy")}
               </Button>
             </div>
           </div>
           <div className="mt-6 flex justify-end">
-            <Button onClick={onClose}>Done</Button>
+            <Button onClick={onClose}>{i18nText("Done")}</Button>
           </div>
         </>
       )}

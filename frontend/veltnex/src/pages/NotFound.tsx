@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import { useNavigate } from "react-router-dom";
 import { Compass } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,14 +13,10 @@ export default function NotFound() {
         <Compass className="size-8" />
       </span>
       <h1 className="mt-6 text-5xl font-bold tracking-tight">404</h1>
-      <p className="mt-3 max-w-sm text-muted">
-        We couldn't find that page. It may have been moved or never existed.
-      </p>
+      <p className="mt-3 max-w-sm text-muted">{i18nText("We couldn't find that page. It may have been moved or never existed.")}</p>
       <div className="mt-8 flex gap-3">
-        <Button onClick={() => navigate("/")}>Go home</Button>
-        <Button variant="secondary" onClick={() => navigate("/docs")}>
-          Browse docs
-        </Button>
+        <Button onClick={() => navigate("/")}>{i18nText("Go home")}</Button>
+        <Button variant="secondary" onClick={() => navigate("/docs")}>{i18nText("Browse docs")}</Button>
       </div>
     </div>
   );

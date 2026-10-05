@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Server, ChevronDown, ChevronRight, Search, FolderOpen } from "lucide-react";
@@ -53,7 +54,7 @@ export function ProjectSwitcher({ className }: { className?: string }) {
   };
 
   const groups = groupProjects(filtered);
-  const categories = [{ label: "My projects", projects: groups.owned }, { label: "Shared projects", projects: groups.shared }];
+  const categories = [{ label: i18nText("My projects"), projects: groups.owned }, { label: i18nText("Shared projects"), projects: groups.shared }];
 
   return (
     <div ref={ref} className={cn("relative", className)}>
@@ -65,22 +66,22 @@ export function ProjectSwitcher({ className }: { className?: string }) {
         )}
       >
         <Server className="size-4 text-muted" />
-        <span className="max-w-40 truncate font-medium">{current ? current.name : "Select a project"}</span>
+        <span className="max-w-40 truncate font-medium">{current ? current.name : i18nText("Select a project")}</span>
         <ChevronDown className="size-3.5 text-muted" />
       </button>
 
       {open && (
-        <div className="absolute left-0 z-50 mt-2 w-88 overflow-hidden rounded-lg border border-border bg-card shadow-2xl animate-fade-in">
+        <div className="absolute start-0 z-50 mt-2 w-88 overflow-hidden rounded-lg border border-border bg-card shadow-2xl animate-fade-in">
           <div className="border-b border-border p-3">
-            <p className="mb-2 text-sm font-medium">Select a project</p>
+            <p className="mb-2 text-sm font-medium">{i18nText("Select a project")}</p>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+              <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
               <input
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search projects"
-                className="h-9 w-full rounded-md border border-border bg-background pl-9 pr-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
+                placeholder={i18nText("Search projects")}
+                className="h-9 w-full rounded-md border border-border bg-background ps-9 pe-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
               />
             </div>
           </div>
@@ -88,17 +89,17 @@ export function ProjectSwitcher({ className }: { className?: string }) {
           {/* All projects */}
           <div className="max-h-72 overflow-y-auto p-2">
             {error && <p className="px-2 py-3 text-sm text-danger">{error}</p>}
-            {loading && projects.length === 0 ? <p className="px-2 py-6 text-center text-sm text-muted">Loading projects…</p> : filtered.length === 0 ? (
-              <p className="px-2 py-6 text-center text-sm text-muted">No projects found.</p>
+            {loading && projects.length === 0 ? <p className="px-2 py-6 text-center text-sm text-muted">{i18nText("Loading projects…")}</p> : filtered.length === 0 ? (
+              <p className="px-2 py-6 text-center text-sm text-muted">{i18nText("No projects found.")}</p>
             ) : categories.map(category => <section key={category.label} aria-label={category.label} className="mb-2 last:mb-0">
               <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{category.label}</p>
-              {category.projects.length === 0 && <p className="px-2 py-2 text-xs text-muted">No projects</p>}
+              {category.projects.length === 0 && <p className="px-2 py-2 text-xs text-muted">{i18nText("No projects")}</p>}
               {category.projects.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => go(projectLink(p))}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-foreground/6",
+                    "flex w-full items-center gap-3 rounded-md px-2 py-2 text-start text-sm transition-colors hover:bg-foreground/6",
                     p.id === currentId && "bg-primary/6",
                   )}
                 >
@@ -108,7 +109,7 @@ export function ProjectSwitcher({ className }: { className?: string }) {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium text-foreground">{p.name}</span>
                     <span className="block truncate text-xs text-muted">
-                      {p.is_hosting ? "Hosting" : "Service"}
+                      {p.is_hosting ? i18nText("Hosting") : i18nText("Service")}
                       {p.region ? ` · ${p.region}` : ""}
                     </span>
                   </span>
@@ -120,10 +121,8 @@ export function ProjectSwitcher({ className }: { className?: string }) {
           <div className="border-t border-border p-2">
             <button
               onClick={() => go("/my/instances")}
-              className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm font-medium text-primary transition-colors hover:bg-foreground/6"
-            >
-              View all projects
-              <ChevronRight className="size-4" />
+              className="flex w-full items-center justify-between rounded-md px-2 py-2 text-start text-sm font-medium text-primary transition-colors hover:bg-foreground/6"
+            >{i18nText("View all projects")}<ChevronRight className="size-4" />
             </button>
           </div>
         </div>

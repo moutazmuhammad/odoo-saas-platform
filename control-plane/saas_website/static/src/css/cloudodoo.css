@@ -4132,3 +4132,9 @@ footer.bg-light.o_footer a:hover {
     color: var(--primary);
     text-decoration: none;
 }
+
+/* Match the portal's Arabic typography while keeping technical inputs readable. */
+html[lang^="ar"] body { font-family: 'Noto Sans Arabic', 'Inter', sans-serif; }
+html[dir="rtl"] body { text-align: start; }
+input:is([type="email"], [type="url"], [type="tel"], [type="password"]),
+pre, code, .co-logo-word { direction: ltr; unicode-bidi: isolate; }

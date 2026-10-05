@@ -88,9 +88,11 @@ def spa_shell():
     # The built `<html lang="en">` has no other attributes, so a
     # straight string replace is safe — and keeps the cached shell
     # bytes intact (the cache holds the unmodified file).
+    language = 'ar' if request.httprequest.cookies.get('veltnex-language') == 'ar' else 'en'
+    direction = 'rtl' if language == 'ar' else 'ltr'
     rendered = html.replace(
         '<html lang="en">',
-        f'<html lang="en" data-theme="{theme}"{cls}>',
+        f'<html lang="{language}" dir="{direction}" data-theme="{theme}"{cls}>',
         1,
     )
 
@@ -124,48 +126,48 @@ def spa_shell():
 # ----------------------------------------------------------------------
 
 class SaasHomeSpa(http.Controller):
-    @http.route('/', type='http', auth='public', website=True, sitemap=True)
+    @http.route('/', type='http', auth='public', website=True, multilang=False, sitemap=True)
     def home_page(self, **kw):
         return spa_shell()
 
 
 class SaasWebsiteSpa(SaasWebsite):
-    @http.route('/services', type='http', auth='public', website=True, sitemap=True)
+    @http.route('/services', type='http', auth='public', website=True, multilang=False, sitemap=True)
     def services_page(self, **kw):
         if not self._section_enabled('services'):
             return request.redirect('/')
         return spa_shell()
 
     @http.route('/services/<int:product_id>', type='http', auth='public',
-                website=True, sitemap=True)
+                website=True, multilang=False, sitemap=True)
     def service_plans(self, product_id, **kw):
         if not self._section_enabled('services'):
             return request.redirect('/')
         return spa_shell()
 
-    @http.route('/hosting', type='http', auth='public', website=True, sitemap=True)
+    @http.route('/hosting', type='http', auth='public', website=True, multilang=False, sitemap=True)
     def hosting_page(self, **kw):
         if not self._section_enabled('hosting'):
             return request.redirect('/')
         return spa_shell()
 
-    @http.route('/docs', type='http', auth='public', website=True, sitemap=True)
+    @http.route('/docs', type='http', auth='public', website=True, multilang=False, sitemap=True)
     def docs_page(self, **kw):
         return spa_shell()
 
     @http.route('/docs/<string:slug>', type='http', auth='public',
-                website=True, sitemap=False)
+                website=True, multilang=False, sitemap=False)
     def docs_article(self, slug, **kw):
         return spa_shell()
 
-    @http.route('/help', type='http', auth='public', website=True, sitemap=True)
+    @http.route('/help', type='http', auth='public', website=True, multilang=False, sitemap=True)
     def help_page(self, **kw):
         return spa_shell()
 
 
 class SaasRegistrationSpa(SaasRegistration):
     @http.route('/services/register', type='http', auth='public',
-                website=True, methods=['GET', 'POST'], sitemap=False)
+                website=True, multilang=False, methods=['GET', 'POST'], sitemap=False)
     def register_form(self, **post):
         # The SPA drives registration through the JSON API
         # (/saas/api/v1/auth/register/*). A bare GET just loads the app;
@@ -178,7 +180,7 @@ class SaasRegistrationSpa(SaasRegistration):
         return super().register_form(**post)
 
     @http.route('/register', type='http', auth='public',
-                website=True, methods=['GET'], sitemap=False)
+                website=True, multilang=False, methods=['GET'], sitemap=False)
     def spa_register(self, **kw):
         # Generic sign-up entry point — NOT gated by the services
         # section, so "Create an account" / "Get started" works even when
@@ -191,61 +193,61 @@ class SaasRegistrationSpa(SaasRegistration):
 class SaasPortalSpa(SaasPortal):
 
     # --- Portal landing (was the QWeb "My Account" home) ---------------
-    @http.route(['/my', '/my/home'], type='http', auth='public', website=True)
+    @http.route(['/my', '/my/home'], type='http', auth='public', website=True, multilang=False)
     def home(self, **kw):
         return spa_shell()
 
     # --- Instance management views -------------------------------------
     @http.route(['/my/instances', '/my/instances/page/<int:page>'],
-                type='http', auth='public', website=True)
+                type='http', auth='public', website=True, multilang=False)
     def portal_my_instances(self, page=1, **kw):
         return spa_shell()
 
     @http.route('/my/instances/<int:instance_id>',
-                type='http', auth='public', website=True)
+                type='http', auth='public', website=True, multilang=False)
     def portal_my_instance_detail(self, instance_id, access_token=None, **kw):
         return spa_shell()
 
     @http.route('/my/instances/<int:instance_id>/databases',
-                type='http', auth='public', website=True)
+                type='http', auth='public', website=True, multilang=False)
     def portal_instance_databases(self, instance_id, access_token=None,
                                   error=None, notice=None, **kw):
         return spa_shell()
 
     @http.route('/my/instances/<int:instance_id>/code',
-                type='http', auth='public', website=True)
+                type='http', auth='public', website=True, multilang=False)
     def portal_instance_code(self, instance_id, access_token=None, **kw):
         return spa_shell()
 
     @http.route('/my/instances/<int:instance_id>/backups',
-                type='http', auth='public', website=True)
+                type='http', auth='public', website=True, multilang=False)
     def portal_instance_backups(self, instance_id, access_token=None,
                                 error=None, notice=None, **kw):
         return spa_shell()
 
     # --- New SPA-only routes (no QWeb equivalent existed) --------------
     @http.route('/my/instances/<int:instance_id>/logs',
-                type='http', auth='public', website=True)
+                type='http', auth='public', website=True, multilang=False)
     def portal_instance_logs(self, instance_id, access_token=None, **kw):
         return spa_shell()
 
     @http.route('/my/instances/<int:instance_id>/metrics',
-                type='http', auth='public', website=True)
+                type='http', auth='public', website=True, multilang=False)
     def portal_instance_metrics(self, instance_id, access_token=None, **kw):
         return spa_shell()
 
     @http.route('/my/instances/<int:instance_id>/shell',
-                type='http', auth='public', website=True)
+                type='http', auth='public', website=True, multilang=False)
     def portal_instance_shell(self, instance_id, access_token=None, **kw):
         return spa_shell()
 
     @http.route('/my/instances/<int:instance_id>/sql',
-                type='http', auth='public', website=True)
+                type='http', auth='public', website=True, multilang=False)
     def portal_instance_sql(self, instance_id, access_token=None, **kw):
         return spa_shell()
 
     @http.route('/my/instances/<int:instance_id>/environments',
-                type='http', auth='public', website=True)
+                type='http', auth='public', website=True, multilang=False)
     def portal_instance_environments(self, instance_id, access_token=None,
                                      **kw):
         return spa_shell()
@@ -253,16 +255,16 @@ class SaasPortalSpa(SaasPortal):
     # Billing list/detail live at /my/billing so Odoo keeps owning
     # /my/invoices/<id> (the canonical PDF + payment portal URL the
     # "pay invoice" button links to).
-    @http.route('/my/billing', type='http', auth='public', website=True)
+    @http.route('/my/billing', type='http', auth='public', website=True, multilang=False)
     def portal_billing(self, **kw):
         return spa_shell()
 
-    @http.route('/my/settings', type='http', auth='public', website=True)
+    @http.route('/my/settings', type='http', auth='public', website=True, multilang=False)
     def portal_settings(self, **kw):
         return spa_shell()
 
     @http.route('/my/billing/<int:invoice_id>',
-                type='http', auth='public', website=True)
+                type='http', auth='public', website=True, multilang=False)
     def portal_billing_detail(self, invoice_id, **kw):
         return spa_shell()
 
@@ -270,7 +272,7 @@ class SaasPortalSpa(SaasPortal):
 class SaasSpaAux(http.Controller):
     """Routes the SPA needs that have no controller to subclass."""
 
-    @http.route('/login', type='http', auth='public', website=True, sitemap=False)
+    @http.route('/login', type='http', auth='public', website=True, multilang=False, sitemap=False)
     def spa_login(self, **kw):
         return spa_shell()
 

@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -51,15 +52,15 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   const commands = React.useMemo<Cmd[]>(() => {
     const nav: Cmd[] = [
-      { id: "projects", label: "Projects", icon: Server, group: "Go to", run: () => go("/my/instances") },
-      { id: "billing", label: "Billing", icon: Receipt, group: "Go to", run: () => go("/my/billing") },
-      { id: "settings", label: "Settings", icon: Settings, group: "Go to", run: () => go("/my/settings") },
-      { id: "docs", label: "Documentation", icon: LifeBuoy, group: "Go to", run: () => go("/docs") },
+      { id: "projects", label: i18nText("Projects"), icon: Server, group: "Go to", run: () => go("/my/instances") },
+      { id: "billing", label: i18nText("Billing"), icon: Receipt, group: "Go to", run: () => go("/my/billing") },
+      { id: "settings", label: i18nText("Settings"), icon: Settings, group: "Go to", run: () => go("/my/settings") },
+      { id: "docs", label: i18nText("Documentation"), icon: LifeBuoy, group: "Go to", run: () => go("/docs") },
     ];
     const actions: Cmd[] = [
       {
         id: "new-project",
-        label: "New project",
+        label: i18nText("New project"),
         icon: Plus,
         group: "Actions",
         run: () => go(sections.hosting ? "/hosting" : "/services"),
@@ -120,7 +121,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       <div className="absolute inset-0 bg-black/60 backdrop-blur-xs" onClick={onClose} />
       <div
         role="dialog"
-        aria-label="Command palette"
+        aria-label={i18nText("Command palette")}
         className="relative w-full max-w-xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl animate-fade-in"
         onKeyDown={onKeyDown}
       >
@@ -130,7 +131,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search projects, pages, actions…"
+            placeholder={i18nText("Search projects, pages, actions…")}
             className="h-12 w-full bg-transparent text-sm outline-hidden placeholder:text-muted"
           />
           <kbd className="hidden shrink-0 rounded-sm border border-border px-1.5 py-0.5 text-[10px] text-muted sm:block">
@@ -140,12 +141,12 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
         <div className="max-h-[50vh] overflow-y-auto p-2">
           {filtered.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-muted">No results.</p>
+            <p className="px-3 py-6 text-center text-sm text-muted">{i18nText("No results.")}</p>
           ) : (
             groups.map((g) => (
-              <div key={g.name} className="mb-1">
+              <div key={i18nText(g.name)} className="mb-1">
                 <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted/70">
-                  {g.name}
+                  {i18nText(g.name)}
                 </p>
                 {g.items.map((c) => {
                   idx++;
@@ -157,7 +158,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                       onMouseEnter={() => setActive(myIdx)}
                       onClick={c.run}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors",
+                        "flex w-full items-center gap-3 rounded-md px-3 py-2 text-start text-sm transition-colors",
                         isActive ? "bg-primary/15 text-foreground" : "text-muted",
                       )}
                     >

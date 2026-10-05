@@ -1,3 +1,5 @@
+import { getLocale } from "@/i18n";
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { usePolling } from "@/hooks/usePolling";
 import { Activity } from "lucide-react";
@@ -85,7 +87,7 @@ export function PerformanceHistory({
   const ramNow = now?.ram ?? 0;
   const pkg = data?.package && "cpu_cores" in data.package ? (data.package as PackageSummary) : null;
   const split = (odoo?: number, db?: number) =>
-    odoo == null && db == null ? undefined : `Odoo ${(odoo ?? 0).toFixed(0)}% · DB ${(db ?? 0).toFixed(0)}%`;
+    odoo == null && db == null ? undefined : i18nText("Odoo {0}% · DB {1}%", [(odoo ?? 0).toFixed(0), (db ?? 0).toFixed(0)]);
   const storagePct = lastSample?.storage_pct ?? 0;
   const storageMb = lastSample?.storage_mb ?? 0;
 
@@ -121,17 +123,11 @@ export function PerformanceHistory({
     <Card className="p-5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <Activity className="size-4 text-primary" />
-          Performance
-          {live && (
+          <Activity className="size-4 text-primary" />{i18nText("Performance")}{live && (
             <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">
-              <span className="size-1.5 rounded-full bg-success animate-pulse-soft" />
-              Live
-            </span>
+              <span className="size-1.5 rounded-full bg-success animate-pulse-soft" />{i18nText("Live")}</span>
           )}
-          <span className="text-xs font-normal text-muted">
-            · retained {data?.retention_days ?? 14} days
-          </span>
+          <span className="text-xs font-normal text-muted">{i18nText("· retained ")}{data?.retention_days ?? 14}{i18nText(" days")}</span>
         </div>
         <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
           {RANGES.map((r) => (
@@ -152,18 +148,16 @@ export function PerformanceHistory({
       </div>
 
       {pkg && (
-        <p className="mt-2 text-xs text-muted">
-          Your package: {pkg.workers} worker{pkg.workers === 1 ? "" : "s"}
-          {pkg.tier ? ` · ${pkg.tier}` : ""} · {pkg.storage_gb} GB storage, including the managed PostgreSQL database.
-        </p>
+        <p className="mt-2 text-xs text-muted">{i18nText("Your package: ")}{pkg.workers}{i18nText(" worker")}{pkg.workers === 1 ? "" : "s"}
+          {pkg.tier ? ` · ${pkg.tier}` : ""} · {pkg.storage_gb}{i18nText(" GB storage, including the managed PostgreSQL database.")}</p>
       )}
 
       {/* Live readout — current CPU / Memory / Disk, refreshed every few secs. */}
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <LiveStat label="CPU" pct={cpuNow} sub={split(now?.odoo_cpu, now?.db_cpu)} color="#4c8dff" live={!!live} />
-        <LiveStat label="Memory" pct={ramNow} sub={split(now?.odoo_ram, now?.db_ram)} color="#a142f4" live={!!live} />
+        <LiveStat label={i18nText("Memory")} pct={ramNow} sub={split(now?.odoo_ram, now?.db_ram)} color="#a142f4" live={!!live} />
         <LiveStat
-          label="Disk"
+          label={i18nText("Disk")}
           pct={pkg ? pkg.storage_pct : storagePct}
           sub={pkg ? `${formatMb(pkg.used_mb)} of ${pkg.storage_gb} GB` : `${storageMb.toFixed(0)} MB`}
           color="#12b886"
@@ -174,15 +168,13 @@ export function PerformanceHistory({
         <div className="mt-6 h-48 animate-pulse rounded-lg bg-background" />
       ) : chartSamples.length < 2 ? (
         <div className="mt-6 flex h-48 flex-col items-center justify-center gap-1 text-sm text-muted">
-          <Activity className="size-6 opacity-40" />
-          No performance data yet for this window.
-          <span className="text-xs">Samples are recorded every few minutes.</span>
+          <Activity className="size-6 opacity-40" />{i18nText("No performance data yet for this window.")}<span className="text-xs">{i18nText("Samples are recorded every few minutes.")}</span>
         </div>
       ) : (
         <div className="mt-4 grid gap-5">
           <AreaChart
             label="CPU"
-            unit="% of plan"
+            unit={i18nText("% of plan")}
             color="#4c8dff"
             samples={chartSamples}
             pick={(s) => s.cpu}
@@ -191,8 +183,8 @@ export function PerformanceHistory({
             endMs={endMs}
           />
           <AreaChart
-            label="Memory"
-            unit="% of plan"
+            label={i18nText("Memory")}
+            unit={i18nText("% of plan")}
             color="#a142f4"
             samples={chartSamples}
             pick={(s) => s.ram}
@@ -204,7 +196,7 @@ export function PerformanceHistory({
             <StorageBreakdown pkg={pkg} />
           ) : (
             <AreaChart
-              label="Storage"
+              label={i18nText("Storage")}
               unit="MB"
               color="#12b886"
               samples={chartSamples}
@@ -290,25 +282,20 @@ function AreaChart({
           {hasDb && (
             <span className="flex items-center gap-2 font-normal text-muted">
               <span className="inline-flex items-center gap-1">
-                <span className="size-2 rounded-sm" style={{ backgroundColor: color, opacity: 0.5 }} />
-                Odoo
-              </span>
+                <span className="size-2 rounded-sm" style={{ backgroundColor: color, opacity: 0.5 }} />{i18nText("Odoo")}</span>
               <span className="inline-flex items-center gap-1">
-                <span className="size-2 rounded-sm" style={{ backgroundColor: DB_COLOR }} />
-                Database
-              </span>
+                <span className="size-2 rounded-sm" style={{ backgroundColor: DB_COLOR }} />{i18nText("Database")}</span>
             </span>
           )}
         </span>
-        <span className="text-muted">
-          now <span className="font-semibold tabular-nums text-foreground">{fmt(last)}</span>
-          <span className="mx-1.5 opacity-40">·</span>peak{" "}
+        <span className="text-muted">{i18nText("now ")}<span className="font-semibold tabular-nums text-foreground">{fmt(last)}</span>
+          <span className="mx-1.5 opacity-40">·</span>{"peak"}{" "}
           <span className="tabular-nums">{fmt(peak)}</span>
         </span>
       </div>
       <div className="flex gap-1.5">
         {/* y-axis scale labels (auto-scaled so small values are readable) */}
-        <div className="flex w-8 shrink-0 flex-col justify-between py-0.5 text-right text-[9px] tabular-nums text-muted">
+        <div className="flex w-8 shrink-0 flex-col justify-between py-0.5 text-end text-[9px] tabular-nums text-muted">
           <span>{axisLabel(max)}</span>
           <span>{axisLabel(max / 2)}</span>
           <span>{axisLabel(0)}</span>
@@ -386,8 +373,7 @@ function AreaChart({
           >
             <div className="font-semibold tabular-nums">{fmt(hv)}</div>
             {hasDb && hover != null && (
-              <div className="tabular-nums text-muted">
-                Odoo {fmt(Math.max(0, hv - dbValues![hover]))} · DB {fmt(dbValues![hover])}
+              <div className="tabular-nums text-muted">{i18nText("Odoo ")}{fmt(Math.max(0, hv - dbValues![hover]))}{i18nText(" · DB ")}{fmt(dbValues![hover])}
               </div>
             )}
             <div className="text-muted">{formatTime(ht)}</div>
@@ -414,11 +400,10 @@ function StorageBreakdown({ pkg }: { pkg: PackageSummary }) {
   return (
     <div>
       <div className="mb-1.5 flex items-baseline justify-between text-xs">
-        <span className="font-medium text-foreground">Storage</span>
+        <span className="font-medium text-foreground">{i18nText("Storage")}</span>
         <span className="text-muted">
-          <span className="font-semibold tabular-nums text-foreground">{formatMb(pkg.used_mb)}</span> of{" "}
-          {pkg.storage_gb} GB
-          {pkg.measured_at && <span className="ml-1.5 opacity-70">· measured {formatTime(pkg.measured_at + "Z")}</span>}
+          <span className="font-semibold tabular-nums text-foreground">{formatMb(pkg.used_mb)}</span>{i18nText(" of")}{" "}
+          {pkg.storage_gb}{i18nText(" GB")}{pkg.measured_at && <span className="ms-1.5 opacity-70">{i18nText("· measured ")}{formatTime(pkg.measured_at + "Z")}</span>}
         </span>
       </div>
       <div className="flex h-3 overflow-hidden rounded-full bg-border">
@@ -427,14 +412,12 @@ function StorageBreakdown({ pkg }: { pkg: PackageSummary }) {
       </div>
       <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
         <span className="inline-flex items-center gap-1">
-          <span className="size-2 rounded-sm" style={{ backgroundColor: "#12b886" }} />
-          Files {formatMb(pkg.files_mb)}
+          <span className="size-2 rounded-sm" style={{ backgroundColor: "#12b886" }} />{i18nText("Files ")}{formatMb(pkg.files_mb)}
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="size-2 rounded-sm" style={{ backgroundColor: DB_COLOR }} />
-          Databases {formatMb(pkg.databases_mb)}
+          <span className="size-2 rounded-sm" style={{ backgroundColor: DB_COLOR }} />{i18nText("Databases ")}{formatMb(pkg.databases_mb)}
         </span>
-        <span>Free {formatMb(freeMb)}</span>
+        <span>{i18nText("Free ")}{formatMb(freeMb)}</span>
       </div>
     </div>
   );
@@ -463,7 +446,7 @@ function formatAxis(ms: number, span: number): string {
   if (span <= 24 * 3600 * 1000) {
     return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   }
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return d.toLocaleDateString(getLocale(), { month: "short", day: "numeric" });
 }
 
 /** A single live metric (DigitalOcean-style): big current value + a usage bar,
@@ -488,7 +471,7 @@ function LiveStat({
         <span className="text-xs font-medium text-muted">{label}</span>
         {live && (
           <span
-            title="Live"
+            title={i18nText("Live")}
             className="size-1.5 rounded-full bg-success animate-pulse-soft"
           />
         )}
@@ -496,7 +479,7 @@ function LiveStat({
       <div className="mt-1 flex items-baseline gap-0.5">
         <span className="text-2xl font-semibold tabular-nums">{pct.toFixed(0)}</span>
         <span className="text-sm text-muted">%</span>
-        {sub && <span className="ml-auto text-[11px] text-muted">{sub}</span>}
+        {sub && <span className="ms-auto text-[11px] text-muted">{sub}</span>}
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
         <div

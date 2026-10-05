@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Play, Pause, Trash2, ArrowDownToLine, ArrowUpRight } from "lucide-react";
@@ -80,7 +81,7 @@ export default function Logs({ embedId }: { embedId?: number } = {}) {
     });
     es.onerror = () => {
       setConnError(
-        "The log stream was interrupted. It will resume when the instance is running — or press Resume to retry."
+        i18nText("The log stream was interrupted. It will resume when the instance is running — or press Resume to retry.")
       );
       es.close();
       sourceRef.current = null;
@@ -104,41 +105,34 @@ export default function Logs({ embedId }: { embedId?: number } = {}) {
 
       <div className="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Logs</h1>
-          <p className="mt-1 text-sm text-muted">
-            Live log stream{instance ? ` · ${instance.name}` : ""}
+          <h1 className="text-2xl font-bold tracking-tight">{i18nText("Logs")}</h1>
+          <p className="mt-1 text-sm text-muted">{i18nText("Live log stream")}{instance ? ` · ${instance.name}` : ""}
           </p>
         </div>
         {logsAvailable && (
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={() => setPaused((p) => !p)}>
               {paused ? <Play className="size-4" /> : <Pause className="size-4" />}
-              {paused ? "Resume" : "Pause"}
+              {paused ? i18nText("Resume") : i18nText("Pause")}
             </Button>
             <Button
               variant="secondary"
               size="sm"
-              title="Open the logs in a new browser tab"
+              title={i18nText("Open the logs in a new browser tab")}
               onClick={() =>
                 window.open(`/my/instances/${id}/logs`, "_blank", "noopener,noreferrer")
               }
             >
-              <ArrowUpRight className="size-4" />
-              New tab
-            </Button>
+              <ArrowUpRight className="size-4" />{i18nText("New tab")}</Button>
             <Button
               variant="secondary"
               size="sm"
               onClick={() => setAutoScroll((a) => !a)}
               className={cn(autoScroll && "border-primary/40 text-primary")}
             >
-              <ArrowDownToLine className="size-4" />
-              Auto-scroll
-            </Button>
+              <ArrowDownToLine className="size-4" />{i18nText("Auto-scroll")}</Button>
             <Button variant="secondary" size="sm" onClick={() => setLines([])}>
-              <Trash2 className="size-4" />
-              Clear
-            </Button>
+              <Trash2 className="size-4" />{i18nText("Clear")}</Button>
           </div>
         )}
       </div>
@@ -147,19 +141,19 @@ export default function Logs({ embedId }: { embedId?: number } = {}) {
         <AlertBanner
           className="mt-6"
           variant="warning"
-          title="Logs unavailable"
+          title={i18nText("Logs unavailable")}
           description={
             instance?.state === "suspended"
-              ? "This instance is suspended. Settle the outstanding invoice to view its logs."
+              ? i18nText("This instance is suspended. Settle the outstanding invoice to view its logs.")
               : instance?.state === "stopped"
-                ? "This instance is stopped. Start it to view its live logs."
-                : "Live logs become available once the instance is running."
+                ? i18nText("This instance is stopped. Start it to view its live logs.")
+                : i18nText("Live logs become available once the instance is running.")
           }
         />
       ) : (
       <div className={cn(embedded && "flex min-h-0 flex-1 flex-col")}>
       {connError && (
-        <AlertBanner className="mt-6 shrink-0" variant="warning" title="Log stream interrupted" description={connError} onDismiss={() => setConnError(null)} />
+        <AlertBanner className="mt-6 shrink-0" variant="warning" title={i18nText("Log stream interrupted")} description={connError} onDismiss={() => setConnError(null)} />
       )}
 
       <div className={cn("mt-6", embedded && "flex min-h-0 flex-1 flex-col")}>
@@ -169,8 +163,7 @@ export default function Logs({ embedId }: { embedId?: number } = {}) {
           </div>
           <div className="mt-2 flex shrink-0 items-center gap-1.5 font-mono text-xs text-muted">
             <span className={cn("size-1.5 rounded-full", paused ? "bg-muted" : "bg-success animate-pulse-soft")} />
-            {paused ? "Paused" : "Streaming"} · {lines.length} lines · odoo.log
-          </div>
+            {paused ? i18nText("Paused") : i18nText("Streaming")} · {lines.length}{i18nText(" lines · odoo.log")}</div>
 
           <div
             ref={viewport}
@@ -186,7 +179,7 @@ export default function Logs({ embedId }: { embedId?: number } = {}) {
           >
             {lines.length === 0 ? (
               <p className="text-muted">
-                {paused ? "Stream paused." : "Waiting for log output… (logs stream only while the instance is running)"}
+                {paused ? i18nText("Stream paused.") : i18nText("Waiting for log output… (logs stream only while the instance is running)")}
               </p>
             ) : (
               lines.map((l) => (

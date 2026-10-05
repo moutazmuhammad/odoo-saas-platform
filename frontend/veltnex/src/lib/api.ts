@@ -1,3 +1,4 @@
+import { i18nText, translateMessage } from "@/i18n";
 /**
  * Client for the saas_website JSON API (Odoo `type='json'` / JSON-RPC 2.0).
  *
@@ -9,7 +10,7 @@
 export class ApiError extends Error {
   code: string;
   constructor(message: string, code = "error") {
-    super(message);
+    super(translateMessage(message));
     this.name = "ApiError";
     this.code = code;
   }
@@ -45,13 +46,13 @@ async function rpc<T = unknown>(
     });
   } catch {
     throw new ApiError(
-      "We couldn't reach the server. Check your connection and try again.",
+      i18nText("We couldn't reach the server. Check your connection and try again."),
       "network"
     );
   }
 
   if (!res.ok) {
-    throw new ApiError("Something went wrong. Please try again.", "http_" + res.status);
+    throw new ApiError(i18nText("Something went wrong. Please try again."), "http_" + res.status);
   }
 
   const payload = await res.json();
@@ -62,10 +63,10 @@ async function rpc<T = unknown>(
     const name: string = data.name || "";
     if (name.includes("SessionExpired") || name.includes("AccessDenied")) {
       onUnauthorized?.();
-      throw new ApiError("Your session has expired. Please sign in again.", "auth_required");
+      throw new ApiError(i18nText("Your session has expired. Please sign in again."), "auth_required");
     }
     throw new ApiError(
-      data.message || payload.error.message || "Server error.",
+      data.message || payload.error.message || i18nText("Server error."),
       "server"
     );
   }
@@ -76,7 +77,7 @@ async function rpc<T = unknown>(
       const code = result.code || "error";
       // Backend can also signal expiry via the envelope (err(..., 'auth_required')).
       if (code === "auth_required") onUnauthorized?.();
-      throw new ApiError(result.error || "Request failed.", code);
+      throw new ApiError(result.error || i18nText("Request failed."), code);
     }
     return result.data as T;
   }
@@ -909,11 +910,11 @@ export function uploadToBucket(
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) resolve();
-      else reject(new ApiError("The upload was rejected by storage.", "upload_failed"));
+      else reject(new ApiError(i18nText("The upload was rejected by storage."), "upload_failed"));
     };
     xhr.onerror = () =>
-      reject(new ApiError("The upload failed. Check your connection and try again.", "upload_failed"));
-    xhr.onabort = () => reject(new ApiError("Upload cancelled.", "upload_cancelled"));
+      reject(new ApiError(i18nText("The upload failed. Check your connection and try again."), "upload_failed"));
+    xhr.onabort = () => reject(new ApiError(i18nText("Upload cancelled."), "upload_cancelled"));
     xhr.send(file);
   });
 }

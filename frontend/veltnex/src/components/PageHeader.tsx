@@ -2,7 +2,7 @@ import * as React from "react";
 import { PortalBreadcrumb } from "@/components/layout/PortalLayout";
 
 /** Consistent page header (Google-console style): breadcrumb, a regular-weight
- *  title, an optional subtitle, and a right-aligned actions slot. Use at the
+ *  title, an optional subtitle, and a end-aligned actions slot. Use at the
  *  top of every portal page so structure + spacing are identical everywhere. */
 export function PageHeader({
   breadcrumb,

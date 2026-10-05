@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Server, Plus, Search, ChevronRight } from "lucide-react";
@@ -62,7 +63,7 @@ export default function Instances() {
   const columns: Column<ApiInstance>[] = [
     {
       key: "name",
-      header: "Name",
+      header: i18nText("Name"),
       sortValue: (i) => i.name.toLowerCase(),
       render: (i) => (
         <div className="flex items-center gap-3">
@@ -76,32 +77,30 @@ export default function Instances() {
         </div>
       ),
     },
-    ...(isStaff ? [{ key: "customer", header: "Customer", sortValue: (i: ApiInstance) => i.customer?.name || "", render: (i: ApiInstance) => i.customer?.name || "—" }] : []),
-    { key: "type", header: "Type", hideBelow: "sm", sortValue: (i) => (i.is_hosting ? 0 : 1), className: "text-muted", render: (i) => (i.is_hosting ? "Hosting" : "Service") },
-    { key: "region", header: "Region", hideBelow: "md", className: "text-muted", render: (i) => i.region || "—" },
-    { key: "size", header: "Size", hideBelow: "lg", className: "text-muted", render: (i) => `${i.workers} workers · ${formatBytes(i.storage_gb)}` },
-    { key: "status", header: "Status", sortValue: (i) => i.state, render: (i) => <StatusBadge status={i.state} label={i.state_label} /> },
-    { key: "created", header: "Created", hideBelow: "md", className: "text-muted", sortValue: (i) => i.created, render: (i) => (i.created ? formatDate(i.created) : "—") },
+    ...(isStaff ? [{ key: "customer", header: i18nText("Customer"), sortValue: (i: ApiInstance) => i.customer?.name || "", render: (i: ApiInstance) => i.customer?.name || "—" }] : []),
+    { key: "type", header: i18nText("Type"), hideBelow: "sm", sortValue: (i) => (i.is_hosting ? 0 : 1), className: "text-muted", render: (i) => (i.is_hosting ? i18nText("Hosting") : i18nText("Service")) },
+    { key: "region", header: i18nText("Region"), hideBelow: "md", className: "text-muted", render: (i) => i.region || "—" },
+    { key: "size", header: i18nText("Size"), hideBelow: "lg", className: "text-muted", render: (i) => i18nText("{0} workers · {1}", [i.workers, formatBytes(i.storage_gb)]) },
+    { key: "status", header: i18nText("Status"), sortValue: (i) => i.state, render: (i) => <StatusBadge status={i.state} label={i.state_label} /> },
+    { key: "created", header: i18nText("Created"), hideBelow: "md", className: "text-muted", sortValue: (i) => i.created, render: (i) => (i.created ? formatDate(i.created) : "—") },
     { key: "go", header: "", align: "right", width: "44px", render: () => <ChevronRight className="size-4 text-muted" /> },
   ];
 
   return (
     <div className="animate-fade-in">
       <PageHeader
-        title="Projects"
-        subtitle={isStaff ? "Manage and monitor projects across all customers." : "Manage your own projects and projects shared with you."}
+        title={i18nText("Projects")}
+        subtitle={isStaff ? i18nText("Manage and monitor projects across all customers.") : i18nText("Manage your own projects and projects shared with you.")}
         actions={canCreate &&
           <Button onClick={() => navigate(createTo)}>
-            <Plus className="size-4" />
-            Create project
-          </Button>
+            <Plus className="size-4" />{i18nText("Create project")}</Button>
         }
       />
 
-      {error && <AlertBanner className="mt-6" variant="danger" title="Couldn't load projects" description={error} />}
+      {error && <AlertBanner className="mt-6" variant="danger" title={i18nText("Couldn't load projects")} description={error} />}
 
-      {!isStaff && <div role="tablist" aria-label="Project categories" className="mt-6 flex gap-1 border-b border-border">
-        {([{ key: "my", label: "My projects", count: ownedProjects.length }, { key: "shared", label: "Shared projects", count: sharedProjects.length }] as const).map(item => <button key={item.key} role="tab" aria-selected={category === item.key} onClick={() => setCategory(item.key)} className={cn("border-b-2 px-4 py-3 text-sm font-medium transition-colors", category === item.key ? "border-primary text-primary" : "border-transparent text-muted hover:text-foreground")}>{item.label} <span className="ml-1 text-xs">({item.count})</span></button>)}
+      {!isStaff && <div role="tablist" aria-label={i18nText("Project categories")} className="mt-6 flex gap-1 border-b border-border">
+        {([{ key: "my", label: i18nText("My projects"), count: ownedProjects.length }, { key: "shared", label: i18nText("Shared projects"), count: sharedProjects.length }] as const).map(item => <button key={item.key} role="tab" aria-selected={category === item.key} onClick={() => setCategory(item.key)} className={cn("border-b-2 px-4 py-3 text-sm font-medium transition-colors", category === item.key ? "border-primary text-primary" : "border-transparent text-muted hover:text-foreground")}>{item.label} <span className="ms-1 text-xs">({item.count})</span></button>)}
       </div>}
 
       <DataTable<ApiInstance>
@@ -114,18 +113,18 @@ export default function Instances() {
         toolbar={
           <>
             <div className="relative w-full max-w-xs">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+              <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
               <Input
-                className="h-9 pl-9"
-                placeholder="Search projects…"
+                className="h-9 ps-9"
+                placeholder={i18nText("Search projects…")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
             {isStaff && <CustomerFilter projects={instances} value={customerId} onChange={setCustomerId} />}
-            <div className="ml-auto inline-flex rounded-md border border-border p-0.5">
+            <div className="ms-auto inline-flex rounded-md border border-border p-0.5">
               {([
-                { key: false, label: "All" },
+                { key: false, label: i18nText("All") },
                 { key: true, label: `Running (${runningTotal})` },
               ] as const).map((opt) => (
                 <button
@@ -146,13 +145,13 @@ export default function Instances() {
           <EmptyState
             className="m-0 py-14"
             icon={Server}
-            title={query || onlyRunning || (isStaff && customerId) ? "No matching projects" : !isStaff && category === "shared" ? "No shared projects yet" : "No projects yet"}
+            title={query || onlyRunning || (isStaff && customerId) ? i18nText("No matching projects") : !isStaff && category === "shared" ? i18nText("No shared projects yet") : i18nText("No projects yet")}
             description={
               query || onlyRunning || (isStaff && customerId)
-                ? "Try a different search term or filter."
-                : !isStaff && category === "shared" ? "Projects shared by other owners will appear here." : canCreate ? "Create your first project to deploy an Odoo environment." : "Ask your customer owner to grant you access to a project."
+                ? i18nText("Try a different search term or filter.")
+                : !isStaff && category === "shared" ? i18nText("Projects shared by other owners will appear here.") : canCreate ? i18nText("Create your first project to deploy an Odoo environment.") : i18nText("Ask your customer owner to grant you access to a project.")
             }
-            action={canCreate && (isStaff || category === "my") && !query && !onlyRunning && (!isStaff || !customerId) && <Button onClick={() => navigate(createTo)}>Create project</Button>}
+            action={canCreate && (isStaff || category === "my") && !query && !onlyRunning && (!isStaff || !customerId) && <Button onClick={() => navigate(createTo)}>{i18nText("Create project")}</Button>}
           />
         }
         columns={columns}

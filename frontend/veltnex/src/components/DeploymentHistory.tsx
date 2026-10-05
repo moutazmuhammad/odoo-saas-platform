@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { usePolling } from "@/hooks/usePolling";
 import {
@@ -17,10 +18,10 @@ import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/format";
 
 const SOURCE_LABEL: Record<Build["source"], string> = {
-  initial: "Initial deployment",
-  push: "Git push",
-  redeploy: "Manual re-deploy",
-  merge: "Branch merge",
+  initial: i18nText("Initial deployment"),
+  push: i18nText("Git push"),
+  redeploy: i18nText("Manual re-deploy"),
+  merge: i18nText("Branch merge"),
 };
 const SOURCE_ICON: Record<Build["source"], typeof Rocket> = {
   initial: Rocket,
@@ -62,9 +63,7 @@ export function DeploymentHistory({
 
   return (
     <div className="mt-6">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
-        Deployment history
-      </p>
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">{i18nText("Deployment history")}</p>
       <div className="overflow-hidden rounded-lg border border-border">
         {builds == null ? (
           <div className="space-y-px">
@@ -73,9 +72,7 @@ export function DeploymentHistory({
             ))}
           </div>
         ) : builds.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted">
-            No deployments yet.
-          </div>
+          <div className="px-4 py-8 text-center text-sm text-muted">{i18nText("No deployments yet.")}</div>
         ) : (
           <ul className="divide-y divide-border">
             {/* Keep the timeline focused: only the 10 most recent deployments. */}
@@ -91,7 +88,7 @@ export function DeploymentHistory({
                     tabIndex={expandable ? 0 : undefined}
                     onClick={() => expandable && setOpen(open === b.id ? null : b.id)}
                     className={cn(
-                      "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
+                      "flex w-full items-center gap-3 px-4 py-3 text-start transition-colors",
                       expandable && "cursor-pointer hover:bg-foreground/3",
                     )}
                   >
@@ -110,22 +107,20 @@ export function DeploymentHistory({
                       <div className="flex items-center gap-2">
                         <Icon className="size-3.5 shrink-0 text-muted" />
                         <span className="truncate text-sm font-medium">
-                          {b.commit_message || SOURCE_LABEL[b.source] || "Deployment"}
+                          {b.commit_message || SOURCE_LABEL[b.source] || i18nText("Deployment")}
                         </span>
                         {failed && (
-                          <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[11px] font-medium text-danger">
-                            Failed
-                          </span>
+                          <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[11px] font-medium text-danger">{i18nText("Failed")}</span>
                         )}
                         {running && (
                           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                            {b.stage === "queued" ? "Queued…" : b.stage === "deploying" ? "Deploying…" : "Building image…"}
+                            {b.stage === "queued" ? i18nText("Queued…") : b.stage === "deploying" ? i18nText("Deploying…") : i18nText("Building image…")}
                           </span>
                         )}
                       </div>
                       {running && (
                         <p className="mt-1 text-xs text-muted" role="status">
-                          {b.stage === "queued" ? "Waiting for a build slot." : b.stage === "deploying" ? "Starting the new version and checking it is ready." : "Preparing your code and dependencies."}
+                          {b.stage === "queued" ? i18nText("Waiting for a build slot.") : b.stage === "deploying" ? i18nText("Starting the new version and checking it is ready.") : i18nText("Preparing your code and dependencies.")}
                         </p>
                       )}
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
@@ -142,7 +137,7 @@ export function DeploymentHistory({
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              title="View commit on GitHub"
+                              title={i18nText("View commit on GitHub")}
                               className="inline-flex items-center gap-1 font-mono text-primary underline-offset-2 hover:underline"
                             >
                               {b.commit}
@@ -151,7 +146,7 @@ export function DeploymentHistory({
                           ) : (
                             <span className="font-mono">{b.commit}</span>
                           ))}
-                        {b.author && <span>by {b.author}</span>}
+                        {b.author && <span>{i18nText("by ")}{b.author}</span>}
                         {b.at && <span>{formatDateTime(b.at)}</span>}
                         {b.duration_s != null && <span>· {dur(b.duration_s)}</span>}
                       </div>
@@ -168,7 +163,7 @@ export function DeploymentHistory({
                   {/* failure reason */}
                   {expandable && open === b.id && (
                     <div className="border-t border-border bg-background/60 px-4 py-3">
-                      <p className="mb-1.5 text-xs font-medium text-danger">Why it failed</p>
+                      <p className="mb-1.5 text-xs font-medium text-danger">{i18nText("Why it failed")}</p>
                       <pre className="max-h-72 overflow-auto rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-muted">
                         {b.log.trimEnd()}
                       </pre>

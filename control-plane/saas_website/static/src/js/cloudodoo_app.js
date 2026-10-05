@@ -24,6 +24,7 @@ const CloudOdoo = {
 
     // Show toast notification
     showToast(message, type = 'info') {
+        message = window.saasText(message);
         let container = document.getElementById('co-toast-container');
         if (!container) {
             container = document.createElement('div');
@@ -45,7 +46,7 @@ const CloudOdoo = {
     // Format currency
     formatCurrency(amount, currency) {
         currency = currency || 'USD';
-        return new Intl.NumberFormat('en-US', {
+        return new Intl.NumberFormat(document.documentElement.lang.startsWith('ar') ? 'ar-EG' : 'en-US', {
             style: 'currency',
             currency: currency,
             minimumFractionDigits: 0,
@@ -62,7 +63,7 @@ const CloudOdoo = {
     // Show styled confirmation modal (programmatic use)
     showConfirm(message, variant, yesText, onConfirm) {
         initConfirmModals();
-        _coSetupModal(message, variant, yesText, 'No, keep it', onConfirm);
+        _coSetupModal(message, variant, yesText, window.saasText("No, keep it"), onConfirm);
     },
 
     // Get CSRF token from the page
@@ -85,7 +86,7 @@ const CloudOdoo = {
         })
         .then(r => r.json())
         .then(data => {
-            if (data.error) throw new Error(data.error.data?.message || data.error.message || 'Server error');
+            if (data.error) throw new Error(data.error.data?.message || data.error.message || window.saasText("Server error"));
             return data.result;
         });
     },
@@ -147,13 +148,13 @@ function initSubdomainCheck() {
         if (!subdomainRe.test(value)) {
             input.classList.remove('is-valid');
             input.classList.add('is-invalid');
-            feedback.innerHTML = '<span class="invalid-feedback d-block"><i class="fas fa-times me-1"></i>Invalid format. Use lowercase letters, numbers, and hyphens only.</span>';
+            feedback.innerHTML = window.saasText("<span class=\"invalid-feedback d-block\"><i class=\"fas fa-times me-1\"></i>Invalid format. Use lowercase letters, numbers, and hyphens only.</span>");
             if (submitBtn) submitBtn.disabled = true;
             return;
         }
 
         // Show loading
-        feedback.innerHTML = '<span class="text-muted"><span class="spinner-sm me-2"></span>Checking availability...</span>';
+        feedback.innerHTML = window.saasText("<span class=\"text-muted\"><span class=\"spinner-sm me-2\"></span>Checking availability...</span>");
 
         const domainId = domainSelect ? parseInt(domainSelect.value) : 0;
         CloudOdoo.jsonRpc('/saas/check-subdomain', {
@@ -168,11 +169,11 @@ function initSubdomainCheck() {
             } else {
                 input.classList.remove('is-valid');
                 input.classList.add('is-invalid');
-                feedback.innerHTML = '<span class="invalid-feedback d-block"><i class="fas fa-times me-1"></i>' + (result.message || 'Subdomain not available') + '</span>';
+                feedback.innerHTML = '<span class="invalid-feedback d-block"><i class="fas fa-times me-1"></i>' + (result.message || window.saasText("Subdomain not available")) + '</span>';
                 if (submitBtn) submitBtn.disabled = true;
             }
         }).catch(() => {
-            feedback.innerHTML = '<span class="invalid-feedback d-block"><i class="fas fa-times me-1"></i>Error checking availability. Please try again.</span>';
+            feedback.innerHTML = window.saasText("<span class=\"invalid-feedback d-block\"><i class=\"fas fa-times me-1\"></i>Error checking availability. Please try again.</span>");
             if (submitBtn) submitBtn.disabled = true;
         });
     }, 500);
@@ -256,7 +257,7 @@ function initOTPTimer() {
 
         if (remaining <= 0) {
             clearInterval(interval);
-            timerEl.textContent = 'Expired';
+            timerEl.textContent = window.saasText("Expired");
         }
     }, 1000);
 }
@@ -299,9 +300,9 @@ function initPasswordStrength() {
             return;
         }
         if (password.value === confirm.value) {
-            matchFeedback.innerHTML = '<span class="valid-feedback d-block"><i class="fas fa-check me-1"></i>Passwords match</span>';
+            matchFeedback.innerHTML = window.saasText("<span class=\"valid-feedback d-block\"><i class=\"fas fa-check me-1\"></i>Passwords match</span>");
         } else {
-            matchFeedback.innerHTML = '<span class="invalid-feedback d-block"><i class="fas fa-times me-1"></i>Passwords do not match</span>';
+            matchFeedback.innerHTML = window.saasText("<span class=\"invalid-feedback d-block\"><i class=\"fas fa-times me-1\"></i>Passwords do not match</span>");
         }
     }
 }
@@ -317,6 +318,8 @@ function initPasswordStrength() {
 // so the user can't double-click before the redirect lands.
 
 function showLoadingOverlay(text, subtitle) {
+    text = text ? window.saasText(text) : text;
+    subtitle = subtitle ? window.saasText(subtitle) : subtitle;
     var existing = document.getElementById('saas-loading-overlay');
     if (existing) {
         // Already showing — just refresh the main text if requested.
@@ -340,9 +343,9 @@ function showLoadingOverlay(text, subtitle) {
         '</div>'
     );
     overlay.querySelector('.saas-loading-overlay-text-main').textContent =
-        text || 'Working on it…';
+        text || window.saasText("Working on it…");
     overlay.querySelector('.saas-loading-overlay-subtitle').textContent =
-        subtitle || 'This page will refresh automatically when it\'s done.';
+        subtitle || window.saasText("This page will refresh automatically when it's done.");
     document.body.appendChild(overlay);
     document.body.classList.add('saas-overlay-locked');
     return overlay;
@@ -351,12 +354,13 @@ function showLoadingOverlay(text, subtitle) {
 
 
 function _setButtonLoading(btn, text) {
+    text = text ? window.saasText(text) : text;
     if (btn.dataset.saasOriginalContent === undefined) {
         btn.dataset.saasOriginalContent = btn.innerHTML;
     }
     btn.innerHTML = (
         '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>' +
-        (text || 'Working…')
+        (text || window.saasText("Working…"))
     );
     btn.disabled = true;
 }
@@ -421,7 +425,7 @@ function initFormLoadingStates() {
 
         btn.dataset.originalHtml = btn.innerHTML;
         btn.disabled = true;
-        var loadingText = btn.dataset.loadingText || 'Processing...';
+        var loadingText = window.saasText(btn.dataset.loadingText || 'Processing...');
         btn.innerHTML = '<span class="spinner-sm me-2" style="display:inline-block;vertical-align:middle;"></span>' + loadingText;
     });
 }
@@ -673,7 +677,7 @@ function initUpgradePlanBuilder() {
                         'You keep your current resources until then.</div>';
                     if (submitBtn) {
                         submitBtn.className = 'btn btn-warning btn-lg w-100';
-                        submitBtn.innerHTML = '<i class="fas fa-calendar-alt me-2"></i>Schedule Change';
+                        submitBtn.innerHTML = window.saasText("<i class=\"fas fa-calendar-alt me-2\"></i>Schedule Change");
                     }
                 } else {
                     // Upgrade (workers same/increased, storage increased)
@@ -688,7 +692,7 @@ function initUpgradePlanBuilder() {
                         'You\'ll be charged the prorated difference.</div>';
                     if (submitBtn) {
                         submitBtn.className = 'btn btn-primary btn-lg w-100';
-                        submitBtn.innerHTML = '<i class="fas fa-arrow-up me-2"></i>Upgrade Now';
+                        submitBtn.innerHTML = window.saasText("<i class=\"fas fa-arrow-up me-2\"></i>Upgrade Now");
                     }
                 }
             }
@@ -813,16 +817,19 @@ function _coHideModal() {
 }
 
 function _coSetupModal(message, variant, confirmText, cancelText, onConfirm) {
+    message = window.saasText(message);
+    confirmText = confirmText ? window.saasText(confirmText) : confirmText;
+    cancelText = cancelText ? window.saasText(cancelText) : cancelText;
     variant = variant || 'warning';
-    confirmText = confirmText || 'Yes, confirm';
-    cancelText = cancelText || 'No, keep it';
+    confirmText = confirmText || window.saasText("Yes, confirm");
+    cancelText = cancelText || window.saasText("No, keep it");
 
     var iconMap = {
         warning: { bg: 'rgba(245,158,11,0.15)', color: '#F59E0B', icon: 'fa-exclamation-triangle' },
         danger:  { bg: 'rgba(239,68,68,0.15)',  color: '#EF4444', icon: 'fa-trash-alt' },
         info:    { bg: 'rgba(59,130,246,0.15)',  color: '#3B82F6', icon: 'fa-info-circle' },
     };
-    var titleMap = { warning: 'Are you sure?', danger: 'Are you sure?', info: 'Please confirm' };
+    var titleMap = { warning: window.saasText("Are you sure?"), danger: window.saasText("Are you sure?"), info: window.saasText("Please confirm") };
     var s = iconMap[variant] || iconMap.warning;
     var btnClass = variant === 'danger' ? 'btn-danger' : variant === 'info' ? 'btn-primary' : 'btn-warning';
 
@@ -830,7 +837,7 @@ function _coSetupModal(message, variant, confirmText, cancelText, onConfirm) {
     iconEl.style.background = s.bg;
     iconEl.style.color = s.color;
     iconEl.innerHTML = '<i class="fas ' + s.icon + '"></i>';
-    document.getElementById('co-confirm-title').textContent = titleMap[variant] || 'Confirm';
+    document.getElementById('co-confirm-title').textContent = titleMap[variant] || window.saasText("Confirm");
     document.getElementById('co-confirm-message').textContent = message;
     document.getElementById('co-confirm-yes').className = 'btn ' + btnClass;
     document.getElementById('co-confirm-yes').innerHTML = '<i class="fas fa-check me-1"></i>' + confirmText;
@@ -905,8 +912,8 @@ function initConfirmModals() {
         _coSetupModal(
             trigger.dataset.confirm,
             trigger.dataset.confirmVariant || 'warning',
-            trigger.dataset.confirmYes || 'Yes, confirm',
-            trigger.dataset.confirmNo || 'No, keep it',
+            trigger.dataset.confirmYes || window.saasText("Yes, confirm"),
+            trigger.dataset.confirmNo || window.saasText("No, keep it"),
             function() {
                 if (trigger.type === 'submit' || trigger.tagName === 'BUTTON') {
                     var form = trigger.closest('form');

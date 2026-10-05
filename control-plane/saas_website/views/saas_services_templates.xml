@@ -38,7 +38,7 @@
                                 <t t-if="error">
                                     <div class="alert-banner alert-danger mb-4">
                                         <i class="fas fa-exclamation-circle"></i>
-                                        <div t-esc="error"/>
+                                        <div t-esc="request.env['ir.http']._saas_display_text(error)"/>
                                     </div>
                                 </t>
 
@@ -221,7 +221,7 @@
                                 <t t-if="error">
                                     <div class="alert-banner alert-danger mb-4">
                                         <i class="fas fa-exclamation-circle"></i>
-                                        <div t-esc="error"/>
+                                        <div t-esc="request.env['ir.http']._saas_display_text(error)"/>
                                     </div>
                                 </t>
 

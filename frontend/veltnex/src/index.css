@@ -244,3 +244,20 @@ input[type="range"].veltnex-range::-moz-range-thumb {
   border: 4px solid rgb(var(--primary));
   cursor: pointer;
 }
+
+/* Arabic uses logical spacing throughout the app; technical values keep LTR. */
+html[lang="ar"] { --font-sans: "Noto Sans Arabic", "Roboto", sans-serif; font-family: "Noto Sans Arabic", "Roboto", sans-serif; }
+html[dir="rtl"] body { text-align: start; }
+input:is([type="email"], [type="url"], [type="tel"], [type="password"]),
+pre, code, .xterm, [data-technical], textarea[spellcheck="false"] {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+}
+html[dir="rtl"] svg.lucide-arrow-left,
+html[dir="rtl"] svg.lucide-arrow-right,
+html[dir="rtl"] svg.lucide-chevron-left,
+html[dir="rtl"] svg.lucide-chevron-right { transform: scaleX(-1); }
+
+/* An element centered on logical start needs the opposite RTL translation. */
+html[dir="rtl"] .start-1\/2.-translate-x-1\/2 { --tw-translate-x: 50%; }

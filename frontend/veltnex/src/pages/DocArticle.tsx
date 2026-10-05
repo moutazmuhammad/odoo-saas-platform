@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Clock, ArrowRight } from "lucide-react";
@@ -16,11 +17,11 @@ function renderBody(lines: string[]) {
     const items = list.items;
     blocks.push(
       list.ordered ? (
-        <ol key={blocks.length} className="ml-5 list-decimal space-y-2 text-muted">
+        <ol key={blocks.length} className="ms-5 list-decimal space-y-2 text-muted">
           {items.map((t, i) => <li key={i}>{t}</li>)}
         </ol>
       ) : (
-        <ul key={blocks.length} className="ml-5 list-disc space-y-2 text-muted">
+        <ul key={blocks.length} className="ms-5 list-disc space-y-2 text-muted">
           {items.map((t, i) => <li key={i}>{t}</li>)}
         </ul>
       )
@@ -71,9 +72,9 @@ export default function DocArticle() {
       <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
         <EmptyState
           icon={FileText}
-          title="Article not found"
-          description="That documentation page doesn't exist."
-          action={<Link to="/docs" className="text-primary hover:underline">Back to documentation</Link>}
+          title={i18nText("Article not found")}
+          description={i18nText("That documentation page doesn't exist.")}
+          action={<Link to="/docs" className="text-primary hover:underline">{i18nText("Back to documentation")}</Link>}
         />
       </div>
     );
@@ -87,17 +88,14 @@ export default function DocArticle() {
   return (
     <div className="mx-auto max-w-3xl animate-fade-in px-4 py-12 sm:px-6 lg:px-8">
       <Link to="/docs" className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground">
-        <ArrowLeft className="size-4" />
-        Documentation
-      </Link>
+        <ArrowLeft className="size-4" />{i18nText("Documentation")}</Link>
 
       <div className="mt-6">
         <p className="text-sm font-medium text-primary">{folder.title}</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight">{article.title}</h1>
         <p className="mt-2 flex items-center gap-1.5 text-xs text-muted">
           <Clock className="size-3" />
-          {article.readMinutes} min read
-        </p>
+          {article.readMinutes}{i18nText(" min read")}</p>
       </div>
 
       {article.image && (
@@ -118,7 +116,7 @@ export default function DocArticle() {
 
       {next && (
         <Card className="mt-12 p-5">
-          <p className="text-xs uppercase tracking-wide text-muted">Next</p>
+          <p className="text-xs uppercase tracking-wide text-muted">{i18nText("Next")}</p>
           <Link
             to={`/docs/${next.id}`}
             className="mt-1 flex items-center justify-between gap-3 font-medium transition-colors hover:text-primary"

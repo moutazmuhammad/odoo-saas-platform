@@ -1,3 +1,5 @@
+import { getLocale } from "@/i18n";
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { RefreshCw, Wallet, HardDrive, CreditCard, ArrowUpCircle, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -8,7 +10,7 @@ import { useToast } from "@/context/ToastContext";
 
 function money(amount: number, currency = "USD") {
   try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
+    return new Intl.NumberFormat(getLocale(), { style: "currency", currency }).format(amount);
   } catch {
     return `${currency} ${amount.toFixed(2)}`;
   }
@@ -47,14 +49,14 @@ export function BillingPanel({
     try {
       await api.setAutoRenew(instance.id, { subscription: !instance.auto_renew_subscription });
       toast.success(
-        "Auto-renew updated",
+        i18nText("Auto-renew updated"),
         !instance.auto_renew_subscription
-          ? "We'll renew automatically on your due date."
-          : "Auto-renew is off — you'll pay each invoice yourself.",
+          ? i18nText("We'll renew automatically on your due date.")
+          : i18nText("Auto-renew is off — you'll pay each invoice yourself."),
       );
       await onChange();
     } catch {
-      toast.error("Couldn't update auto-renew", "Please try again.");
+      toast.error(i18nText("Couldn't update auto-renew"), i18nText("Please try again."));
     } finally {
       setSaving(false);
     }
@@ -66,23 +68,23 @@ export function BillingPanel({
   async function addStorage() {
     const blockGb = cap?.block_gb || 0;
     if (!blockGb) {
-      toast.error("Storage blocks unavailable", "Please upgrade your plan to add capacity.");
+      toast.error(i18nText("Storage blocks unavailable"), i18nText("Please upgrade your plan to add capacity."));
       return;
     }
     if (!window.confirm(
-      `Add ${blockGb} GB of storage for ${money(cap!.block_price, currency)}/cycle?`,
+      i18nText("Add {0} GB of storage for {1}/cycle?", [blockGb, money(cap!.block_price, currency)]),
     )) return;
     setSaving(true);
     try {
       const res = await api.addStorageBlock(instance.id, 1);
       if (res.activated) {
-        toast.success("Storage added", "Your capacity is now expanded.");
+        toast.success(i18nText("Storage added"), i18nText("Your capacity is now expanded."));
         await onChange();
       } else if (res.checkout_url) {
         window.location.href = res.checkout_url;
       }
     } catch {
-      toast.error("Couldn't add storage", "Please try again.");
+      toast.error(i18nText("Couldn't add storage"), i18nText("Please try again."));
     } finally {
       setSaving(false);
     }
@@ -105,18 +107,16 @@ export function BillingPanel({
                 />
               </div>
               <p className="mt-1 text-xs text-muted">
-                {cap.used_gb} GB of {cap.capacity_gb} GB used ({cap.usage_pct}%)
+                {cap.used_gb}{i18nText(" GB of ")}{cap.capacity_gb}{i18nText(" GB used (")}{cap.usage_pct}%)
                 {cap.grace_days_left != null && cap.grace_days_left >= 0
                   ? ` · ${cap.grace_days_left} day(s) to expand`
                   : ""}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button onClick={upgrade}>
-                  <ArrowUpCircle className="size-4" /> Upgrade plan
-                </Button>
+                  <ArrowUpCircle className="size-4" />{i18nText(" Upgrade plan")}</Button>
                 <Button variant="secondary" onClick={addStorage}>
-                  <Plus className="size-4" /> Add storage
-                </Button>
+                  <Plus className="size-4" />{i18nText(" Add storage")}</Button>
               </div>
             </div>
           </div>
@@ -127,19 +127,18 @@ export function BillingPanel({
         {/* Auto-renew + payment method */}
         <Card className="flex flex-col gap-3 p-5">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <RefreshCw className="size-4 text-primary" /> Auto-renew
-          </div>
+            <RefreshCw className="size-4 text-primary" />{i18nText(" Auto-renew")}</div>
           <p className="text-xs text-muted">
             {instance.auto_renew_subscription
-              ? "Your subscription renews automatically on the due date."
-              : "Auto-renew is off — invoices are issued but you pay them yourself."}
+              ? i18nText("Your subscription renews automatically on the due date.")
+              : i18nText("Auto-renew is off — invoices are issued but you pay them yourself.")}
           </p>
           <div className="flex items-center gap-2 text-xs text-muted">
             <CreditCard className="size-3.5" />
             {method ? (
               <span>{method.label}{method.provider ? ` · ${method.provider}` : ""}</span>
             ) : (
-              <span>No saved payment method yet — added on your next payment.</span>
+              <span>{i18nText("No saved payment method yet — added on your next payment.")}</span>
             )}
           </div>
           <Button
@@ -148,42 +147,39 @@ export function BillingPanel({
             onClick={toggleAutoRenew}
             className="mt-1 w-fit"
           >
-            {instance.auto_renew_subscription ? "Turn off auto-renew" : "Turn on auto-renew"}
+            {instance.auto_renew_subscription ? i18nText("Turn off auto-renew") : i18nText("Turn on auto-renew")}
           </Button>
         </Card>
 
         {/* Wallet — two classes */}
         <Card className="flex flex-col gap-2 p-5 lg:col-span-2">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <Wallet className="size-4 text-primary" /> Wallet
-          </div>
+            <Wallet className="size-4 text-primary" />{i18nText(" Wallet")}</div>
           {wallet ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <p className="text-xs text-muted">Your balance</p>
+                <p className="text-xs text-muted">{i18nText("Your balance")}</p>
                 <p className="text-xl font-semibold tabular-nums">
                   {money(wallet.funded, currency)}
                 </p>
-                <p className="text-[11px] text-muted">Your money — never expires.</p>
+                <p className="text-[11px] text-muted">{i18nText("Your money — never expires.")}</p>
               </div>
               <div>
-                <p className="text-xs text-muted">Bonus credit</p>
+                <p className="text-xs text-muted">{i18nText("Bonus credit")}</p>
                 <p className="text-xl font-semibold tabular-nums">
                   {money(wallet.bonus, currency)}
                 </p>
                 <p className="text-[11px] text-muted">
                   {wallet.bonus > 0 && wallet.bonus_expiry
-                    ? `Expires ${wallet.bonus_expiry} · used first, automatically.`
-                    : "Promotional credit, applied before your own money."}
+                    ? i18nText("Expires {0} · used first, automatically.", [wallet.bonus_expiry])
+                    : i18nText("Promotional credit, applied before your own money.")}
                 </p>
               </div>
             </div>
           ) : (
-            <p className="text-xs text-muted">No wallet credit yet.</p>
+            <p className="text-xs text-muted">{i18nText("No wallet credit yet.")}</p>
           )}
-          <p className="mt-1 text-xs text-muted">
-            Credit is applied to your invoices automatically.
-          </p>
+          <p className="mt-1 text-xs text-muted">{i18nText("Credit is applied to your invoices automatically.")}</p>
         </Card>
       </div>
     </div>

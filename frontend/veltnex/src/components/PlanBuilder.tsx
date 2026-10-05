@@ -1,3 +1,5 @@
+import { getLocale } from "@/i18n";
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Sparkles } from "lucide-react";
 import { Card } from "./ui/card";
@@ -36,7 +38,7 @@ interface PlanBuilderProps {
 }
 
 function money(amount: number, currency = "USD") {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(getLocale(), {
     style: "currency",
     currency,
     maximumFractionDigits: 2,
@@ -71,8 +73,8 @@ export function PlanBuilder({
       <Card className="p-6 sm:p-8">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium">Billing cycle</p>
-            <p className="text-xs text-muted">Switch anytime, no penalty.</p>
+            <p className="text-sm font-medium">{i18nText("Billing cycle")}</p>
+            <p className="text-xs text-muted">{i18nText("Switch anytime, no penalty.")}</p>
           </div>
           <div className="relative flex rounded-lg border border-border bg-background p-1">
             {(["monthly", "yearly"] as BillingCycle[]).map((c) => (
@@ -86,7 +88,7 @@ export function PlanBuilder({
               >
                 {c}
                 {c === "yearly" && (
-                  <span className="ml-1.5 rounded-sm bg-success/20 px-1.5 py-0.5 text-[10px] font-semibold text-success">
+                  <span className="ms-1.5 rounded-sm bg-success/20 px-1.5 py-0.5 text-[10px] font-semibold text-success">
                     -{savingsPercent}%
                   </span>
                 )}
@@ -100,35 +102,35 @@ export function PlanBuilder({
 
         <div className="mt-8 space-y-8">
           <SliderControl
-            label="Workers"
+            label={i18nText("Workers")}
             value={config.workers}
             min={limits.workers.min}
             max={limits.workers.max}
             step={1}
             onChange={(v) => onChange({ ...config, workers: v })}
             format={(v) => `${v} ${v === 1 ? "worker" : "workers"}`}
-            hint={`Concurrent request capacity · recommended for ${usersLabel} users`}
+            hint={i18nText("Concurrent request capacity · recommended for {0} users", [usersLabel])}
           />
           <SliderControl
-            label="Storage"
+            label={i18nText("Storage")}
             value={config.storageGb}
             min={limits.storage.min}
             max={limits.storage.max}
             step={5}
             onChange={(v) => onChange({ ...config, storageGb: v })}
             format={(v) => formatBytes(v)}
-            hint="Database + filestore"
+            hint={i18nText("Database + filestore")}
           />
         </div>
       </Card>
 
       <Card glass className="flex flex-col p-6">
-        <p className="text-sm font-medium text-muted">Your configuration</p>
+        <p className="text-sm font-medium text-muted">{i18nText("Your configuration")}</p>
         <div className="mt-2">
-          <BreakdownRow label="Workers" value={config.workers} />
-          <BreakdownRow label="Storage" value={formatBytes(config.storageGb)} />
+          <BreakdownRow label={i18nText("Workers")} value={config.workers} />
+          <BreakdownRow label={i18nText("Storage")} value={formatBytes(config.storageGb)} />
           <BreakdownRow
-            label="Billing"
+            label={i18nText("Billing")}
             value={<span className="capitalize">{config.cycle}</span>}
           />
         </div>
@@ -136,12 +138,12 @@ export function PlanBuilder({
         <div className="mt-2 border-t border-border pt-4">
           {!price ? (
             <div className="flex h-20 items-center justify-center">
-              <Spinner label="Calculating…" />
+              <Spinner label={i18nText("Calculating…")} />
             </div>
           ) : (
             <>
               <p className="text-sm text-muted">
-                {config.cycle === "yearly" ? "Billed yearly" : "Billed monthly"}
+                {config.cycle === "yearly" ? i18nText("Billed yearly") : i18nText("Billed monthly")}
               </p>
               <p className="mt-1 text-3xl font-bold tracking-tight">
                 {money(price.total, currency)}
@@ -151,14 +153,11 @@ export function PlanBuilder({
               </p>
               {config.cycle === "yearly" ? (
                 <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
-                  <Sparkles className="size-4" />
-                  You save {money(price.yearly_savings, currency)} per year
-                </div>
+                  <Sparkles className="size-4" />{i18nText("You save ")}{money(price.yearly_savings, currency)}{i18nText(" per year")}</div>
               ) : (
                 price.yearly_savings > 0 && (
                   <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
-                    <Sparkles className="size-4" />
-                    Switch to yearly and save {money(price.yearly_savings, currency)} ({price.savings_percent}%)
+                    <Sparkles className="size-4" />{i18nText("Switch to yearly and save ")}{money(price.yearly_savings, currency)} ({price.savings_percent}%)
                   </div>
                 )
               )}

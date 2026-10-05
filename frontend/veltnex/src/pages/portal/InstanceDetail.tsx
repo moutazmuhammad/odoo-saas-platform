@@ -1,3 +1,5 @@
+import { getLocale } from "@/i18n";
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { hasPermission } from "@/lib/permissions";
 import { usePolling } from "@/hooks/usePolling";
@@ -44,7 +46,7 @@ const PROVISIONING = new Set(["provisioning", "pending_provision", "paid"]);
 
 function formatMoney(amount: number, currency = "USD") {
   try {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat(getLocale(), {
       style: "currency",
       currency,
       maximumFractionDigits: 2,
@@ -78,7 +80,7 @@ export default function InstanceDetail() {
       setInstance(data);
       patch(data);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Instance not found.");
+      setError(e instanceof ApiError ? e.message : i18nText("Instance not found."));
     }
   }, [instanceId, params, patch]);
 
@@ -89,7 +91,7 @@ export default function InstanceDetail() {
   // Notify on payment return.
   React.useEffect(() => {
     if (params.get("payment") === "success") {
-      toast.success("Payment received", "Your instance is being provisioned.");
+      toast.success(i18nText("Payment received"), i18nText("Your instance is being provisioned."));
     }
   }, [params, toast]);
 
@@ -130,9 +132,9 @@ export default function InstanceDetail() {
       <EmptyState
         className="mt-10"
         icon={ServerCrash}
-        title="Instance not found"
-        description="This instance may have been removed or you don't have access."
-        action={<Button onClick={() => navigate("/my/instances")}>Back to instances</Button>}
+        title={i18nText("Instance not found")}
+        description={i18nText("This instance may have been removed or you don't have access.")}
+        action={<Button onClick={() => navigate("/my/instances")}>{i18nText("Back to instances")}</Button>}
       />
     );
   }
@@ -140,7 +142,7 @@ export default function InstanceDetail() {
   if (!instance) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
-        <Spinner size="lg" label="Loading instance…" />
+        <Spinner size="lg" label={i18nText("Loading instance…")} />
       </div>
     );
   }
@@ -157,7 +159,7 @@ export default function InstanceDetail() {
       await load();
       toast.success(label, instance.name);
     } catch (e) {
-      toast.error("Action failed", e instanceof ApiError ? e.message : "Please try again.");
+      toast.error(i18nText("Action failed"), e instanceof ApiError ? e.message : i18nText("Please try again."));
     } finally {
       setPending(null);
     }
@@ -168,14 +170,14 @@ export default function InstanceDetail() {
     try {
       const { result } = await api.invoiceCancel(instanceId);
       setConfirmCancel(false);
-      toast.success("Invoice cancelled", "The pending charge was removed.");
+      toast.success(i18nText("Invoice cancelled"), i18nText("The pending charge was removed."));
       if (result === "instance_cancelled") {
         navigate("/my/instances");
       } else {
         await load();
       }
     } catch (e) {
-      toast.error("Couldn't cancel", e instanceof ApiError ? e.message : "Please try again.");
+      toast.error(i18nText("Couldn't cancel"), e instanceof ApiError ? e.message : i18nText("Please try again."));
     } finally {
       setCancelling(false);
     }
@@ -190,11 +192,11 @@ export default function InstanceDetail() {
         return;
       }
       if (applied) {
-        toast.success("Compute tier changed", "Scaling in the background — this can take a few minutes.");
+        toast.success(i18nText("Compute tier changed"), i18nText("Scaling in the background — this can take a few minutes."));
         await load();
       }
     } catch (e) {
-      toast.error("Couldn't change compute tier", e instanceof ApiError ? e.message : "Please try again.");
+      toast.error(i18nText("Couldn't change compute tier"), e instanceof ApiError ? e.message : i18nText("Please try again."));
     } finally {
       setChangingTier(null);
     }
@@ -203,7 +205,7 @@ export default function InstanceDetail() {
   return (
     <div className="animate-fade-in">
       {/* Identity (name/status/url) lives in the shared InstanceLayout header.
-          Here we keep only the lifecycle actions, right-aligned. */}
+          Here we keep only the lifecycle actions, end-aligned. */}
       <div className="mb-6 flex flex-wrap justify-end gap-2">
           {isRunning ? (
             <>
@@ -211,33 +213,27 @@ export default function InstanceDetail() {
                 variant="secondary"
                 icon={RotateCw}
                 loading={pending === "restart"}
-                loadingText="Restarting…"
+                loadingText={i18nText("Restarting\u2026")}
                 disabled={!hasPermission(instance.permissions, "instance.operate") || !!pending}
-                onClick={() => run("restart", "Instance restarted")}
-              >
-                Restart
-              </ActionButton>
+                onClick={() => run("restart", i18nText("Instance restarted"))}
+              >{i18nText("Restart")}</ActionButton>
               <ActionButton
                 variant="danger"
                 icon={Square}
                 loading={pending === "stop"}
-                loadingText="Stopping…"
+                loadingText={i18nText("Stopping\u2026")}
                 disabled={!hasPermission(instance.permissions, "instance.operate") || !!pending}
-                onClick={() => run("stop", "Instance stopped")}
-              >
-                Stop
-              </ActionButton>
+                onClick={() => run("stop", i18nText("Instance stopped"))}
+              >{i18nText("Stop")}</ActionButton>
             </>
           ) : (
             <ActionButton
               icon={Play}
               loading={pending === "start" || isBusy}
-              loadingText={isBusy ? "Provisioning…" : "Starting…"}
+              loadingText={isBusy ? i18nText("Provisioning…") : i18nText("Starting…")}
               disabled={!hasPermission(instance.permissions, "instance.operate") || !!pending || isBusy || isSuspended || awaitingPayment}
-              onClick={() => run("start", "Instance started")}
-            >
-              Start
-            </ActionButton>
+              onClick={() => run("start", i18nText("Instance started"))}
+            >{i18nText("Start")}</ActionButton>
           )}
       </div>
 
@@ -245,20 +241,18 @@ export default function InstanceDetail() {
         <AlertBanner
           className="mt-6"
           variant="info"
-          title="Provisioning in progress"
-          description="Your instance is being prepared. Resources come online automatically — this page updates itself."
+          title={i18nText("Provisioning in progress")}
+          description={i18nText("Your instance is being prepared. Resources come online automatically — this page updates itself.")}
         />
       )}
       {isSuspended && (
         <AlertBanner
           className="mt-6"
           variant="warning"
-          title="This instance is suspended"
-          description="Suspended instances can't be started until billing is resolved."
+          title={i18nText("This instance is suspended")}
+          description={i18nText("Suspended instances can't be started until billing is resolved.")}
           action={
-            hasPermission(instance.permissions, "billing.manage") ? <Button size="sm" variant="secondary" onClick={() => navigate("/my/billing")}>
-              View invoices
-            </Button> : undefined
+            hasPermission(instance.permissions, "billing.manage") ? <Button size="sm" variant="secondary" onClick={() => navigate("/my/billing")}>{i18nText("View invoices")}</Button> : undefined
           }
         />
       )}
@@ -266,14 +260,12 @@ export default function InstanceDetail() {
         <AlertBanner
           className="mt-6"
           variant="danger"
-          title="Your instance was stopped"
+          title={i18nText("Your instance was stopped")}
           description={instance.last_error}
           action={
             instance.is_hosting ? (
               <Button size="sm" variant="secondary" onClick={() => navigate(`/my/instances/${id}/code`)}>
-                <GitBranch className="size-4" />
-                Review code &amp; packages
-              </Button>
+                <GitBranch className="size-4" />{i18nText("Review code & packages")}</Button>
             ) : undefined
           }
         />
@@ -284,29 +276,23 @@ export default function InstanceDetail() {
           variant="warning"
           title={
             instance.has_retained_snapshot
-              ? "This instance is cancelled — your last snapshot is kept"
-              : "This instance is cancelled"
+              ? i18nText("This instance is cancelled — your last snapshot is kept")
+              : i18nText("This instance is cancelled")
           }
           description={
             instance.has_retained_snapshot
-              ? `We've kept your most recent full snapshot${
-                  instance.retained_snapshot_date
-                    ? ` (${formatDate(instance.retained_snapshot_date)})` : ""
-                }. Reactivate the instance to restore it. Because the instance was deleted, a one-time data-restoration fee${
-                  instance.restoration_fee
+              ? i18nText("We've kept your most recent full snapshot{0}. Reactivate the instance to restore it. Because the instance was deleted, a one-time data-restoration fee{1} applies on top of the new plan.", [instance.retained_snapshot_date
+                    ? ` (${formatDate(instance.retained_snapshot_date)})` : "", instance.restoration_fee
                     ? ` of ${formatMoney(instance.restoration_fee, instance.currency)}`
-                    : ""
-                } applies on top of the new plan.`
-              : "Reactivate to provision a fresh instance. No snapshot was retained, so it will start empty."
+                    : ""])
+              : i18nText("Reactivate to provision a fresh instance. No snapshot was retained, so it will start empty.")
           }
           action={
             <Button
               size="sm"
               onClick={() => (window.location.href = instance.reactivate_url || `/my/instances/${id}/reactivate`)}
             >
-              <RotateCw className="size-4" />
-              Reactivate
-            </Button>
+              <RotateCw className="size-4" />{i18nText("Reactivate")}</Button>
           }
         />
       )}
@@ -314,22 +300,18 @@ export default function InstanceDetail() {
         <AlertBanner
           className="mt-6"
           variant="warning"
-          title="You have an unpaid invoice for this instance"
+          title={i18nText("You have an unpaid invoice for this instance")}
           description={
             instance.cancellable_invoice_id
-              ? "Complete the payment to activate this change — or decline it to remove the invoice."
-              : "Complete payment to keep your instance active."
+              ? i18nText("Complete the payment to activate this change — or decline it to remove the invoice.")
+              : i18nText("Complete payment to keep your instance active.")
           }
           action={
             <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={() => (window.location.href = instance.checkout_url || "/my/billing")}>
-                <CreditCard className="size-4" />
-                Pay now
-              </Button>
+                <CreditCard className="size-4" />{i18nText("Pay now")}</Button>
               {instance.cancellable_invoice_id && (
-                <Button size="sm" variant="secondary" onClick={() => setConfirmCancel(true)}>
-                  Decline
-                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setConfirmCancel(true)}>{i18nText("Decline")}</Button>
               )}
             </div>
           }
@@ -338,8 +320,8 @@ export default function InstanceDetail() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <UsageCard icon={Cpu} label="CPU" helpAnchor="cpu-usage" value={live?.cpu ?? instance.usage.cpu} active={isRunning} live={isRunning && !!live} history={cpuHist} />
-        <UsageCard icon={MemoryStick} label="Memory" helpAnchor="ram-usage" value={live?.ram ?? instance.usage.ram} active={isRunning} live={isRunning && !!live} history={ramHist} />
-        <UsageCard icon={HardDrive} label="Storage" helpAnchor="storage-usage" value={instance.usage.storage} active />
+        <UsageCard icon={MemoryStick} label={i18nText("Memory")} helpAnchor="ram-usage" value={live?.ram ?? instance.usage.ram} active={isRunning} live={isRunning && !!live} history={ramHist} />
+        <UsageCard icon={HardDrive} label={i18nText("Storage")} helpAnchor="storage-usage" value={instance.usage.storage} active />
       </div>
 
       <div className="mt-4">
@@ -347,28 +329,26 @@ export default function InstanceDetail() {
       </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <InfoCard label="Region" value={<span className="text-base">{(instance.region || "—").split(" · ").pop()}</span>} />
-        <InfoCard label="Version" value={<span className="text-base">{instance.version || "—"}</span>} />
-        <InfoCard label="Plan" value={<span className="text-base">{instance.plan_name || `${instance.workers}W`}</span>} hint={`${instance.workers} workers`} />
-        <InfoCard label="Storage" value={formatBytes(instance.storage_gb)} hint={instance.created ? `Since ${formatDate(instance.created)}` : undefined} />
+        <InfoCard label={i18nText("Region")} value={<span className="text-base">{(instance.region || "—").split(" · ").pop()}</span>} />
+        <InfoCard label={i18nText("Version")} value={<span className="text-base">{instance.version || "—"}</span>} />
+        <InfoCard label={i18nText("Plan")} value={<span className="text-base">{instance.plan_name || `${instance.workers}W`}</span>} hint={`${instance.workers} workers`} />
+        <InfoCard label={i18nText("Storage")} value={formatBytes(instance.storage_gb)} hint={instance.created ? i18nText("Since {0}", [formatDate(instance.created)]) : undefined} />
       </div>
 
       {hasPermission(instance.permissions, "billing.manage") && <Card className="mt-4 flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm text-muted">Current plan</p>
+          <p className="text-sm text-muted">{i18nText("Current plan")}</p>
           <p className="mt-0.5 text-base font-semibold">{instance.plan_name || `${instance.workers} workers`}</p>
           <p className="mt-1 text-xs text-muted">
-            {instance.workers} workers · {formatBytes(instance.storage_gb)} · billed {instance.billing_cycle}
+            {instance.workers}{i18nText(" workers · ")}{formatBytes(instance.storage_gb)}{i18nText(" · billed ")}{instance.billing_cycle}
           </p>
           {instance.pending_plan && (
             <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-warning">
-              <Clock className="size-3.5" /> Change to “{instance.pending_plan}” pending payment
-            </p>
+              <Clock className="size-3.5" />{i18nText(" Change to “")}{instance.pending_plan}{i18nText("” pending payment")}</p>
           )}
           {instance.scheduled_plan && (
             <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-info">
-              <Clock className="size-3.5" /> Downgrade to “{instance.scheduled_plan}” scheduled for next billing cycle
-            </p>
+              <Clock className="size-3.5" />{i18nText(" Downgrade to “")}{instance.scheduled_plan}{i18nText("” scheduled for next billing cycle")}</p>
           )}
         </div>
         <Button
@@ -379,7 +359,7 @@ export default function InstanceDetail() {
           }}
         >
           <ArrowUpCircle className="size-4" />
-          {instance.is_trial ? "Upgrade plan" : "Change plan"}
+          {instance.is_trial ? i18nText("Upgrade plan") : i18nText("Change plan")}
         </Button>
       </Card>}
 
@@ -397,19 +377,17 @@ export default function InstanceDetail() {
       <Dialog
         open={confirmCancel}
         onClose={() => !cancelling && setConfirmCancel(false)}
-        title="Decline this invoice?"
+        title={i18nText("Decline this invoice?")}
         description={
           instance.state === "draft" || instance.state === "pending_payment"
-            ? "This will cancel the pending charge and the new instance order — the subdomain will be released. This can't be undone."
-            : "This will cancel the pending charge and undo the change it was for. Your instance keeps running on its current plan."
+            ? i18nText("This will cancel the pending charge and the new instance order — the subdomain will be released. This can't be undone.")
+            : i18nText("This will cancel the pending charge and undo the change it was for. Your instance keeps running on its current plan.")
         }
       >
         <div className="mt-6 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setConfirmCancel(false)} disabled={cancelling}>
-            Keep it
-          </Button>
+          <Button variant="secondary" onClick={() => setConfirmCancel(false)} disabled={cancelling}>{i18nText("Keep it")}</Button>
           <Button variant="danger" onClick={cancelInvoice} disabled={cancelling}>
-            {cancelling ? "Cancelling…" : "Yes, decline"}
+            {cancelling ? i18nText("Cancelling…") : i18nText("Yes, decline")}
           </Button>
         </div>
       </Dialog>
@@ -436,8 +414,7 @@ function ComputeTierCard({
   return (
     <Card className="mt-4 p-5">
       <div className="flex items-center justify-between">
-        <p className="font-medium">
-          Compute Tier<HelpHint anchor="compute-tiers" className="ml-1.5" />
+        <p className="font-medium">{i18nText("Compute Tier")}<HelpHint anchor="compute-tiers" className="ms-1.5" />
         </p>
         {current && (
           <span className="inline-flex items-center gap-1.5 text-xs text-success">
@@ -450,13 +427,9 @@ function ComputeTierCard({
         <div className="mt-3 flex flex-col gap-2 rounded-lg border border-info/40 bg-info/5 p-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-2">
             <Clock className="mt-0.5 size-4 shrink-0 text-info" />
-            <p className="text-xs text-muted">
-              Payment pending for the <strong>{pending.name}</strong> tier.
-            </p>
+            <p className="text-xs text-muted">{i18nText("Payment pending for the ")}<strong>{pending.name}</strong>{i18nText(" tier.")}</p>
           </div>
-          <Button size="sm" className="shrink-0" onClick={onCheckout}>
-            Complete checkout
-          </Button>
+          <Button size="sm" className="shrink-0" onClick={onCheckout}>{i18nText("Complete checkout")}</Button>
         </div>
       )}
 
@@ -476,23 +449,23 @@ function ComputeTierCard({
                 <p className="text-sm font-medium">{tier.name}</p>
               </div>
               <p className="text-xs text-muted">
-                {tier.price > 0 ? `${tier.price}/month` : "Included"}
+                {tier.price > 0 ? `${tier.price}/month` : i18nText("Included")}
               </p>
               {tier.description && (
                 <p className="text-xs text-muted">{tier.description}</p>
               )}
               {isCurrent ? (
-                <span className="mt-1 text-center text-xs font-medium text-success">Current tier</span>
+                <span className="mt-1 text-center text-xs font-medium text-success">{i18nText("Current tier")}</span>
               ) : (
                 <ActionButton
                   size="sm"
                   variant={isUpgrade ? "default" : "secondary"}
                   loading={changingTier === tier.id}
-                  loadingText="Starting…"
+                  loadingText={i18nText("Starting\u2026")}
                   onClick={() => onChange(tier.id)}
                   disabled={changingTier !== null && changingTier !== tier.id}
                 >
-                  {isUpgrade ? "Upgrade" : "Downgrade"}
+                  {isUpgrade ? i18nText("Upgrade") : i18nText("Downgrade")}
                 </ActionButton>
               )}
             </div>
@@ -530,10 +503,8 @@ function UsageCard({
           {label}
           {helpAnchor && <HelpHint anchor={helpAnchor} />}
           {live && (
-            <span className="ml-1 inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-success">
-              <span className="size-1.5 rounded-full bg-success animate-pulse-soft" />
-              live
-            </span>
+            <span className="ms-1 inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-success">
+              <span className="size-1.5 rounded-full bg-success animate-pulse-soft" />{"live"}</span>
           )}
         </div>
         <span className="text-sm font-semibold tabular-nums">{active ? `${value}%` : "—"}</span>

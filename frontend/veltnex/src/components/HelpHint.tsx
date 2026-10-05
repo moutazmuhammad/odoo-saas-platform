@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import { HelpCircle } from "lucide-react";
 import { helpTip } from "@/lib/helpTopics";
 import { cn } from "@/lib/utils";
@@ -24,7 +25,7 @@ export function HelpHint({
       target="_blank"
       rel="noopener noreferrer"
       title={text}
-      aria-label={text || "Learn more"}
+      aria-label={text || i18nText("Learn more")}
       onClick={(e) => e.stopPropagation()}
       className={cn(
         // cursor-[inherit] = don't change the mouse pointer on hover.

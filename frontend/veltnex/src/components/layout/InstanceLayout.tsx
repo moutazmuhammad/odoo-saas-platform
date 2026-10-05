@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import { PermissionContext } from "@/lib/permissions";
 import { Outlet, useParams, Link } from "react-router-dom";
 import { GitBranch, Globe, ExternalLink, ArrowLeft } from "lucide-react";
@@ -26,7 +27,7 @@ export default function InstanceLayout() {
   if (!inst && loading) {
     return (
       <div className="mt-20 flex justify-center">
-        <Spinner size="lg" label="Loading…" />
+        <Spinner size="lg" label={i18nText("Loading…")} />
       </div>
     );
   }
@@ -38,9 +39,7 @@ export default function InstanceLayout() {
         to="/my/instances"
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
       >
-        <ArrowLeft className="size-4" />
-        All projects
-      </Link>
+        <ArrowLeft className="size-4" />{i18nText("All projects")}</Link>
 
       {inst && (
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -76,7 +75,7 @@ export default function InstanceLayout() {
                 </span>
               )}
               {inst.domain && (
-                <CopyButton value={inst.url || `https://${inst.domain}`} label="Copy URL" />
+                <CopyButton value={inst.url || `https://${inst.domain}`} label={i18nText("Copy URL")} />
               )}
             </div>
           </div>

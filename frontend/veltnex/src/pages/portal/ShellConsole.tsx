@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -96,7 +97,7 @@ export default function ShellConsole({ instanceId }: { instanceId: number }) {
         term.focus();
       } catch (e) {
         if (disposed) return;
-        setError(e instanceof ApiError ? e.message : "Couldn't open the shell.");
+        setError(e instanceof ApiError ? e.message : i18nText("Couldn't open the shell."));
         setStatus("error");
       }
     };
@@ -137,13 +138,13 @@ export default function ShellConsole({ instanceId }: { instanceId: number }) {
           )}
         />
         {status === "open"
-          ? "Connected"
+          ? i18nText("Connected")
           : status === "connecting"
-            ? "Connecting…"
+            ? i18nText("Connecting…")
             : status === "error"
-              ? "Failed"
-              : "Session closed"}
-        <span className="text-muted/60">· shell</span>
+              ? i18nText("Failed")
+              : i18nText("Session closed")}
+        <span className="text-muted/60">{i18nText("· shell")}</span>
       </div>
       {error ? (
         <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">

@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Check, Boxes } from "lucide-react";
@@ -17,30 +18,23 @@ export default function Services() {
       .services()
       .then(setServices)
       .catch((e) =>
-        setError(e instanceof ApiError ? e.message : "Could not load services.")
+        setError(e instanceof ApiError ? e.message : i18nText("Could not load services."))
       );
   }, []);
 
   return (
     <div className="mx-auto max-w-7xl animate-fade-in px-4 py-16 sm:px-6 lg:px-8">
       <div>
-        <p className="text-sm font-medium text-primary">Ready-Made Apps</p>
-        <h1 className="mt-2 max-w-2xl text-4xl font-bold tracking-tight">
-          Pre-built Odoo apps, running on day one
-        </h1>
-        <p className="mt-4 max-w-2xl text-muted">
-          Pick a solution tuned to your industry — pharmacy management, retail,
-          clinics and more. Each one boots with its modules and database
-          already set up, ready to use and yours to customize. Open any app to
-          see the full details and start a free trial.
-        </p>
+        <p className="text-sm font-medium text-primary">{i18nText("Ready-Made Apps")}</p>
+        <h1 className="mt-2 max-w-2xl text-4xl font-bold tracking-tight">{i18nText("Pre-built Odoo apps, running on day one")}</h1>
+        <p className="mt-4 max-w-2xl text-muted">{i18nText("Pick a solution tuned to your industry — pharmacy management, retail, clinics and more. Each one boots with its modules and database already set up, ready to use and yours to customize. Open any app to see the full details and start a free trial.")}</p>
       </div>
 
-      {error && <AlertBanner className="mt-8" variant="danger" title="Couldn't load services" description={error} />}
+      {error && <AlertBanner className="mt-8" variant="danger" title={i18nText("Couldn't load services")} description={error} />}
 
       {!services && !error && (
         <div className="mt-16 flex justify-center">
-          <Spinner size="lg" label="Loading services…" />
+          <Spinner size="lg" label={i18nText("Loading services…")} />
         </div>
       )}
 
@@ -48,8 +42,8 @@ export default function Services() {
         <EmptyState
           className="mt-12"
           icon={Boxes}
-          title="No services published yet"
-          description="Check back soon — new services are on the way."
+          title={i18nText("No services published yet")}
+          description={i18nText("Check back soon — new services are on the way.")}
         />
       )}
 
@@ -73,8 +67,7 @@ export default function Services() {
                     ))}
                   </ul>
                 )}
-                <span className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-primary">
-                  View plans <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+                <span className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-primary">{i18nText("View plans ")}<ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
                 </span>
               </Card>
             </Link>

@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Spinner } from "@/components/Spinner";
@@ -12,7 +13,7 @@ export function ProtectedRoute() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Spinner size="lg" label="Loading your workspace…" />
+        <Spinner size="lg" label={i18nText("Loading your workspace…")} />
       </div>
     );
   }

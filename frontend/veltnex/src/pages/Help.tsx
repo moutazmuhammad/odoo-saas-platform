@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Search, BookOpen, LifeBuoy } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -56,17 +57,15 @@ export default function Help() {
         <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
           <LifeBuoy className="size-6" />
         </span>
-        <h1 className="mt-5 text-4xl font-bold tracking-tight">Help &amp; definitions</h1>
-        <p className="mt-3 text-muted">
-          Plain-language explanations of every option you can choose.
-        </p>
+        <h1 className="mt-5 text-4xl font-bold tracking-tight">{i18nText("Help & definitions")}</h1>
+        <p className="mt-3 text-muted">{i18nText("Plain-language explanations of every option you can choose.")}</p>
       </div>
 
       <div className="relative mx-auto mt-8 max-w-xl">
-        <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+        <Search className="absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
         <Input
-          className="h-12 pl-10"
-          placeholder="Search help…"
+          className="h-12 ps-10"
+          placeholder={i18nText("Search help…")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -76,8 +75,8 @@ export default function Help() {
         <EmptyState
           className="mt-12"
           icon={BookOpen}
-          title="Nothing found"
-          description={`Nothing matches "${query}". Try a different term.`}
+          title={i18nText("Nothing found")}
+          description={i18nText("Nothing matches \"{0}\". Try a different term.", [query])}
         />
       ) : (
         <div className="mt-12 space-y-12">

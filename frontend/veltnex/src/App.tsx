@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import * as React from "react";
 import { useInstances } from "./context/InstancesContext";
@@ -62,7 +63,7 @@ function InstanceHome() {
   if (!inst && loading) {
     return (
       <div className="mt-20 flex justify-center">
-        <Spinner size="lg" label="Loading…" />
+        <Spinner size="lg" label={i18nText("Loading…")} />
       </div>
     );
   }

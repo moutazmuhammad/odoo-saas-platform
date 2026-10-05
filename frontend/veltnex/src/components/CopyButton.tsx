@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -6,7 +7,7 @@ import { cn } from "@/lib/utils";
  *  Reusable across the app (instance URLs, repo URLs, webhook URLs, …). */
 export function CopyButton({
   value,
-  label = "Copy",
+  label = i18nText("Copy"),
   className,
 }: {
   value: string;
@@ -29,7 +30,7 @@ export function CopyButton({
     <button
       type="button"
       onClick={copy}
-      title={copied ? "Copied" : label}
+      title={copied ? i18nText("Copied") : label}
       aria-label={label}
       className={cn(
         "inline-flex items-center justify-center rounded-md p-1 text-muted transition-colors hover:bg-foreground/6 hover:text-foreground",

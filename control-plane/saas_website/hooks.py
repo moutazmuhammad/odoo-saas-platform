@@ -35,3 +35,13 @@ def _set_website_favicon(env):
 
 def post_init_hook(env):
     _set_website_favicon(env)
+    _enable_website_languages(env)
+
+
+def _enable_website_languages(env):
+    arabic = env['res.lang']._activate_lang('ar_001')
+    english = env['res.lang']._activate_lang('en_US')
+    for website in env['website'].sudo().search([]):
+        website.write({'language_ids': [(4, arabic.id), (4, english.id)]})
+    installed = env['ir.module.module'].search([('state', '=', 'installed')]).mapped('name')
+    env['ir.module.module']._load_module_terms(installed, ['ar_001'], overwrite=False)

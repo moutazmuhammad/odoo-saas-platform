@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
@@ -82,7 +83,7 @@ export function Dialog({
           <button
             onClick={onClose}
             className="rounded-md p-1 text-muted transition-colors hover:bg-border hover:text-foreground"
-            aria-label="Close"
+            aria-label={i18nText("Close")}
           >
             <X className="size-4" />
           </button>

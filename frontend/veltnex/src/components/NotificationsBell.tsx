@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, CheckCircle2 } from "lucide-react";
@@ -34,15 +35,15 @@ export function NotificationsBell({ className }: { className?: string }) {
         const out: Note[] = [];
         for (const inv of d.recent_invoices) {
           if (inv.status === "open" || inv.status === "overdue")
-            out.push({ id: `inv-${inv.id}`, text: `Invoice ${inv.number} ${inv.status}`, to: `/my/billing/${inv.id}`, tone: "warning" });
+            out.push({ id: `inv-${inv.id}`, text: i18nText("Invoice {0} {1}", [inv.number, inv.status]), to: `/my/billing/${inv.id}`, tone: "warning" });
         }
         for (const i of d.instances) {
           if (i.state === "suspended")
             out.push({ id: `s-${i.id}`, text: `${i.name} is suspended`, to: link(i), tone: "warning" });
           else if (i.state === "failed")
-            out.push({ id: `f-${i.id}`, text: `${i.name} failed to deploy`, to: link(i), tone: "danger" });
+            out.push({ id: `f-${i.id}`, text: i18nText("{0} failed to deploy", [i.name]), to: link(i), tone: "danger" });
           else if (i.state === "pending_payment")
-            out.push({ id: `p-${i.id}`, text: `${i.name} awaiting payment`, to: `/my/instances/${i.id}/checkout`, tone: "info" });
+            out.push({ id: `p-${i.id}`, text: i18nText("{0} awaiting payment", [i.name]), to: `/my/instances/${i.id}/checkout`, tone: "info" });
         }
         setNotes(out);
       })
@@ -73,11 +74,11 @@ export function NotificationsBell({ className }: { className?: string }) {
       <button
         onClick={() => setOpen((o) => !o)}
         className="relative rounded-md p-2 text-muted transition-colors hover:bg-card hover:text-foreground"
-        aria-label={`Notifications${count ? ` (${count})` : ""}`}
+        aria-label={i18nText("Notifications") + (count ? ` (${count})` : "")}
       >
         <Bell className="size-5" />
         {count > 0 && (
-          <span className="absolute right-1.5 top-1.5 flex size-2 items-center justify-center">
+          <span className="absolute end-1.5 top-1.5 flex size-2 items-center justify-center">
             <span className="absolute inline-flex size-2 animate-ping rounded-full bg-warning/70" />
             <span className="relative inline-flex size-2 rounded-full bg-warning" />
           </span>
@@ -85,15 +86,15 @@ export function NotificationsBell({ className }: { className?: string }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-card shadow-2xl animate-fade-in">
+        <div className="absolute end-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-card shadow-2xl animate-fade-in">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <p className="text-sm font-semibold">Notifications</p>
-            {count > 0 && <span className="text-xs text-muted">{count} need action</span>}
+            <p className="text-sm font-semibold">{i18nText("Notifications")}</p>
+            {count > 0 && <span className="text-xs text-muted">{count}{i18nText(" need action")}</span>}
           </div>
           {count === 0 ? (
             <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
               <CheckCircle2 className="size-6 text-success" />
-              <p className="text-sm text-muted">You're all caught up.</p>
+              <p className="text-sm text-muted">{i18nText("You're all caught up.")}</p>
             </div>
           ) : (
             <ul className="max-h-80 divide-y divide-border overflow-y-auto">
@@ -104,7 +105,7 @@ export function NotificationsBell({ className }: { className?: string }) {
                       setOpen(false);
                       navigate(n.to);
                     }}
-                    className="flex w-full items-start gap-2.5 px-4 py-3 text-left text-sm transition-colors hover:bg-background/50"
+                    className="flex w-full items-start gap-2.5 px-4 py-3 text-start text-sm transition-colors hover:bg-background/50"
                   >
                     <span
                       className={cn(

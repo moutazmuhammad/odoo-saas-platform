@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Link } from "react-router-dom";
 import { PermissionContext, hasPermission } from "@/lib/permissions";
@@ -91,13 +92,13 @@ type SectionTab =
   | "logs"
   | "snapshots";
 const SECTION_TABS: { key: SectionTab; label: string; icon: typeof Activity }[] = [
-  { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "metrics", label: "Metrics", icon: Activity },
-  { key: "databases", label: "Databases", icon: Database },
-  { key: "shell", label: "Shell", icon: TerminalSquare },
+  { key: "overview", label: i18nText("Overview"), icon: LayoutDashboard },
+  { key: "metrics", label: i18nText("Metrics"), icon: Activity },
+  { key: "databases", label: i18nText("Databases"), icon: Database },
+  { key: "shell", label: i18nText("Shell"), icon: TerminalSquare },
   { key: "sql", label: "SQL", icon: TableProperties },
-  { key: "logs", label: "Logs", icon: ScrollText },
-  { key: "snapshots", label: "Snapshots", icon: Archive },
+  { key: "logs", label: i18nText("Logs"), icon: ScrollText },
+  { key: "snapshots", label: i18nText("Snapshots"), icon: Archive },
 ];
 const SECTION_KEYS: readonly string[] = [
   "overview",
@@ -124,7 +125,7 @@ function SectionTabBar({
 }) {
   return (
     <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-3">
-      {SECTION_TABS.filter(t => hasPermission(permissions, ({ overview: 'project.view', metrics: 'project.view', databases: 'db.view', shell: 'terminal.open', sql: 'sql.execute', logs: 'logs.view', snapshots: 'backup.view' } as Record<string, string>)[t.key])).map((t) => {
+      {SECTION_TABS.filter(t => hasPermission(permissions, ({ overview: "project.view", metrics: "project.view", databases: "db.view", shell: "terminal.open", sql: "sql.execute", logs: "logs.view", snapshots: "backup.view" } as Record<string, string>)[t.key])).map((t) => {
         const active = tab === t.key;
         return (
           <button
@@ -221,7 +222,7 @@ export default function Environments() {
         return all[0]?.id || d.production.id;
       });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not load this project.");
+      setError(e instanceof ApiError ? e.message : i18nText("Could not load this project."));
     }
   }, [instanceId]);
 
@@ -249,14 +250,14 @@ export default function Environments() {
   if (error) {
     return (
       <div className="animate-fade-in">
-        <AlertBanner className="mt-6" variant="danger" title="Project" description={error} />
+        <AlertBanner className="mt-6" variant="danger" title={i18nText("Project")} description={error} />
       </div>
     );
   }
   if (!data) {
     return (
       <div className="mt-20 flex justify-center">
-        <Spinner size="lg" label="Loading project…" />
+        <Spinner size="lg" label={i18nText("Loading project…")} />
       </div>
     );
   }
@@ -264,9 +265,9 @@ export default function Environments() {
   if (!selected) {
     return <div className="space-y-4">
       <h1 className="text-2xl font-bold">{data.project_name}</h1>
-      <p className="text-sm text-muted">No environments are available in your assigned scopes yet.</p>
-      {data.can_manage_access && <Link className="inline-block text-primary" to={`/my/instances/${instanceId}/access`}>Manage team & permissions</Link>}
-      <div className="flex gap-3">{(["staging", "development"] as const).map(type => data.can_create?.[type] && <Button key={type} disabled={!canCreate} onClick={() => setCreateType(type)}>Create {type} environment</Button>)}</div>
+      <p className="text-sm text-muted">{i18nText("No environments are available in your assigned scopes yet.")}</p>
+      {data.can_manage_access && <Link className="inline-block text-primary" to={`/my/instances/${instanceId}/access`}>{i18nText("Manage team & permissions")}</Link>}
+      <div className="flex gap-3">{(["staging", "development"] as const).map(type => data.can_create?.[type] && <Button key={type} disabled={!canCreate} onClick={() => setCreateType(type)}>{i18nText("Create ")}{type}{i18nText(" environment")}</Button>)}</div>
       <CreateEnvDialog instanceId={instanceId} type={createType} onClose={() => setCreateType(null)} onCreated={(_auto, childId) => { setCreateType(null); if (childId) selectEnv(childId); load(); }} />
     </div>;
   }
@@ -276,17 +277,17 @@ export default function Environments() {
 
   return (
     <div className="animate-fade-in">
-      {data.can_manage_access && <Link className="mb-4 inline-block text-sm font-medium text-primary" to={`/my/instances/${instanceId}/access`}>Manage team & permissions →</Link>}
+      {data.can_manage_access && <Link className="mb-4 inline-block text-sm font-medium text-primary" to={`/my/instances/${instanceId}/access`}>{i18nText("Manage team & permissions →")}</Link>}
       <div className="flex flex-col gap-5 lg:flex-row">
         {/* ───────── Left sidebar: branches (sticky per-project bar) ───── */}
         <aside className="lg:sticky lg:top-20 lg:max-h-[calc(100dvh-14.5rem)] lg:w-64 lg:shrink-0 lg:self-start lg:overflow-y-auto">
           <div className="rounded-xl border border-border bg-card/40">
             <div className="border-b border-border p-3">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+                <Search className="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
                 <Input
-                  className="h-9 pl-8"
-                  placeholder="Filter branches…"
+                  className="h-9 ps-8"
+                  placeholder={i18nText("Filter branches…")}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                 />
@@ -295,14 +296,14 @@ export default function Environments() {
 
             <div className="p-2">
               <div className="px-2 py-1.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Project</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{i18nText("Project")}</p>
                 <p className="mt-0.5 truncate text-sm font-semibold">{data.project_name}</p>
                 {data.repo_url && (
                   <p className="truncate text-xs text-muted">{repoShort(data.repo_url)}</p>
                 )}
               </div>
 
-              {hasPermission(data.production.permissions, "project.view") && <SidebarSection title="Production">
+              {hasPermission(data.production.permissions, "project.view") && <SidebarSection title={i18nText("Production")}>
                 <BranchItem
                   env={data.production}
                   filter={filter}
@@ -313,7 +314,7 @@ export default function Environments() {
               </SidebarSection>}
 
               <SidebarSection
-                title="Staging"
+                title={i18nText("Staging")}
                 onAdd={data.can_create?.staging === false ? undefined : () => setCreateType("staging")}
               >
                 <BranchList
@@ -326,7 +327,7 @@ export default function Environments() {
               </SidebarSection>
 
               <SidebarSection
-                title="Development"
+                title={i18nText("Development")}
                 onAdd={data.can_create?.development === false ? undefined : () => setCreateType("development")}
               >
                 <BranchList
@@ -362,9 +363,7 @@ export default function Environments() {
 
           {tab === "overview" && canCreate && allEnvs.length > 1 && (
             <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
-              <GitMerge className="size-3.5" />
-              Tip: drag a branch onto another in the sidebar to merge it and redeploy.
-            </p>
+              <GitMerge className="size-3.5" />{i18nText("Tip: drag a branch onto another in the sidebar to merge it and redeploy.")}</p>
           )}
         </div>
       </div>
@@ -376,7 +375,7 @@ export default function Environments() {
         onCreated={(auto, childId) => {
           setCreateType(null);
           if (childId) selectEnv(childId);
-          if (auto) toast.success("Environment created", "Provisioning your new server now.");
+          if (auto) toast.success(i18nText("Environment created"), i18nText("Provisioning your new server now."));
           load();
         }}
       />
@@ -387,7 +386,7 @@ export default function Environments() {
         onDeleted={() => {
           setDeleteTarget(null);
           selectEnv(data.production.id);
-          toast.success("Environment removed", "The server is being torn down.");
+          toast.success(i18nText("Environment removed"), i18nText("The server is being torn down."));
           load();
         }}
       />
@@ -399,7 +398,7 @@ export default function Environments() {
         onClose={() => setMergePrompt(null)}
         onMerged={(msg) => {
           setMergePrompt(null);
-          toast.success("Merge complete", msg);
+          toast.success(i18nText("Merge complete"), msg);
           load();
         }}
       />
@@ -474,10 +473,10 @@ function ScaleCard({
         window.location.href = res.checkout_url;
         return;
       }
-      toast.success("Slot reserved", "You can now create a server in it.");
+      toast.success(i18nText("Slot reserved"), i18nText("You can now create a server in it."));
       onChanged();
     } catch (e) {
-      toast.error("Couldn't reserve", e instanceof ApiError ? e.message : "Please try again.");
+      toast.error(i18nText("Couldn't reserve"), e instanceof ApiError ? e.message : i18nText("Please try again."));
     } finally {
       setBusy(null);
     }
@@ -487,10 +486,10 @@ function ScaleCard({
     setBusy(`release-${type}`);
     try {
       await api.environmentRelease(project.production.id, type);
-      toast.success("Slot released", "The unused time was credited to your wallet.");
+      toast.success(i18nText("Slot released"), i18nText("The unused time was credited to your wallet."));
       onChanged();
     } catch (e) {
-      toast.error("Couldn't release", e instanceof ApiError ? e.message : "Please try again.");
+      toast.error(i18nText("Couldn't release"), e instanceof ApiError ? e.message : i18nText("Please try again."));
     } finally {
       setBusy(null);
     }
@@ -516,13 +515,11 @@ function ScaleCard({
           <div>
             <p className="text-sm font-medium">
               {label}
-              <span className="ml-1.5 font-normal text-muted">
-                {s.total} reserved
-              </span>
+              <span className="ms-1.5 font-normal text-muted">
+                {s.total}{i18nText(" reserved")}</span>
             </p>
             <p className="text-xs text-muted">
-              {s.used} in use · {available} available to create
-            </p>
+              {s.used}{i18nText(" in use · ")}{available}{i18nText(" available to create")}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -532,22 +529,18 @@ function ScaleCard({
               size="sm"
               disabled={busy !== null}
               onClick={() => release(type)}
-              title="Give up a free reserved slot (prorated refund)"
+              title={i18nText("Give up a free reserved slot (prorated refund)")}
             >
-              <Minus className="size-4" />
-              Release
-            </Button>
+              <Minus className="size-4" />{i18nText("Release")}</Button>
           )}
           <Button
             variant="secondary"
             size="sm"
             disabled={busy !== null}
             onClick={() => reserve(type)}
-            title="Reserve one more server — a paid slot you can create into"
+            title={i18nText("Reserve one more server — a paid slot you can create into")}
           >
-            <Plus className="size-4" />
-            Reserve
-          </Button>
+            <Plus className="size-4" />{i18nText("Reserve")}</Button>
         </div>
       </div>
     );
@@ -557,42 +550,31 @@ function ScaleCard({
     <Card className="mb-4 p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="font-semibold">Production resources</h2>
+          <h2 className="font-semibold">{i18nText("Production resources")}</h2>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
             <span className="inline-flex items-center gap-1">
-              <Cpu className="size-3.5" /> {plan.workers} workers
-            </span>
+              <Cpu className="size-3.5" /> {plan.workers}{i18nText(" workers")}</span>
             <span className="inline-flex items-center gap-1">
-              <HardDrive className="size-3.5" /> {plan.storage_gb} GB storage
-            </span>
+              <HardDrive className="size-3.5" /> {plan.storage_gb}{i18nText(" GB storage")}</span>
             {plan.plan_name && <span>· {plan.plan_name}</span>}
-            <span>· billed {project.billing_cycle}</span>
+            <span>{i18nText("· billed ")}{project.billing_cycle}</span>
           </p>
         </div>
         <Button variant="secondary" className="shrink-0" onClick={goScale}>
           <ArrowUpCircle className="size-4" />
-          {plan.is_trial ? "Upgrade plan" : "Scale resources"}
+          {plan.is_trial ? i18nText("Upgrade plan") : i18nText("Scale resources")}
         </Button>
       </div>
 
       <div className="mt-4 border-t border-border pt-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-          Test environments
-        </p>
-        <p className="mt-0.5 text-xs text-muted">
-          Reserve Staging/Development servers — each reserved server is paid per
-          cycle. Create them (and delete/recreate freely within your reserved
-          count) from the <span className="font-medium">+</span> in the sidebar.
-        </p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">{i18nText("Test environments")}</p>
+        <p className="mt-0.5 text-xs text-muted">{i18nText("Reserve Staging/Development servers — each reserved server is paid per cycle. Create them (and delete/recreate freely within your reserved count) from the ")}<span className="font-medium">+</span>{i18nText(" in the sidebar.")}</p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <SlotRow type="staging" label="Staging" icon={FlaskConical} />
-          <SlotRow type="development" label="Development" icon={Rocket} />
+          <SlotRow type="staging" label={i18nText("Staging")} icon={FlaskConical} />
+          <SlotRow type="development" label={i18nText("Development")} icon={Rocket} />
         </div>
         {!hasRepo && (
-          <p className="mt-2 text-xs text-muted">
-            Reserving needs no repository; creating a server does — connect one
-            below first.
-          </p>
+          <p className="mt-2 text-xs text-muted">{i18nText("Reserving needs no repository; creating a server does — connect one below first.")}</p>
         )}
       </div>
     </Card>
@@ -641,9 +623,7 @@ function RepoCard({
           </div>
         </div>
         <Button variant="secondary" size="sm" onClick={() => window.open(web, "_blank", "noopener,noreferrer")}>
-          <FolderGit2 className="size-4" />
-          Open repository
-        </Button>
+          <FolderGit2 className="size-4" />{i18nText("Open repository")}</Button>
       </div>
 
       {/* git clone command + copy */}
@@ -652,11 +632,11 @@ function RepoCard({
         <button
           type="button"
           onClick={copy}
-          title="Copy clone command"
+          title={i18nText("Copy clone command")}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:text-foreground"
         >
           {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
-          {copied ? "Copied" : "Copy"}
+          {copied ? i18nText("Copied") : i18nText("Copy")}
         </button>
       </div>
     </div>
@@ -717,7 +697,7 @@ function BranchList({
       e.branch.toLowerCase().includes(filter.toLowerCase()),
   );
   if (shown.length === 0) {
-    return <p className="px-2 py-1.5 text-xs text-muted/70">No branches</p>;
+    return <p className="px-2 py-1.5 text-xs text-muted/70">{i18nText("No branches")}</p>;
   }
   return (
     <>
@@ -777,7 +757,7 @@ function BranchItem({
       onDragLeave={drag.onDragLeave}
       onDrop={drag.onDrop}
       className={cn(
-        "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+        "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-start text-sm transition-colors",
         selected ? "bg-primary/10 text-foreground" : "text-muted hover:bg-border/40 hover:text-foreground",
         drag.draggable && "cursor-grab active:cursor-grabbing",
         drag.isDragging && "opacity-40",
@@ -852,7 +832,7 @@ function MainPanel({
       await refreshStatus();
       onChanged();
     } catch (e) {
-      toast.error("Action failed", e instanceof ApiError ? e.message : "Please try again.");
+      toast.error(i18nText("Action failed"), e instanceof ApiError ? e.message : i18nText("Please try again."));
     } finally {
       setPending(null);
     }
@@ -888,9 +868,9 @@ function MainPanel({
             <h1 className="text-xl font-bold tracking-tight">{env.name}</h1>
             <StatusBadge status={liveState} />
             <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">
-              {env.environment_label}
+              {i18nText(env.environment_label)}
             </span>
-            {env.version && <span className="text-xs text-muted">Odoo {env.version}</span>}
+            {env.version && <span className="text-xs text-muted">{i18nText("Odoo ")}{env.version}</span>}
           </div>
           <p className="mt-1.5 flex items-center gap-1.5 font-mono text-xs text-muted">
             <GitBranch className="size-3" />
@@ -916,56 +896,44 @@ function MainPanel({
               variant="secondary"
               onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
             >
-              <ExternalLink className="size-4" />
-              Open app
-            </Button>
+              <ExternalLink className="size-4" />{i18nText("Open app")}</Button>
           )}
           {isRunning && can("instance.operate") && (
             <ActionButton
               icon={RotateCw}
               loading={pending === "restart"}
-              loadingText="Restarting…"
+              loadingText={i18nText("Restarting\u2026")}
               disabled={!!pending}
-              onClick={() => run("restart", "Restarted")}
-            >
-              Restart
-            </ActionButton>
+              onClick={() => run("restart", i18nText("Restarted"))}
+            >{i18nText("Restart")}</ActionButton>
           )}
-          {isRunning && can("deploy") && <ActionButton loading={pending === "deploy"} disabled={!!pending} onClick={() => run("deploy", "Deployment queued")}>Build &amp; deploy</ActionButton>}
+          {isRunning && can("deploy") && <ActionButton loading={pending === "deploy"} disabled={!!pending} onClick={() => run("deploy", i18nText("Deployment queued"))}>{i18nText("Build & deploy")}</ActionButton>}
           {isRunning && can("db.restore") && env.environment !== "production" && (
             <Button size="sm" variant="secondary" onClick={() => setCopyOpen(true)}>
-              <Database className="size-4" />
-              Copy databases
-            </Button>
+              <Database className="size-4" />{i18nText("Copy databases")}</Button>
           )}
           {isStopped && can("instance.operate") && (
             <ActionButton
               icon={Play}
               loading={pending === "start"}
-              loadingText="Starting…"
+              loadingText={i18nText("Starting\u2026")}
               disabled={!!pending}
-              onClick={() => run("start", "Starting")}
-            >
-              Start
-            </ActionButton>
+              onClick={() => run("start", i18nText("Starting"))}
+            >{i18nText("Start")}</ActionButton>
           )}
           {isRunning && can("instance.operate") && (
             <ActionButton
               variant="secondary"
               icon={Square}
               loading={pending === "stop"}
-              loadingText="Stopping…"
+              loadingText={i18nText("Stopping\u2026")}
               disabled={!!pending}
-              onClick={() => run("stop", "Stopping")}
-            >
-              Stop
-            </ActionButton>
+              onClick={() => run("stop", i18nText("Stopping"))}
+            >{i18nText("Stop")}</ActionButton>
           )}
           {onDelete && can("environment.delete") && (
             <Button size="sm" variant="danger" onClick={onDelete}>
-              <Trash2 className="size-4" />
-              Delete
-            </Button>
+              <Trash2 className="size-4" />{i18nText("Delete")}</Button>
           )}
         </div>
       </div>
@@ -980,15 +948,13 @@ function MainPanel({
           nothing is clipped under the tabs. */}
       <div className={cn("flex min-h-0 flex-1 flex-col", bounded && "overflow-hidden")}>
       <div className={cn("min-h-0 flex-1 p-5", bounded && "overflow-y-auto")}>
-        {!can(({ overview: 'project.view', metrics: 'project.view', databases: 'db.view', code: 'project.configure', shell: 'terminal.open', sql: 'sql.execute', logs: 'logs.view', snapshots: 'backup.view' } as Record<string, string>)[tab]) ? <AlertBanner variant="info" title="Access restricted" description="Ask your project owner for the role needed to use this tool." /> : pendingPay ? (
+        {!can(({ overview: "project.view", metrics: "project.view", databases: "db.view", code: 'project.configure', shell: "terminal.open", sql: "sql.execute", logs: "logs.view", snapshots: "backup.view" } as Record<string, string>)[tab]) ? <AlertBanner variant="info" title={i18nText("Access restricted")} description={i18nText("Ask your project owner for the role needed to use this tool.")} /> : pendingPay ? (
           <AlertBanner
             variant="warning"
-            title="Payment pending"
-            description="Finish checkout to provision this server."
+            title={i18nText("Payment pending")}
+            description={i18nText("Finish checkout to provision this server.")}
             action={
-              <Button size="sm" onClick={() => (window.location.href = `/my/instances/${env.id}/checkout`)}>
-                Complete checkout
-              </Button>
+              <Button size="sm" onClick={() => (window.location.href = `/my/instances/${env.id}/checkout`)}>{i18nText("Complete checkout")}</Button>
             }
           />
         ) : tab === "overview" ? (
@@ -1030,7 +996,7 @@ function MainPanel({
         target={env}
         allEnvs={[project.production, ...(project.environments || [])].filter(e => hasPermission(e.permissions, "backup.download"))}
         onClose={() => setCopyOpen(false)}
-        onCopied={() => toast.success("Database copy started", `Databases will be copied to ${env.name} shortly. Check its logs for progress.`)}
+        onCopied={() => toast.success(i18nText("Database copy started"), `Databases will be copied to ${env.name} shortly. Check its logs for progress.`)}
       />
     </Card></PermissionContext.Provider>
   );
@@ -1085,11 +1051,11 @@ function MergeEnvDialog({
       const res = await api.environmentMerge(instanceId, prompt.source.id, prompt.target.id);
       const msg =
         res.status === "up_to_date"
-          ? `${prompt.target.name} is already up to date with ${prompt.source.branch}.`
-          : `Merged ${res.source_branch} into ${res.target_branch}.${res.redeployed ? " Redeploying…" : ""}`;
+          ? i18nText("{0} is already up to date with {1}.", [prompt.target.name, prompt.source.branch])
+          : i18nText("Merged {0} into {1}.{2}", [res.source_branch, res.target_branch, res.redeployed ? " Redeploying…" : ""]);
       onMerged(msg);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't merge.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't merge."));
       setLoading(false);
     }
   };
@@ -1098,8 +1064,8 @@ function MergeEnvDialog({
   const toProd = prompt?.target.is_production;
 
   return (
-    <Dialog open={!!prompt} onClose={onClose} title="Merge branches">
-      {error && <AlertBanner className="mb-4" variant="danger" title="Couldn't merge" description={error} />}
+    <Dialog open={!!prompt} onClose={onClose} title={i18nText("Merge branches")}>
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't merge")} description={error} />}
       {prompt && (
         <>
           <div className="flex items-center justify-center gap-3 rounded-lg border border-border bg-card/50 p-4">
@@ -1109,7 +1075,7 @@ function MergeEnvDialog({
           </div>
 
           <div className="mt-4 space-y-2">
-            <Label htmlFor="merge-source">Merge from</Label>
+            <Label htmlFor="merge-source">{i18nText("Merge from")}</Label>
             <select
               id="merge-source"
               className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
@@ -1127,20 +1093,17 @@ function MergeEnvDialog({
             </select>
           </div>
 
-          <p className="mt-3 text-sm text-muted">
-            Merges{" "}
-            <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{prompt.source.branch}</code>{" "}
-            into{" "}
-            <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{prompt.target.branch}</code>{" "}
-            and redeploys <strong>{prompt.target.name}</strong>.
+          <p className="mt-3 text-sm text-muted">{i18nText("Merges")}{" "}
+            <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{prompt.source.branch}</code>{" "}{"into"}{" "}
+            <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{prompt.target.branch}</code>{" "}{i18nText("and redeploys ")}<strong>{prompt.target.name}</strong>.
           </p>
           {toProd && (
             <>
               <AlertBanner
                 className="mt-4"
                 variant="danger"
-                title="This deploys to live Production"
-                description="The merged code goes straight to your live Production server and its end-users. There is no staging step after this."
+                title={i18nText("This deploys to live Production")}
+                description={i18nText("The merged code goes straight to your live Production server and its end-users. There is no staging step after this.")}
               />
               <label className="mt-3 flex items-start gap-2.5 rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm">
                 <input
@@ -1149,27 +1112,23 @@ function MergeEnvDialog({
                   checked={confirmProd}
                   onChange={(e) => setConfirmProd(e.target.checked)}
                 />
-                <span>
-                  I understand this deploys merged code to my <strong>live Production</strong> server.
-                </span>
+                <span>{i18nText("I understand this deploys merged code to my ")}<strong>{i18nText("live Production")}</strong>{i18nText(" server.")}</span>
               </label>
             </>
           )}
         </>
       )}
       <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>
-          Cancel
-        </Button>
+        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
         <ActionButton
           variant={toProd ? "danger" : "default"}
           loading={loading}
-          loadingText="Merging…"
+          loadingText={i18nText("Merging\u2026")}
           disabled={toProd && !confirmProd}
           onClick={submit}
         >
           <GitMerge className="size-4" />
-          {toProd ? "Deploy to live Production" : "Merge & redeploy"}
+          {toProd ? i18nText("Deploy to live Production") : i18nText("Merge & redeploy")}
         </ActionButton>
       </div>
     </Dialog>
@@ -1226,7 +1185,7 @@ function CopyDbsDialog({
         setDstPrefix(d.prefix || "");
       })
       .catch(() => {
-        if (!cancelled) setError("Couldn't load the target databases. Close and try again.");
+        if (!cancelled) setError(i18nText("Couldn't load the target databases. Close and try again."));
       })
       .finally(() => { if (!cancelled) setLoadingDst(false); });
     return () => { cancelled = true; };
@@ -1252,7 +1211,7 @@ function CopyDbsDialog({
         setSrcPrefix(d.prefix || "");
       })
       .catch(() => {
-        if (!cancelled) setError("Couldn't load the source databases. Close and try again.");
+        if (!cancelled) setError(i18nText("Couldn't load the source databases. Close and try again."));
       })
       .finally(() => { if (!cancelled) setLoadingSrc(false); });
     return () => { cancelled = true; };
@@ -1300,21 +1259,20 @@ function CopyDbsDialog({
       onCopied();
       onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't start the copy.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't start the copy."));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="Copy databases">
-      {error && <AlertBanner className="mb-4" variant="danger" title="Couldn't copy" description={error} />}
+    <Dialog open={open} onClose={onClose} title={i18nText("Copy databases")}>
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't copy")} description={error} />}
       <div className="space-y-4">
-        <div className="text-sm text-muted">
-          Copy databases (dump + filestore) from another server onto <b>{target.name}</b>. The mapped names on this server keep your databases namespaced; existing databases are only replaced if you check their overwrite box.
+        <div className="text-sm text-muted">{i18nText("Copy databases (dump + filestore) from another server onto ")}<b>{target.name}</b>. The mapped names on this server keep your databases namespaced; existing databases are only replaced if you check their overwrite box.
         </div>
         <div className="space-y-2">
-          <Label htmlFor="copy-source">Source server</Label>
+          <Label htmlFor="copy-source">{i18nText("Source server")}</Label>
           <select
             id="copy-source"
             className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
@@ -1323,7 +1281,7 @@ function CopyDbsDialog({
           >
             {sources.map((e) => (
               <option key={e.id} value={e.id}>
-                {e.name} ({e.environment_label})
+                {e.name} ({i18nText(e.environment_label)})
               </option>
             ))}
           </select>
@@ -1331,19 +1289,19 @@ function CopyDbsDialog({
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label>Databases to copy</Label>
+            <Label>{i18nText("Databases to copy")}</Label>
             <button
               type="button"
               className="text-xs text-primary hover:underline"
               onClick={() => toggleAll(selected.size !== srcDbs.length)}
             >
-              {selected.size === srcDbs.length ? "Clear all" : "Select all"}
+              {selected.size === srcDbs.length ? i18nText("Clear all") : i18nText("Select all")}
             </button>
           </div>
           {loadingDbs ? (
-            <p className="text-xs text-muted">Loading…</p>
+            <p className="text-xs text-muted">{i18nText("Loading…")}</p>
           ) : srcDbs.length === 0 ? (
-            <p className="text-xs text-muted">No databases on the source server.</p>
+            <p className="text-xs text-muted">{i18nText("No databases on the source server.")}</p>
           ) : (
             <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-lg border border-border p-2">
               {mapped.map((m) => (
@@ -1357,9 +1315,7 @@ function CopyDbsDialog({
                   <span className="text-muted">→</span>
                   <span className="font-mono">{m.dst}</span>
                   {m.collision && (
-                    <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[10px] font-medium text-danger">
-                      exists
-                    </span>
+                    <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[10px] font-medium text-danger">{"exists"}</span>
                   )}
                 </label>
               ))}
@@ -1369,9 +1325,8 @@ function CopyDbsDialog({
 
         {collisions.length > 0 && (
           <div className="rounded-lg border border-danger/30 bg-danger/5 p-3">
-            <p className="text-sm font-medium">Overwrite confirmation</p>
-            <p className="mb-2 text-xs text-muted">
-              These databases already exist on {target.name}. Check each one you
+            <p className="text-sm font-medium">{i18nText("Overwrite confirmation")}</p>
+            <p className="mb-2 text-xs text-muted">{i18nText("These databases already exist on ")}{target.name}. Check each one you
               want to replace — its dump will be dropped and replaced.
             </p>
             {collisions.map((m) => (
@@ -1394,39 +1349,30 @@ function CopyDbsDialog({
           </div>
         )}
 
-        <div className="text-xs text-muted">
-          Source: <b>{sources.find((e) => e.id === sourceId)?.name ?? "—"}</b> → Target: <b>{target.name}</b>. Nothing is overwritten unless checked above.
+        <div className="text-xs text-muted">{i18nText("Source: ")}<b>{sources.find((e) => e.id === sourceId)?.name ?? "—"}</b>{i18nText(" → Target: ")}<b>{target.name}</b>. Nothing is overwritten unless checked above.
         </div>
       </div>
       <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>
-          Cancel
-        </Button>
+        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
         <ActionButton
           loading={loading}
-          loadingText="Copying…"
+          loadingText={i18nText("Copying\u2026")}
           disabled={picked.length === 0 || !overwriteReady || loadingDbs || !srcPrefix || !dstPrefix}
           onClick={() => setConfirmOpen(true)}
-        >
-          Copy {picked.length || ""} database{picked.length === 1 ? "" : "s"}
+        >{i18nText("Copy ")}{picked.length || ""}{i18nText(" database")}{picked.length === 1 ? "" : "s"}
         </ActionButton>
       </div>
 
-      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Confirm database copy">
-        <p className="text-sm">
-          Copy <b>{picked.length}</b> database(s) from{" "}
-          <b>{sources.find((e) => e.id === sourceId)?.name}</b> to <b>{target.name}</b>?
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} title={i18nText("Confirm database copy")}>
+        <p className="text-sm">{i18nText("Copy ")}<b>{picked.length}</b>{i18nText(" database(s) from")}{" "}
+          <b>{sources.find((e) => e.id === sourceId)?.name}</b>{i18nText(" to ")}<b>{target.name}</b>?
           {overwrite.size > 0 && (
-            <> On this server, <b>{Array.from(overwrite).join(", ")}</b> will be replaced.</>
+            <>{i18nText(" On this server, ")}<b>{Array.from(overwrite).join(", ")}</b>{i18nText(" will be replaced.")}</>
           )}
         </p>
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setConfirmOpen(false)} disabled={loading}>
-            Back
-          </Button>
-          <ActionButton loading={loading} loadingText="Copying…" onClick={submit}>
-            Start copy
-          </ActionButton>
+          <Button variant="secondary" onClick={() => setConfirmOpen(false)} disabled={loading}>{i18nText("Back")}</Button>
+          <ActionButton loading={loading} loadingText={i18nText("Copying\u2026")} onClick={submit}>{i18nText("Start copy")}</ActionButton>
         </div>
       </Dialog>
     </Dialog>
@@ -1499,17 +1445,17 @@ function CreateEnvDialog({
       }
       onCreated(!!res.auto_provisioned, res.child_id);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't create the environment.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't create the environment."));
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={!!type} onClose={onClose} title={isStaging ? "New staging server" : "New development server"}>
-      {error && <AlertBanner className="mb-4" variant="danger" title="Couldn't create" description={error} />}
+    <Dialog open={!!type} onClose={onClose} title={isStaging ? i18nText("New staging server") : i18nText("New development server")}>
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't create")} description={error} />}
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="env-name">Server name</Label>
+          <Label htmlFor="env-name">{i18nText("Server name")}</Label>
           <Input
             id="env-name"
             autoFocus
@@ -1521,39 +1467,33 @@ function CreateEnvDialog({
           />
           <p className="text-xs text-muted">
             {isStaging
-              ? "A new server is provisioned automatically."
-              : "A new server is provisioned automatically."}
+              ? i18nText("A new server is provisioned automatically.")
+              : i18nText("A new server is provisioned automatically.")}
           </p>
         </div>
         {type && (
           <div className="space-y-2">
-            <Label htmlFor="env-branch">Git branch</Label>
+            <Label htmlFor="env-branch">{i18nText("Git branch")}</Label>
             <select
               id="env-branch"
               className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
             >
-              <option value="">New branch from main (named after this server)</option>
+              <option value="">{i18nText("New branch from main (named after this server)")}</option>
               {branches.map((b) => (
                 <option key={b} value={b}>
                   {b}
                 </option>
               ))}
             </select>
-            <p className="text-xs text-muted">
-              Leave empty to create a fresh branch from your main branch and link it to this server, or pick an existing branch to run on that branch's latest code.
-            </p>
+            <p className="text-xs text-muted">{i18nText("Leave empty to create a fresh branch from your main branch and link it to this server, or pick an existing branch to run on that branch's latest code.")}</p>
           </div>
         )}
       </div>
       <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>
-          Cancel
-        </Button>
-        <ActionButton loading={loading} loadingText="Creating…" disabled={!ok} onClick={submit}>
-          Create server
-        </ActionButton>
+        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
+        <ActionButton loading={loading} loadingText={i18nText("Creating\u2026")} disabled={!ok} onClick={submit}>{i18nText("Create server")}</ActionButton>
       </div>
     </Dialog>
   );
@@ -1596,42 +1536,34 @@ function DeleteEnvDialog({
       await api.environmentDelete(instanceId, env.id, deleteBranch);
       onDeleted();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't remove the environment.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't remove the environment."));
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={!!env} onClose={onClose} title="Delete environment — can't be undone">
-      {error && <AlertBanner className="mb-4" variant="danger" title="Couldn't remove" description={error} />}
+    <Dialog open={!!env} onClose={onClose} title={i18nText("Delete environment — can't be undone")}>
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't remove")} description={error} />}
       <div className="flex gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger/10 text-danger">
           <Trash2 className="size-5" />
         </span>
         <div className="text-sm">
-          <p className="font-medium text-foreground">
-            Delete the {env?.environment_label.toLowerCase()} server <strong>{env?.name}</strong>?
+          <p className="font-medium text-foreground">{i18nText("Delete the ")}{i18nText(env?.environment_label || "")}{i18nText(" server ")}<strong>{env?.name}</strong>?
           </p>
-          <p className="mt-1 text-muted">
-            This permanently destroys the server and <strong>all of its data — databases, files, and logs</strong>.
+          <p className="mt-1 text-muted">{i18nText("This permanently destroys the server and ")}<strong>{i18nText("all of its data — databases, files, and logs")}</strong>.
             Any unused time on your current cycle is credited back to your wallet. This can't be undone.
           </p>
         </div>
       </div>
       <label className="mt-5 flex items-start gap-2.5 rounded-lg border border-border p-3 text-sm">
         <input type="checkbox" className="mt-0.5" checked={deleteBranch} onChange={(e) => setDeleteBranch(e.target.checked)} />
-        <span>
-          Also delete the Git branch{" "}
-          <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{env?.branch}</code> on the
-          remote. Leave unchecked to keep your branch.
-        </span>
+        <span>{i18nText("Also delete the Git branch")}{" "}
+          <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{env?.branch}</code>{i18nText(" on the remote. Leave unchecked to keep your branch.")}</span>
       </label>
       <div className="mt-5 space-y-2">
-        <Label htmlFor="confirm-env">
-          Type{" "}
-          <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{env?.name}</code>{" "}
-          to confirm
-        </Label>
+        <Label htmlFor="confirm-env">{i18nText("Type")}{" "}
+          <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{env?.name}</code>{" "}{i18nText("to confirm")}</Label>
         <Input
           id="confirm-env"
           autoFocus
@@ -1643,12 +1575,8 @@ function DeleteEnvDialog({
         />
       </div>
       <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>
-          Cancel
-        </Button>
-        <ActionButton variant="danger" loading={loading} loadingText="Deleting…" disabled={!confirmed} onClick={submit}>
-          Delete server
-        </ActionButton>
+        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
+        <ActionButton variant="danger" loading={loading} loadingText={i18nText("Deleting\u2026")} disabled={!confirmed} onClick={submit}>{i18nText("Delete server")}</ActionButton>
       </div>
     </Dialog>
   );

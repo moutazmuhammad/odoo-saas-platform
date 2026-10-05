@@ -1,6 +1,6 @@
 {
     'name': 'SaaS Website',
-    'version': '18.0.5.0.12',
+    'version': '18.0.6.0.0',
     'category': 'SaaS',
     'summary': 'Customer-facing website for SaaS plan selection, ordering, and instance management',
     'author': 'SaaS Platform',
@@ -26,6 +26,7 @@
             # delivered as a plain script (not wrapped as a module).
             'saas_website/static/src/js/veltnex_theme.js',
             'saas_website/static/src/css/cloudodoo.css',
+            'saas_website/static/src/js/veltnex_language.js',
             'saas_website/static/src/js/cloudodoo_app.js',
             # portal_actions.js / portal_logs.js / subdomain_check.js
             # removed: the portal pages they drove (instance start/stop,

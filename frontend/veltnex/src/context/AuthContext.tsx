@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { api, ApiError, setUnauthorizedHandler, type ApiUser, type OtpSent } from "@/lib/api";
 import { useIdleLogout } from "@/hooks/useIdleLogout";
@@ -82,8 +83,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { warning } = useToast();
   const handleIdleWarn = React.useCallback(() => {
     warning(
-      "You'll be signed out soon",
-      "Move your mouse or press a key to stay signed in."
+      i18nText("You'll be signed out soon"),
+      i18nText("Move your mouse or press a key to stay signed in.")
     );
   }, [warning]);
   const handleIdle = React.useCallback(() => {

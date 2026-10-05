@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { hasPermission } from "@/lib/permissions";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -33,7 +34,7 @@ export default function Code({ embedId }: { embedId?: number } = {}) {
     try {
       setInstance(await api.instance(instanceId, params.get("access_token") || undefined));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Instance not found.");
+      setError(e instanceof ApiError ? e.message : i18nText("Instance not found."));
     }
   }, [instanceId, params]);
 
@@ -51,12 +52,12 @@ export default function Code({ embedId }: { embedId?: number } = {}) {
 
   if (error) {
     return (
-      <EmptyState className="mt-10" icon={GitBranch} title="Unavailable" description={error} />
+      <EmptyState className="mt-10" icon={GitBranch} title={i18nText("Unavailable")} description={error} />
     );
   }
   if (!instance) {
     return (
-      <div className="mt-20 flex justify-center"><Spinner size="lg" label="Loading…" /></div>
+      <div className="mt-20 flex justify-center"><Spinner size="lg" label={i18nText("Loading…")} /></div>
     );
   }
 
@@ -67,13 +68,9 @@ export default function Code({ embedId }: { embedId?: number } = {}) {
 
       {!embedded && (
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            Code &amp; packages
-            <HelpHint anchor="repo" className="ml-1.5" />
+          <h1 className="text-2xl font-bold tracking-tight">{i18nText("Code & packages")}<HelpHint anchor="repo" className="ms-1.5" />
           </h1>
-          <p className="mt-1 text-sm text-muted">
-            Connect your Git modules. Python dependencies come from your
-            repository's <code>requirements.txt</code>. Applying a change pulls
+          <p className="mt-1 text-sm text-muted">{i18nText("Connect your Git modules. Python dependencies come from your repository's ")}<code>{"requirements.txt"}</code>. Applying a change pulls
             your code and restarts the instance (brief downtime).
           </p>
         </div>
@@ -83,8 +80,8 @@ export default function Code({ embedId }: { embedId?: number } = {}) {
         <AlertBanner
           className="mt-6"
           variant="warning"
-          title="Can't deploy right now"
-          description="The instance must be running or stopped to apply code or package changes."
+          title={i18nText("Can't deploy right now")}
+          description={i18nText("The instance must be running or stopped to apply code or package changes.")}
         />
       )}
 
@@ -125,10 +122,10 @@ function RepoSection({
       };
       if (token.trim()) p.git_token = token.trim();
       await api.setRepo(instance.id, p);
-      toast.success("Deploying…", "Pulling your repository and restarting the instance.");
+      toast.success(i18nText("Deploying…"), i18nText("Pulling your repository and restarting the instance."));
       onDeployed();
     } catch (e) {
-      toast.error("Couldn't deploy", e instanceof ApiError ? e.message : "Please try again.");
+      toast.error(i18nText("Couldn't deploy"), e instanceof ApiError ? e.message : i18nText("Please try again."));
       setSaving(false);
     }
   };
@@ -137,10 +134,10 @@ function RepoSection({
     setSaving(true);
     try {
       await api.setRepo(instance.id, { repo_url: "", repo_branch: "main" });
-      toast.success("Disconnecting…", "Removing the repository and restarting the instance.");
+      toast.success(i18nText("Disconnecting…"), i18nText("Removing the repository and restarting the instance."));
       onDeployed();
     } catch (e) {
-      toast.error("Couldn't disconnect", e instanceof ApiError ? e.message : "Please try again.");
+      toast.error(i18nText("Couldn't disconnect"), e instanceof ApiError ? e.message : i18nText("Please try again."));
       setSaving(false);
       setConfirmOff(false);
     }
@@ -155,26 +152,21 @@ function RepoSection({
             <GitBranch className="size-4" />
           </span>
           <div className="flex-1">
-            <h2 className="font-semibold">Git repository</h2>
-            <p className="text-xs text-muted">
-              Inherited from the project. The repository and token are managed
-              once on the Production environment.
-            </p>
+            <h2 className="font-semibold">{i18nText("Git repository")}</h2>
+            <p className="text-xs text-muted">{i18nText("Inherited from the project. The repository and token are managed once on the Production environment.")}</p>
           </div>
           <Button
             variant="secondary"
             onClick={() => navigate(`/my/instances/${instance.parent_id}/code`)}
-          >
-            Manage on project
-          </Button>
+          >{i18nText("Manage on project")}</Button>
         </div>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <div>
-            <Label>Repository</Label>
+            <Label>{i18nText("Repository")}</Label>
             <p className="mt-1 truncate font-mono text-sm text-muted">{repo.url || "—"}</p>
           </div>
           <div>
-            <Label>Branch</Label>
+            <Label>{i18nText("Branch")}</Label>
             <p className="mt-1 font-mono text-sm text-muted">{repo.branch || "main"}</p>
           </div>
         </div>
@@ -189,58 +181,52 @@ function RepoSection({
           <GitBranch className="size-4" />
         </span>
         <div className="flex-1">
-          <h2 className="font-semibold">Git repository</h2>
+          <h2 className="font-semibold">{i18nText("Git repository")}</h2>
           <p className="text-xs text-muted">
             {connected
-              ? "Your custom modules are deployed from this repository."
-              : "Deploy your own Odoo modules from GitHub, GitLab or Bitbucket."}
+              ? i18nText("Your custom modules are deployed from this repository.")
+              : i18nText("Deploy your own Odoo modules from GitHub, GitLab or Bitbucket.")}
           </p>
         </div>
         {connected && (
           <Button variant="secondary" disabled={disabled || saving} onClick={() => setConfirmOff(true)}>
             <Unplug className="size-4" />
-            <span className="hidden sm:inline">Disconnect</span>
+            <span className="hidden sm:inline">{i18nText("Disconnect")}</span>
           </Button>
         )}
       </div>
 
       <div className="mt-5 space-y-4">
         <div>
-          <Label htmlFor="repo-url">Repository URL</Label>
+          <Label htmlFor="repo-url">{i18nText("Repository URL")}</Label>
           <Input id="repo-url" value={url} onChange={(e) => setUrl(e.target.value)}
                  placeholder="https://github.com/you/your-odoo-modules.git" />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <Label htmlFor="repo-branch">Branch</Label>
-            <Input id="repo-branch" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" />
+            <Label htmlFor="repo-branch">{i18nText("Branch")}</Label>
+            <Input id="repo-branch" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder={"main"} />
           </div>
           <div>
-            <Label htmlFor="repo-token">
-              Access token {repo.has_token && <span className="text-muted">(set — blank keeps it)</span>}
+            <Label htmlFor="repo-token">{i18nText("Access token ")}{repo.has_token && <span className="text-muted">{i18nText("(set — blank keeps it)")}</span>}
             </Label>
             <Input id="repo-token" type="password" value={token} onChange={(e) => setToken(e.target.value)}
-                   placeholder={repo.has_token ? "••••••••" : "for private repositories"} />
+                   placeholder={repo.has_token ? "••••••••" : i18nText("for private repositories")} />
           </div>
         </div>
       </div>
 
       <div className="mt-5 flex justify-end">
-        <ActionButton loading={saving} loadingText="Deploying…" disabled={disabled || !url.trim()} onClick={save}>
-          {connected ? "Save & redeploy" : "Connect & deploy"}
+        <ActionButton loading={saving} loadingText={i18nText("Deploying\u2026")} disabled={disabled || !url.trim()} onClick={save}>
+          {connected ? i18nText("Save & redeploy") : i18nText("Connect & deploy")}
         </ActionButton>
       </div>
 
-      <Dialog open={confirmOff} onClose={() => setConfirmOff(false)} title="Disconnect repository?">
-        <p className="text-sm text-muted">
-          This removes your custom modules from the instance and restarts it. Your databases and
-          data are not affected. You can reconnect any time.
-        </p>
+      <Dialog open={confirmOff} onClose={() => setConfirmOff(false)} title={i18nText("Disconnect repository?")}>
+        <p className="text-sm text-muted">{i18nText("This removes your custom modules from the instance and restarts it. Your databases and data are not affected. You can reconnect any time.")}</p>
         <div className="mt-6 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setConfirmOff(false)} disabled={saving}>Cancel</Button>
-          <ActionButton variant="danger" loading={saving} loadingText="Disconnecting…" onClick={disconnect}>
-            Disconnect
-          </ActionButton>
+          <Button variant="secondary" onClick={() => setConfirmOff(false)} disabled={saving}>{i18nText("Cancel")}</Button>
+          <ActionButton variant="danger" loading={saving} loadingText={i18nText("Disconnecting\u2026")} onClick={disconnect}>{i18nText("Disconnect")}</ActionButton>
         </div>
       </Dialog>
     </Card>
@@ -264,33 +250,20 @@ function RequirementsInfo({ instance }: { instance: ApiInstance }) {
           <Package className="size-4" />
         </span>
         <div>
-          <h2 className="font-semibold">Python dependencies</h2>
-          <p className="text-xs text-muted">
-            Managed from your repository's <code className="font-mono">requirements.txt</code> — no manual list.
-          </p>
+          <h2 className="font-semibold">{i18nText("Python dependencies")}</h2>
+          <p className="text-xs text-muted">{i18nText("Managed from your repository's ")}<code className="font-mono">{"requirements.txt"}</code>{i18nText(" — no manual list.")}</p>
         </div>
       </div>
 
-      <p className="mt-4 text-sm text-muted">
-        Add a <code className="rounded-sm bg-foreground/6 px-1 py-0.5 font-mono text-xs">requirements.txt</code> to the
-        root of your connected branch. On every deploy we install it in an
-        isolated check <strong className="text-foreground">before</strong> touching your live instance.
-      </p>
+      <p className="mt-4 text-sm text-muted">{i18nText("Add a ")}<code className="rounded-sm bg-foreground/6 px-1 py-0.5 font-mono text-xs">{"requirements.txt"}</code>{i18nText(" to the root of your connected branch. On every deploy we install it in an isolated check ")}<strong className="text-foreground">{i18nText("before")}</strong>{i18nText(" touching your live instance.")}</p>
       <ul className="mt-4 space-y-2 text-sm text-muted">
         <li className="flex items-start gap-2">
-          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
-          Validated on a throwaway environment first — a broken dependency never reaches your instance.
-        </li>
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />{i18nText("Validated on a throwaway environment first — a broken dependency never reaches your instance.")}</li>
         <li className="flex items-start gap-2">
-          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
-          If it fails, your code is <strong className="text-foreground">not</strong> deployed and your instance keeps running.
-        </li>
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />{i18nText("If it fails, your code is ")}<strong className="text-foreground">{"not"}</strong>{i18nText(" deployed and your instance keeps running.")}</li>
         <li className="flex items-start gap-2">
-          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
-          The deployment status — and the exact pip error — appear in{" "}
-          <a href={historyHref} className="font-medium text-primary underline-offset-2 hover:underline">
-            Deployment history
-          </a>
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />{i18nText("The deployment status — and the exact pip error — appear in")}{" "}
+          <a href={historyHref} className="font-medium text-primary underline-offset-2 hover:underline">{i18nText("Deployment history")}</a>
           .
         </li>
       </ul>

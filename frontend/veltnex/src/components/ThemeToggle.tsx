@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import { Sun, Moon } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 
@@ -13,8 +14,8 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     <button
       type="button"
       onClick={toggle}
-      aria-label={`Switch to ${next} mode`}
-      title={`Switch to ${next} mode`}
+      aria-label={i18nText("Switch to {0} mode", [next])}
+      title={i18nText("Switch to {0} mode", [next])}
       className={
         "inline-flex size-9 items-center justify-center rounded-md border border-border bg-card text-muted transition-colors hover:bg-card hover:text-foreground focus-ring " +
         className

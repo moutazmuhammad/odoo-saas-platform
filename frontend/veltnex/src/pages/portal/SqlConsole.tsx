@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Play, Database, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -52,7 +53,7 @@ export default function SqlConsole({ instanceId }: { instanceId: number }) {
       const r = await api.sqlQuery(instanceId, db, query);
       setResult(r);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't run the query.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't run the query."));
     } finally {
       setRunning(false);
     }
@@ -70,15 +71,15 @@ export default function SqlConsole({ instanceId }: { instanceId: number }) {
       {/* Toolbar: DB picker + Run */}
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <div className="relative">
-          <Database className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+          <Database className="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
           <select
             value={db}
             onChange={(e) => setDb(e.target.value)}
             disabled={loadingDbs || !dbs.length}
-            className="h-9 rounded-md border border-border bg-background pl-8 pr-3 text-sm outline-hidden focus:border-primary/50 disabled:opacity-60"
+            className="h-9 rounded-md border border-border bg-background ps-8 pe-3 text-sm outline-hidden focus:border-primary/50 disabled:opacity-60"
           >
             {dbs.length === 0 ? (
-              <option value="">{loadingDbs ? "Loading…" : "No databases"}</option>
+              <option value="">{loadingDbs ? i18nText("Loading…") : i18nText("No databases")}</option>
             ) : (
               dbs.map((n) => (
                 <option key={n} value={n}>
@@ -89,10 +90,8 @@ export default function SqlConsole({ instanceId }: { instanceId: number }) {
           </select>
         </div>
         <Button size="sm" onClick={run} disabled={running || !db || !query.trim()}>
-          {running ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-          Run
-        </Button>
-        <span className="text-xs text-muted">Read-only · ⌘/Ctrl + Enter to run</span>
+          {running ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}{i18nText("Run")}</Button>
+        <span className="text-xs text-muted">{i18nText("Read-only · ⌘/Ctrl + Enter to run")}</span>
       </div>
 
       {/* SQL editor */}
@@ -111,9 +110,9 @@ export default function SqlConsole({ instanceId }: { instanceId: number }) {
           <div className="whitespace-pre-wrap p-3 font-mono text-xs text-danger">{error}</div>
         ) : result ? (
           result.columns.length === 0 ? (
-            <div className="p-3 text-xs text-muted">Statement executed (no rows returned).</div>
+            <div className="p-3 text-xs text-muted">{i18nText("Statement executed (no rows returned).")}</div>
           ) : (
-            <table className="w-full border-collapse text-left font-mono text-xs">
+            <table className="w-full border-collapse text-start font-mono text-xs">
               <thead className="sticky top-0 bg-card">
                 <tr>
                   {result.columns.map((c) => (
@@ -132,7 +131,7 @@ export default function SqlConsole({ instanceId }: { instanceId: number }) {
                     {row.map((cell, j) => (
                       <td key={j} className="border-b border-border/50 px-3 py-1 align-top">
                         {cell === null ? (
-                          <span className="italic text-muted/60">null</span>
+                          <span className="italic text-muted/60">{"null"}</span>
                         ) : (
                           String(cell)
                         )}
@@ -144,14 +143,14 @@ export default function SqlConsole({ instanceId }: { instanceId: number }) {
             </table>
           )
         ) : (
-          <div className="p-3 text-xs text-muted">Run a query to see results.</div>
+          <div className="p-3 text-xs text-muted">{i18nText("Run a query to see results.")}</div>
         )}
       </div>
 
       {result && result.columns.length > 0 && (
         <p className="mt-2 shrink-0 text-xs text-muted">
-          {result.rows.length} row{result.rows.length === 1 ? "" : "s"}
-          {result.truncated ? " (truncated)" : ""}
+          {result.rows.length}{i18nText(" row")}{result.rows.length === 1 ? "" : "s"}
+          {result.truncated ? i18nText(" (truncated)") : ""}
         </p>
       )}
     </div>

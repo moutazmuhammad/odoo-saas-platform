@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -34,10 +35,10 @@ const GlobeViz = React.lazy(() =>
 );
 
 const STATS = [
-  { value: "99.99%", label: "Uptime SLA" },
-  { value: "Daily", label: "Automatic Backups" },
-  { value: "Free", label: "SSL Certificates" },
-  { value: "24/7", label: "Expert support" },
+  { value: "99.99%", label: i18nText("Uptime SLA") },
+  { value: "Daily", label: i18nText("Automatic Backups") },
+  { value: "Free", label: i18nText("SSL Certificates") },
+  { value: "24/7", label: i18nText("Expert support") },
 ];
 
 const ODOO_VERSIONS = ["13", "14", "15", "16", "17", "18", "19", "20"];
@@ -46,30 +47,30 @@ const HOW_IT_WORKS = [
   {
     step: "01",
     icon: Sparkles,
-    title: "Sign up",
+    title: i18nText("Sign up"),
     description:
-      "Create your account in under a minute — no credit card needed to explore the console.",
+      i18nText("Create your account in under a minute — no credit card needed to explore the console."),
   },
   {
     step: "02",
     icon: Server,
-    title: "Pick your stack",
+    title: i18nText("Pick your stack"),
     description:
-      "Choose any Odoo version (13 → 19), set workers, RAM and storage, and pick a region.",
+      i18nText("Choose any Odoo version (13 → 20), set workers, RAM and storage, and pick a region."),
   },
   {
     step: "03",
     icon: GitBranch,
-    title: "Bring your code",
+    title: i18nText("Bring your code"),
     description:
-      "Link a GitHub, GitLab, or Bitbucket repo. We clone on boot and redeploy on every push.",
+      i18nText("Link a GitHub, GitLab, or Bitbucket repo. We clone on boot and redeploy on every push."),
   },
   {
     step: "04",
     icon: TrendingUp,
-    title: "Scale & ship",
+    title: i18nText("Scale & ship"),
     description:
-      "Dial resources up or down anytime. We handle backups, SSL, monitoring — you ship features.",
+      i18nText("Dial resources up or down anytime. We handle backups, SSL, monitoring — you ship features."),
   },
 ];
 
@@ -103,7 +104,7 @@ const SectionHeading = ({
     className={
       align === "center"
         ? "mx-auto max-w-2xl text-center"
-        : "max-w-2xl text-left"
+        : "max-w-2xl text-start"
     }
   >
     {pill}
@@ -134,7 +135,7 @@ export default function Home() {
       {/* ============================================================== */}
       <section className="relative overflow-hidden">
         <div className="pointer-events-none absolute inset-0 bg-grid-faint bg-size-[48px_48px] mask-[radial-gradient(ellipse_at_top,black,transparent_70%)]" />
-        <div className="pointer-events-none absolute left-1/2 top-[-160px] h-[620px] w-[1040px] -translate-x-1/2 rounded-full bg-primary/20 blur-[180px]" />
+        <div className="pointer-events-none absolute start-1/2 top-[-160px] h-[620px] w-[1040px] -translate-x-1/2 rounded-full bg-primary/20 blur-[180px]" />
 
         <div className="relative mx-auto max-w-5xl px-4 pb-28 pt-4 text-center sm:px-6 lg:px-8 lg:pt-6">
           {/* Globe + overlay stack: BOTH the status pill and the H1 sit
@@ -154,33 +155,20 @@ export default function Home() {
                 <span className="relative flex size-1.5">
                   <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
                   <span className="relative inline-flex size-1.5 rounded-full bg-success" />
-                </span>
-                All systems operational
-              </span>
-              <h1 className="whitespace-nowrap text-5xl font-bold leading-[0.95] tracking-tight drop-shadow-[0_2px_28px_rgba(0,0,0,0.65)] sm:text-6xl lg:text-7xl xl:text-8xl">
-                The Logic of
-                <br />
-                <span className="bg-linear-to-br from-primary-glow via-info to-foreground bg-clip-text text-transparent">
-                  Stability
-                </span>
+                </span>{i18nText("All systems operational")}</span>
+              <h1 className="whitespace-nowrap text-5xl font-bold leading-[0.95] tracking-tight drop-shadow-[0_2px_28px_rgba(0,0,0,0.65)] sm:text-6xl lg:text-7xl xl:text-8xl">{i18nText("The Logic of")}<br />
+                <span className="bg-linear-to-br from-primary-glow via-info to-foreground bg-clip-text text-transparent">{i18nText("Stability")}</span>
               </h1>
             </div>
           </div>
 
-          <p className="mx-auto mt-2 max-w-2xl text-lg text-muted sm:text-xl">
-            One managed platform, two ways to run Odoo:{" "}
-            <strong className="text-foreground">host your own code</strong> on
-            any version, or launch a{" "}
-            <strong className="text-foreground">ready-made app</strong> that
-            ships with its database already set up. Pick a path to see how it
-            works.
-          </p>
+          <p className="mx-auto mt-2 max-w-2xl text-lg text-muted sm:text-xl">{i18nText("One managed platform, two ways to run Odoo:")}{" "}
+            <strong className="text-foreground">{i18nText("host your own code")}</strong>{i18nText(" on any version, or launch a")}{" "}
+            <strong className="text-foreground">{i18nText("ready-made app")}</strong>{i18nText(" that ships with its database already set up. Pick a path to see how it works.")}</p>
 
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             {sections.hosting && (
-              <Button size="lg" onClick={() => navigate("/hosting")}>
-                Explore Hosting
-                <ArrowRight />
+              <Button size="lg" onClick={() => navigate("/hosting")}>{i18nText("Explore Hosting")}<ArrowRight />
               </Button>
             )}
             {sections.services && (
@@ -188,26 +176,22 @@ export default function Home() {
                 size="lg"
                 variant={sections.hosting ? "secondary" : "default"}
                 onClick={() => navigate("/services")}
-              >
-                Explore Ready-Made Apps
-                {!sections.hosting && <ArrowRight />}
+              >{i18nText("Explore Ready-Made Apps")}{!sections.hosting && <ArrowRight />}
               </Button>
             )}
           </div>
 
-          <p className="mt-4 text-sm text-muted">
-            No setup fees · Cancel anytime · Free trial available inside each
-          </p>
+          <p className="mt-4 text-sm text-muted">{i18nText("No setup fees · Cancel anytime · Free trial available inside each")}</p>
 
           {/* Capability strip — the full offering, scannable above the fold */}
           <div className="mx-auto mt-12 flex max-w-3xl flex-wrap items-center justify-center gap-x-7 gap-y-3 text-sm text-muted">
             {[
-              "Any Odoo 13 → 19",
-              "Git-based deploys",
-              "Staging & dev environments",
-              "Automated backups",
-              "Live metrics & logs",
-              "One-click scaling",
+              i18nText("Any Odoo 13 → 20"),
+              i18nText("Git-based deploys"),
+              i18nText("Staging & dev environments"),
+              i18nText("Automated backups"),
+              i18nText("Live metrics & logs"),
+              i18nText("One-click scaling"),
             ].map((c) => (
               <span key={c} className="inline-flex items-center gap-2">
                 <CheckCircle2 className="size-4 text-primary" />
@@ -229,14 +213,13 @@ export default function Home() {
       <section className="border-y border-border bg-card/20">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <SectionHeading
-            pill={<SectionPill icon={Sparkles}>Two ways to launch</SectionPill>}
+            pill={<SectionPill icon={Sparkles}>{i18nText("Two ways to launch")}</SectionPill>}
             title={
-              <>
-                Bring your own code,{" "}
-                <span className="text-muted">or start from a ready-made app</span>
+              <>{i18nText("Bring your own code,")}{" "}
+                <span className="text-muted">{i18nText("or start from a ready-made app")}</span>
               </>
             }
-            subtitle="Same managed platform, same backups, SSL and uptime — the difference is what's inside when it boots. Open either one to see the full details and start."
+            subtitle={i18nText("Same managed platform, same backups, SSL and uptime — the difference is what's inside when it boots. Open either one to see the full details and start.")}
           />
 
           <div className="mt-14 grid gap-6 lg:grid-cols-2">
@@ -247,22 +230,15 @@ export default function Home() {
                 <span className="flex size-12 items-center justify-center rounded-xl bg-primary/15 text-primary">
                   <Server className="size-6" />
                 </span>
-                <h3 className="mt-6 text-2xl font-semibold">Hosting</h3>
-                <p className="mt-1 text-sm font-medium text-primary">
-                  You bring the code — we run it on a clean instance.
-                </p>
-                <p className="mt-3 text-muted">
-                  For teams who write their own Odoo. Pick any version (13 → 19),
-                  connect your Git repo, install custom Python packages, and scale
-                  on demand. Boots as an <strong className="text-foreground">empty
-                  Odoo</strong> — you own the modules and the data.
-                </p>
+                <h3 className="mt-6 text-2xl font-semibold">{i18nText("Hosting")}</h3>
+                <p className="mt-1 text-sm font-medium text-primary">{i18nText("You bring the code — we run it on a clean instance.")}</p>
+                <p className="mt-3 text-muted">{i18nText("For teams who write their own Odoo. Pick any version (13 → 20), connect your Git repo, install custom Python packages, and scale on demand. Boots as an ")}<strong className="text-foreground">{i18nText("empty Odoo")}</strong>{i18nText(" — you own the modules and the data.")}</p>
                 <ul className="mt-6 space-y-2.5 text-sm">
                   {[
-                    "Any Odoo version, Community or Enterprise",
-                    "Link a GitHub / GitLab / Bitbucket repo",
-                    "Install custom pip packages per instance",
-                    "Scale workers, RAM, and storage independently",
+                    i18nText("Any Odoo version, Community or Enterprise"),
+                    i18nText("Link a GitHub / GitLab / Bitbucket repo"),
+                    i18nText("Install custom pip packages per instance"),
+                    i18nText("Scale workers, RAM, and storage independently"),
                   ].map((it) => (
                     <li key={it} className="flex items-start gap-2">
                       <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
@@ -271,9 +247,7 @@ export default function Home() {
                   ))}
                 </ul>
                 <div className="mt-8 flex items-center gap-3 pt-4">
-                  <Button onClick={() => navigate("/hosting")}>
-                    Explore Hosting
-                    <ArrowRight />
+                  <Button onClick={() => navigate("/hosting")}>{i18nText("Explore Hosting")}<ArrowRight />
                   </Button>
                 </div>
               </div>
@@ -286,23 +260,17 @@ export default function Home() {
                 <span className="flex size-12 items-center justify-center rounded-xl bg-info/15 text-info">
                   <Layers className="size-6" />
                 </span>
-                <h3 className="mt-6 text-2xl font-semibold">Ready-Made Services</h3>
-                <p className="mt-1 text-sm font-medium text-info">
-                  Ready code <em>and</em> a ready database — running on day one.
-                </p>
-                <p className="mt-3 text-muted">
-                  Pre-built Odoo apps for a specific job — pharmacy management,
-                  retail, clinics and more. Sign up and your instance boots with
-                  the <strong className="text-foreground">modules and starter
-                  data already in place</strong>. Use it as-is, or tailor it to
+                <h3 className="mt-6 text-2xl font-semibold">{i18nText("Ready-Made Services")}</h3>
+                <p className="mt-1 text-sm font-medium text-info">{i18nText("Ready code ")}<em>{i18nText("and")}</em>{i18nText(" a ready database — running on day one.")}</p>
+                <p className="mt-3 text-muted">{i18nText("Pre-built Odoo apps for a specific job — pharmacy management, retail, clinics and more. Sign up and your instance boots with the ")}<strong className="text-foreground">{i18nText("modules and starter data already in place")}</strong>. Use it as-is, or tailor it to
                   how you work.
                 </p>
                 <ul className="mt-6 space-y-2.5 text-sm">
                   {[
-                    "Industry-tuned app, set up and ready to use",
-                    "Ships with its database — no blank screen",
-                    "Customize it freely whenever you want",
-                    "Same backups, SSL & uptime as hosting",
+                    i18nText("Industry-tuned app, set up and ready to use"),
+                    i18nText("Ships with its database — no blank screen"),
+                    i18nText("Customize it freely whenever you want"),
+                    i18nText("Same backups, SSL & uptime as hosting"),
                   ].map((it) => (
                     <li key={it} className="flex items-start gap-2">
                       <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
@@ -311,9 +279,7 @@ export default function Home() {
                   ))}
                 </ul>
                 <div className="mt-8 flex items-center gap-3 pt-4">
-                  <Button onClick={() => navigate("/services")}>
-                    Explore Ready-Made Apps
-                    <ArrowRight />
+                  <Button onClick={() => navigate("/services")}>{i18nText("Explore Ready-Made Apps")}<ArrowRight />
                   </Button>
                 </div>
               </div>
@@ -329,37 +295,31 @@ export default function Home() {
       {/* ============================================================== */}
       <section className="border-y border-border bg-card/20">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-          <p className="text-center text-xs font-medium uppercase tracking-[0.22em] text-muted">
-            Built for the Odoo ecosystem
-          </p>
+          <p className="text-center text-xs font-medium uppercase tracking-[0.22em] text-muted">{i18nText("Built for the Odoo ecosystem")}</p>
 
           {/* Operations console preview — proof of what "managed
               hosting for Odoo" looks like in practice. */}
           <div className="relative mx-auto mt-10 max-w-6xl">
             <div className="pointer-events-none absolute -inset-x-8 -bottom-8 -top-4 rounded-4xl bg-linear-to-b from-primary/25 to-transparent blur-3xl" />
             <Card className="relative overflow-hidden border-border bg-card p-2 shadow-glow">
-              <div className="rounded-xl border border-border bg-background/95 p-5 text-left sm:p-7">
+              <div className="rounded-xl border border-border bg-background/95 p-5 text-start sm:p-7">
                 <div className="flex items-center justify-between border-b border-border pb-4">
                   <div className="flex items-center gap-2.5">
                     <Globe className="size-4 text-primary" />
-                    <span className="font-mono text-sm">
-                      my-company.veltnex.com
-                    </span>
+                    <span className="font-mono text-sm">{"my-company.veltnex.com"}</span>
                     <span className="hidden rounded-sm border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted sm:inline">
                       v18.0
                     </span>
                   </div>
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
-                    <span className="size-1.5 animate-pulse-soft rounded-full bg-success" />
-                    Running
-                  </span>
+                    <span className="size-1.5 animate-pulse-soft rounded-full bg-success" />{i18nText("Running")}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3 pt-5 sm:grid-cols-4 sm:gap-4">
                   {[
                     { icon: Cpu, label: "CPU", value: "34%", trend: "stable" },
-                    { icon: Activity, label: "Memory", value: "58%", trend: "+2%" },
-                    { icon: Database, label: "Storage", value: "47%", trend: "+1%" },
-                    { icon: TrendingUp, label: "Req/min", value: "1,284", trend: "+12%" },
+                    { icon: Activity, label: i18nText("Memory"), value: "58%", trend: "+2%" },
+                    { icon: Database, label: i18nText("Storage"), value: "47%", trend: "+1%" },
+                    { icon: TrendingUp, label: i18nText("Req/min"), value: "1,284", trend: "+12%" },
                   ].map((m) => (
                     <div
                       key={m.label}
@@ -381,8 +341,8 @@ export default function Home() {
                 <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
                   {[
                     { icon: ShieldCheck, label: "SSL", value: "Valid · 89d" },
-                    { icon: RefreshCw, label: "Last backup", value: "2h ago" },
-                    { icon: GitBranch, label: "Branch", value: "main · a1b2c3d" },
+                    { icon: RefreshCw, label: i18nText("Last backup"), value: "2h ago" },
+                    { icon: GitBranch, label: i18nText("Branch"), value: "main · a1b2c3d" },
                   ].map((r) => (
                     <div
                       key={r.label}
@@ -414,7 +374,7 @@ export default function Home() {
               className="bg-background py-14 text-center transition-colors hover:bg-card/40"
             >
               <p className="bg-linear-to-br from-foreground to-muted bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl">
-                {s.value}
+                {i18nText(s.value)}
               </p>
               <p className="mt-2 text-sm text-muted">{s.label}</p>
             </div>
@@ -426,17 +386,16 @@ export default function Home() {
       {/* ODOO VERSIONS                                                  */}
       {/* ============================================================== */}
       <section className="relative overflow-hidden border-b border-border">
-        <div className="pointer-events-none absolute left-1/2 top-1/2 size-[680px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/8 blur-[140px]" />
+        <div className="pointer-events-none absolute start-1/2 top-1/2 size-[680px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/8 blur-[140px]" />
         <div className="relative mx-auto max-w-7xl px-4 py-20 text-center sm:px-6 lg:px-8">
           <SectionHeading
-            pill={<SectionPill icon={Layers}>Version freedom</SectionPill>}
+            pill={<SectionPill icon={Layers}>{i18nText("Version freedom")}</SectionPill>}
             title={
-              <>
-                Every Odoo version —{" "}
-                <span className="text-muted">Community &amp; Enterprise</span>
+              <>{i18nText("Every Odoo version —")}{" "}
+                <span className="text-muted">{i18nText("Community & Enterprise")}</span>
               </>
             }
-            subtitle="Maintaining a legacy install? Starting fresh on the latest release? We run it. Pin your version, upgrade on your schedule, migrate when you're ready."
+            subtitle={i18nText("Maintaining a legacy install? Starting fresh on the latest release? We run it. Pin your version, upgrade on your schedule, migrate when you're ready.")}
           />
           <div className="mt-14 flex flex-wrap items-center justify-center gap-3">
             {ODOO_VERSIONS.map((v) => (
@@ -444,21 +403,16 @@ export default function Home() {
                 key={v}
                 className="group inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-6 py-3 text-lg font-bold transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-glow"
               >
-                <span className="text-xs font-medium uppercase tracking-wider text-muted transition-colors group-hover:text-primary">
-                  Odoo
-                </span>
+                <span className="text-xs font-medium uppercase tracking-wider text-muted transition-colors group-hover:text-primary">{i18nText("Odoo")}</span>
                 {v}
               </span>
             ))}
           </div>
-          <p className="mt-8 text-sm text-muted">
-            Need an older release or a custom patch level?{" "}
+          <p className="mt-8 text-sm text-muted">{i18nText("Need an older release or a custom patch level?")}{" "}
             <Link
               to="/docs"
               className="font-medium text-primary hover:underline"
-            >
-              Custom images welcome →
-            </Link>
+            >{i18nText("Custom images welcome →")}</Link>
           </p>
         </div>
       </section>
@@ -472,31 +426,24 @@ export default function Home() {
             <div>
               <SectionHeading
                 align="left"
-                pill={<SectionPill icon={GitBranch}>Bring your own code</SectionPill>}
+                pill={<SectionPill icon={GitBranch}>{i18nText("Bring your own code")}</SectionPill>}
                 title={
-                  <>
-                    Connect your repo.
-                    <br />
-                    <span className="text-muted">We deploy your modules.</span>
+                  <>{i18nText("Connect your repo.")}<br />
+                    <span className="text-muted">{i18nText("We deploy your modules.")}</span>
                   </>
                 }
                 subtitle={
-                  <>
-                    Link a <strong className="text-foreground">GitHub</strong>,{" "}
-                    <strong className="text-foreground">GitLab</strong>, or{" "}
-                    <strong className="text-foreground">Bitbucket</strong>{" "}
-                    repository. Custom addons are cloned on first boot, and a
-                    webhook redeploys them on every push — no SSH, no SCP, no
-                    downtime windows.
-                  </>
+                  <>{i18nText("Link a ")}<strong className="text-foreground">{i18nText("GitHub")}</strong>,{" "}
+                    <strong className="text-foreground">{i18nText("GitLab")}</strong>{i18nText(", or")}{" "}
+                    <strong className="text-foreground">{i18nText("Bitbucket")}</strong>{" "}{i18nText("repository. Custom addons are cloned on first boot, and a webhook redeploys them on every push — no SSH, no SCP, no downtime windows.")}</>
                 }
               />
               <ul className="mt-9 space-y-3.5 text-sm">
                 {[
-                  "Private repositories via personal access token",
-                  "Auto-redeploy on git push (webhook-driven)",
-                  "Pin a branch, tag, or commit per instance",
-                  "Install Python dependencies in one click",
+                  i18nText("Private repositories via personal access token"),
+                  i18nText("Auto-redeploy on git push (webhook-driven)"),
+                  i18nText("Pin a branch, tag, or commit per instance"),
+                  i18nText("Install Python dependencies in one click"),
                 ].map((it) => (
                   <li key={it} className="flex items-start gap-3">
                     <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-success/15">
@@ -508,9 +455,7 @@ export default function Home() {
               </ul>
               <div className="mt-10">
                 {sections.hosting && (
-                <Button onClick={() => navigate("/hosting")}>
-                  Start hosting your code
-                  <ArrowRight />
+                <Button onClick={() => navigate("/hosting")}>{i18nText("Start hosting your code")}<ArrowRight />
                 </Button>
                 )}
               </div>
@@ -519,7 +464,7 @@ export default function Home() {
             <div className="relative">
               <div className="pointer-events-none absolute -inset-6 rounded-3xl bg-linear-to-br from-primary/30 to-info/10 opacity-50 blur-2xl" />
               <Card glass className="relative overflow-hidden p-1.5 shadow-glow">
-                <div className="rounded-lg border border-border bg-background/95 text-left">
+                <div className="rounded-lg border border-border bg-background/95 text-start">
                   <div className="flex items-center justify-between border-b border-border px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span className="size-2.5 rounded-full bg-danger/70" />
@@ -528,20 +473,16 @@ export default function Home() {
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted">
                       <Terminal className="size-3.5" />
-                      <span>deploy.log</span>
+                      <span>{"deploy.log"}</span>
                     </div>
                     <span className="font-mono text-xs text-muted">●</span>
                   </div>
                   <div className="px-5 py-4 font-mono text-[13px] leading-relaxed">
                     <div className="flex items-center gap-2 border-b border-border/60 pb-3">
                       <GitBranch className="size-3.5 text-primary" />
-                      <span className="truncate text-xs sm:text-sm">
-                        github.com/your-org/odoo-addons
-                      </span>
-                      <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-success">
-                        <span className="size-1 animate-pulse-soft rounded-full bg-success" />
-                        Synced
-                      </span>
+                      <span className="truncate text-xs sm:text-sm">{"github.com/your-org/odoo-addons"}</span>
+                      <span className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-success">
+                        <span className="size-1 animate-pulse-soft rounded-full bg-success" />{i18nText("Synced")}</span>
                     </div>
                     <pre className="mt-4 overflow-x-auto whitespace-pre text-xs">
 {`$ git push origin main
@@ -550,9 +491,9 @@ export default function Home() {
 `}<span className="text-primary">→</span>{` pulling commit     `}<span className="text-muted">·</span>{` `}<span className="text-info">a1b2c3d</span>{`
 `}<span className="text-primary">→</span>{` instance           `}<span className="text-muted">·</span>{` my-company
 `}<span className="text-primary">→</span>{` pip install -r requirements.txt
-`}<span className="text-primary">→</span>{` restarting workers ... `}<span className="text-success">done</span>{`
+`}<span className="text-primary">→</span>{` restarting workers ... `}<span className="text-success">{"done"}</span>{`
 
-`}<span className="text-success">✓ deployed in 12s</span>
+`}<span className="text-success">{i18nText("✓ deployed in 12s")}</span>
                     </pre>
                   </div>
                 </div>
@@ -568,9 +509,9 @@ export default function Home() {
       <section className="border-b border-border">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <SectionHeading
-            pill={<SectionPill icon={Zap}>Production-ready by default</SectionPill>}
-            title="Everything you need to run Odoo"
-            subtitle="A complete operations layer — so your team ships features instead of babysitting servers."
+            pill={<SectionPill icon={Zap}>{i18nText("Production-ready by default")}</SectionPill>}
+            title={i18nText("Everything you need to run Odoo")}
+            subtitle={i18nText("A complete operations layer — so your team ships features instead of babysitting servers.")}
           />
 
           <div className="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
@@ -581,19 +522,13 @@ export default function Home() {
                 <span className="flex size-12 items-center justify-center rounded-xl bg-primary/15 text-primary">
                   <Activity className="size-6" />
                 </span>
-                <h3 className="mt-6 text-2xl font-semibold">
-                  Live observability, baked in
-                </h3>
-                <p className="mt-3 max-w-xl text-muted">
-                  Real-time CPU, memory and storage metrics with streaming
-                  logs for every instance. Tail your logs from the dashboard,
-                  no SSH required.
-                </p>
+                <h3 className="mt-6 text-2xl font-semibold">{i18nText("Live observability, baked in")}</h3>
+                <p className="mt-3 max-w-xl text-muted">{i18nText("Real-time CPU, memory and storage metrics with streaming logs for every instance. Tail your logs from the dashboard, no SSH required.")}</p>
                 <div className="mt-8 grid flex-1 grid-cols-3 gap-3">
                   {[
                     { label: "CPU", value: "34%", bar: "w-1/3" },
-                    { label: "Memory", value: "58%", bar: "w-3/5" },
-                    { label: "Storage", value: "47%", bar: "w-[47%]" },
+                    { label: i18nText("Memory"), value: "58%", bar: "w-3/5" },
+                    { label: i18nText("Storage"), value: "47%", bar: "w-[47%]" },
                   ].map((m) => (
                     <div
                       key={m.label}
@@ -614,12 +549,11 @@ export default function Home() {
                   ))}
                 </div>
                 <div className="mt-4 rounded-lg border border-border bg-background/80 p-3 font-mono text-[11px] leading-relaxed text-muted">
-                  <span className="text-success">[INFO]</span> worker pool ready
-                  · 4 workers · <span className="text-primary">heartbeat ok</span>
+                  <span className="text-success">{i18nText("[INFO]")}</span>{i18nText(" worker pool ready · 4 workers · ")}<span className="text-primary">{i18nText("heartbeat ok")}</span>
                   <br />
-                  <span className="text-success">[INFO]</span> request{" "}
-                  <span className="text-info">GET</span> /web/login 200{" "}
-                  <span className="text-muted">in 38ms</span>
+                  <span className="text-success">{i18nText("[INFO]")}</span>{i18nText(" request")}{" "}
+                  <span className="text-info">GET</span>{i18nText(" /web/login 200")}{" "}
+                  <span className="text-muted">{i18nText("in 38ms")}</span>
                 </div>
               </div>
             </Card>
@@ -629,14 +563,11 @@ export default function Home() {
               <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
                 <Zap className="size-5" />
               </span>
-              <h3 className="mt-5 text-lg font-semibold">Provision in seconds</h3>
-              <p className="mt-2 text-sm text-muted">
-                Production-ready Odoo with one click. Server, database,
-                proxy — all wired up.
-              </p>
+              <h3 className="mt-5 text-lg font-semibold">{i18nText("Provision in seconds")}</h3>
+              <p className="mt-2 text-sm text-muted">{i18nText("Production-ready Odoo with one click. Server, database, proxy — all wired up.")}</p>
               <div className="mt-5 rounded-lg border border-border bg-background/60 p-3">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-mono text-muted">my-company</span>
+                  <span className="font-mono text-muted">{"my-company"}</span>
                   <span className="font-mono text-success">✓ 12s</span>
                 </div>
                 <div className="mt-2 h-1 overflow-hidden rounded-full bg-border">
@@ -650,11 +581,8 @@ export default function Home() {
               <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
                 <ShieldCheck className="size-5" />
               </span>
-              <h3 className="mt-5 text-lg font-semibold">Stable by design</h3>
-              <p className="mt-2 text-sm text-muted">
-                Isolated environments, automatic failover, zero-downtime
-                upgrades keep you online.
-              </p>
+              <h3 className="mt-5 text-lg font-semibold">{i18nText("Stable by design")}</h3>
+              <p className="mt-2 text-sm text-muted">{i18nText("Isolated environments, automatic failover, zero-downtime upgrades keep you online.")}</p>
               <div className="mt-5 flex flex-wrap gap-2">
                 {["isolated", "auto-failover", "zero-downtime"].map((t) => (
                   <span
@@ -674,20 +602,15 @@ export default function Home() {
                   <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
                     <RefreshCw className="size-5" />
                   </span>
-                  <h3 className="mt-5 text-lg font-semibold">
-                    Daily backups + on-demand
-                  </h3>
-                  <p className="mt-2 text-sm text-muted">
-                    Deduplicated daily snapshots with point-in-time restore,
-                    plus one-click downloadable backups.
-                  </p>
+                  <h3 className="mt-5 text-lg font-semibold">{i18nText("Daily backups + on-demand")}</h3>
+                  <p className="mt-2 text-sm text-muted">{i18nText("Deduplicated daily snapshots with point-in-time restore, plus one-click downloadable backups.")}</p>
                 </div>
               </div>
               <div className="mt-5 space-y-2 font-mono text-xs">
                 {[
-                  { name: "backup-2026-05-28", size: "1.24 GB", when: "2h ago", tag: "auto" },
-                  { name: "backup-2026-05-27", size: "1.23 GB", when: "1d ago", tag: "auto" },
-                  { name: "pre-upgrade", size: "1.21 GB", when: "3d ago", tag: "manual" },
+                  { name: "backup-2026-05-28", size: i18nText("1.24 GB"), when: i18nText("2h ago"), tag: "auto" },
+                  { name: "backup-2026-05-27", size: i18nText("1.23 GB"), when: i18nText("1d ago"), tag: "auto" },
+                  { name: "pre-upgrade", size: i18nText("1.21 GB"), when: i18nText("3d ago"), tag: "manual" },
                 ].map((b) => (
                   <div
                     key={b.name}
@@ -720,19 +643,14 @@ export default function Home() {
               <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
                 <Package className="size-5" />
               </span>
-              <h3 className="mt-5 text-lg font-semibold">
-                Custom Python packages
-              </h3>
-              <p className="mt-2 text-sm text-muted">
-                Add pip dependencies per instance from the dashboard — no
-                Docker images to rebuild, no tickets to file.
-              </p>
+              <h3 className="mt-5 text-lg font-semibold">{i18nText("Custom Python packages")}</h3>
+              <p className="mt-2 text-sm text-muted">{i18nText("Add pip dependencies per instance from the dashboard — no Docker images to rebuild, no tickets to file.")}</p>
               <div className="mt-5 rounded-lg border border-border bg-background/80 p-3 font-mono text-xs leading-relaxed">
                 <div className="text-muted">
-                  <span className="text-primary">$</span> pip install{" "}
-                  <span className="text-foreground">pandas openpyxl phonenumbers</span>
+                  <span className="text-primary">$</span>{i18nText(" pip install")}{" "}
+                  <span className="text-foreground">{i18nText("pandas openpyxl phonenumbers")}</span>
                 </div>
-                <div className="mt-1 text-success">✓ installed · pip 24.0</div>
+                <div className="mt-1 text-success">{i18nText("✓ installed · pip 24.0")}</div>
               </div>
             </Card>
 
@@ -741,11 +659,8 @@ export default function Home() {
               <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
                 <Database className="size-5" />
               </span>
-              <h3 className="mt-5 text-lg font-semibold">Effortless databases</h3>
-              <p className="mt-2 text-sm text-muted">
-                Create, clone, back up, restore, reset admin passwords — all
-                from the portal.
-              </p>
+              <h3 className="mt-5 text-lg font-semibold">{i18nText("Effortless databases")}</h3>
+              <p className="mt-2 text-sm text-muted">{i18nText("Create, clone, back up, restore, reset admin passwords — all from the portal.")}</p>
             </Card>
 
             {/* Scale on demand */}
@@ -753,11 +668,8 @@ export default function Home() {
               <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
                 <Gauge className="size-5" />
               </span>
-              <h3 className="mt-5 text-lg font-semibold">Scale on demand</h3>
-              <p className="mt-2 text-sm text-muted">
-                Workers, RAM, storage — dial up or down. Prorated, monthly
-                or yearly.
-              </p>
+              <h3 className="mt-5 text-lg font-semibold">{i18nText("Scale on demand")}</h3>
+              <p className="mt-2 text-sm text-muted">{i18nText("Workers, RAM, storage — dial up or down. Prorated, monthly or yearly.")}</p>
             </Card>
 
             {/* Security & SSL */}
@@ -765,11 +677,8 @@ export default function Home() {
               <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
                 <Lock className="size-5" />
               </span>
-              <h3 className="mt-5 text-lg font-semibold">Security & SSL</h3>
-              <p className="mt-2 text-sm text-muted">
-                Free wildcard SSL, encrypted backups, isolated networks,
-                audit logs.
-              </p>
+              <h3 className="mt-5 text-lg font-semibold">{i18nText("Security & SSL")}</h3>
+              <p className="mt-2 text-sm text-muted">{i18nText("Free wildcard SSL, encrypted backups, isolated networks, audit logs.")}</p>
             </Card>
           </div>
         </div>
@@ -781,13 +690,13 @@ export default function Home() {
       <section className="border-b border-border bg-card/20">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <SectionHeading
-            pill={<SectionPill icon={Sparkles}>From signup to production</SectionPill>}
-            title="How it works"
-            subtitle="Four steps from idea to a production-grade Odoo instance running your code."
+            pill={<SectionPill icon={Sparkles}>{i18nText("From signup to production")}</SectionPill>}
+            title={i18nText("How it works")}
+            subtitle={i18nText("Four steps from idea to a production-grade Odoo instance running your code.")}
           />
 
           <div className="relative mt-16">
-            <div className="pointer-events-none absolute left-0 right-0 top-12 hidden h-px bg-linear-to-r from-transparent via-border to-transparent lg:block" />
+            <div className="pointer-events-none absolute start-0 end-0 top-12 hidden h-px bg-linear-to-r from-transparent via-border to-transparent lg:block" />
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {HOW_IT_WORKS.map((s) => (
                 <Card
@@ -819,21 +728,14 @@ export default function Home() {
           <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
             <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-end">
               <div className="max-w-xl">
-                <SectionPill icon={Layers}>Ready-made services</SectionPill>
-                <h2 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">
-                  One platform, every service
-                </h2>
-                <p className="mt-3 text-muted">
-                  From hosting to commerce to compliance — compose the stack
-                  your business needs.
-                </p>
+                <SectionPill icon={Layers}>{i18nText("Ready-made services")}</SectionPill>
+                <h2 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">{i18nText("One platform, every service")}</h2>
+                <p className="mt-3 text-muted">{i18nText("From hosting to commerce to compliance — compose the stack your business needs.")}</p>
               </div>
               <Button
                 variant="secondary"
                 onClick={() => navigate("/services")}
-              >
-                Browse all services
-                <ArrowRight />
+              >{i18nText("Browse all services")}<ArrowRight />
               </Button>
             </div>
             <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
@@ -845,8 +747,7 @@ export default function Home() {
                     </span>
                     <h3 className="mt-5 text-lg font-semibold">{s.name}</h3>
                     <p className="mt-2 text-sm text-muted">{s.tagline}</p>
-                    <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                      Learn more <ArrowRight className="size-3.5" />
+                    <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">{i18nText("Learn more ")}<ArrowRight className="size-3.5" />
                     </span>
                   </Card>
                 </Link>
@@ -869,42 +770,30 @@ export default function Home() {
             <div className="pointer-events-none absolute -left-20 top-1/2 size-96 -translate-y-1/2 rounded-full bg-primary/20 blur-3xl" />
             <div className="pointer-events-none absolute -right-20 top-1/2 size-96 -translate-y-1/2 rounded-full bg-info/15 blur-3xl" />
             <div className="relative">
-              <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight sm:text-5xl">
-                Ship on infrastructure that{" "}
-                <span className="bg-linear-to-br from-primary-glow to-info bg-clip-text text-transparent">
-                  just stays up
-                </span>
+              <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight sm:text-5xl">{i18nText("Ship on infrastructure that")}{" "}
+                <span className="bg-linear-to-br from-primary-glow to-info bg-clip-text text-transparent">{i18nText("just stays up")}</span>
               </h2>
-              <p className="mx-auto mt-5 max-w-xl text-lg text-muted">
-                Configure your plan in under a minute. No credit card
-                required to explore the console.
-              </p>
+              <p className="mx-auto mt-5 max-w-xl text-lg text-muted">{i18nText("Configure your plan in under a minute. No credit card required to explore the console.")}</p>
               <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 {sections.hosting ? (
-                <Button size="lg" onClick={() => navigate("/hosting")}>
-                  Configure your plan
-                  <ArrowRight />
+                <Button size="lg" onClick={() => navigate("/hosting")}>{i18nText("Configure your plan")}<ArrowRight />
                 </Button>
                 ) : sections.services ? (
-                <Button size="lg" onClick={() => navigate("/services")}>
-                  Browse services
-                  <ArrowRight />
+                <Button size="lg" onClick={() => navigate("/services")}>{i18nText("Browse services")}<ArrowRight />
                 </Button>
                 ) : null}
                 <Button
                   size="lg"
                   variant="outline"
                   onClick={() => navigate("/docs")}
-                >
-                  Read the docs
-                </Button>
+                >{i18nText("Read the docs")}</Button>
               </div>
               <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted">
                 {[
-                  "No setup fees",
-                  "Cancel anytime",
-                  "Daily backups included",
-                  "Free wildcard SSL",
+                  i18nText("No setup fees"),
+                  i18nText("Cancel anytime"),
+                  i18nText("Daily backups included"),
+                  i18nText("Free wildcard SSL"),
                 ].map((t) => (
                   <span key={t} className="flex items-center gap-1.5">
                     <CheckCircle2 className="size-4 text-success" />

@@ -1,3 +1,4 @@
+import { i18nText, translateMessage } from "@/i18n";
 import * as React from "react";
 import { AlertTriangle, CheckCircle2, Info, XCircle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -47,7 +48,7 @@ export function AlertBanner({
       <div className="min-w-0 flex-1">
         <p className={cn("text-sm font-medium", c.text)}>{title}</p>
         {description && (
-          <div className="mt-1 text-sm text-foreground/80">{description}</div>
+          <div className="mt-1 text-sm text-foreground/80">{typeof description === "string" ? translateMessage(description) : description}</div>
         )}
         {action && <div className="mt-3">{action}</div>}
       </div>
@@ -55,7 +56,7 @@ export function AlertBanner({
         <button
           onClick={onDismiss}
           className="rounded-sm p-0.5 text-muted transition-colors hover:text-foreground"
-          aria-label="Dismiss"
+          aria-label={i18nText("Dismiss")}
         >
           <X className="size-4" />
         </button>

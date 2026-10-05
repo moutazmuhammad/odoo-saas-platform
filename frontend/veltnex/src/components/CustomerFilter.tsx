@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import type { ApiInstance } from "@/lib/api";
 
@@ -17,14 +18,14 @@ export function CustomerFilter({ projects, value, onChange }: {
 
   return (
     <div className="flex items-center gap-2">
-      <label htmlFor={id} className="text-sm text-muted">Customer</label>
+      <label htmlFor={id} className="text-sm text-muted">{i18nText("Customer")}</label>
       <select
         id={id}
         className="h-9 max-w-xs rounded-md border border-border bg-card px-3 text-sm"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
-        <option value="">All customers</option>
+        <option value="">{i18nText("All customers")}</option>
         {customers.map((customer) => (
           <option key={customer.id} value={customer.id}>{customer.name}</option>
         ))}

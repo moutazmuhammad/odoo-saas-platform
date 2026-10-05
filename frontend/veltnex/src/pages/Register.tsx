@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -118,21 +119,21 @@ export default function Register() {
   const handleAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!form.name.trim()) return setError("Please enter your full name.");
-    if (!form.email.includes("@")) return setError("Please enter a valid email address.");
-    if (!form.phone.trim()) return setError("Please enter your phone number.");
-    if (!form.country_id) return setError("Please select your country.");
-    if (!form.city.trim()) return setError("Please enter your city.");
-    if (form.password.length < 8) return setError("Password must be at least 8 characters.");
+    if (!form.name.trim()) return setError(i18nText("Please enter your full name."));
+    if (!form.email.includes("@")) return setError(i18nText("Please enter a valid email address."));
+    if (!form.phone.trim()) return setError(i18nText("Please enter your phone number."));
+    if (!form.country_id) return setError(i18nText("Please select your country."));
+    if (!form.city.trim()) return setError(i18nText("Please enter your city."));
+    if (form.password.length < 8) return setError(i18nText("Password must be at least 8 characters."));
 
     setSubmitting(true);
     try {
       const res = await registerStart(form);
       setTestOtp(res.test_otp);
-      toast.info("Verification sent", "We texted a 6-digit code to your phone.");
+      toast.info(i18nText("Verification sent"), i18nText("We texted a 6-digit code to your phone."));
       setStep(2);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't start registration.");
+      setError(err instanceof ApiError ? err.message : i18nText("Couldn't start registration."));
     } finally {
       setSubmitting(false);
     }
@@ -140,7 +141,7 @@ export default function Register() {
 
   return (
     <div className="relative flex min-h-[calc(100vh-4rem)] items-center justify-center overflow-hidden px-4 py-12">
-      <div className="pointer-events-none absolute left-1/2 top-0 h-96 w-[700px] -translate-x-1/2 rounded-full bg-primary/15 blur-[130px]" />
+      <div className="pointer-events-none absolute start-1/2 top-0 h-96 w-[700px] -translate-x-1/2 rounded-full bg-primary/15 blur-[130px]" />
       <div className="relative w-full max-w-md animate-scale-in">
         <div className="mb-8 flex justify-center">
           <Logo />
@@ -161,32 +162,32 @@ export default function Register() {
         <Card glass className="p-8">
           {step === 1 ? (
             <>
-              <h1 className="text-2xl font-bold tracking-tight">Create your account</h1>
-              <p className="mt-1.5 text-sm text-muted">Step 1 of 2 — your details</p>
+              <h1 className="text-2xl font-bold tracking-tight">{i18nText("Create your account")}</h1>
+              <p className="mt-1.5 text-sm text-muted">{i18nText("Step 1 of 2 — your details")}</p>
 
               {error && (
                 <AlertBanner
                   className="mt-5"
                   variant="danger"
-                  title="Please review your details"
+                  title={i18nText("Please review your details")}
                   description={error}
                   onDismiss={() => setError(null)}
                 />
               )}
 
               <form onSubmit={handleAccount} className="mt-6 space-y-4">
-                <Field icon={User} id="name" label="Full name" placeholder="Jane Cooper" value={form.name} onChange={set("name")} />
-                <Field icon={Mail} id="email" label="Work email" type="email" placeholder="jane@company.com" value={form.email} onChange={set("email")} />
-                <Field icon={Phone} id="phone" label="Phone" placeholder="+1 555 123 4567" value={form.phone} onChange={set("phone")} />
+                <Field icon={User} id="name" label={i18nText("Full name")} placeholder={i18nText("Jane Cooper")} value={form.name} onChange={set("name")} />
+                <Field icon={Mail} id="email" label={i18nText("Work email")} type="email" placeholder={i18nText("jane@company.com")} value={form.email} onChange={set("email")} />
+                <Field icon={Phone} id="phone" label={i18nText("Phone")} placeholder="+1 555 123 4567" value={form.phone} onChange={set("phone")} />
                 <div className="space-y-2">
-                  <Label htmlFor="country">Country</Label>
+                  <Label htmlFor="country">{i18nText("Country")}</Label>
                   <select
                     id="country"
                     value={form.country_id}
                     onChange={set("country_id")}
                     className="flex h-10 w-full rounded-lg border border-border bg-background px-3 text-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-glow/70"
                   >
-                    <option value="">Select your country…</option>
+                    <option value="">{i18nText("Select your country…")}</option>
                     {countries.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -194,20 +195,15 @@ export default function Register() {
                     ))}
                   </select>
                 </div>
-                <Field icon={MapPin} id="city" label="City" placeholder="San Francisco" value={form.city} onChange={set("city")} />
-                <Field icon={Building2} id="company" label="Company (optional)" placeholder="Acme Inc." value={form.company_name} onChange={set("company_name")} />
-                <Field icon={Lock} id="password" label="Password" type="password" placeholder="••••••••" value={form.password} onChange={set("password")} />
-                <ActionButton type="submit" className="w-full" loading={submitting} loadingText="Sending code…">
-                  Continue
-                  <ArrowRight />
+                <Field icon={MapPin} id="city" label={i18nText("City")} placeholder={i18nText("San Francisco")} value={form.city} onChange={set("city")} />
+                <Field icon={Building2} id="company" label={i18nText("Company (optional)")} placeholder={i18nText("Acme Inc.")} value={form.company_name} onChange={set("company_name")} />
+                <Field icon={Lock} id="password" label={i18nText("Password")} type="password" placeholder="••••••••" value={form.password} onChange={set("password")} />
+                <ActionButton type="submit" className="w-full" loading={submitting} loadingText={i18nText("Sending code\u2026")}>{i18nText("Continue")}<ArrowRight />
                 </ActionButton>
               </form>
 
-              <p className="mt-6 text-center text-sm text-muted">
-                Already have an account?{" "}
-                <Link to="/login" className="font-medium text-primary hover:underline">
-                  Sign in
-                </Link>
+              <p className="mt-6 text-center text-sm text-muted">{i18nText("Already have an account?")}{" "}
+                <Link to="/login" className="font-medium text-primary hover:underline">{i18nText("Sign in")}</Link>
               </p>
             </>
           ) : (
@@ -217,13 +213,13 @@ export default function Register() {
               onBack={() => setStep(1)}
               onVerify={async (otp) => {
                 const me = await registerVerify({ ...form, otp });
-                toast.success("Account created", `Welcome to VELTNEX, ${me.name.split(" ")[0]}.`);
+                toast.success(i18nText("Account created"), `Welcome to VELTNEX, ${me.name.split(" ")[0]}.`);
                 goAfterRegister();
               }}
               onResend={async () => {
                 const res = await registerResend(form.phone);
                 setTestOtp(res.test_otp);
-                toast.info("Code resent", "A new code is on its way.");
+                toast.info(i18nText("Code resent"), i18nText("A new code is on its way."));
               }}
             />
           )}
@@ -247,8 +243,8 @@ function Field({
     <div className="space-y-2">
       <Label htmlFor={id}>{label}</Label>
       <div className="relative">
-        <Icon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-        <Input id={id} className="pl-9" {...props} />
+        <Icon className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+        <Input id={id} className="ps-9" {...props} />
       </div>
     </div>
   );
@@ -305,13 +301,13 @@ function OtpStep({
 
   const verify = React.useCallback(
     async (value: string) => {
-      if (value.length !== OTP_LENGTH) return setError("Enter all six digits.");
+      if (value.length !== OTP_LENGTH) return setError(i18nText("Enter all six digits."));
       setSubmitting(true);
       setError(null);
       try {
         await onVerify(value);
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : "Verification failed.");
+        setError(err instanceof ApiError ? err.message : i18nText("Verification failed."));
         setDigits(Array(OTP_LENGTH).fill(""));
         inputs.current[0]?.focus();
       } finally {
@@ -332,21 +328,18 @@ function OtpStep({
         onClick={onBack}
         className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
       >
-        <ArrowLeft className="size-4" />
-        Back
-      </button>
+        <ArrowLeft className="size-4" />{i18nText("Back")}</button>
       <div className="mt-4 flex items-center gap-3">
         <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
           <ShieldCheck className="size-5" />
         </span>
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Verify your phone</h1>
-          <p className="text-sm text-muted">Step 2 of 2</p>
+          <h1 className="text-xl font-bold tracking-tight">{i18nText("Verify your phone")}</h1>
+          <p className="text-sm text-muted">{i18nText("Step 2 of 2")}</p>
         </div>
       </div>
 
-      <p className="mt-5 text-sm text-muted">
-        Enter the 6-digit code we sent on WhatsApp to{" "}
+      <p className="mt-5 text-sm text-muted">{i18nText("Enter the 6-digit code we sent on WhatsApp to")}{" "}
         <span className="font-medium text-foreground">{form.phone}</span>.
       </p>
 
@@ -354,13 +347,13 @@ function OtpStep({
         <AlertBanner
           className="mt-4"
           variant="warning"
-          title={`Test mode: your code is ${testOtp}`}
-          description="Shown because no SMS provider is set up. Turn it off in Settings before going live."
+          title={i18nText("Test mode: your code is {0}", [testOtp])}
+          description={i18nText("Shown because no SMS provider is set up. Turn it off in Settings before going live.")}
         />
       )}
 
       {error && (
-        <AlertBanner className="mt-4" variant="danger" title="Verification failed" description={error} />
+        <AlertBanner className="mt-4" variant="danger" title={i18nText("Verification failed")} description={error} />
       )}
 
       <div className="mt-5 flex justify-between gap-2">
@@ -387,15 +380,13 @@ function OtpStep({
       <ActionButton
         className="mt-6 w-full"
         loading={submitting}
-        loadingText="Verifying…"
+        loadingText={i18nText("Verifying\u2026")}
         onClick={() => verify(code)}
-      >
-        Verify & create account
-      </ActionButton>
+      >{i18nText("Verify & create account")}</ActionButton>
 
       <div className="mt-5 text-center text-sm">
         {seconds > 0 ? (
-          <span className="text-muted">Resend code in {seconds}s</span>
+          <span className="text-muted">{i18nText("Resend code in ")}{seconds}s</span>
         ) : (
           <button
             onClick={() => {
@@ -403,9 +394,7 @@ function OtpStep({
               onResend();
             }}
             className="font-medium text-primary hover:underline"
-          >
-            Resend code
-          </button>
+          >{i18nText("Resend code")}</button>
         )}
       </div>
     </>

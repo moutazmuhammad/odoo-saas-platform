@@ -1,3 +1,4 @@
+import { i18nText, translateMessage } from "@/i18n";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, Info, AlertTriangle, XCircle, X } from "lucide-react";
@@ -67,7 +68,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
       {createPortal(
-        <div className="pointer-events-none fixed bottom-4 right-4 z-100 flex w-full max-w-sm flex-col gap-3">
+        <div className="pointer-events-none fixed bottom-4 end-4 z-100 flex w-full max-w-sm flex-col gap-3">
           {toasts.map((t) => {
             const Icon = ICONS[t.variant];
             return (
@@ -77,15 +78,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               >
                 <Icon className={cn("mt-0.5 size-5 shrink-0", ACCENT[t.variant])} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">{t.title}</p>
+                  <p className="text-sm font-medium text-foreground">{translateMessage(t.title)}</p>
                   {t.description && (
-                    <p className="mt-0.5 text-sm text-muted">{t.description}</p>
+                    <p className="mt-0.5 text-sm text-muted">{translateMessage(t.description)}</p>
                   )}
                 </div>
                 <button
                   onClick={() => remove(t.id)}
                   className="rounded-sm p-0.5 text-muted transition-colors hover:text-foreground"
-                  aria-label="Dismiss notification"
+                  aria-label={i18nText("Dismiss notification")}
                 >
                   <X className="size-4" />
                 </button>

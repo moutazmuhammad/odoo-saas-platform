@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Mail, Lock, ArrowRight } from "lucide-react";
@@ -42,13 +43,13 @@ export default function Login() {
     // Accept any login, not just emails — staff/admin sign in with a
     // plain username (e.g. "admin"). The backend authenticates by login.
     if (!email.trim() || !password) {
-      setError("Enter your email/username and password to continue.");
+      setError(i18nText("Enter your email/username and password to continue."));
       return;
     }
     setLoading(true);
     try {
       const signedInUser = await login(email, password);
-      toast.success("Welcome back", "You're signed in.");
+      toast.success(i18nText("Welcome back"), i18nText("You're signed in."));
       if (signedInUser.must_change_password || signedInUser.must_verify_phone) {
         navigate("/my/change-password", { replace: true, state: { from: fromState || safeRedirect } });
       } else if (fromState) navigate(fromState, { replace: true });
@@ -58,7 +59,7 @@ export default function Login() {
       setError(
         err instanceof ApiError
           ? err.message
-          : "We couldn't sign you in just now. Please try again."
+          : i18nText("We couldn't sign you in just now. Please try again.")
       );
     } finally {
       setLoading(false);
@@ -67,22 +68,20 @@ export default function Login() {
 
   return (
     <div className="relative flex min-h-[calc(100vh-4rem)] items-center justify-center overflow-hidden px-4 py-12">
-      <div className="pointer-events-none absolute left-1/2 top-0 h-96 w-[700px] -translate-x-1/2 rounded-full bg-primary/15 blur-[130px]" />
+      <div className="pointer-events-none absolute start-1/2 top-0 h-96 w-[700px] -translate-x-1/2 rounded-full bg-primary/15 blur-[130px]" />
       <div className="relative w-full max-w-md animate-scale-in">
         <div className="mb-8 flex justify-center">
           <Logo />
         </div>
         <Card glass className="p-8">
-          <h1 className="text-2xl font-bold tracking-tight">Sign in</h1>
-          <p className="mt-1.5 text-sm text-muted">
-            Welcome back. Sign in to manage your instances.
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight">{i18nText("Sign in")}</h1>
+          <p className="mt-1.5 text-sm text-muted">{i18nText("Welcome back. Sign in to manage your instances.")}</p>
 
           {error && (
             <AlertBanner
               className="mt-5"
               variant="danger"
-              title="Sign-in failed"
+              title={i18nText("Sign-in failed")}
               description={error}
               onDismiss={() => setError(null)}
             />
@@ -90,14 +89,15 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email or username</Label>
+              <Label htmlFor="email">{i18nText("Email or username")}</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+                <Mail className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
                 <Input
                   id="email"
                   type="text"
-                  className="pl-9"
-                  placeholder="you@company.com"
+                  dir="ltr"
+                  className="ps-9"
+                  placeholder={i18nText("you@company.com")}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="username"
@@ -106,17 +106,15 @@ export default function Login() {
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <Link to="/forgot-password" className="text-xs text-primary hover:underline">
-                  Forgot?
-                </Link>
+                <Label htmlFor="password">{i18nText("Password")}</Label>
+                <Link to="/forgot-password" className="text-xs text-primary hover:underline">{i18nText("Forgot?")}</Link>
               </div>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+                <Lock className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
                 <Input
                   id="password"
                   type="password"
-                  className="pl-9"
+                  className="ps-9"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -128,18 +126,13 @@ export default function Login() {
               type="submit"
               className="w-full"
               loading={loading}
-              loadingText="Signing in…"
-            >
-              Sign in
-              <ArrowRight />
+              loadingText={i18nText("Signing in\u2026")}
+            >{i18nText("Sign in")}<ArrowRight />
             </ActionButton>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted">
-            New to VELTNEX?{" "}
-            <Link to={registerTo} state={{ from: fromState }} className="font-medium text-primary hover:underline">
-              Create an account
-            </Link>
+          <p className="mt-6 text-center text-sm text-muted">{i18nText("New to VELTNEX?")}{" "}
+            <Link to={registerTo} state={{ from: fromState }} className="font-medium text-primary hover:underline">{i18nText("Create an account")}</Link>
           </p>
         </Card>
       </div>

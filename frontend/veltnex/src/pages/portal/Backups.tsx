@@ -1,3 +1,4 @@
+import { i18nText } from "@/i18n";
 import * as React from "react";
 import { usePermissions } from "@/lib/permissions";
 import { usePolling } from "@/hooks/usePolling";
@@ -52,7 +53,7 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
       setReady(b.ready);
       setInstance(inst);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not load snapshots.");
+      setError(e instanceof ApiError ? e.message : i18nText("Could not load snapshots."));
     }
   }, [instanceId]);
 
@@ -66,7 +67,7 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
       const { checkout_url } = await api.dailyBackupEnable(instanceId);
       window.location.href = checkout_url;
     } catch (e) {
-      toast.error("Couldn't start checkout", e instanceof ApiError ? e.message : "Please try again.");
+      toast.error(i18nText("Couldn't start checkout"), e instanceof ApiError ? e.message : i18nText("Please try again."));
       setEnabling(false);
     }
   };
@@ -91,14 +92,12 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
     <div className="animate-fade-in">
 
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          Snapshots
-          <HelpHint anchor="snapshots" className="ml-1.5" />
+        <h1 className="text-2xl font-bold tracking-tight">{i18nText("Snapshots")}<HelpHint anchor="snapshots" className="ms-1.5" />
         </h1>
         <p className="mt-1 text-sm text-muted">
           {isManagedService
-            ? "Automatic daily snapshots of your service. Restore any snapshot with one click."
-            : "Automatic daily full-instance snapshots. On-demand, per-database backups are on the Databases page."}
+            ? i18nText("Automatic daily snapshots of your service. Restore any snapshot with one click.")
+            : i18nText("Automatic daily full-instance snapshots. On-demand, per-database backups are on the Databases page.")}
         </p>
       </div>
 
@@ -106,13 +105,13 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
         <AlertBanner
           className="mt-6"
           variant="warning"
-          title="Snapshots unavailable"
+          title={i18nText("Snapshots unavailable")}
           description={
             instance?.state === "suspended"
-              ? "This instance is suspended. Settle the outstanding invoice to access snapshots and daily backups."
+              ? i18nText("This instance is suspended. Settle the outstanding invoice to access snapshots and daily backups.")
               : instance?.state === "stopped"
-                ? "This instance is stopped. Start it to access snapshots and daily backups."
-                : "Snapshots and daily backups become available once the instance is running."
+                ? i18nText("This instance is stopped. Start it to access snapshots and daily backups.")
+                : i18nText("Snapshots and daily backups become available once the instance is running.")
           }
         />
       ) : (
@@ -127,18 +126,18 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
             />
           )}
 
-          {error && <AlertBanner className="mt-6" variant="danger" title="Snapshots" description={error} />}
+          {error && <AlertBanner className="mt-6" variant="danger" title={i18nText("Snapshots")} description={error} />}
 
           {!backups && !error ? (
         <div className="mt-20 flex justify-center">
-          <Spinner size="lg" label="Loading snapshots…" />
+          <Spinner size="lg" label={i18nText("Loading snapshots…")} />
         </div>
       ) : snapshots ? (
         <>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <InfoCard label="Snapshots" value={snapshots.length} icon={Archive} />
+            <InfoCard label={i18nText("Snapshots")} value={snapshots.length} icon={Archive} />
             <InfoCard
-              label="Latest"
+              label={i18nText("Latest")}
               value={<span className="text-base">{lastDone ? formatDate(lastDone.created) : "—"}</span>}
               icon={ShieldCheck}
             />
@@ -148,8 +147,8 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
             <EmptyState
               className="mt-8"
               icon={Archive}
-              title="No snapshots yet"
-              description="Full-instance snapshots run automatically every day; the first one will appear here once it completes."
+              title={i18nText("No snapshots yet")}
+              description={i18nText("Full-instance snapshots run automatically every day; the first one will appear here once it completes.")}
             />
           ) : (
             <Card className="mt-6 divide-y divide-border">
@@ -162,17 +161,15 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="font-medium">{formatDateTime(b.created)}</p>
-                        <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">Automatic</span>
+                        <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">{i18nText("Automatic")}</span>
                       </div>
                       <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
-                        <Clock className="size-3" />
-                        Full snapshot
-                      </p>
+                        <Clock className="size-3" />{i18nText("Full snapshot")}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 sm:justify-end">
                     <StatusBadge status={b.status} />
-                    {can("backup.download") && b.download_url && <a className="text-sm text-primary" href={b.download_url}>Download</a>}
+                    {can("backup.download") && b.download_url && <a className="text-sm text-primary" href={b.download_url}>{i18nText("Download")}</a>}
                     <Button
                       size="sm"
                       variant="secondary"
@@ -180,7 +177,7 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
                       onClick={() => setRestoreTarget(b)}
                     >
                       <RotateCcw className="size-4" />
-                      <span className="hidden sm:inline">Restore</span>
+                      <span className="hidden sm:inline">{i18nText("Restore")}</span>
                     </Button>
                   </div>
                 </div>
@@ -234,31 +231,27 @@ function RestoreSnapshotDialog({
     try {
       await onRestore(backup, confirm.trim());
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't start the restore.");
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't start the restore."));
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={!!backup} onClose={onClose} title="Restore from snapshot">
-      {error && <AlertBanner className="mb-4" variant="danger" title="Couldn't restore" description={error} />}
+    <Dialog open={!!backup} onClose={onClose} title={i18nText("Restore from snapshot")}>
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't restore")} description={error} />}
       <div className="flex gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-warning/10 text-warning">
           <RotateCcw className="size-5" />
         </span>
         <div className="text-sm">
-          <p className="font-medium text-foreground">Restore this instance to the snapshot?</p>
-          <p className="mt-1 text-muted">
-            This replaces the instance's <strong>current</strong> databases, files, and configuration with the
-            state captured in this snapshot{backup ? ` (${formatDateTime(backup.created)})` : ""}. A fresh
+          <p className="font-medium text-foreground">{i18nText("Restore this instance to the snapshot?")}</p>
+          <p className="mt-1 text-muted">{i18nText("This replaces the instance's ")}<strong>{"current"}</strong>{i18nText(" databases, files, and configuration with the state captured in this snapshot")}{backup ? ` (${formatDateTime(backup.created)})` : ""}. A fresh
             pre-restore snapshot is taken first, but anything created since cannot be recovered otherwise.
           </p>
         </div>
       </div>
       <div className="mt-5 space-y-2">
-        <Label htmlFor="restore-confirm">
-          Type <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{instanceName}</code> to confirm
-        </Label>
+        <Label htmlFor="restore-confirm">{i18nText("Type ")}<code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{instanceName}</code>{i18nText(" to confirm")}</Label>
         <Input
           id="restore-confirm"
           autoFocus
@@ -270,10 +263,8 @@ function RestoreSnapshotDialog({
         />
       </div>
       <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>Cancel</Button>
-        <ActionButton variant="danger" loading={loading} loadingText="Starting restore…" disabled={!ok} onClick={submit}>
-          Restore instance
-        </ActionButton>
+        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
+        <ActionButton variant="danger" loading={loading} loadingText={i18nText("Starting restore\u2026")} disabled={!ok} onClick={submit}>{i18nText("Restore instance")}</ActionButton>
       </div>
     </Dialog>
   );
@@ -304,9 +295,8 @@ function DailyBackupCard({
             <ShieldCheck className="size-5" />
           </span>
           <div>
-            <p className="font-medium">Daily snapshots are on</p>
-            <p className="text-xs text-muted">
-              Billed monthly by used storage{price > 0 ? ` · currently ${price}/month` : ""}{next ? ` · next charge ${formatDate(next)}` : ""}.
+            <p className="font-medium">{i18nText("Daily snapshots are on")}</p>
+            <p className="text-xs text-muted">{i18nText("Billed monthly by used storage")}{price > 0 ? i18nText(" · currently {0}/month", [price]) : ""}{next ? i18nText(" · next charge {0}", [formatDate(next)]) : ""}.
             </p>
           </div>
         </div>
@@ -323,15 +313,11 @@ function DailyBackupCard({
             <ShieldAlert className="size-5" />
           </span>
           <div>
-            <p className="font-medium">Daily snapshots paused</p>
-            <p className="text-xs text-muted">
-              Your monthly backup invoice is overdue. Snapshots resume automatically once it's paid.
-            </p>
+            <p className="font-medium">{i18nText("Daily snapshots paused")}</p>
+            <p className="text-xs text-muted">{i18nText("Your monthly backup invoice is overdue. Snapshots resume automatically once it's paid.")}</p>
           </div>
         </div>
-        <Button variant="secondary" className="shrink-0" onClick={onBilling}>
-          Go to billing
-        </Button>
+        <Button variant="secondary" className="shrink-0" onClick={onBilling}>{i18nText("Go to billing")}</Button>
       </Card>
     );
   }
@@ -345,13 +331,11 @@ function DailyBackupCard({
             <Clock className="size-5" />
           </span>
           <div>
-            <p className="font-medium">Payment pending</p>
-            <p className="text-xs text-muted">Finish checkout to turn on daily snapshots.</p>
+            <p className="font-medium">{i18nText("Payment pending")}</p>
+            <p className="text-xs text-muted">{i18nText("Finish checkout to turn on daily snapshots.")}</p>
           </div>
         </div>
-        <Button className="shrink-0" onClick={onCheckout}>
-          Complete checkout
-        </Button>
+        <Button className="shrink-0" onClick={onCheckout}>{i18nText("Complete checkout")}</Button>
       </Card>
     );
   }
@@ -364,16 +348,13 @@ function DailyBackupCard({
           <ShieldAlert className="size-5" />
         </span>
         <div>
-          <p className="font-medium">Daily snapshots are off<HelpHint anchor="daily-backup" className="ml-1.5" /></p>
-          <p className="text-xs text-muted">
-            Automatic daily full-instance snapshots, billed monthly by used storage{price > 0 ? ` (currently ${price}/month)` : ""}. Renews monthly; pauses if a renewal goes unpaid.
+          <p className="font-medium">{i18nText("Daily snapshots are off")}<HelpHint anchor="daily-backup" className="ms-1.5" /></p>
+          <p className="text-xs text-muted">{i18nText("Automatic daily full-instance snapshots, billed monthly by used storage")}{price > 0 ? i18nText(" (currently {0}/month)", [price]) : ""}. Renews monthly; pauses if a renewal goes unpaid.
           </p>
         </div>
       </div>
-      <ActionButton className="shrink-0" loading={enabling} loadingText="Starting…" onClick={onEnable}>
-        <ShieldCheck className="size-4" />
-        Enable daily snapshots
-      </ActionButton>
+      <ActionButton className="shrink-0" loading={enabling} loadingText={i18nText("Starting\u2026")} onClick={onEnable}>
+        <ShieldCheck className="size-4" />{i18nText("Enable daily snapshots")}</ActionButton>
     </Card>
   );
 }

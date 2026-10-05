@@ -62,16 +62,33 @@ class IamInstance(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         iam = self.env['saas.iam']
-        if iam._is_managed_user():
+        if not iam._is_platform_admin(self.env.user):
+            iam._require_customer_owner()
             for values in vals_list:
                 parent = self.sudo().browse(values.get('parent_id', 0)).exists()
+                if not parent:
+                    if values.get('partner_id') != self.env.user.partner_id.id:
+                        raise AccessError('New projects must belong to your own customer account.')
+                    continue
                 environment = values.get('environment', 'production')
-                if not parent or parent.parent_id or environment not in ('staging', 'development'):
-                    iam._require_customer_owner()
+                if parent.parent_id or environment not in ('staging', 'development'):
+                    raise AccessError('Choose a valid project and environment type.')
                 iam._require(parent, 'environment.create', environment=environment)
                 if values.get('partner_id') != parent.partner_id.id:
                     raise AccessError('An environment must belong to its project customer.')
         return super().create(vals_list)
+
+    def copy(self, default=None):
+        iam = self.env['saas.iam']
+        if not iam._is_platform_admin(self.env.user):
+            for instance in self:
+                if not iam._is_owner(instance):
+                    target = default or {}
+                    if not instance.parent_id or target.get('parent_id', instance.parent_id.id) != instance.parent_id.id:
+                        raise AccessError('Only the project owner can copy a project.')
+                    iam._require(instance, 'project.view')
+                    iam._require(instance.parent_id, 'environment.create', environment=target.get('environment', instance.environment))
+        return super().copy(default)
 
     def write(self, values):
         transferred = self.filtered(lambda i: not i.parent_id and i.partner_id.id != values['partner_id']) if 'partner_id' in values else self.browse()

@@ -260,6 +260,24 @@ class TestIamApi(IamFixture, HttpCase):
         self.assertNotIn('wallet', result['data'])
         self.assertEqual(result['data']['permissions'], ['build.view', 'project.view'])
 
+    def test_project_categories_follow_customer_ownership_and_shared_billing_stays_hidden(self):
+        owned = self.project.copy({'subdomain': 'iamapiowned', 'partner_id': self.team.partner_id.id, 'state': 'running'})
+        self._grant('viewer')
+        self.authenticate(self.team.login, 'iam-test-pass')
+        result = self._rpc('/saas/api/v1/instances')
+        self.assertTrue(result['ok'], result)
+        projects = {p['id']: p for p in result['data']}
+        self.assertEqual(set(projects), {owned.id, self.project.id})
+        self.assertTrue(projects[owned.id]['is_owned_project'])
+        self.assertTrue(projects[owned.id]['is_project_owner'])
+        self.assertIn('billing.manage', projects[owned.id]['permissions'])
+        self.assertFalse(projects[self.project.id]['is_owned_project'])
+        self.assertFalse(projects[self.project.id]['is_project_owner'])
+        self.assertNotIn('billing.manage', projects[self.project.id]['permissions'])
+        detail = self._rpc('/saas/api/v1/instances/%s' % self.project.id)
+        self.assertNotIn('wallet', detail['data'])
+        self.assertEqual(detail['data']['invoices'], [])
+
     def test_viewer_cannot_stop_delete_get_manager_or_run_sql(self):
         self._grant('viewer')
         self.authenticate(self.team.login, 'iam-test-pass')

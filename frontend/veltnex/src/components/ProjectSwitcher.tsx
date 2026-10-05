@@ -1,21 +1,22 @@
 import * as React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Server, ChevronDown, ChevronRight, Search, GitBranch, FolderOpen } from "lucide-react";
-import { api, type ApiInstance, type ProjectEnvironments } from "@/lib/api";
+import { Server, ChevronDown, ChevronRight, Search, FolderOpen } from "lucide-react";
+import { type ApiInstance } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useInstances } from "@/context/InstancesContext";
+import { groupProjects } from "@/lib/projects";
 
 const projectLink = (p: ApiInstance) =>
   p.is_hosting ? `/my/instances/${p.id}/environments` : `/my/instances/${p.id}`;
 
 /** Google Cloud-style project picker in the top bar: shows the current
- *  project as a header, opens a searchable dropdown of all projects, and
- *  lists the environments inside the active project for quick jumps. */
+ *  project as a header and groups searchable root projects by ownership. */
 export function ProjectSwitcher({ className }: { className?: string }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [open, setOpen] = React.useState(false);
-  const [projects, setProjects] = React.useState<ApiInstance[]>([]);
-  const [envs, setEnvs] = React.useState<ProjectEnvironments | null>(null);
+  const { instances, loading, error } = useInstances();
+  const { projects } = groupProjects(instances);
   const [query, setQuery] = React.useState("");
   const ref = React.useRef<HTMLDivElement>(null);
 
@@ -23,21 +24,7 @@ export function ProjectSwitcher({ className }: { className?: string }) {
   const currentId = m ? Number(m[1]) : null;
   const current = projects.find((p) => p.id === currentId) || null;
 
-  React.useEffect(() => {
-    if (!open) return;
-    setQuery("");
-    api.instances().then(setProjects).catch(() => setProjects([]));
-  }, [open]);
-
-  React.useEffect(() => {
-    if (open && current && current.is_hosting) {
-      api.environments(current.id).then(setEnvs).catch(() => setEnvs(null));
-    } else {
-      setEnvs(null);
-    }
-  }, [open, current?.id]);
-
-  React.useEffect(() => setOpen(false), [pathname]);
+  React.useEffect(() => { setOpen(false); setQuery(""); }, [pathname]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -65,7 +52,8 @@ export function ProjectSwitcher({ className }: { className?: string }) {
     navigate(to);
   };
 
-  const envList = envs ? [envs.production, ...envs.environments] : [];
+  const groups = groupProjects(filtered);
+  const categories = [{ label: "My projects", projects: groups.owned }, { label: "Shared projects", projects: groups.shared }];
 
   return (
     <div ref={ref} className={cn("relative", className)}>
@@ -97,37 +85,15 @@ export function ProjectSwitcher({ className }: { className?: string }) {
             </div>
           </div>
 
-          {/* Environments inside the active project */}
-          {current && envList.length > 0 && (
-            <div className="border-b border-border p-2">
-              <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                {current.name} · environments
-              </p>
-              <div className="max-h-40 overflow-y-auto">
-                {envList.map((e) => (
-                  <button
-                    key={e.id}
-                    onClick={() => go(`/my/instances/${current.id}/environments?env=${e.id}`)}
-                    className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-foreground/6"
-                  >
-                    <GitBranch className="size-3.5 shrink-0 text-muted" />
-                    <span className="truncate">{e.name}</span>
-                    <span className="ml-auto shrink-0 text-xs text-muted">{e.environment_label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* All projects */}
           <div className="max-h-72 overflow-y-auto p-2">
-            <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
-              {q ? "Results" : "All projects"}
-            </p>
-            {filtered.length === 0 ? (
+            {error && <p className="px-2 py-3 text-sm text-danger">{error}</p>}
+            {loading && projects.length === 0 ? <p className="px-2 py-6 text-center text-sm text-muted">Loading projects…</p> : filtered.length === 0 ? (
               <p className="px-2 py-6 text-center text-sm text-muted">No projects found.</p>
-            ) : (
-              filtered.map((p) => (
+            ) : categories.map(category => <section key={category.label} aria-label={category.label} className="mb-2 last:mb-0">
+              <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{category.label}</p>
+              {category.projects.length === 0 && <p className="px-2 py-2 text-xs text-muted">No projects</p>}
+              {category.projects.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => go(projectLink(p))}
@@ -147,8 +113,8 @@ export function ProjectSwitcher({ className }: { className?: string }) {
                     </span>
                   </span>
                 </button>
-              ))
-            )}
+              ))}
+            </section>)}
           </div>
 
           <div className="border-t border-border p-2">

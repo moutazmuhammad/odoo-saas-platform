@@ -284,22 +284,43 @@ class TestIamMembers(IamFixture, TransactionCase):
             })
         self.assertFalse(self.env['res.users'].sudo().search_count([('login', '=', 'phone-duplicate@example.com')]))
 
-    def test_managed_user_cannot_become_customer_owner_after_password_change(self):
+    def test_teammate_can_own_projects_only_after_onboarding(self):
         member, _ = self._new_profile()
         user = member.user_id
+        Instance = self.env['saas.instance'].with_user(user).sudo()
+        values = {'subdomain': 'iamowned', 'domain_id': self.project.domain_id.id,
+            'partner_id': user.partner_id.id, 'saas_product_id': self.project.saas_product_id.id,
+            'plan_id': self.project.plan_id.id, 'environment': 'production',
+            'is_hosting': True, 'state': 'running', 'region_id': False}
+        with self.assertRaises(AccessError):
+            Instance.create(values)
         self.env['res.users'].with_user(user)._change_initial_password('MyOwnStrongPassword123!')
+        with self.assertRaises(AccessError):
+            Instance.create(values)
         self._verify_member_phone(member)
-        self.assertTrue(self.iam._is_managed_user(user))
+        owned = Instance.create(values)
+        self.assertTrue(self.iam._is_owner(owned, user))
+        self.assertTrue(self.iam._allowed(owned, 'db.delete', user))
+        self.assertTrue(self.iam._allowed(owned, 'billing.manage', user))
+        self.assertFalse(self.iam._allowed(owned, 'project.view', self.owner))
+        self._grant('viewer', user=user)
+        self.assertTrue(self.iam._allowed(self.project, 'project.view', user))
+        self.assertFalse(self.iam._allowed(self.project, 'db.delete', user))
+        self.assertFalse(self.iam._allowed(self.project, 'billing.manage', user))
+        nested = self.env['saas.iam.member'].with_user(user)._create_profile('Own teammate', 'nested@example.com')
+        self.assertEqual(self.env['saas.iam.member'].sudo().browse(nested['id']).owner_id, user.partner_id)
+        with self.assertRaises(AccessError):
+            Instance.create(dict(values, subdomain='iamforeign', partner_id=self.other.partner_id.id))
         with self.assertRaises(AccessError):
             self.project.with_user(user).sudo().copy({'subdomain': 'iamunauthorized', 'partner_id': user.partner_id.id})
+        self.assertEqual(self.iam.with_user(user)._project_domain(), ['|', ('partner_id', '=', user.partner_id.id), ('id', 'in', [self.project.id])])
+        self.assertFalse(member._can_manage_login())
         with self.assertRaises(AccessError):
-            self.env['saas.iam.member'].with_user(user)._create_profile('Nested', 'nested@example.com')
-        # Legacy projects created through the old checkout bypass never imply ownership.
-        legacy = self.project.copy({'subdomain': 'iamlegacy', 'partner_id': user.partner_id.id})
-        self.assertFalse(self.iam._is_owner(legacy, user))
-        self.assertFalse(self.iam._allowed(legacy, 'db.delete', user))
-        self.assertFalse(self.iam._allowed(legacy, 'billing.manage', user))
-        self.assertEqual(self.iam.with_user(user)._project_domain(), [('id', 'in', [])])
+            member.with_user(self.owner)._reset_password()
+        removed = member.with_user(self.owner)._delete_profile()
+        self.assertFalse(removed['account_disabled'])
+        self.assertTrue(self.iam._allowed(owned, 'billing.manage', user))
+        self.assertFalse(self.iam._allowed(self.project, 'project.view', user))
 
     def test_managed_roles_enforce_action_and_environment_boundaries(self):
         member, _ = self._new_profile()
@@ -542,11 +563,13 @@ class TestIamMemberApi(IamFixture, HttpCase):
         self.assertTrue(self._rpc('/saas/api/v1/instances/%s/status' % self.project.id)['ok'])
         me = self._rpc('/saas/api/v1/me')['data']
         self.assertTrue(me['is_managed_teammate'])
-        self.assertFalse(me['can_create_projects'])
-        for route in ('/saas/api/v1/hosting/order', '/saas/api/v1/wallet', '/saas/api/v1/invoices', '/saas/api/v1/iam/members', '/saas/api/v1/iam/groups'):
-            denied = self._rpc(route)
-            self.assertFalse(denied['ok'], denied)
-            self.assertEqual(denied['code'], 'access_denied')
+        self.assertTrue(me['can_create_projects'])
+        self.assertTrue(self._rpc('/saas/api/v1/wallet')['ok'])
+        self.assertEqual(self._rpc('/saas/api/v1/invoices')['data'], [])
+        nested = self._rpc('/saas/api/v1/iam/members', name='Own Teammate', email='iamnestedapi@example.com')
+        self.assertTrue(nested['ok'], nested)
+        group = self._rpc('/saas/api/v1/iam/groups', name='Own Team')
+        self.assertTrue(group['ok'], group)
         old_session = self.opener.cookies.copy()
         self.authenticate(self.other.login, 'iam-test-pass')
         self.assertFalse(self._rpc('/saas/api/v1/iam/members', member_id=profile.id, reset_password=True)['ok'])

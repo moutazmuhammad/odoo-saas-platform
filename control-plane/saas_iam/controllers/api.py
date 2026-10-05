@@ -21,7 +21,8 @@ class IamApi(SaasApi):
         data['must_change_password'] = bool(request.env.user.sudo().iam_initial_password)
         data['must_verify_phone'] = request.env.user.sudo()._needs_phone_verification()
         data['is_managed_teammate'] = request.env['saas.iam']._is_managed_user()
-        data['can_create_projects'] = not data['is_managed_teammate']
+        data['can_create_projects'] = bool(request.env.user.active and not request.env.user._is_public()
+                                           and not request.env.user.sudo()._onboarding_pending())
         return data
 
     def _otp_sent_payload(self, otp):
@@ -107,6 +108,7 @@ class IamApi(SaasApi):
         iam = request.env['saas.iam']
         data['permissions'] = sorted(iam._permissions(instance))
         data['is_project_owner'] = iam._is_owner(instance)
+        data['is_owned_project'] = iam._project(instance).partner_id == request.env.user.partner_id
         data['can_manage_access'] = any(iam._allowed(instance, 'iam.manage', environment=e) for e in ENVIRONMENTS)
         if not iam._is_owner(instance):
             for key in ('wallet', 'invoices', 'payment_method', 'capacity', 'checkout_url',
@@ -192,7 +194,7 @@ class IamApi(SaasApi):
             'current_customer_id': request.env.user.partner_id.id,
             **self._phone_options(),
             'can_manage_groups': bool(projects.filtered(lambda p: p.partner_id == request.env.user.partner_id)),
-            'empty_reason': ('no_projects' if not accessible and not iam._is_managed_user() else 'access_not_granted') if not projects else None,
+            'empty_reason': ('no_projects' if not accessible else 'access_not_granted') if not projects else None,
             'roles': [{'code': code, 'name': label, 'permissions': sorted(perms)} for code, (label, perms) in ROLE_DEFINITIONS.items()],
             'projects': [{'id': p.id, 'name': p.project_name or p.subdomain or p.name,
                           'customer_id': p.partner_id.id, 'is_owner': iam._is_owner(p),

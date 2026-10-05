@@ -14,6 +14,7 @@ import { useInstances } from "@/context/InstancesContext";
 import { useSections } from "@/lib/useSections";
 import { formatBytes, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { groupProjects } from "@/lib/projects";
 import type { ApiInstance } from "@/lib/api";
 
 const projectLink = (i: ApiInstance) =>
@@ -32,7 +33,16 @@ export default function Instances() {
     else next.delete("customer");
     setSearchParams(next, { replace: true });
   };
-  const customerProjects = instances.filter((i) => !isStaff || !customerId || String(i.customer?.id) === customerId);
+  const { projects, owned: ownedProjects, shared: sharedProjects } = groupProjects(instances);
+  const category = searchParams.get("category") === "shared" ? "shared" : searchParams.get("category") === "my" ? "my" : ownedProjects.length === 0 && sharedProjects.length > 0 ? "shared" : "my";
+  const setCategory = (value: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("category", value);
+    setSearchParams(next, { replace: true });
+    setOnlyRunning(false);
+  };
+  const categoryProjects = isStaff ? projects : category === "my" ? ownedProjects : sharedProjects;
+  const customerProjects = categoryProjects.filter((i) => !isStaff || !customerId || String(i.customer?.id) === customerId);
   const navigate = useNavigate();
   const sections = useSections();
   // Send "Create instance" to whichever offering is live.
@@ -79,7 +89,7 @@ export default function Instances() {
     <div className="animate-fade-in">
       <PageHeader
         title="Projects"
-        subtitle={isStaff ? "Manage and monitor projects across all customers." : "Manage and monitor all your Odoo projects."}
+        subtitle={isStaff ? "Manage and monitor projects across all customers." : "Manage your own projects and projects shared with you."}
         actions={canCreate &&
           <Button onClick={() => navigate(createTo)}>
             <Plus className="size-4" />
@@ -89,6 +99,10 @@ export default function Instances() {
       />
 
       {error && <AlertBanner className="mt-6" variant="danger" title="Couldn't load projects" description={error} />}
+
+      {!isStaff && <div role="tablist" aria-label="Project categories" className="mt-6 flex gap-1 border-b border-border">
+        {([{ key: "my", label: "My projects", count: ownedProjects.length }, { key: "shared", label: "Shared projects", count: sharedProjects.length }] as const).map(item => <button key={item.key} role="tab" aria-selected={category === item.key} onClick={() => setCategory(item.key)} className={cn("border-b-2 px-4 py-3 text-sm font-medium transition-colors", category === item.key ? "border-primary text-primary" : "border-transparent text-muted hover:text-foreground")}>{item.label} <span className="ml-1 text-xs">({item.count})</span></button>)}
+      </div>}
 
       <DataTable<ApiInstance>
         className="mt-2"
@@ -132,13 +146,13 @@ export default function Instances() {
           <EmptyState
             className="m-0 py-14"
             icon={Server}
-            title={query || onlyRunning || (isStaff && customerId) ? "No matching projects" : "No projects yet"}
+            title={query || onlyRunning || (isStaff && customerId) ? "No matching projects" : !isStaff && category === "shared" ? "No shared projects yet" : "No projects yet"}
             description={
               query || onlyRunning || (isStaff && customerId)
                 ? "Try a different search term or filter."
-                : canCreate ? "Create your first project to deploy an Odoo environment." : "Ask your customer owner to grant you access to a project."
+                : !isStaff && category === "shared" ? "Projects shared by other owners will appear here." : canCreate ? "Create your first project to deploy an Odoo environment." : "Ask your customer owner to grant you access to a project."
             }
-            action={canCreate && !query && !onlyRunning && (!isStaff || !customerId) && <Button onClick={() => navigate(createTo)}>Create project</Button>}
+            action={canCreate && (isStaff || category === "my") && !query && !onlyRunning && (!isStaff || !customerId) && <Button onClick={() => navigate(createTo)}>Create project</Button>}
           />
         }
         columns={columns}

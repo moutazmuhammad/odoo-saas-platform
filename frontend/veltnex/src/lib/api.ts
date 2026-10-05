@@ -381,6 +381,7 @@ export interface ApiInstance {
   permissions?: string[];
   can_manage_access?: boolean;
   is_project_owner?: boolean;
+  is_owned_project?: boolean;
   /** Project owner, available only to staff. */
   customer?: { id: number; name: string };
   id: number;

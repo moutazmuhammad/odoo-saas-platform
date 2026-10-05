@@ -1,6 +1,6 @@
 {
     'name': 'SaaS Project IAM',
-    'version': '18.0.1.3.3',
+    'version': '18.0.1.3.4',
     'category': 'SaaS',
     'summary': 'Fixed project roles, team invitations and environment scopes',
     'author': 'SaaS Platform',

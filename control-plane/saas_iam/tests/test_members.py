@@ -49,6 +49,21 @@ class TestIamMembers(IamFixture, TransactionCase):
         self.assertIn(reset['temporary_password'], mail.body_html)
         self.assertNotEqual(reset['temporary_password'], result['temporary_password'])
 
+    def test_email_button_checks_owner_and_current_temporary_password(self):
+        member, result = self._new_profile()
+        with self.assertRaises(AccessError):
+            member.with_user(self.other)._email_credentials(result['temporary_password'])
+        with self.assertRaises(ValidationError):
+            member.with_user(self.owner)._email_credentials('wrong-password-secret')
+        self.assertFalse(self.env['mail.mail'].sudo().search_count([('email_to', '=', result['email'])]))
+        self.assertTrue(member.with_user(self.owner)._email_credentials(result['temporary_password'])['email_queued'])
+        member.with_user(self.owner)._reset_password()
+        with self.assertRaises(ValidationError):
+            member.with_user(self.owner)._email_credentials(result['temporary_password'])
+        member.user_id.sudo().write({'iam_initial_password': False})
+        with self.assertRaises(ValidationError):
+            member.with_user(self.owner)._email_credentials(result['temporary_password'])
+
     def test_phone_uniqueness_normalizes_mobile_and_inactive_contacts(self):
         egypt = self.env.ref('base.eg')
         self.owner.partner_id.country_id = egypt

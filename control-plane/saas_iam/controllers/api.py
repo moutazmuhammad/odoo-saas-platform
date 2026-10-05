@@ -57,7 +57,7 @@ class IamApi(SaasApi):
         return limited or _response(lambda: request.env['res.users']._verify_phone_code(code), savepoint=False)
 
     @http.route('/saas/api/v1/iam/members', type='json', auth='user')
-    def iam_member(self, name=None, email=None, phone=None, member_id=None, delete=False, reset_password=False, country_id=None, send_credentials=False):
+    def iam_member(self, name=None, email=None, phone=None, member_id=None, delete=False, reset_password=False, country_id=None):
         def change():
             Member = request.env['saas.iam.member']
             if delete or reset_password:
@@ -67,10 +67,20 @@ class IamApi(SaasApi):
                 if not member:
                     raise ValidationError(_('Teammate profile not found.'))
                 member = member.with_user(request.env.user)
-                return member._delete_profile() if delete else member._reset_password(send_credentials=send_credentials is True)
-            return Member._create_profile(name, email, phone, country_id=country_id, send_credentials=send_credentials is True)
+                return member._delete_profile() if delete else member._reset_password()
+            return Member._create_profile(name, email, phone, country_id=country_id)
         limited = self._rate_limit('iam_member', 30, 3600)
         return limited or _response(change)
+
+    @http.route('/saas/api/v1/iam/members/credentials/email', type='json', auth='user')
+    def iam_email_credentials(self, member_id=None, temporary_password=None):
+        def send():
+            member = request.env['saas.iam.member'].sudo().browse(int(member_id or 0)).exists()
+            if not member:
+                raise ValidationError(_('Teammate profile not found.'))
+            return member.with_user(request.env.user)._email_credentials(temporary_password)
+        limited = self._rate_limit('iam_credentials_email', 10, 600)
+        return limited or _response(send)
 
     @http.route(['/saas/api/v1/iam/password/change', '/saas/api/v1/iam/verification/finish'], type='json', auth='user')
     def iam_password_change(self, password=None, **kw):

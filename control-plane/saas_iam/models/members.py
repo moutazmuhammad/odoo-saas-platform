@@ -104,7 +104,7 @@ class IamMember(models.Model):
                 'login_url': self.env['ir.config_parameter'].sudo().get_param('web.base.url', '') + '/login'}
         if send_credentials:
             # Recheck ownership before queuing sensitive sign-in details. Never accept
-            # a recipient or password supplied by the browser.
+            # a recipient supplied by the browser.
             member = self._owner_profile()
             body = '<p>Hello %s,</p><p>Your teammate profile is ready.</p>' % escape(member.name)
             body += '<p>Sign-in page: %s<br>Email: %s</p>' % (
@@ -121,6 +121,21 @@ class IamMember(models.Model):
             })
             result['email_queued'] = True
         return result
+
+    def _email_credentials(self, password=None):
+        member = self._owner_profile()
+        user = member.user_id
+        if password is not None:
+            if (not member._can_manage_login() or not user.iam_initial_password
+                    or not isinstance(password, str) or not 12 <= len(password) <= 256):
+                raise ValidationError(_('These temporary credentials are no longer valid. Reset the password to generate new ones.'))
+            try:
+                user.with_user(user)._check_credentials(
+                    {'login': user.login, 'password': password, 'type': 'password'}, {'interactive': True})
+            except AccessDenied:
+                raise ValidationError(_('These temporary credentials are no longer valid. Reset the password to generate new ones.')) from None
+        self._credentials(password, send_credentials=True)
+        return {'email_queued': True}
 
     @api.model
     def _phone_country(self, country_id=None, default_country=None):

@@ -6,7 +6,7 @@ import ProjectAccess from "../ProjectAccess";
 import { api, type IamData } from "@/lib/api";
 
 vi.mock("@/lib/api", async (original) => ({ ...await original<typeof import("@/lib/api")>(),
-  api: { iam: vi.fn(), iamInvite: vi.fn(), iamGrant: vi.fn(), iamRevoke: vi.fn(), iamGroup: vi.fn(), iamMember: vi.fn() } }));
+  api: { iam: vi.fn(), iamInvite: vi.fn(), iamGrant: vi.fn(), iamRevoke: vi.fn(), iamGroup: vi.fn(), iamMember: vi.fn(), iamEmailCredentials: vi.fn() } }));
 const mocked = vi.mocked(api, { deep: true });
 const fixture = (): IamData => ({
   can_manage_groups: true, current_customer_id: 10, phone_country_id: 65, phone_countries: [{ id: 65, name: "Egypt", phone_code: 20 }],
@@ -114,7 +114,7 @@ describe("Project Access", () => {
     expect(screen.getByDisplayValue("temporary-secret")).toBeInTheDocument();
   });
   it("emails credentials on request and downloads the returned sign-in details", async () => {
-    mocked.iamMember.mockResolvedValue({ id: 12, email: "new@example.com", temporary_password: "temporary-secret", login_url: "https://example.com/login", email_queued: true });
+    mocked.iamMember.mockResolvedValue({ id: 12, email: "new@example.com", temporary_password: "temporary-secret", login_url: "https://example.com/login" });
     const createUrl = vi.fn().mockReturnValue("blob:credentials");
     const revokeUrl = vi.fn();
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createUrl });
@@ -125,9 +125,12 @@ describe("Project Access", () => {
     await user.click(await screen.findByRole("button", { name: "Add teammate" }));
     await user.type(screen.getByLabelText("name"), "New Teammate");
     await user.type(screen.getByLabelText("email"), "new@example.com");
-    await user.click(screen.getByLabelText("Email sign-in details to the teammate"));
     await user.click(screen.getByRole("button", { name: "Create profile" }));
-    await waitFor(() => expect(mocked.iamMember).toHaveBeenCalledWith(expect.objectContaining({ send_credentials: true })));
+    await screen.findByRole("dialog", { name: "Teammate sign-in details" });
+    expect(mocked.iamEmailCredentials).not.toHaveBeenCalled();
+    mocked.iamEmailCredentials.mockResolvedValue({ email_queued: true });
+    await user.click(screen.getByRole("button", { name: "Send credentials by email" }));
+    await waitFor(() => expect(mocked.iamEmailCredentials).toHaveBeenCalledWith(12, "temporary-secret"));
     expect(await screen.findByText("Email queued for delivery to the teammate.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Download credentials" }));
     expect(createUrl).toHaveBeenCalledWith(expect.any(Blob));

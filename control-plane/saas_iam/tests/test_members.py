@@ -24,6 +24,31 @@ class TestIamMembers(IamFixture, TransactionCase):
             User._send_phone_code(phone, self.env.ref('base.eg').id)
         return User._verify_phone_code(member.user_id.sudo().iam_phone_code)
 
+    def test_owner_can_email_new_credentials_to_registered_login(self):
+        result = self.env['saas.iam.member'].with_user(self.owner)._create_profile(
+            '<New Teammate>', 'credential-mail@example.com', send_credentials=True)
+        mail = self.env['mail.mail'].sudo().search([('email_to', '=', result['email'])])
+        self.assertTrue(result['email_queued'])
+        self.assertEqual(len(mail), 1)
+        self.assertEqual(mail.state, 'outgoing')
+        self.assertTrue(mail.auto_delete)
+        self.assertIn(result['temporary_password'], mail.body_html)
+        self.assertIn('&lt;New Teammate&gt;', mail.body_html)
+        self.assertIn('WhatsApp', mail.body_html)
+        self.assertTrue(self.env['saas.iam.member'].sudo().browse(result['id']).user_id.iam_initial_password)
+
+    def test_credentials_email_is_opt_in_and_owner_only(self):
+        member, result = self._new_profile()
+        self.assertNotIn('email_queued', result)
+        self.assertFalse(self.env['mail.mail'].sudo().search_count([('email_to', '=', result['email'])]))
+        with self.assertRaises(AccessError):
+            member.with_user(self.other)._credentials('secret', send_credentials=True)
+        reset = member.with_user(self.owner)._reset_password(send_credentials=True)
+        self.assertTrue(reset['email_queued'])
+        mail = self.env['mail.mail'].sudo().search([('email_to', '=', result['email'])])
+        self.assertIn(reset['temporary_password'], mail.body_html)
+        self.assertNotEqual(reset['temporary_password'], result['temporary_password'])
+
     def test_phone_uniqueness_normalizes_mobile_and_inactive_contacts(self):
         egypt = self.env.ref('base.eg')
         self.owner.partner_id.country_id = egypt

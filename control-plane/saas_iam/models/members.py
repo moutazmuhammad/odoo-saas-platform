@@ -1,6 +1,7 @@
 import re
 import secrets
 import hmac
+from html import escape
 from datetime import timedelta
 from odoo import api, fields, models, _
 from odoo.exceptions import AccessDenied, AccessError, ValidationError
@@ -50,7 +51,7 @@ class IamMember(models.Model):
                         (accepted.mapped('user_id') - profiles.mapped('user_id')).filtered('active').ids))
 
     @api.model
-    def _create_profile(self, name, email, phone=None, country_id=None):
+    def _create_profile(self, name, email, phone=None, country_id=None, send_credentials=False):
         self.env['saas.iam']._require_customer_owner()
         owner = self.env.user.partner_id
         if not isinstance(name, str) or not name.strip() or len(name) > 100:
@@ -95,12 +96,31 @@ class IamMember(models.Model):
         else:
             member = self.sudo().create(values)
         self.env['saas.iam']._audit('iam.member.create', detail='Profile %s' % member.id)
-        return member._credentials(password)
+        return member._credentials(password, send_credentials=send_credentials)
 
-    def _credentials(self, password):
+    def _credentials(self, password, send_credentials=False):
         self.ensure_one()
-        return {'id': self.id, 'email': self.sudo().user_id.login, 'temporary_password': password,
+        result = {'id': self.id, 'email': self.sudo().user_id.login, 'temporary_password': password,
                 'login_url': self.env['ir.config_parameter'].sudo().get_param('web.base.url', '') + '/login'}
+        if send_credentials:
+            # Recheck ownership before queuing sensitive sign-in details. Never accept
+            # a recipient or password supplied by the browser.
+            member = self._owner_profile()
+            body = '<p>Hello %s,</p><p>Your teammate profile is ready.</p>' % escape(member.name)
+            body += '<p>Sign-in page: %s<br>Email: %s</p>' % (
+                escape(result['login_url']), escape(result['email']))
+            if password:
+                body += '<p>Temporary password: <strong>%s</strong></p>' % escape(password)
+                body += '<p>On first login, replace your temporary password, then verify your mobile number through WhatsApp before accessing projects.</p>'
+            else:
+                body += '<p>Use your existing password to sign in.</p>'
+            self.env['mail.mail'].sudo().create({
+                'subject': _('Your teammate sign-in details'),
+                'email_to': result['email'], 'body_html': body,
+                'auto_delete': True,
+            })
+            result['email_queued'] = True
+        return result
 
     @api.model
     def _phone_country(self, country_id=None, default_country=None):
@@ -176,7 +196,7 @@ class IamMember(models.Model):
             raise AccessError(_('Only the customer owner can manage this profile.'))
         return self.sudo()
 
-    def _reset_password(self):
+    def _reset_password(self, send_credentials=False):
         member = self._owner_profile()
         if not member._can_manage_login():
             raise AccessError(_('This is an existing or shared account. Its password is managed by the account holder.'))
@@ -185,7 +205,7 @@ class IamMember(models.Model):
                                     'iam_verified_phone': False, 'iam_phone_code': False})
         member._invalidate_user_access()
         self.env['saas.iam']._audit('iam.member.password.reset', detail='Profile %s' % member.id)
-        return member._credentials(password)
+        return member._credentials(password, send_credentials=send_credentials)
 
     def _invalidate_user_access(self):
         self.ensure_one()

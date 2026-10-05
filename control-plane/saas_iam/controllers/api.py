@@ -57,7 +57,7 @@ class IamApi(SaasApi):
         return limited or _response(lambda: request.env['res.users']._verify_phone_code(code), savepoint=False)
 
     @http.route('/saas/api/v1/iam/members', type='json', auth='user')
-    def iam_member(self, name=None, email=None, phone=None, member_id=None, delete=False, reset_password=False, country_id=None):
+    def iam_member(self, name=None, email=None, phone=None, member_id=None, delete=False, reset_password=False, country_id=None, send_credentials=False):
         def change():
             Member = request.env['saas.iam.member']
             if delete or reset_password:
@@ -67,8 +67,8 @@ class IamApi(SaasApi):
                 if not member:
                     raise ValidationError(_('Teammate profile not found.'))
                 member = member.with_user(request.env.user)
-                return member._delete_profile() if delete else member._reset_password()
-            return Member._create_profile(name, email, phone, country_id=country_id)
+                return member._delete_profile() if delete else member._reset_password(send_credentials=send_credentials is True)
+            return Member._create_profile(name, email, phone, country_id=country_id, send_credentials=send_credentials is True)
         limited = self._rate_limit('iam_member', 30, 3600)
         return limited or _response(change)
 

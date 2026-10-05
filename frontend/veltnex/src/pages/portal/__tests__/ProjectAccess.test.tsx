@@ -113,6 +113,33 @@ describe("Project Access", () => {
     expect(await screen.findByRole("dialog", { name: "Teammate sign-in details" })).toHaveTextContent("shown only once");
     expect(screen.getByDisplayValue("temporary-secret")).toBeInTheDocument();
   });
+  it("emails credentials on request and downloads the returned sign-in details", async () => {
+    mocked.iamMember.mockResolvedValue({ id: 12, email: "new@example.com", temporary_password: "temporary-secret", login_url: "https://example.com/login", email_queued: true });
+    const createUrl = vi.fn().mockReturnValue("blob:credentials");
+    const revokeUrl = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createUrl });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeUrl });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectAccess />);
+    await user.click(await screen.findByRole("button", { name: "Add teammate" }));
+    await user.type(screen.getByLabelText("name"), "New Teammate");
+    await user.type(screen.getByLabelText("email"), "new@example.com");
+    await user.click(screen.getByLabelText("Email sign-in details to the teammate"));
+    await user.click(screen.getByRole("button", { name: "Create profile" }));
+    await waitFor(() => expect(mocked.iamMember).toHaveBeenCalledWith(expect.objectContaining({ send_credentials: true })));
+    expect(await screen.findByText("Email queued for delivery to the teammate.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Download credentials" }));
+    expect(createUrl).toHaveBeenCalledWith(expect.any(Blob));
+    expect(click).toHaveBeenCalledOnce();
+    const downloaded = createUrl.mock.calls[0][0] as Blob;
+    const content = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(downloaded); });
+    expect(content).toContain("https://example.com/login");
+    expect(content).toContain("new@example.com");
+    expect(content).toContain("temporary-secret");
+    expect(content).toContain("WhatsApp");
+    click.mockRestore();
+  });
   it("lists unverified profiles immediately and requires confirmation before deletion", async () => {
     mocked.iam.mockResolvedValue({ ...fixture(), profiles: [{ id: 12, user_id: 4, name: "Ahmed", email: "ahmed@example.com", phone: "+201012345678", customer_id: 10, ready: false, can_reset_password: true, editable: true }] });
     const user = userEvent.setup();

@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link, useParams } from "react-router-dom";
-import { Copy, KeyRound, Pencil, FolderGit2, Plus, Search, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
+import { Copy, Download, KeyRound, Pencil, FolderGit2, Plus, Search, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
 import { api, ApiError, type IamData } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { Button } from "@/components/ui/button";
@@ -52,20 +52,34 @@ export default function ProjectAccess() {
   const [busy, setBusy] = React.useState(false);
   const [remove, setRemove] = React.useState<{ ids: number[]; name: string } | null>(null);
   const [memberDraft, setMemberDraft] = React.useState<{ name: string; email: string; phone: string; country_id: number } | null>(null);
-  const [memberCredentials, setMemberCredentials] = React.useState<{ email: string; temporary_password?: string | null; login_url: string } | null>(null);
+  const [memberCredentials, setMemberCredentials] = React.useState<{ email: string; temporary_password?: string | null; login_url: string; email_queued?: boolean } | null>(null);
   const [resetMember, setResetMember] = React.useState<NonNullable<IamData["profiles"]>[number] | null>(null);
   const [removeMember, setRemoveMember] = React.useState<NonNullable<IamData["profiles"]>[number] | null>(null);
+  const [emailCredentials, setEmailCredentials] = React.useState(false);
+  React.useEffect(() => { setEmailCredentials(false); }, [!!memberDraft, !!resetMember]);
+  const downloadCredentials = () => {
+    if (!memberCredentials) return;
+    const details = ["Teammate sign-in details", `Sign-in page: ${memberCredentials.login_url}`, `Email: ${memberCredentials.email}`,
+      memberCredentials.temporary_password ? `Temporary password: ${memberCredentials.temporary_password}` : "Use your existing password.",
+      memberCredentials.temporary_password ? "On first login, replace your temporary password and verify your mobile number through WhatsApp." : ""].filter(Boolean).join("\n");
+    const url = URL.createObjectURL(new Blob([details + "\n"], { type: "text/plain;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = "teammate-sign-in-details.txt";
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const emailOption = <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={emailCredentials} onChange={e => setEmailCredentials(e.target.checked)} />Email sign-in details to the teammate</label>;
   const saveMember = async () => {
     if (!memberDraft) return;
     setBusy(true);
-    try { const result = await api.iamMember(memberDraft); setMemberDraft(null); setMemberCredentials(result); await load(); toast.success("Teammate profile created"); }
+    try { const result = await api.iamMember({ ...memberDraft, ...(emailCredentials ? { send_credentials: true } : {}) }); setMemberDraft(null); setMemberCredentials(result); await load(); toast.success("Teammate profile created"); }
     catch (e) { toast.error("Could not create profile", e instanceof ApiError ? e.message : "Please try again."); }
     finally { setBusy(false); }
   };
   const resetPassword = async () => {
     if (!resetMember) return;
     setBusy(true);
-    try { const result = await api.iamMember({ member_id: resetMember.id, reset_password: true }); setResetMember(null); setMemberCredentials(result); await load(); toast.success("Password reset", "Share the new temporary password privately."); }
+    try { const result = await api.iamMember({ member_id: resetMember.id, reset_password: true, ...(emailCredentials ? { send_credentials: true } : {}) }); setResetMember(null); setMemberCredentials(result); await load(); toast.success("Password reset", "Share the new temporary password privately."); }
     catch (e) { toast.error("Could not reset password", e instanceof ApiError ? e.message : "Please try again."); }
     finally { setBusy(false); }
   };
@@ -201,10 +215,10 @@ export default function ProjectAccess() {
     <Dialog open={!!memberDraft} onClose={() => !busy && setMemberDraft(null)} title="Add teammate" description="Create a profile now. New users set their own password and verify their mobile before accessing projects." variant="drawer">
       <div className="space-y-5 py-5">{(["name", "email"] as const).map(field => <div key={field}><Label htmlFor={`member-${field}`} className="capitalize">{field}</Label><Input id={`member-${field}`} className="mt-2" type={field === "email" ? "email" : "text"} value={memberDraft?.[field] || ""} onChange={e => setMemberDraft(d => d && { ...d, [field]: e.target.value })} /></div>)}
         <div><Label htmlFor="member-phone-country">Phone country</Label><select id="member-phone-country" className="mt-2 h-10 w-full rounded-sm border border-border bg-card px-3 text-sm" value={memberDraft?.country_id || ""} onChange={e => setMemberDraft(d => d && { ...d, country_id: Number(e.target.value) })}><option value="">Select country…</option>{data?.phone_countries?.map(c => <option key={c.id} value={c.id}>{c.name} (+{c.phone_code})</option>)}</select></div>
-        <div><Label htmlFor="member-phone">Phone (optional)</Label><div className="mt-2 flex items-center gap-2">{!!memberDraft?.country_id && !/^(\+|00)/.test(memberDraft.phone) && <span className="shrink-0 text-sm text-muted">+{data?.phone_countries?.find(c => c.id === memberDraft.country_id)?.phone_code}</span>}<Input id="member-phone" type="tel" autoComplete="tel-national" value={memberDraft?.phone || ""} onChange={e => setMemberDraft(d => d && { ...d, phone: e.target.value })} /></div><p className="mt-2 text-xs text-muted">Enter a local number. The country code is added automatically.</p></div><p className="text-xs text-muted">New accounts receive a temporary password. Existing accounts keep their own login credentials.</p><ActionButton loading={busy} disabled={!memberDraft?.name.trim() || !memberDraft.email.trim()} onClick={saveMember}>Create profile</ActionButton></div>
+        <div><Label htmlFor="member-phone">Phone (optional)</Label><div className="mt-2 flex items-center gap-2">{!!memberDraft?.country_id && !/^(\+|00)/.test(memberDraft.phone) && <span className="shrink-0 text-sm text-muted">+{data?.phone_countries?.find(c => c.id === memberDraft.country_id)?.phone_code}</span>}<Input id="member-phone" type="tel" autoComplete="tel-national" value={memberDraft?.phone || ""} onChange={e => setMemberDraft(d => d && { ...d, phone: e.target.value })} /></div><p className="mt-2 text-xs text-muted">Enter a local number. The country code is added automatically.</p></div><p className="text-xs text-muted">New accounts receive a temporary password. Existing accounts keep their own login credentials.</p>{emailOption}<ActionButton loading={busy} disabled={!memberDraft?.name.trim() || !memberDraft.email.trim()} onClick={saveMember}>Create profile</ActionButton></div>
     </Dialog>
-    <Dialog open={!!memberCredentials} onClose={() => setMemberCredentials(null)} title="Teammate sign-in details" description="Share the sign-in details privately with your teammate."><div className="mt-4 space-y-4"><Label>Sign-in page</Label><Input readOnly value={memberCredentials?.login_url || ""} /><Label>Email</Label><Input readOnly value={memberCredentials?.email || ""} />{memberCredentials?.temporary_password ? <><Label>Temporary password</Label><Input readOnly value={memberCredentials.temporary_password} /><p className="text-xs text-muted">Copy it now; it is shown only once. Your teammate must replace this password when they next sign in.</p></> : <p className="text-sm text-muted">This teammate already has an account. They sign in with their existing password. No email or phone verification is needed.</p>}<Button onClick={() => setMemberCredentials(null)}>Done</Button></div></Dialog>
-    <Dialog open={!!resetMember} onClose={() => !busy && setResetMember(null)} title="Reset teammate password?" description={`Generate a new temporary password for ${resetMember?.name || "this teammate"}. Current sessions lose access, and they must choose a new password at their next login.`}><div className="mt-5 flex justify-end gap-3"><Button variant="secondary" disabled={busy} onClick={() => setResetMember(null)}>Cancel</Button><ActionButton loading={busy} onClick={resetPassword}>Reset password</ActionButton></div></Dialog>
+    <Dialog open={!!memberCredentials} onClose={() => setMemberCredentials(null)} title="Teammate sign-in details" description="Share the sign-in details privately with your teammate."><div className="mt-4 space-y-4"><Label>Sign-in page</Label><Input readOnly value={memberCredentials?.login_url || ""} /><Label>Email</Label><Input readOnly value={memberCredentials?.email || ""} />{memberCredentials?.temporary_password ? <><Label>Temporary password</Label><Input readOnly value={memberCredentials.temporary_password} /><p className="text-xs text-muted">Copy it now; it is shown only once. Your teammate must replace this password when they next sign in.</p></> : <p className="text-sm text-muted">This teammate already has an account. They sign in with their existing password.</p>}<p className="text-xs text-muted">{memberCredentials?.email_queued ? "Email queued for delivery to the teammate." : "Email was not requested. You can download and share these details privately."}</p><div className="flex gap-3"><Button variant="secondary" onClick={downloadCredentials}><Download />Download credentials</Button><Button onClick={() => setMemberCredentials(null)}>Done</Button></div></div></Dialog>
+    <Dialog open={!!resetMember} onClose={() => !busy && setResetMember(null)} title="Reset teammate password?" description={`Generate a new temporary password for ${resetMember?.name || "this teammate"}. Current sessions lose access, and they must choose a new password at their next login.`}><div className="mt-5">{emailOption}</div><div className="mt-5 flex justify-end gap-3"><Button variant="secondary" disabled={busy} onClick={() => setResetMember(null)}>Cancel</Button><ActionButton loading={busy} onClick={resetPassword}>Reset password</ActionButton></div></Dialog>
     <Dialog open={!!removeMember} onClose={() => !busy && setRemoveMember(null)} title="Delete teammate profile?" description={`Remove ${removeMember?.name || "this teammate"} from your team and revoke their direct and group access to your projects. Accounts created solely for your team are disabled. Shared accounts keep their access with other customers.`}><div className="mt-5 flex justify-end gap-3"><Button variant="secondary" disabled={busy} onClick={() => setRemoveMember(null)}>Cancel</Button><ActionButton variant="danger" loading={busy} onClick={deleteMember}>Delete profile</ActionButton></div></Dialog>
     <Dialog open={wizard} onClose={() => !busy && setWizard(false)} title="Grant access" description="Select a principal and assign roles on your projects." variant="drawer" className="max-w-xl">
       <div className="space-y-6 py-4">

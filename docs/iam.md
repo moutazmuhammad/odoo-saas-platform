@@ -68,3 +68,9 @@ Removing a role or group membership closes terminals that are no longer authoriz
 Back up the platform and control-plane database, stop the Odoo and job services, copy the new module and changed website files, and install `saas_iam` while upgrading only `saas_website`. For an existing installation, upgrade only `saas_iam` for teammate-profile schema changes; Deploy the rebuilt website bundle and restart both services. This installs the IAM tables and job authorization fields; it does not upgrade customer Odoo modules, recreate customer instances, or assign teammate roles automatically.
 
 The regression suite covers role combinations, environment scopes, customer isolation, delegation limits, single-use invitations, group membership, direct model calls, status/billing redaction, permitted creation/deletion/restarts, backup download revocation, and frontend grants across multiple projects.
+
+### Sharing teammate credentials
+
+The customer owner can choose **Email sign-in details to the teammate** when creating a profile or resetting its password. The server queues the generated details to the account login email through Odoo's configured outgoing mail server; AWS SES can be configured there later. The interface reports queued delivery, not successful delivery. Successful emails are automatically deleted from Odoo's mail queue.
+
+The sign-in details dialog also offers **Download credentials**, a local text file containing the login URL, email and newly generated temporary password, plus the required first-login steps. Downloads are generated in the browser; passwords are not stored in browser storage. Close the dialog only after saving or sharing the details. Existing accounts receive sign-in instructions without a password.

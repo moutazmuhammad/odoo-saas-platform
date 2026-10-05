@@ -263,17 +263,16 @@ class IamUser(models.Model):
     iam_phone_country_id = fields.Many2one('res.country', groups='base.group_system', copy=False)
     iam_phone_code = EncryptedChar(groups='base.group_system', copy=False)
     iam_phone_code_expires = fields.Datetime(groups='base.group_system', copy=False)
+    iam_phone_test_challenge = fields.Boolean(default=False, groups='base.group_system', copy=False)
+    iam_phone_test_verified = fields.Boolean(default=False, groups='base.group_system', copy=False)
     iam_phone_code_attempts = fields.Integer(groups='base.group_system', copy=False)
 
     def _needs_phone_verification(self):
         self.ensure_one()
         user = self.sudo()
-        skip = self.env['ir.config_parameter'].sudo().get_param(
-            'saas_iam.skip_teammate_phone_verification', 'False')
-        if str(skip).lower() in ('true', '1'):
-            return False
         return bool(user.iam_managed_owner_id and (
-            not user.iam_verified_phone or user.iam_verified_phone != user.partner_id.phone))
+            not user.iam_verified_phone or user.iam_verified_phone != user.partner_id.phone
+            or (user.iam_phone_test_verified and not self.env['saas.iam.whatsapp']._test_codes_enabled())))
 
     def _onboarding_pending(self):
         self.ensure_one()
@@ -290,7 +289,12 @@ class IamUser(models.Model):
 
     def _deliver_phone_code(self, phone, code):
         """Use the shared WhatsApp sender for every phone verification."""
-        self.env['saas.iam.whatsapp']._send_code(phone, code)
+        sender = self.env['saas.iam.whatsapp']
+        if sender._test_codes_enabled():
+            sender._recipient(phone)
+            return {'test_otp': code}
+        sender._send_code(phone, code)
+        return {}
 
     @api.model
     def _send_phone_code(self, phone, country_id=None):
@@ -304,15 +308,18 @@ class IamUser(models.Model):
         code = '%06d' % secrets.randbelow(1000000)
         # Invalidate any previous challenge even if the new delivery fails.
         user.write({'iam_phone_code': False, 'iam_phone_pending': False})
-        user._deliver_phone_code(phone, code)
+        delivery = user._deliver_phone_code(phone, code)
+        testing = isinstance(delivery, dict) and delivery.get('test_otp') == code
         user.write({'iam_phone_pending': phone, 'iam_phone_country_id': country.id,
-                    'iam_phone_code': code, 'iam_phone_code_attempts': 0,
+                    'iam_phone_code': code, 'iam_phone_test_challenge': testing, 'iam_phone_code_attempts': 0,
                     'iam_phone_code_expires': fields.Datetime.now() + timedelta(minutes=10)})
-        return {'otp_sent': True, 'phone': phone}
+        return {'otp_sent': True, 'phone': phone, **({'test_otp': code} if testing else {})}
 
     @api.model
     def _verify_phone_code(self, code):
         user = self._phone_setup_user()
+        if user.iam_phone_test_challenge and not self.env['saas.iam.whatsapp']._test_codes_enabled():
+            raise ValidationError(_('Testing codes are no longer available. Request a new WhatsApp code.'))
         if (not user.iam_phone_code or not user.iam_phone_pending or
                 not user.iam_phone_code_expires or user.iam_phone_code_expires < fields.Datetime.now() or
                 user.iam_phone_code_attempts >= 5):
@@ -327,7 +334,10 @@ class IamUser(models.Model):
         phone = user.iam_phone_pending
         with self.env.cr.savepoint():
             user.partner_id.write({'phone': phone, 'mobile': False, 'country_id': user.iam_phone_country_id.id})
-            user.write({'iam_verified_phone': phone, 'iam_account_verified': True, 'iam_phone_code': False,
+            user.write({'iam_verified_phone': phone,
+                        'iam_account_verified': user.iam_account_verified or not user.iam_phone_test_challenge,
+                        'iam_phone_test_verified': user.iam_phone_test_challenge,
+                        'iam_phone_test_challenge': False, 'iam_phone_code': False,
                         'iam_phone_pending': False, 'iam_phone_code_expires': False})
             profiles = self.env['saas.iam.member'].sudo().search([('user_id', '=', user.id)])
             profiles.write({'phone': phone})

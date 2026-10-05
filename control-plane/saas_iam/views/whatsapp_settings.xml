@@ -6,8 +6,8 @@
         <field name="arch" type="xml">
             <xpath expr="//app[@name='saas_core']" position="inside">
                 <block title="WhatsApp phone verification" name="saas_whatsapp" groups="base.group_system">
-                    <setting string="Skip teammate mobile verification for testing" help="Owner-created teammates still change their temporary password. Disable this after testing to require unverified teammates to verify their mobile. Customer registration is unaffected.">
-                        <field name="saas_skip_teammate_phone_verification"/>
+                    <setting string="Show teammate verification codes for testing" help="Shows a temporary code on the teammate verification page until Meta WhatsApp is configured. Password change and entering a valid code remain required. Testing codes turn off automatically when WhatsApp is configured.">
+                        <field name="saas_teammate_phone_test_codes"/>
                     </setting>
                     <setting string="Meta WhatsApp Cloud API" help="Used for customer registration and teammate mobile verification. Enter an approved authentication template with a Copy Code button.">
                         <div class="content-group">

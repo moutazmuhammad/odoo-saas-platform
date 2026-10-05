@@ -24,9 +24,9 @@ class WhatsAppCompany(models.Model):
 class WhatsAppSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
-    saas_skip_teammate_phone_verification = fields.Boolean(
-        string='Skip teammate mobile verification for testing',
-        config_parameter='saas_iam.skip_teammate_phone_verification',
+    saas_teammate_phone_test_codes = fields.Boolean(
+        string='Show teammate verification codes for testing',
+        config_parameter='saas_iam.teammate_phone_test_codes',
         groups='base.group_system')
 
     saas_whatsapp_phone_id = fields.Char(related='company_id.saas_whatsapp_phone_id', readonly=False)
@@ -41,6 +41,30 @@ class WhatsAppVerification(models.AbstractModel):
     _description = 'WhatsApp verification delivery'
 
     @api.model
+    def _is_configured(self):
+        company = self.env.company.sudo()
+        return bool(re.fullmatch(r'[0-9]+', (company.saas_whatsapp_phone_id or '').strip())
+            and re.fullmatch(r'v[0-9]+\.0', (company.saas_whatsapp_api_version or '').strip())
+            and re.fullmatch(r'[a-z0-9_]+', (company.saas_whatsapp_template or '').strip())
+            and re.fullmatch(r'[a-z]{2,3}(?:_[A-Z]{2})?', (company.saas_whatsapp_language or '').strip())
+            and company.saas_whatsapp_access_token)
+
+    @api.model
+    def _test_codes_enabled(self):
+        enabled = self.env['ir.config_parameter'].sudo().get_param('saas_iam.teammate_phone_test_codes', 'False')
+        return str(enabled).lower() in ('true', '1') and not self._is_configured()
+
+    @api.model
+    def _recipient(self, phone):
+        try:
+            number = phonenumbers.parse(phone, None)
+        except phonenumbers.NumberParseException as exc:
+            raise ValidationError(_('Enter a valid phone number with its country code.')) from exc
+        if not phonenumbers.is_valid_number(number):
+            raise ValidationError(_('Enter a valid mobile phone number.'))
+        return phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164).lstrip('+')
+
+    @api.model
     def _send_code(self, phone, code):
         company = self.env.company.sudo()
         phone_id = (company.saas_whatsapp_phone_id or '').strip()
@@ -48,17 +72,9 @@ class WhatsAppVerification(models.AbstractModel):
         template = (company.saas_whatsapp_template or '').strip()
         language = (company.saas_whatsapp_language or '').strip()
         token = company.saas_whatsapp_access_token
-        if (not re.fullmatch(r'[0-9]+', phone_id) or not re.fullmatch(r'v[0-9]+\.0', version)
-                or not re.fullmatch(r'[a-z0-9_]+', template)
-                or not re.fullmatch(r'[a-z]{2,3}(?:_[A-Z]{2})?', language) or not token):
+        if not self._is_configured():
             raise UserError(_('WhatsApp verification is not configured. Please contact support.'))
-        try:
-            number = phonenumbers.parse(phone, None)
-        except phonenumbers.NumberParseException as exc:
-            raise ValidationError(_('Enter a valid phone number with its country code.')) from exc
-        if not phonenumbers.is_valid_number(number):
-            raise ValidationError(_('Enter a valid mobile phone number.'))
-        recipient = phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164).lstrip('+')
+        recipient = self._recipient(phone)
         payload = {
             'messaging_product': 'whatsapp', 'to': recipient, 'type': 'template',
             'template': {'name': template, 'language': {'code': language}, 'components': [

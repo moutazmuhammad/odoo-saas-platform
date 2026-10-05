@@ -599,7 +599,7 @@ export interface IamData {
 
 export const api = {
   iamPhoneSetup: () => rpc<{ phone: string; phone_country_id: number | null; phone_countries: { id: number; name: string; phone_code: number }[] }>("/saas/api/v1/iam/phone/setup"),
-  iamPhoneSend: (phone: string, country_id: number) => rpc<{ otp_sent: boolean; phone: string }>("/saas/api/v1/iam/phone/send", { phone, country_id }),
+  iamPhoneSend: (phone: string, country_id: number) => rpc<{ otp_sent: boolean; phone: string; test_otp?: string }>("/saas/api/v1/iam/phone/send", { phone, country_id }),
   iamPhoneVerify: (code: string) => rpc<{ verified: boolean }>("/saas/api/v1/iam/phone/verify", { code }),
   iamMember: (params: { name?: string; email?: string; phone?: string; country_id?: number; member_id?: number; delete?: boolean; reset_password?: boolean }) => rpc<{ id: number; email: string; temporary_password?: string | null; login_url: string; email_queued?: boolean }>("/saas/api/v1/iam/members", params),
   iamEmailCredentials: (member_id: number, temporary_password?: string | null) => rpc<{ email_queued: boolean }>("/saas/api/v1/iam/members/credentials/email", { member_id, temporary_password }),

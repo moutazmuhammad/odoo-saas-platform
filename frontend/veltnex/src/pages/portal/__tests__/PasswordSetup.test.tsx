@@ -53,6 +53,20 @@ describe("First-login password change", () => {
     await waitFor(() => expect(mocked.iamPhoneVerify).toHaveBeenCalledWith("123456"));
     expect(auth.refresh).toHaveBeenCalled();
   });
+  it("shows a testing code but still requires entering it to continue", async () => {
+    auth.user.must_change_password = false;
+    mocked.iamPhoneSend.mockResolvedValue({ otp_sent: true, phone: "+201012345678", test_otp: "654321" });
+    const user = userEvent.setup();
+    renderWithProviders(<PasswordSetup />);
+    await screen.findByLabelText("Mobile number");
+    await user.click(screen.getByRole("button", { name: "Send verification code" }));
+    expect(await screen.findByText(/Enter this code: 654321/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verify mobile and continue" })).toBeDisabled();
+    expect(auth.refresh).not.toHaveBeenCalled();
+    await user.type(screen.getByLabelText("Verification code"), "654321");
+    await user.click(screen.getByRole("button", { name: "Verify mobile and continue" }));
+    await waitFor(() => expect(mocked.iamPhoneVerify).toHaveBeenCalledWith("654321"));
+  });
   it("keeps access blocked when WhatsApp verification fails", async () => {
     auth.user.must_change_password = false;
     mocked.iamPhoneSend.mockResolvedValue({ otp_sent: true, phone: "+201012345678" });

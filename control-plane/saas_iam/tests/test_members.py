@@ -64,18 +64,56 @@ class TestIamMembers(IamFixture, TransactionCase):
         with self.assertRaises(ValidationError):
             member.with_user(self.owner)._email_credentials(result['temporary_password'])
 
-    def test_testing_skip_preserves_password_gate_and_can_be_reversed(self):
-        member, result = self._new_profile()
+    def test_testing_code_requires_entry_and_stops_when_whatsapp_is_configured(self):
+        member, _ = self._new_profile()
         config = self.env['ir.config_parameter'].sudo()
-        config.set_param('saas_iam.skip_teammate_phone_verification', True)
-        self.assertFalse(member.user_id._needs_phone_verification())
+        config.set_param('saas_iam.teammate_phone_test_codes', True)
+        self.env.company.sudo().write({'saas_whatsapp_phone_id': False})
+        User = self.env['res.users'].with_user(member.user_id)
+        User._change_initial_password('TestingOwnPassword123!')
         self.assertFalse(member._ready())
-        self.env['res.users'].with_user(member.user_id)._change_initial_password('TestingOwnPassword123!')
-        self.assertTrue(member._ready())
-        self.assertFalse(member.user_id.iam_verified_phone)
-        config.set_param('saas_iam.skip_teammate_phone_verification', False)
+        with self.assertRaises(ValidationError):
+            User._send_phone_code('+12345678', self.env.ref('base.eg').id)
+        sent = User._send_phone_code('01012345678', self.env.ref('base.eg').id)
+        self.assertEqual(len(sent['test_otp']), 6)
+        member.user_id.invalidate_recordset()
         self.assertTrue(member.user_id._needs_phone_verification())
         self.assertFalse(member._ready())
+        wrong = '000000' if sent['test_otp'] != '000000' else '111111'
+        with self.assertRaises(ValidationError):
+            User._verify_phone_code(wrong)
+        User._verify_phone_code(sent['test_otp'])
+        self.assertTrue(member._ready())
+        self.assertTrue(member.user_id.iam_phone_test_verified)
+        self.assertFalse(member.user_id.iam_account_verified)
+        self._configure_whatsapp()
+        self.assertFalse(self.env['saas.iam.whatsapp']._test_codes_enabled())
+        self.assertTrue(member.user_id._needs_phone_verification())
+        self.assertFalse(member._ready())
+
+    def test_testing_code_cannot_be_used_after_configuration_or_disabling(self):
+        member, _ = self._new_profile()
+        config = self.env['ir.config_parameter'].sudo()
+        config.set_param('saas_iam.teammate_phone_test_codes', True)
+        self.env.company.sudo().write({'saas_whatsapp_phone_id': False})
+        User = self.env['res.users'].with_user(member.user_id)
+        User._change_initial_password('TestingOwnPassword123!')
+        sent = User._send_phone_code('01012345678', self.env.ref('base.eg').id)
+        config.set_param('saas_iam.teammate_phone_test_codes', False)
+        with self.assertRaises(ValidationError):
+            User._verify_phone_code(sent['test_otp'])
+        config.set_param('saas_iam.teammate_phone_test_codes', True)
+        self._configure_whatsapp()
+        with self.assertRaises(ValidationError):
+            User._verify_phone_code(sent['test_otp'])
+        with patch('odoo.addons.saas_iam.models.whatsapp.requests.post') as post:
+            post.return_value.ok = True
+            post.return_value.json.return_value = {'messages': [{'id': 'wamid.test'}]}
+            real = User._send_phone_code('01012345678', self.env.ref('base.eg').id)
+        self.assertNotIn('test_otp', real)
+        User._verify_phone_code(member.user_id.iam_phone_code)
+        self.assertTrue(member.user_id.iam_account_verified)
+        self.assertFalse(member.user_id.iam_phone_test_verified)
 
     def test_phone_uniqueness_normalizes_mobile_and_inactive_contacts(self):
         egypt = self.env.ref('base.eg')

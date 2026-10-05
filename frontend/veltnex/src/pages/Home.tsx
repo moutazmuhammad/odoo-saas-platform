@@ -156,8 +156,8 @@ export default function Home() {
                   <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
                   <span className="relative inline-flex size-1.5 rounded-full bg-success" />
                 </span>{i18nText("All systems operational")}</span>
-              <h1 className="whitespace-nowrap text-5xl font-bold leading-[0.95] tracking-tight drop-shadow-[0_2px_28px_rgba(0,0,0,0.65)] sm:text-6xl lg:text-7xl xl:text-8xl">{i18nText("The Logic of")}<br />
-                <span className="bg-linear-to-br from-primary-glow via-info to-foreground bg-clip-text text-transparent">{i18nText("Stability")}</span>
+              <h1 className="whitespace-nowrap text-3xl font-bold leading-[1.15] tracking-tight drop-shadow-[0_2px_28px_rgba(0,0,0,0.65)] sm:text-5xl lg:text-6xl">{i18nText("Built for stability.")}<br />
+                <span className="bg-linear-to-br from-primary-glow via-info to-foreground bg-clip-text text-transparent">{i18nText("Designed for growth.")}</span>
               </h1>
             </div>
           </div>

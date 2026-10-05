@@ -164,7 +164,7 @@ export function DeploymentHistory({
                   {expandable && open === b.id && (
                     <div className="border-t border-border bg-background/60 px-4 py-3">
                       <p className="mb-1.5 text-xs font-medium text-danger">{i18nText("Why it failed")}</p>
-                      <pre className="max-h-72 overflow-auto rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-muted">
+                      <pre dir="ltr" data-technical className="max-h-72 overflow-auto rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-muted">
                         {b.log.trimEnd()}
                       </pre>
                     </div>

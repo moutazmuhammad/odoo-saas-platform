@@ -167,6 +167,8 @@ export default function Logs({ embedId }: { embedId?: number } = {}) {
 
           <div
             ref={viewport}
+            dir="ltr"
+            data-technical
             onScroll={(e) => {
               const el = e.currentTarget;
               const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
@@ -178,7 +180,7 @@ export default function Logs({ embedId }: { embedId?: number } = {}) {
             )}
           >
             {lines.length === 0 ? (
-              <p className="text-muted">
+              <p dir="auto" className="text-start text-muted">
                 {paused ? i18nText("Stream paused.") : i18nText("Waiting for log output… (logs stream only while the instance is running)")}
               </p>
             ) : (

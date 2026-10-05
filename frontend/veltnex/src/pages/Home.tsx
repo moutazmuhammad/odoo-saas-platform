@@ -482,7 +482,7 @@ export default function Home() {
                       <span className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-success">
                         <span className="size-1 animate-pulse-soft rounded-full bg-success" />{i18nText("Synced")}</span>
                     </div>
-                    <pre className="mt-4 overflow-x-auto whitespace-pre text-xs">
+                    <pre dir="ltr" data-technical className="mt-4 overflow-x-auto whitespace-pre text-xs">
 {`$ git push origin main
 
 `}<span className="text-primary">→</span>{` webhook received   `}<span className="text-muted">·</span>{` your-org/odoo-addons
@@ -546,7 +546,7 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
-                <div className="mt-4 rounded-lg border border-border bg-background/80 p-3 font-mono text-[11px] leading-relaxed text-muted">
+                <div dir="ltr" data-technical className="mt-4 rounded-lg border border-border bg-background/80 p-3 font-mono text-[11px] leading-relaxed text-muted">
                   <span className="text-success">{i18nText("[INFO]")}</span>{i18nText(" worker pool ready · 4 workers · ")}<span className="text-primary">{i18nText("heartbeat ok")}</span>
                   <br />
                   <span className="text-success">{i18nText("[INFO]")}</span>{i18nText(" request")}{" "}

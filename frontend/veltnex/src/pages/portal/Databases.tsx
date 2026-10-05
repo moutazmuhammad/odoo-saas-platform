@@ -799,7 +799,7 @@ function UpgradeModulesDialog({
       {report && (
         <div className="mt-4 space-y-2">
           <Label>{i18nText("Report")}</Label>
-          <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-xs text-muted">
+          <pre dir="ltr" data-technical className="max-h-60 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-xs text-muted">
             {report}
           </pre>
         </div>

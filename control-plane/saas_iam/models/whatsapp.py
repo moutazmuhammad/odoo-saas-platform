@@ -24,6 +24,11 @@ class WhatsAppCompany(models.Model):
 class WhatsAppSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
+    saas_skip_teammate_phone_verification = fields.Boolean(
+        string='Skip teammate mobile verification for testing',
+        config_parameter='saas_iam.skip_teammate_phone_verification',
+        groups='base.group_system')
+
     saas_whatsapp_phone_id = fields.Char(related='company_id.saas_whatsapp_phone_id', readonly=False)
     saas_whatsapp_access_token = fields.Char(related='company_id.saas_whatsapp_access_token', readonly=False)
     saas_whatsapp_template = fields.Char(related='company_id.saas_whatsapp_template', readonly=False)

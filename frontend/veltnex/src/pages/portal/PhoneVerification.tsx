@@ -44,7 +44,7 @@ export default function PhoneVerification() {
       <div className="flex justify-between gap-3"><Button variant="ghost" disabled={busy} onClick={send}>Resend code</Button><Button variant="ghost" disabled={busy} onClick={() => { setSentPhone(""); setCode(""); setError(""); }}>Change number</Button></div>
     </> : <>
       <div><Label htmlFor="mobile-country">Phone country</Label><select id="mobile-country" className="mt-2 h-10 w-full rounded-sm border border-border bg-card px-3 text-sm" value={country || ""} onChange={e => setCountry(Number(e.target.value))}><option value="">Select country…</option>{options.phone_countries.map(c => <option key={c.id} value={c.id}>{c.name} (+{c.phone_code})</option>)}</select></div>
-      <div><Label htmlFor="mobile-phone">Mobile number</Label><div className="mt-2 flex items-center gap-2">{!!country && !/^(\+|00)/.test(phone) && <span className="shrink-0 text-sm text-muted">+{options.phone_countries.find(c => c.id === country)?.phone_code}</span>}<Input id="mobile-phone" type="tel" autoComplete="tel-national" value={phone} onChange={e => setPhone(e.target.value)} /></div><p className="mt-2 text-xs text-muted">The country code is added automatically.</p></div>
+      <div><Label htmlFor="mobile-phone">Mobile number</Label><div className="mt-2 flex items-center gap-2">{!!country && !/^(\+|00)/.test(phone) && <span className="shrink-0 text-sm text-muted">+{options.phone_countries.find(c => c.id === country)?.phone_code}</span>}<Input id="mobile-phone" type="tel" autoComplete="tel-national" value={phone} onChange={e => setPhone(e.target.value)} /></div></div>
       <ActionButton className="w-full" loading={busy} disabled={!phone.trim() || !country} onClick={send}>Send verification code</ActionButton>
     </>}
   </>;

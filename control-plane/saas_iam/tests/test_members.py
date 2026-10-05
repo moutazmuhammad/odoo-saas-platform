@@ -64,6 +64,19 @@ class TestIamMembers(IamFixture, TransactionCase):
         with self.assertRaises(ValidationError):
             member.with_user(self.owner)._email_credentials(result['temporary_password'])
 
+    def test_testing_skip_preserves_password_gate_and_can_be_reversed(self):
+        member, result = self._new_profile()
+        config = self.env['ir.config_parameter'].sudo()
+        config.set_param('saas_iam.skip_teammate_phone_verification', True)
+        self.assertFalse(member.user_id._needs_phone_verification())
+        self.assertFalse(member._ready())
+        self.env['res.users'].with_user(member.user_id)._change_initial_password('TestingOwnPassword123!')
+        self.assertTrue(member._ready())
+        self.assertFalse(member.user_id.iam_verified_phone)
+        config.set_param('saas_iam.skip_teammate_phone_verification', False)
+        self.assertTrue(member.user_id._needs_phone_verification())
+        self.assertFalse(member._ready())
+
     def test_phone_uniqueness_normalizes_mobile_and_inactive_contacts(self):
         egypt = self.env.ref('base.eg')
         self.owner.partner_id.country_id = egypt

@@ -263,6 +263,10 @@ class IamUser(models.Model):
     def _needs_phone_verification(self):
         self.ensure_one()
         user = self.sudo()
+        skip = self.env['ir.config_parameter'].sudo().get_param(
+            'saas_iam.skip_teammate_phone_verification', 'False')
+        if str(skip).lower() in ('true', '1'):
+            return False
         return bool(user.iam_managed_owner_id and (
             not user.iam_verified_phone or user.iam_verified_phone != user.partner_id.phone))
 

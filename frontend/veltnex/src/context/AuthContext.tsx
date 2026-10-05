@@ -78,9 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // SEC-018: no client-side idle timeout existed at all — an
-  // authenticated tab left open on a shared/public machine stayed valid
-  // indefinitely. Warns once, then logs out if activity never resumes.
+  // Browser activity is shared across tabs; the server retains the session cookie.
   const { warning } = useToast();
   const handleIdleWarn = React.useCallback(() => {
     warning(

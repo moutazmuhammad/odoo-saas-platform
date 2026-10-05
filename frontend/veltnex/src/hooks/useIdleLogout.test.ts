@@ -1,14 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useIdleLogout, IDLE_LOGOUT_MS, IDLE_WARNING_MS } from "./useIdleLogout";
+import { useIdleLogout, IDLE_LOGOUT_MS, IDLE_WARNING_MS, ACTIVITY_STORAGE_KEY } from "./useIdleLogout";
 
 describe("useIdleLogout", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    localStorage.clear();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("keeps a session active beyond the old thirty-minute cutoff", () => {
+    const idle = vi.fn();
+    renderHook(() => useIdleLogout(true, vi.fn(), idle));
+    vi.advanceTimersByTime(60 * 60 * 1000);
+    expect(idle).not.toHaveBeenCalled();
   });
 
   it("does nothing while disabled", () => {
@@ -67,6 +75,28 @@ describe("useIdleLogout", () => {
 
     expect(onWarn).not.toHaveBeenCalled();
     expect(onIdle).not.toHaveBeenCalled();
+  });
+
+  it("extends an inactive tab when another tab reports activity", () => {
+    const idle = vi.fn();
+    renderHook(() => useIdleLogout(true, vi.fn(), idle));
+    vi.advanceTimersByTime(IDLE_LOGOUT_MS - 1000);
+    window.dispatchEvent(new StorageEvent("storage", { key: ACTIVITY_STORAGE_KEY, newValue: String(Date.now()) }));
+    vi.advanceTimersByTime(2000);
+    expect(idle).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(IDLE_LOGOUT_MS);
+    expect(idle).toHaveBeenCalledOnce();
+  });
+
+  it("checks recent shared activity even if the storage event was missed in a background tab", () => {
+    const idle = vi.fn();
+    renderHook(() => useIdleLogout(true, vi.fn(), idle));
+    vi.advanceTimersByTime(IDLE_LOGOUT_MS - 1000);
+    localStorage.setItem(ACTIVITY_STORAGE_KEY, String(Date.now()));
+    vi.advanceTimersByTime(2000);
+    expect(idle).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(IDLE_LOGOUT_MS);
+    expect(idle).toHaveBeenCalledOnce();
   });
 
   it("removes its activity listeners on unmount", () => {

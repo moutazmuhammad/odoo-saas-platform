@@ -262,9 +262,7 @@ export default function Home() {
                 </span>
                 <h3 className="mt-6 text-2xl font-semibold">{i18nText("Ready-Made Services")}</h3>
                 <p className="mt-1 text-sm font-medium text-info">{i18nText("Ready code ")}<em>{i18nText("and")}</em>{i18nText(" a ready database — running on day one.")}</p>
-                <p className="mt-3 text-muted">{i18nText("Pre-built Odoo apps for a specific job — pharmacy management, retail, clinics and more. Sign up and your instance boots with the ")}<strong className="text-foreground">{i18nText("modules and starter data already in place")}</strong>. Use it as-is, or tailor it to
-                  how you work.
-                </p>
+                <p className="mt-3 text-muted">{i18nText("Pre-built Odoo apps for a specific job — pharmacy management, retail, clinics and more. Sign up and your instance boots with the ")}<strong className="text-foreground">{i18nText("modules and starter data already in place")}</strong>{i18nText(". Use it as-is, or tailor it to how you work.")}</p>
                 <ul className="mt-6 space-y-2.5 text-sm">
                   {[
                     i18nText("Industry-tuned app, set up and ready to use"),

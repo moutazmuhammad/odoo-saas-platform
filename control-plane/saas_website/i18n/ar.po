@@ -12,7 +12,7 @@ msgstr ""
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "% off)"
-msgstr "٪ عن)"
+msgstr "% خصم)"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
@@ -38,17 +38,11 @@ msgid ""
 "                                    28th. Charged again on every renewal\n"
 "                                    while the feature is on."
 msgstr ""
-".\n"
-"                                    يلتقط كل قاعدة البيانات، التي تم تحميلها\n"
-"                                    الملفات والوحدات المخصصة الخاصة بك و\n"
-"                                    إعدادات الخادم في كل عملية تشغيل؛ يستمر حتى\n"
-"                                    أحدث 7 لقطات (الأقدم هو\n"
-"                                    سقط تلقائيا). وصفت بأنها أ\n"
-"                                    <strong> رسوم شهرية ثابتة </strong> بدون رقم\n"
-"                                    التناسب - يتم تحصيل نفس المبلغ\n"
-"                                    سواء قمت بالتمكين في الأول أو\n"
-"                                    الثامن والعشرون. يتم تحصيل الرسوم مرة أخرى عند كل تجديد\n"
-"                                    أثناء تشغيل الميزة."
+". تشمل كل نسخة جميع قواعد البيانات والملفات المرفوعة والوحدات المخصصة "
+"وإعدادات Instance. نحتفظ بآخر 7 لقطات، ونحذف الأقدم تلقائيًا. تُحتسب "
+"<strong>رسوم شهرية ثابتة</strong> دون احتساب نسبي؛ تدفع المبلغ نفسه سواء "
+"فعّلت الميزة في اليوم 1 أو 28 من الشهر. تُجدّد الرسوم مع كل تجديد للاشتراك "
+"ما دامت الميزة مفعّلة."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
@@ -73,7 +67,7 @@ msgstr "/شهر"
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "/mo billed yearly"
-msgstr "/ شهر يتم إصدار فاتورة به سنويًا"
+msgstr "/شهر، بفوترة سنوية"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -86,7 +80,7 @@ msgstr "/شهر)"
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "/yr"
-msgstr "/ سنة"
+msgstr "/سنة"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
@@ -119,14 +113,11 @@ msgid ""
 "                                    whether you upgrade on the 1st or the 28th. Charged\n"
 "                                    again on every renewal while you stay on this tier."
 msgstr ""
-":\n"
-"                                    المزيد من النسخ المتماثلة يعني المرونة (إذا فشل أحدها أو فشل\n"
-"                                    وبعد تحديثها، يستمر الآخرون في خدمة المستخدمين\n"
-"                                    مع عدم وجود توقف) وقدرة إضافية تحت أعلى\n"
-"                                    حركة المرور. تم إصدار فاتورة بها كرسوم شهرية ثابتة <strong></strong>\n"
-"                                    بدون تقسيم نسبي — يتم تحصيل نفس المبلغ\n"
-"                                    سواء قمت بالترقية في الأول أو الثامن والعشرين. مشحونة\n"
-"                                    مرة أخرى عند كل تجديد أثناء بقائك في هذا المستوى."
+": زيادة عدد النسخ تعزز استمرارية الخدمة؛ فإذا تعطلت إحدى النسخ أو كانت قيد "
+"التحديث، تواصل النسخ الأخرى خدمة المستخدمين دون توقف. وتتيح أيضًا سعة إضافية"
+" عند ارتفاع عدد الزيارات. تُحتسب <strong>رسوم شهرية ثابتة</strong> دون "
+"احتساب نسبي؛ تدفع المبلغ نفسه سواء أجريت الترقية في اليوم 1 أو 28 من الشهر. "
+"تُجدّد الرسوم مع كل تجديد للاشتراك ما دمت على هذا المستوى."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -138,7 +129,7 @@ msgstr "<i class=\"fas fa-arrow-left me-2\"/>العودة إلى الاستضا�
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
 msgid "<i class=\"fas fa-arrow-left me-2\"/>Back to Instance"
-msgstr "<i class=\"fas fa-arrow-left me-2\"/>العودة إلى الخادم"
+msgstr "<i class=\"fas fa-arrow-left me-2\"/>العودة إلى Instance"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
@@ -163,8 +154,7 @@ msgstr "<i class=\"fas fa-arrow-up me-2\"/>تطبيق التغييرات"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
 msgid "<i class=\"fas fa-check text-success me-2\"/>Backups become available"
-msgstr ""
-"أصبحت النسخ الاحتياطية <i class=\"fas fa-check text-success me-2\"/> متاحة"
+msgstr "<i class=\"fas fa-check text-success me-2\"/>تتوفر النسخ الاحتياطية"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
@@ -201,7 +191,7 @@ msgid ""
 "                                            Worker reduction will take effect at your next billing cycle"
 msgstr ""
 "<i class=\"fas fa-clock me-1\"/>\n"
-"                                            سيتم تفعيل تخفيض عدد عمليات التشغيل في دورة الفوترة التالية"
+"                                            سيتم تفعيل تخفيض عدد Workers في دورة الفوترة التالية"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
@@ -214,8 +204,8 @@ msgid ""
 "<i class=\"fas fa-clock\"/>\n"
 "                                    <span>99.9% uptime SLA</span>"
 msgstr ""
-"<i class=\"fas fa-clock\"/>\n"
-"                                    <span> وقت تشغيل بنسبة 99.9% SLA</span>"
+"<i class=\"fas fa-clock\"/> <span>اتفاقية SLA تضمن توفر الخدمة بنسبة "
+"99.9%</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
@@ -224,7 +214,7 @@ msgstr ""
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "<i class=\"fas fa-cogs me-2\"/>Workers"
-msgstr "<i class=\"fas fa-cogs me-2\"/>عمليات التشغيل"
+msgstr "<i class=\"fas fa-cogs me-2\"/>Workers"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -269,8 +259,8 @@ msgid ""
 "<i class=\"fas fa-info-circle me-1\"/>\n"
 "                                    You can upgrade or downgrade anytime"
 msgstr ""
-"<i class=\"fas fa-info-circle me-1\"/>\n"
-"                                    يمكنك الترقية أو الرجوع إلى إصدار سابق في أي وقت"
+"<i class=\"fas fa-info-circle me-1\"/> يمكنك الانتقال إلى خطة أعلى أو أقل في"
+" أي وقت"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -285,7 +275,7 @@ msgstr "<i class=\"fas fa-lock me-1\"/>الحد الأدنى"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "<i class=\"fas fa-lock me-1\"/>Secure checkout. Cancel anytime."
-msgstr "<i class=\"fas fa-lock me-1\"/>الخروج الآمن. إلغاء في أي وقت."
+msgstr "<i class=\"fas fa-lock me-1\"/>دفع آمن. يمكنك الإلغاء في أي وقت."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
@@ -293,8 +283,8 @@ msgid ""
 "<i class=\"fas fa-lock me-1\"/>Storage cannot be reduced below current "
 "allocation ("
 msgstr ""
-"لا يمكن تقليل <i class=\"fas fa-lock me-1\"/>Storage إلى ما دون التخصيص "
-"الحالي ("
+"<i class=\"fas fa-lock me-1\"/>لا يمكن خفض مساحة التخزين إلى أقل من المساحة "
+"المخصصة حاليًا ("
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_side_content
@@ -309,35 +299,29 @@ msgid ""
 "<i class=\"fas fa-piggy-bank me-1\"/>\n"
 "                                                        You save <span id=\"upgrade-summary-yearly-savings\">$0</span> per year"
 msgstr ""
-"<i class=\"fas fa-piggy-bank me-1\"/>\n"
-"                                                        يمكنك توفير <span id=\"upgrade-summary-yearly-savings\"> 0</span> سنويًا"
+"<i class=\"fas fa-piggy-bank me-1\"/> توفّر <span id=\"upgrade-summary-"
+"yearly-savings\">$0</span> سنويًا"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 msgid ""
 "<i class=\"fas fa-piggy-bank me-1\"/>\n"
 "                                                    You save"
-msgstr ""
-"<i class=\"fas fa-piggy-bank me-1\"/>\n"
-"                                                    قمت بحفظ"
+msgstr "<i class=\"fas fa-piggy-bank me-1\"/> توفّر"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid ""
 "<i class=\"fas fa-piggy-bank me-1\"/>\n"
 "                                                You save"
-msgstr ""
-"<i class=\"fas fa-piggy-bank me-1\"/>\n"
-"                                                قمت بحفظ"
+msgstr "<i class=\"fas fa-piggy-bank me-1\"/> توفّر"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid ""
 "<i class=\"fas fa-piggy-bank me-1\"/>\n"
 "                                            You're saving"
-msgstr ""
-"<i class=\"fas fa-piggy-bank me-1\"/>\n"
-"                                            أنت تقوم بالحفظ"
+msgstr "<i class=\"fas fa-piggy-bank me-1\"/> توفّر"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
@@ -347,12 +331,12 @@ msgstr "<i class=\"fas fa-plus me-1\"/>استضافة جديدة"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
 msgid "<i class=\"fas fa-plus me-1\"/>New Instance"
-msgstr "<i class=\"fas fa-plus me-1\"/> خادم جديد"
+msgstr "<i class=\"fas fa-plus me-1\"/>Instance جديدة"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 msgid "<i class=\"fas fa-redo me-2\"/>Reactivate Instance"
-msgstr "<i class=\"fas fa-redo me-2\"/>إعادة تنشيط الخادم"
+msgstr "<i class=\"fas fa-redo me-2\"/>إعادة تنشيط Instance"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
@@ -368,7 +352,7 @@ msgstr "<i class=\"fas fa-rocket me-2\"/>بدء النسخة التجريبية 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
 msgid "<i class=\"fas fa-rocket me-2\"/>Upgrade Now"
-msgstr "<i class=\"fas fa-rocket me-2\"/>Uقم بالترقية الآن"
+msgstr "<i class=\"fas fa-rocket me-2\"/>الترقية الآن"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
@@ -407,12 +391,12 @@ msgstr "<i class=\"fas fa-shopping-cart me-2\"/>ملخص الطلب"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
 msgid "<i class=\"fas fa-spinner me-1\"/>In Payment"
-msgstr "<i class=\"fas fa-spinner me-1\"/>في الدفع"
+msgstr "<i class=\"fas fa-spinner me-1\"/>جارٍ السداد"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "<i class=\"fas fa-tag me-1\"/>SAVE"
-msgstr "<i class=\"fas fa-tag me-1\"/>SAVE"
+msgstr "<i class=\"fas fa-tag me-1\"/>وفّر"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
@@ -422,7 +406,7 @@ msgstr "<i class=\"fas fa-times me-1\"/>إلغاء التغيير المجدول
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
 msgid "<i class=\"fas fa-undo me-1\"/>Reversed"
-msgstr "<i class=\"fas fa-undo me-1\"/>معكوس"
+msgstr "<i class=\"fas fa-undo me-1\"/>تم عكس القيد"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
@@ -448,7 +432,7 @@ msgid ""
 "                                                </span>"
 msgstr ""
 "<span class=\"breakdown-label\">\n"
-"                                                    <i class=\"fas fa-cogs me-2\"/>عمليات التشغيل\n"
+"                                                    <i class=\"fas fa-cogs me-2\"/>Workers\n"
 "                                                </span>"
 
 #. module: saas_website
@@ -462,7 +446,7 @@ msgid ""
 "                                                </span>"
 msgstr ""
 "<span class=\"breakdown-label\">\n"
-"                                                    <i class=\"fas fa-cogs me-2\"/>عمليات التشغيل\n"
+"                                                    <i class=\"fas fa-cogs me-2\"/>Workers\n"
 "                                                </span>\n"
 "                                                <span class=\"breakdown-value\">\n"
 "                                                    <span id=\"upgrade-summary-workers\" style=\"font-weight:700;\">2</span>\n"
@@ -494,15 +478,13 @@ msgstr ""
 "                                                    <i class=\"fas fa-hdd me-2\"/>التخزين\n"
 "                                                </span>\n"
 "                                                <span class=\"breakdown-value\">\n"
-"                                                    <span id=\"upgrade-summary-storage\" style=\"font-weight:700;\">5</span> جيجابايت\n"
+"                                                    <span id=\"upgrade-summary-storage\" style=\"font-weight:700;\">5</span> GB\n"
 "                                                </span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "<span class=\"breakdown-label\"><i class=\"fas fa-cogs me-2\"/>Workers</span>"
-msgstr ""
-"<span class=\"breakdown-label\"><i class=\"fas fa-cogs me-2\"/>عمليات "
-"التشغيل</span>"
+msgstr "<span class=\"breakdown-label\"><i class=\"fas fa-cogs me-2\"/>Workers</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -561,9 +543,7 @@ msgstr ""
 msgid ""
 "<span class=\"mx-1\">·</span>\n"
 "                                        7 Backups"
-msgstr ""
-"<span class=\"mx-1\">·</span>\n"
-"                                        7 النسخ الاحتياطية"
+msgstr "<span class=\"mx-1\">·</span> 7 نسخ احتياطية"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
@@ -575,9 +555,7 @@ msgstr "<span class=\"mx-2\">|</span>"
 msgid ""
 "<span class=\"mx-2\">|</span>\n"
 "                                        <span>Due: </span>"
-msgstr ""
-"<span class=\"mx-2\">|</span>\n"
-"                                        <span>بسبب: </span>"
+msgstr "<span class=\"mx-2\">|</span> <span>الاستحقاق: </span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
@@ -614,7 +592,7 @@ msgstr "<span class=\"text-muted\">النسخ الاحتياطي اليومي</s
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 msgid "<span class=\"text-muted\">Production plan</span>"
-msgstr "<span class=\"text-muted\">خطة الإنتاج</span>"
+msgstr "<span class=\"text-muted\">خطة Production</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
@@ -624,7 +602,7 @@ msgstr "<span class=\"text-muted\">دعم</span>"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "<span class=\"vx-config-label\">Billing</span>"
-msgstr "<span class=\"vx-config-label\">Billing</span>"
+msgstr "<span class=\"vx-config-label\">الفوترة</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -644,17 +622,17 @@ msgstr "<span class=\"vx-config-label\">البيئات</span>"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "<span class=\"vx-config-label\">Instance</span>"
-msgstr "<span class=\"vx-config-label\">خادم</span>"
+msgstr "<span class=\"vx-config-label\">Instance</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "<span class=\"vx-config-label\">Odoo Version</span>"
-msgstr "إصدار <span class=\"vx-config-label\">Odoo</span>"
+msgstr "<span class=\"vx-config-label\">إصدار Odoo</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "<span class=\"vx-config-label\">Plan</span>"
-msgstr "<span class=\"vx-config-label\">Plan</span>"
+msgstr "<span class=\"vx-config-label\">الخطة</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -679,7 +657,7 @@ msgstr "<span class=\"vx-config-label\">دعم</span>"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "<span class=\"vx-config-label\">Workers</span>"
-msgstr "<span class=\"vx-config-label\">عمليات التشغيل</span>"
+msgstr "<span class=\"vx-config-label\">Workers</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
@@ -697,12 +675,12 @@ msgid ""
 "weight:600;color:var(--success);\">Annual billing discount applied!</span>"
 msgstr ""
 "<span style=\"font-size:0.9rem;font-weight:600;color:var(--success);\">تم "
-"تطبيق خصم الفواتير السنوية!</span>"
+"تطبيق خصم الفوترة السنوية!</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "<span><i class=\"fas fa-cogs me-2\"/>Workers</span>"
-msgstr "<span><i class=\"fas fa-cogs me-2\"/>عمليات التشغيل</span>"
+msgstr "<span><i class=\"fas fa-cogs me-2\"/>Workers</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -772,7 +750,7 @@ msgstr "<span> © 2026 VELTNEX. جميع الحقوق محفوظة.</span>"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 msgid "<strong>Billing will resume</strong>"
-msgstr "سيتم استئناف <strong>Billing</strong>"
+msgstr "<strong>يُستأنف احتساب الرسوم</strong>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
@@ -800,8 +778,8 @@ msgid ""
 "A paid add-on: an automatic encrypted snapshot every day, last 7 days kept, "
 "so you can restore."
 msgstr ""
-"وظيفة إضافية مدفوعة: لقطة مشفرة تلقائيًا كل يوم، يتم الاحتفاظ بها لآخر 7 "
-"أيام، حتى تتمكن من استعادتها."
+"إضافة مدفوعة تنشئ لقطة مشفّرة تلقائيًا كل يوم، وتحتفظ بلقطات آخر 7 أيام "
+"للاستعادة عند الحاجة."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
@@ -829,8 +807,8 @@ msgid ""
 "Adjust your resources. Upgrades take effect immediately.\n"
 "                            Worker reductions take effect at your next billing cycle."
 msgstr ""
-"ضبط الموارد الخاصة بك. تسري الترقيات على الفور.\n"
-"                            تسري تخفيضات عمليات التشغيل في دورة الفوترة التالية."
+"عدّل مواردك. تسري الترقية فورًا، ويسري تخفيض عدد Workers مع دورة الفوترة "
+"التالية."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
@@ -850,7 +828,7 @@ msgstr "المبلغ المستحق"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
 msgid "Backend"
-msgstr "الخلفية"
+msgstr "Backend"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
@@ -876,7 +854,7 @@ msgstr "رسوم"
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "Choose your subdomain"
-msgstr "اختر المجال الفرعي الخاص بك"
+msgstr "اختر النطاق الفرعي"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
@@ -900,7 +878,7 @@ msgstr ""
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
 msgid "Communication history"
-msgstr "تاريخ الاتصالات"
+msgstr "سجل المراسلات"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
@@ -915,7 +893,7 @@ msgstr "أكمل طلبك"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
 msgid "Compute Tier:"
-msgstr "طبقة الحساب:"
+msgstr "مستوى الحوسبة:"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -926,22 +904,22 @@ msgstr "إعدادات"
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 msgid "Configure"
-msgstr "تكوين"
+msgstr "إعداد"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "Configure Your Custom Instance"
-msgstr "قم بتكوين الخادم المخصص الخاص بك"
+msgstr "إعداد Instance مخصصة"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "Configure Your Hosting Instance"
-msgstr "قم بتكوين خادم الاستضافة الخاص بك"
+msgstr "إعداد Instance الاستضافة"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 msgid "Configure Your Instance"
-msgstr "تكوين الخادم الخاص بك"
+msgstr "إعداد Instance"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
@@ -951,15 +929,16 @@ msgid ""
 "                                page, re-enable Daily Backups (one-time activation invoice includes a small retention surcharge),\n"
 "                                and click Restore to bring your data back yourself. No support ticket needed."
 msgstr ""
-"قم بتكوين خطتك وادفع الفاتورة لإعادة التنشيط. سيتم إعادة نشر الخادم الخاص بك فارغًا\n"
-"                                - يتم الاحتفاظ بآخر لقطاتك بأمان. بمجرد تشغيل الخادم، افتح اللقطات\n"
-"                                الصفحة، أعد تمكين النسخ الاحتياطية اليومية (تتضمن فاتورة التنشيط لمرة واحدة رسومًا إضافية للاحتفاظ)،\n"
-"                                وانقر فوق \"استعادة\" لاستعادة بياناتك بنفسك. لا حاجة لتذكرة الدعم."
+"حدّد خطتك وادفع الفاتورة لإعادة التفعيل. يُعاد تشغيل Instance فارغة، مع "
+"الاحتفاظ بأحدث لقطة بأمان. بعد تشغيلها، افتح صفحة اللقطات وأعد تفعيل النسخ "
+"الاحتياطي اليومي؛ تتضمن فاتورة التفعيل لمرة واحدة رسومًا إضافية بسيطة "
+"للاحتفاظ باللقطة. ثم اضغط «استعادة» لاسترجاع بياناتك بنفسك، دون الحاجة إلى "
+"طلب دعم."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 msgid "Confirm &amp; pay"
-msgstr "تأكيد والدفع"
+msgstr "تأكيد ودفع"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
@@ -979,7 +958,7 @@ msgstr "متابعة <i class=\"fas fa-arrow-right ms-2\"/>"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
 msgid "Create Your Account"
-msgstr "قم بإنشاء حسابك"
+msgstr "إنشاء حسابك"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
@@ -989,7 +968,7 @@ msgstr "أنشئ ما يصل إلى هذا العدد مجانًا، في أي �
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
 msgid "Credit Note"
-msgstr "مذكرة الائتمان"
+msgstr "إشعار دائن"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
@@ -1002,8 +981,8 @@ msgid ""
 "Daily Backups Add-on\n"
 "                                                <span class=\"badge ms-2 bg-info\">Monthly</span>"
 msgstr ""
-"الوظيفة الإضافية للنسخ الاحتياطي اليومي\n"
-"                                                <span class=\"badge ms-2 bg-info\">شهريا</span>"
+"إضافة النسخ الاحتياطي اليومي <span class=\"badge ms-2 bg-"
+"info\">شهريًا</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
@@ -1013,7 +992,7 @@ msgstr "النسخ الاحتياطية اليومية"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
 msgid "Daily snapshots of your full instance for"
-msgstr "لقطات يومية لخادمك الكامل لـ"
+msgstr "لقطات يومية تشمل Instance بالكامل مقابل"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_folder_tree_items
@@ -1029,17 +1008,17 @@ msgstr "وصف"
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 msgid "Development servers"
-msgstr "خوادم التطوير"
+msgstr "خوادم Development"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
 msgid "Disc.%"
-msgstr "القرص%"
+msgstr "الخصم %"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
 msgid "Docs"
-msgstr "التوثيق"
+msgstr "الوثائق"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
@@ -1059,12 +1038,12 @@ msgstr "عنوان البريد الإلكتروني"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
 msgid "Enter your credentials to access your account"
-msgstr "أدخل بيانات الاعتماد الخاصة بك للوصول إلى حسابك"
+msgstr "أدخل بيانات الدخول للوصول إلى حسابك"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 msgid "Environments (paid slots)"
-msgstr "البيئات (فتحات مدفوعة)"
+msgstr "البيئات (أماكن مدفوعة)"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -1074,10 +1053,9 @@ msgid ""
 "                                                        ones roll off automatically. Restore any snapshot with one\n"
 "                                                        click from your portal. The price is included in your monthly total below."
 msgstr ""
-"يتم تفريغ كل قاعدة بيانات في هذا الخادم يوميًا لتشفيرها\n"
-"                                                        التخزين السحابي. يتم الاحتفاظ بما يصل إلى 7 لقطات حديثة؛ كبار السن\n"
-"                                                        تلك تتدحرج تلقائيا. استعادة أي لقطة مع واحدة\n"
-"                                                        انقر من البوابة الخاصة بك. يتم تضمين السعر في الإجمالي الشهري الخاص بك أدناه."
+"ننشئ نسخة يومية من كل قاعدة بيانات في Instance ونحفظها في تخزين سحابي مشفّر."
+" نحتفظ بأحدث 7 لقطات، ونحذف الأقدم تلقائيًا. يمكنك استعادة أي لقطة بنقرة "
+"واحدة من لوحة التحكم. تشمل التكلفة الإجمالي الشهري الموضّح أدناه."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
@@ -1087,12 +1065,12 @@ msgstr "اكتشف الحلول السحابية المتاحة"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "FREE"
-msgstr "حر"
+msgstr "مجاني"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "Faster response times for mission-critical workloads. Billed monthly."
-msgstr "أوقات استجابة أسرع لأحمال العمل ذات المهام الحرجة. تدفع شهريا."
+msgstr "استجابة أسرع للتطبيقات التي يعتمد عليها عملك، بفوترة شهرية."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
@@ -1100,8 +1078,8 @@ msgid ""
 "Flat monthly fee — no proration. Once applied, the next charge is one full "
 "month after today's payment."
 msgstr ""
-"رسوم شهرية ثابتة - بدون تقسيم. بمجرد تطبيقها، سيتم تحصيل الرسوم التالية بعد "
-"شهر كامل من دفع اليوم."
+"رسوم شهرية ثابتة دون احتساب نسبي. بعد تطبيق التغيير، تستحق الدفعة التالية "
+"بعد شهر كامل من دفعة اليوم."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
@@ -1109,13 +1087,13 @@ msgid ""
 "Flat monthly fee — no proration. Once enabled, the next charge is one full "
 "month after today's payment."
 msgstr ""
-"رسوم شهرية ثابتة - بدون تقسيم. بمجرد التمكين، سيتم تحصيل الرسوم التالية بعد "
-"شهر كامل من دفع اليوم."
+"رسوم شهرية ثابتة دون احتساب نسبي. بعد التفعيل، تستحق الدفعة التالية بعد شهر "
+"كامل من دفعة اليوم."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_form
 msgid "Forgot password?"
-msgstr "هل نسيت كلمة السر؟"
+msgstr "نسيت كلمة المرور؟"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
@@ -1136,22 +1114,22 @@ msgstr "الاسم الكامل"
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "GB"
-msgstr "غيغابايت"
+msgstr "GB"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 msgid "GB (previous plan)"
-msgstr "جيجابايت (الخطة السابقة)"
+msgstr "GB (الخطة السابقة)"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
 msgid "GB Storage"
-msgstr "تخزين جيجا بايت"
+msgstr "GB للتخزين"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
 msgid "GB)"
-msgstr "غيغابايت)"
+msgstr "GB)"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
@@ -1166,17 +1144,17 @@ msgstr "ابدأ في دقائق"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 msgid "Git repository"
-msgstr "مستودع جيت"
+msgstr "مستودع Git"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
 msgid "GitHub"
-msgstr "جيثب"
+msgstr "GitHub"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
 msgid "Help"
-msgstr "يساعد"
+msgstr "المساعدة"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
@@ -1191,8 +1169,8 @@ msgid ""
 "How fast we promise to respond when you need help. Higher tiers = faster "
 "guaranteed response."
 msgstr ""
-"مدى سرعة وعدنا بالرد عندما تحتاج إلى المساعدة. المستويات الأعلى = استجابة "
-"مضمونة أسرع."
+"المدة التي نلتزم خلالها بالرد عندما تحتاج إلى مساعدة. توفر المستويات الأعلى "
+"وقت استجابة مضمونًا وأقصر."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
@@ -1204,8 +1182,8 @@ msgid ""
 "How many people can use your instance at the same time — more workers = more"
 " simultaneous users."
 msgstr ""
-"كم عدد الأشخاص الذين يمكنهم استخدام الخادم الخاص بك في نفس الوقت - المزيد من"
-" عمليات التشغيل = المزيد من المستخدمين المتزامنين."
+"عدد المستخدمين الذين يمكنهم استخدام Instance بالتزامن. زيادة Workers تتيح "
+"خدمة المزيد من المستخدمين في الوقت نفسه."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -1215,7 +1193,7 @@ msgstr "متضمنة"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "Instance Details"
-msgstr "تفاصيل الخادم"
+msgstr "تفاصيل Instance"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
@@ -1237,7 +1215,7 @@ msgstr "الفواتير"
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
 msgid "Item"
-msgstr "غرض"
+msgstr "البند"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
@@ -1257,27 +1235,27 @@ msgstr "آخر 7 نسخ"
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "Learn more"
-msgstr "يتعلم أكثر"
+msgstr "معرفة المزيد"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
 msgid "LinkedIn"
-msgstr "ينكدين"
+msgstr "LinkedIn"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_form
 msgid "Log in as superuser"
-msgstr "قم بتسجيل الدخول كمستخدم متميز"
+msgstr "تسجيل الدخول بصلاحيات superuser"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
 msgid "Manage your account, instances, and billing from here."
-msgstr "قم بإدارة حسابك والخوادم والفوترة من هنا."
+msgstr "أدر حسابك وInstances والفوترة من هنا."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
 msgid "Manage your cloud instances"
-msgstr "إدارة خوادمك السحابية"
+msgstr "إدارة Instances السحابية"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -1291,7 +1269,7 @@ msgstr "شهريا"
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "Monthly Billing"
-msgstr "الفواتير الشهرية"
+msgstr "الفوترة الشهرية"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -1306,17 +1284,17 @@ msgstr "المجموع الشهري"
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
 msgid "My Instances"
-msgstr "خوادمي"
+msgstr "Instances الخاصة بي"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
 msgid "New Plan Configuration"
-msgstr "تكوين الخطة الجديدة"
+msgstr "إعداد الخطة الجديدة"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
 msgid "Next billing"
-msgstr "الفواتير القادمة"
+msgstr "موعد الفوترة التالي"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -1332,12 +1310,12 @@ msgstr "Odoo"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "Odoo Version"
-msgstr "نسخة اودو"
+msgstr "إصدار Odoo"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 msgid "Odoo version"
-msgstr "نسخة اودو"
+msgstr "إصدار Odoo"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -1369,12 +1347,12 @@ msgstr "كلمة المرور (8 أحرف على الأقل)"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 msgid "Pay"
-msgstr "يدفع"
+msgstr "دفع"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "Payment"
-msgstr "قسط"
+msgstr "الدفع"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -1386,17 +1364,17 @@ msgstr "طريقة الدفع"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
 msgid "Phone Number"
-msgstr "رقم التليفون"
+msgstr "رقم الهاتف"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 msgid "Plan"
-msgstr "يخطط"
+msgstr "الخطة"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 msgid "Plan Configuration"
-msgstr "تكوين الخطة"
+msgstr "إعداد الخطة"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
@@ -1410,13 +1388,12 @@ msgid ""
 "Production is always included. Add Staging and Development\n"
 "                                                servers (lowest spec) at"
 msgstr ""
-"يتم تضمين الإنتاج دائمًا. إضافة التدريج والتطوير\n"
-"                                                الخوادم (أدنى المواصفات) في"
+"تُضمّن Production دائمًا. أضف خوادم Staging وDevelopment بأقل مواصفات مقابل"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 msgid "Production specs"
-msgstr "مواصفات الإنتاج"
+msgstr "مواصفات Production"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
@@ -1436,12 +1413,12 @@ msgstr "كمية"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 msgid "Reactivate"
-msgstr "إعادة التنشيط"
+msgstr "إعادة التفعيل"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 msgid "Reactivate Instance"
-msgstr "إعادة تنشيط الخادم"
+msgstr "إعادة تفعيل Instance"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
@@ -1482,12 +1459,12 @@ msgstr "قم بمراجعة طلبك"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
 msgid "Runs"
-msgstr "أشواط"
+msgstr "مرات التشغيل"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 msgid "SAVE"
-msgstr "يحفظ"
+msgstr "وفّر"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
@@ -1504,18 +1481,18 @@ msgstr "الدفع الآمن المدعوم بتشفير SSL"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
 msgid "Security"
-msgstr "حماية"
+msgstr "الأمان"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "Select your domain"
-msgstr "حدد المجال الخاص بك"
+msgstr "اختر Domain"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "Server location for this instance. Fixed once created."
-msgstr "موقع الخادم لهذا الخادم. تم إصلاحه بمجرد إنشائه."
+msgstr "موقع الخادم الذي تعمل عليه Instance. يُثبّت عند الإنشاء."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
@@ -1552,7 +1529,8 @@ msgid ""
 "Sign in to manage your cloud instances, monitor performance, and scale your "
 "business."
 msgstr ""
-"قم بتسجيل الدخول لإدارة خوادمك السحابية ومراقبة الأداء وتوسيع نطاق أعمالك."
+"سجّل الدخول لإدارة Instances السحابية ومراقبة الأداء وزيادة الموارد مع نمو "
+"أعمالك."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
@@ -1562,7 +1540,7 @@ msgstr "تسجيل الخروج"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
 msgid "Sign up"
-msgstr "اشتراك"
+msgstr "إنشاء حساب"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
@@ -1573,7 +1551,7 @@ msgstr "لقطات"
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 msgid "Staging servers"
-msgstr "خوادم التدريج"
+msgstr "خوادم Staging"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
@@ -1583,7 +1561,7 @@ msgstr "ابدأ النسخة التجريبية المجانية"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 msgid "Storage"
-msgstr "تخزين"
+msgstr "التخزين"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -1609,7 +1587,7 @@ msgstr "خطة الدعم"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "Switch to yearly &amp; save"
-msgstr "قم بالتبديل إلى السنوي وحفظه"
+msgstr "انتقل إلى الفوترة السنوية ووفّر"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -1623,8 +1601,8 @@ msgid ""
 "Testing only: the sign-up page shows the phone verification code, so no SMS "
 "provider is needed. Turn it off before going live."
 msgstr ""
-"للاختبار فقط: تعرض صفحة الاشتراك رمز التحقق من الهاتف، لذلك لا حاجة إلى مزود"
-" خدمة الرسائل القصيرة. قم بإيقاف تشغيله قبل البث المباشر."
+"للاختبار فقط: تعرض صفحة التسجيل رمز التحقق من الهاتف، دون الحاجة إلى مزود "
+"SMS. عطّل هذا الخيار قبل إطلاق الخدمة الفعلية."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -1632,28 +1610,26 @@ msgid ""
 "The data-centre location your instance runs in. Pick the one closest to your"
 " users. Fixed after creation."
 msgstr ""
-"موقع مركز البيانات الذي يعمل فيه الخادم الخاص بك. اختر الموقع الأقرب إلى "
-"المستخدمين لديك. ثابت بعد الإنشاء."
+"موقع مركز البيانات الذي تعمل فيه Instance. اختر الأقرب إلى مستخدميك. لا يمكن"
+" تغييره بعد الإنشاء."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid ""
 "The name in front of your instance's web address, e.g. \"acme\" in "
 "acme.example.com."
-msgstr ""
-"الاسم الموجود أمام عنوان الويب الخاص بخادمك، على سبيل المثال. \"acme\" في "
-"acme.example.com."
+msgstr "الجزء الأول من عنوان Instance، مثل \"acme\" في acme.example.com."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_header
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
 msgid "Toggle theme"
-msgstr "تبديل الموضوع"
+msgstr "تبديل المظهر"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
 msgid "Total"
-msgstr "المجموع"
+msgstr "الإجمالي"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -1678,7 +1654,7 @@ msgstr ""
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_footer
 msgid "Twitter"
-msgstr "تغريد"
+msgstr "Twitter"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
@@ -1688,12 +1664,12 @@ msgstr "سعر الوحدة"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
 msgid "Upgrade"
-msgstr "يرقي"
+msgstr "ترقية"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
 msgid "Upgrade Compute Tier"
-msgstr "ترقية طبقة الحساب"
+msgstr "ترقية مستوى الحوسبة"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
@@ -1713,7 +1689,7 @@ msgstr "VELTNEX"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_invoice_page_override
 msgid "Vendor Bill"
-msgstr "فاتورة البائع"
+msgstr "فاتورة مورد"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
@@ -1733,7 +1709,7 @@ msgstr "عرض ودفع الفواتير"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
 msgid "View your purchase history"
-msgstr "عرض تاريخ الشراء الخاص بك"
+msgstr "عرض سجل مشترياتك"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
@@ -1756,8 +1732,8 @@ msgid ""
 "Which release of Odoo your instance runs (e.g. 17, 18, 19), Community or "
 "Enterprise."
 msgstr ""
-"ما هو إصدار Odoo الذي يعمل عليه خادمك (على سبيل المثال 17، 18، 19)، المجتمع "
-"أو المؤسسة."
+"إصدار Odoo الذي تعمل به Instance، مثل 17 أو 18 أو 19، سواء Community أو "
+"Enterprise."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
@@ -1765,12 +1741,12 @@ msgstr ""
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
 msgid "Workers"
-msgstr "عمليات التشغيل"
+msgstr "Workers"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
 msgid "Workers /"
-msgstr "عمليات التشغيل /"
+msgstr "Workers /"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -1784,7 +1760,7 @@ msgstr "سنوي"
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "Yearly Billing"
-msgstr "الفواتير السنوية"
+msgstr "الفوترة السنوية"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -1794,7 +1770,7 @@ msgstr "المجموع السنوي"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "You save (vs monthly)"
-msgstr "الحفظ الذي تقوم به (مقابل شهريًا)"
+msgstr "التوفير مقارنة بالدفع الشهري"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
@@ -1814,12 +1790,12 @@ msgstr "ستتغير خطتك إلى"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
 msgid "Your trial instance"
-msgstr "المثال التجريبي الخاص بك"
+msgstr "Instance التجريبية"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
 msgid "across"
-msgstr "عير"
+msgstr "على"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -1832,7 +1808,7 @@ msgstr "عير"
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "breadcrumb"
-msgstr "فتات الخبز"
+msgstr "مسار التنقل"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -1849,14 +1825,12 @@ msgstr "أيام مجانية."
 msgid ""
 "each — provision more any\n"
 "                                                time from your dashboard."
-msgstr ""
-"كل — توفير المزيد من أي\n"
-"                                                الوقت من لوحة القيادة الخاصة بك."
+msgstr "لكل خادم. أضف المزيد في أي وقت من لوحة التحكم."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "for"
-msgstr "ل"
+msgstr "مقابل"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
@@ -1873,7 +1847,7 @@ msgstr "حاليا على"
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "my-company"
-msgstr "شركتي"
+msgstr "my-company"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -1885,9 +1859,7 @@ msgstr "كل سنة"
 msgid ""
 "per year\n"
 "                                                    ("
-msgstr ""
-"في السنة\n"
-"                                                    ("
+msgstr "في السنة ("
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
@@ -1900,32 +1872,30 @@ msgid ""
 "plan (Free Trial).\n"
 "                            Configure your resources below to keep your data and instance running."
 msgstr ""
-"الخطة (تجربة مجانية).\n"
-"                            قم بتكوين مواردك أدناه للحفاظ على تشغيل بياناتك وخوادمك."
+"خطة (تجربة مجانية). حدّد الموارد أدناه للحفاظ على بياناتك واستمرار تشغيل "
+"Instance."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
 msgid "pod replicas"
-msgstr "النسخ المتماثلة جراب"
+msgstr "نسخ Pod"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "replica"
-msgstr "نسخة طبق الأصل"
+msgstr "نسخة"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
 msgid ""
 "replicas)\n"
 "                                                <span class=\"badge ms-2 bg-info\">Monthly</span>"
-msgstr ""
-"النسخ المتماثلة)\n"
-"                                                <span class=\"badge ms-2 bg-info\">شهريا</span>"
+msgstr "نسخ) <span class=\"badge ms-2 bg-info\">شهريًا</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "s"
-msgstr "ق"
+msgstr "ث"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
@@ -1936,29 +1906,29 @@ msgstr "صفحة الفاتورة"
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
 msgid "tier"
-msgstr "الطبقة"
+msgstr "المستوى"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
 msgid "too."
-msgstr "أيضاً."
+msgstr "أيضًا."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 msgid "with the same subdomain and domain."
-msgstr "مع نفس المجال الفرعي والمجال."
+msgstr "بالنطاق الفرعي وDomain نفسيهما."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 msgid "workers (previous plan)"
-msgstr "عمليات التشغيل (الخطة السابقة)"
+msgstr "Workers (الخطة السابقة)"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
 msgid "your-subdomain."
-msgstr "نطاقك الفرعي."
+msgstr "your-subdomain."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
@@ -2001,7 +1971,8 @@ msgid ""
 "'%s' is your own cancelled instance — reactivate it from My Instances "
 "instead of creating a new one."
 msgstr ""
-"الخادم '%s' ملغى ويخصك. أعد تفعيله من صفحة خوادمك بدلاً من إنشاء خادم جديد."
+"Instance '%s' ملغاة وتخصك. أعد تفعيلها من «Instances الخاصة بي» بدلًا من "
+"إنشاء واحدة جديدة."
 
 #. module: saas_website
 #. odoo-python
@@ -2270,26 +2241,22 @@ msgid ""
 "\n"
 "Action: Open the instance in the backend and use 'Restore to Instance & Invoice' to create the restoration invoice and schedule the restore."
 msgstr ""
-"طلب استعادة من العميل:\n"
-"العميل: %s (%s)\n"
-"الخادم: %s\n"
-"النطاق الفرعي: %s.%s\n"
-"الخطة: %s (%s)\n"
-"النسخة المحتفظ بها: %s\n"
-"ملاحظة العميل: %s\n"
-"الإجراء: افتح الخادم في لوحة الإدارة واستخدم «استعادة إلى الخادم وإصدار فاتورة» لإنشاء الفاتورة وجدولة الاستعادة."
+"طلب استعادة بيانات من العميل: العميل: %s (%s) Instance: %s النطاق الفرعي: "
+"%s.%s الخطة: %s (%s) اللقطة المحتفظ بها: %s ملاحظة العميل: %s الإجراء: افتح "
+"Instance في Backend، واستخدم 'Restore to Instance & Invoice' لإنشاء فاتورة "
+"الاستعادة وجدولتها."
 
 #. module: saas_website
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "Database '%s' does not exist on this instance."
-msgstr "قاعدة '%s' غير موجودة على هذا الخادم."
+msgstr "قاعدة البيانات '%s' غير موجودة على هذه Instance."
 
 #. module: saas_website
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "Database management is only available for hosting instances."
-msgstr "إدارة قواعد البيانات متاحة لخوادم الاستضافة فقط."
+msgstr "تتوفر إدارة قواعد البيانات لـ Instances الاستضافة فقط."
 
 #. module: saas_website
 #. odoo-python
@@ -2301,7 +2268,7 @@ msgstr "إدارة قواعد البيانات متاحة للاستضافة ف�
 #. odoo-python
 #: code:addons/saas_website/controllers/api.py:0
 msgid "Databases can only be copied onto a Staging or Development server."
-msgstr "يمكن نسخ قواعد البيانات إلى خادم اختبار أو تطوير فقط."
+msgstr "يمكن نسخ قواعد البيانات إلى خادم Staging أو Development فقط."
 
 #. module: saas_website
 #. odoo-python
@@ -2337,7 +2304,7 @@ msgstr "لم يتم العثور على البيئة."
 #. odoo-python
 #: code:addons/saas_website/controllers/api.py:0
 msgid "Environments are managed from the Production server."
-msgstr "تُدار البيئات من خادم الإنتاج."
+msgstr "تُدار البيئات من خادم Production."
 
 #. module: saas_website
 #. odoo-python
@@ -2368,43 +2335,43 @@ msgstr "يجب إدخال الاسم الكامل."
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "Instance must be Running or Stopped to restore."
-msgstr "يجب أن يكون الخادم مشغّلاً أو متوقفاً للاستعادة."
+msgstr "يجب أن تكون Instance في حالة Running أو Stopped للاستعادة."
 
 #. module: saas_website
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "Instance must be running to create a backup."
-msgstr "يجب تشغيل الخادم لإنشاء نسخة احتياطية."
+msgstr "يجب تشغيل Instance لإنشاء نسخة احتياطية."
 
 #. module: saas_website
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "Instance must be running."
-msgstr "يجب أن يكون الخادم قيد التشغيل."
+msgstr "يجب أن تكون Instance قيد التشغيل."
 
 #. module: saas_website
 #. odoo-python
 #: code:addons/saas_website/controllers/api.py:0
 msgid "Instance not found."
-msgstr "لم يتم العثور على الخادم."
+msgstr "Instance غير موجودة."
 
 #. module: saas_website
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "Instance restart initiated."
-msgstr "بدأت إعادة تشغيل الخادم."
+msgstr "بدأت إعادة تشغيل Instance."
 
 #. module: saas_website
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "Instance start initiated."
-msgstr "بدأ تشغيل الخادم."
+msgstr "بدأ تشغيل Instance."
 
 #. module: saas_website
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "Instance stop initiated."
-msgstr "بدأ إيقاف الخادم."
+msgstr "بدأ إيقاف Instance."
 
 #. module: saas_website
 #. odoo-python
@@ -2468,7 +2435,7 @@ msgstr "لم تُحدّد أي تغييرات."
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "No instances found."
-msgstr "لم يتم العثور على خوادم."
+msgstr "لم يتم العثور على Instances."
 
 #. module: saas_website
 #. odoo-python
@@ -2492,13 +2459,13 @@ msgstr ""
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "On-demand backups are available for hosting instances only."
-msgstr "النسخ الاحتياطية عند الطلب متاحة لخوادم الاستضافة فقط."
+msgstr "تتوفر النسخ الاحتياطية عند الطلب لـ Instances الاستضافة فقط."
 
 #. module: saas_website
 #. odoo-python
 #: code:addons/saas_website/controllers/api.py:0
 msgid "Only the owner or an administrator can change this instance."
-msgstr "المالك أو المسؤول وحده يستطيع تغيير هذا الخادم."
+msgstr "المالك أو المسؤول وحده يستطيع تعديل هذه Instance."
 
 #. module: saas_website
 #. odoo-python
@@ -2562,7 +2529,7 @@ msgstr "اختر قاعدة بيانات لنسخها احتياطياً."
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "Pick a database to reset."
-msgstr "اختر قاعدة بيانات لإعادة ضبطها."
+msgstr "اختر قاعدة البيانات المطلوب إعادة تعيين كلمة مرور مسؤولها."
 
 #. module: saas_website
 #. odoo-python
@@ -2651,8 +2618,8 @@ msgid ""
 "Repairing '%(module)s' on '%(db)s'… your instance will come back up "
 "automatically. This page auto-refreshes."
 msgstr ""
-"جارٍ إصلاح '%(module)s' على '%(db)s'… سيعود خادمك تلقائياً. تُحدّث هذه "
-"الصفحة تلقائياً."
+"جارٍ إصلاح '%(module)s' على '%(db)s'… ستعود Instance للعمل تلقائيًا. تُحدّث "
+"هذه الصفحة تلقائيًا."
 
 #. module: saas_website
 #. odoo-python
@@ -2728,7 +2695,7 @@ msgstr "لم يتم العثور على خادم المصدر."
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
 msgid "Storage cannot be reduced. Current storage: %d GB."
-msgstr "لا يمكن تقليل التخزين. المساحة الحالية: %d جيجابايت."
+msgstr "لا يمكن تقليل التخزين. المساحة الحالية: %d GB."
 
 #. module: saas_website
 #. odoo-python
@@ -2770,7 +2737,7 @@ msgstr "هذا الملف المرفوع غير متاح للاستعادة."
 #. odoo-python
 #: code:addons/saas_website/controllers/api.py:0
 msgid "The instance must be running or stopped to apply this change."
-msgstr "يجب أن يكون الخادم مشغّلاً أو متوقفاً لتطبيق هذا التغيير."
+msgstr "يجب أن تكون Instance قيد التشغيل أو متوقفة لتطبيق هذا التغيير."
 
 #. module: saas_website
 #. odoo-python
@@ -2792,7 +2759,7 @@ msgstr "رقم الهاتف '%s' غير صالح لدولة %s. أدخل رقم�
 msgid ""
 "The repository is managed at the project level. Open the Production "
 "environment to change it."
-msgstr "يُدار المستودع على مستوى المشروع. افتح بيئة الإنتاج لتغييره."
+msgstr "يُدار المستودع على مستوى المشروع. افتح بيئة Production لتغييره."
 
 #. module: saas_website
 #. odoo-python
@@ -2816,7 +2783,7 @@ msgstr "النطاق الفرعي '%s' مستخدم بالفعل. اختر نط�
 #. odoo-python
 #: code:addons/saas_website/controllers/api.py:0
 msgid "There's no cancellable invoice for this instance."
-msgstr "لا توجد فاتورة يمكن إلغاؤها لهذا الخادم."
+msgstr "لا توجد فاتورة قابلة للإلغاء لهذه Instance."
 
 #. module: saas_website
 #. odoo-python
@@ -2824,7 +2791,7 @@ msgstr "لا توجد فاتورة يمكن إلغاؤها لهذا الخادم
 msgid ""
 "This instance is stopped. Start it to access backups, snapshots and logs."
 msgstr ""
-"هذا الخادم متوقف. شغّله للوصول إلى النسخ الاحتياطية والنسخ الكاملة والسجلات."
+"هذه Instance متوقفة. شغّلها للوصول إلى النسخ الاحتياطية واللقطات والسجلات."
 
 #. module: saas_website
 #. odoo-python
@@ -2833,8 +2800,8 @@ msgid ""
 "This instance is suspended. Settle the outstanding invoice to restore access"
 " to backups, snapshots and logs."
 msgstr ""
-"هذا الخادم معلّق. سدّد الفاتورة المستحقة لاستعادة الوصول إلى النسخ "
-"الاحتياطية والنسخ الكاملة والسجلات."
+"هذه Instance معلّقة. سدد الفاتورة المستحقة لاستعادة الوصول إلى النسخ "
+"الاحتياطية واللقطات والسجلات."
 
 #. module: saas_website
 #. odoo-python
@@ -2843,8 +2810,8 @@ msgid ""
 "This instance isn't running yet. Backups, snapshots and logs are available "
 "once it's running."
 msgstr ""
-"هذا الخادم لم يبدأ التشغيل بعد. تتوفر النسخ الاحتياطية والنسخ الكاملة "
-"والسجلات بعد تشغيله."
+"لم تبدأ هذه Instance العمل بعد. تتوفر النسخ الاحتياطية واللقطات والسجلات بعد"
+" تشغيلها."
 
 #. module: saas_website
 #. odoo-python
@@ -2898,7 +2865,7 @@ msgstr "اكتب اسم قاعدة البيانات مطابقاً تماماً 
 #. odoo-python
 #: code:addons/saas_website/controllers/api.py:0
 msgid "Type the instance name exactly to confirm the restore."
-msgstr "اكتب اسم الخادم مطابقاً تماماً لتأكيد الاستعادة."
+msgstr "اكتب اسم Instance مطابقاً تماماً لتأكيد الاستعادة."
 
 #. module: saas_website
 #. odoo-python
@@ -3038,7 +3005,7 @@ msgstr "لم يتم العثور على مساحة العمل."
 msgid ""
 "You already have a paid service instance — the free trial is no longer "
 "available."
-msgstr "لديك خادم خدمة مدفوع بالفعل؛ التجربة المجانية لم تعد متاحة."
+msgstr "لديك Instance لخدمة مدفوعة بالفعل. لم تعد التجربة المجانية متاحة."
 
 #. module: saas_website
 #. odoo-python
@@ -3050,7 +3017,7 @@ msgstr "استخدمت تجربتك المجانية بالفعل."
 #. odoo-python
 #: code:addons/saas_website/controllers/main.py:0
 msgid "You have reached the maximum number of instances (%d)."
-msgstr "وصلت إلى الحد الأقصى لعدد الخوادم (%d)."
+msgstr "وصلت إلى الحد الأقصى لعدد Instances (%d)."
 
 #. module: saas_website
 #. odoo-python
@@ -3058,8 +3025,7 @@ msgstr "وصلت إلى الحد الأقصى لعدد الخوادم (%d)."
 msgid ""
 "You have reached the maximum number of instances (%d). Please delete or "
 "cancel an existing one first."
-msgstr ""
-"وصلت إلى الحد الأقصى لعدد الخوادم (%d). احذف أو ألغِ خادماً موجوداً أولاً."
+msgstr "وصلت إلى الحد الأقصى لعدد Instances (%d). احذف أو ألغِ إحداها أولًا."
 
 #. module: saas_website
 #. odoo-python

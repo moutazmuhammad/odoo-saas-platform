@@ -245,9 +245,7 @@ function RestoreSnapshotDialog({
         </span>
         <div className="text-sm">
           <p className="font-medium text-foreground">{i18nText("Restore this instance to the snapshot?")}</p>
-          <p className="mt-1 text-muted">{i18nText("This replaces the instance's ")}<strong>{"current"}</strong>{i18nText(" databases, files, and configuration with the state captured in this snapshot")}{backup ? ` (${formatDateTime(backup.created)})` : ""}. A fresh
-            pre-restore snapshot is taken first, but anything created since cannot be recovered otherwise.
-          </p>
+          <p className="mt-1 text-muted">{i18nText("This replaces the instance's current databases, files, and configuration with the state captured in this snapshot.")}{backup ? ` (${formatDateTime(backup.created)})` : ""}{" "}{i18nText("A fresh pre-restore snapshot is taken first, but anything created since cannot be recovered otherwise.")}</p>
         </div>
       </div>
       <div className="mt-5 space-y-2">
@@ -349,8 +347,7 @@ function DailyBackupCard({
         </span>
         <div>
           <p className="font-medium">{i18nText("Daily snapshots are off")}<HelpHint anchor="daily-backup" className="ms-1.5" /></p>
-          <p className="text-xs text-muted">{i18nText("Automatic daily full-instance snapshots, billed monthly by used storage")}{price > 0 ? i18nText(" (currently {0}/month)", [price]) : ""}. Renews monthly; pauses if a renewal goes unpaid.
-          </p>
+          <p className="text-xs text-muted">{i18nText("Automatic daily full-instance snapshots, billed monthly by used storage")}{price > 0 ? i18nText(" (currently {0}/month)", [price]) : ""}{i18nText(". Renews monthly; pauses if a renewal goes unpaid.")}</p>
         </div>
       </div>
       <ActionButton className="shrink-0" loading={enabling} loadingText={i18nText("Starting\u2026")} onClick={onEnable}>

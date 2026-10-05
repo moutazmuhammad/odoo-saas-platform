@@ -504,7 +504,7 @@ function UsageCard({
           {helpAnchor && <HelpHint anchor={helpAnchor} />}
           {live && (
             <span className="ms-1 inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-success">
-              <span className="size-1.5 rounded-full bg-success animate-pulse-soft" />{"live"}</span>
+              <span className="size-1.5 rounded-full bg-success animate-pulse-soft" />{i18nText("live")}</span>
           )}
         </div>
         <span className="text-sm font-semibold tabular-nums">{active ? `${value}%` : "—"}</span>

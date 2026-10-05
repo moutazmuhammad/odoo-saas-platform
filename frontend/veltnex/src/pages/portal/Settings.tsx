@@ -127,9 +127,7 @@ export default function Settings() {
         </Section>
 
         <Section icon={Bell} title={i18nText("Notifications")} description={i18nText("How we reach you about renewals, backups, and deployments.")}>
-          <p className="text-sm text-muted">{i18nText("Account notifications are sent to ")}<span className="font-medium text-foreground">{user?.email}</span>.
-            Granular channel controls are coming soon.
-          </p>
+          <p className="text-sm text-muted">{i18nText("Account notifications are sent to ")}<span className="font-medium text-foreground">{user?.email}</span>{i18nText(". Granular channel controls are coming soon.")}</p>
         </Section>
 
         <Section icon={Palette} title={i18nText("Appearance")} description={i18nText("Switch between light and dark themes.")}>

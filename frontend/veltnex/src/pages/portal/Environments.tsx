@@ -1052,7 +1052,7 @@ function MergeEnvDialog({
       const msg =
         res.status === "up_to_date"
           ? i18nText("{0} is already up to date with {1}.", [prompt.target.name, prompt.source.branch])
-          : i18nText("Merged {0} into {1}.{2}", [res.source_branch, res.target_branch, res.redeployed ? " Redeploying…" : ""]);
+          : i18nText("Merged {0} into {1}.{2}", [res.source_branch, res.target_branch, res.redeployed ? i18nText(" Redeploying…") : ""]);
       onMerged(msg);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : i18nText("Couldn't merge."));
@@ -1094,7 +1094,7 @@ function MergeEnvDialog({
           </div>
 
           <p className="mt-3 text-sm text-muted">{i18nText("Merges")}{" "}
-            <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{prompt.source.branch}</code>{" "}{"into"}{" "}
+            <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{prompt.source.branch}</code>{" "}{i18nText("into")}{" "}
             <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{prompt.target.branch}</code>{" "}{i18nText("and redeploys ")}<strong>{prompt.target.name}</strong>.
           </p>
           {toProd && (
@@ -1269,8 +1269,7 @@ function CopyDbsDialog({
     <Dialog open={open} onClose={onClose} title={i18nText("Copy databases")}>
       {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't copy")} description={error} />}
       <div className="space-y-4">
-        <div className="text-sm text-muted">{i18nText("Copy databases (dump + filestore) from another server onto ")}<b>{target.name}</b>. The mapped names on this server keep your databases namespaced; existing databases are only replaced if you check their overwrite box.
-        </div>
+        <div className="text-sm text-muted">{i18nText("Copy databases (dump + filestore) from another server onto ")}<b>{target.name}</b>{i18nText(". The mapped names on this server keep your databases namespaced; existing databases are only replaced if you check their overwrite box.")}</div>
         <div className="space-y-2">
           <Label htmlFor="copy-source">{i18nText("Source server")}</Label>
           <select
@@ -1315,7 +1314,7 @@ function CopyDbsDialog({
                   <span className="text-muted">→</span>
                   <span className="font-mono">{m.dst}</span>
                   {m.collision && (
-                    <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[10px] font-medium text-danger">{"exists"}</span>
+                    <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[10px] font-medium text-danger">{i18nText("exists")}</span>
                   )}
                 </label>
               ))}
@@ -1326,9 +1325,7 @@ function CopyDbsDialog({
         {collisions.length > 0 && (
           <div className="rounded-lg border border-danger/30 bg-danger/5 p-3">
             <p className="text-sm font-medium">{i18nText("Overwrite confirmation")}</p>
-            <p className="mb-2 text-xs text-muted">{i18nText("These databases already exist on ")}{target.name}. Check each one you
-              want to replace — its dump will be dropped and replaced.
-            </p>
+            <p className="mb-2 text-xs text-muted">{i18nText("These databases already exist on ")}{target.name}{i18nText(". Check each one you want to replace — its dump will be dropped and replaced.")}</p>
             {collisions.map((m) => (
               <label key={m.dst} className="flex items-center gap-2 text-sm">
                 <input
@@ -1349,8 +1346,7 @@ function CopyDbsDialog({
           </div>
         )}
 
-        <div className="text-xs text-muted">{i18nText("Source: ")}<b>{sources.find((e) => e.id === sourceId)?.name ?? "—"}</b>{i18nText(" → Target: ")}<b>{target.name}</b>. Nothing is overwritten unless checked above.
-        </div>
+        <div className="text-xs text-muted">{i18nText("Source: ")}<b>{sources.find((e) => e.id === sourceId)?.name ?? "—"}</b>{i18nText(" → Target: ")}<b>{target.name}</b>{i18nText(". Nothing is overwritten unless checked above.")}</div>
       </div>
       <div className="mt-6 flex justify-end gap-2">
         <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
@@ -1549,11 +1545,9 @@ function DeleteEnvDialog({
           <Trash2 className="size-5" />
         </span>
         <div className="text-sm">
-          <p className="font-medium text-foreground">{i18nText("Delete the ")}{i18nText(env?.environment_label || "")}{i18nText(" server ")}<strong>{env?.name}</strong>?
+          <p className="font-medium text-foreground">{i18nText("Delete the {0} server {1}?", [i18nText(env?.environment_label || ""), env?.name ?? ""])}
           </p>
-          <p className="mt-1 text-muted">{i18nText("This permanently destroys the server and ")}<strong>{i18nText("all of its data — databases, files, and logs")}</strong>.
-            Any unused time on your current cycle is credited back to your wallet. This can't be undone.
-          </p>
+          <p className="mt-1 text-muted">{i18nText("This permanently destroys the server and ")}<strong>{i18nText("all of its data — databases, files, and logs")}</strong>{i18nText(". Any unused time on your current cycle is credited back to your wallet. This can't be undone.")}</p>
         </div>
       </div>
       <label className="mt-5 flex items-start gap-2.5 rounded-lg border border-border p-3 text-sm">

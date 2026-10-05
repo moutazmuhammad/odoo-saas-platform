@@ -70,9 +70,7 @@ export default function Code({ embedId }: { embedId?: number } = {}) {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{i18nText("Code & packages")}<HelpHint anchor="repo" className="ms-1.5" />
           </h1>
-          <p className="mt-1 text-sm text-muted">{i18nText("Connect your Git modules. Python dependencies come from your repository's ")}<code>{"requirements.txt"}</code>. Applying a change pulls
-            your code and restarts the instance (brief downtime).
-          </p>
+          <p className="mt-1 text-sm text-muted">{i18nText("Connect your Git modules. Python dependencies come from your repository's ")}<code>{"requirements.txt"}</code>{i18nText(". Applying a change pulls your code and restarts the instance (brief downtime).")}</p>
         </div>
       )}
 
@@ -260,7 +258,7 @@ function RequirementsInfo({ instance }: { instance: ApiInstance }) {
         <li className="flex items-start gap-2">
           <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />{i18nText("Validated on a throwaway environment first — a broken dependency never reaches your instance.")}</li>
         <li className="flex items-start gap-2">
-          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />{i18nText("If it fails, your code is ")}<strong className="text-foreground">{"not"}</strong>{i18nText(" deployed and your instance keeps running.")}</li>
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />{i18nText("If validation fails, your code is not deployed and your instance keeps running.")}</li>
         <li className="flex items-start gap-2">
           <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />{i18nText("The deployment status — and the exact pip error — appear in")}{" "}
           <a href={historyHref} className="font-medium text-primary underline-offset-2 hover:underline">{i18nText("Deployment history")}</a>

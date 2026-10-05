@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { getLanguage, getLocale, initializeLanguage, i18nText, languageUrl, loadLanguage, translateMessage } from ".";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import arabic from "../../../../control-plane/saas_website/static/src/i18n/ar.json";
+import { parse } from "@babel/parser";
 
 function language(value: string) {
   document.cookie = `veltnex-language=${value}; path=/`;
@@ -78,5 +79,53 @@ describe("English and Arabic", () => {
       expect([...(target.match(pattern) || [])].sort(), source)
         .toEqual([...(source.match(pattern) || [])].sort());
     }
+  });
+
+  it("preserves product names, technical values, numbers, units and native markup", () => {
+    const names = /\b(?:VELTNEX|Veltnex|Odoo|Kubernetes|GitHub|GitLab|Gitea|Bitbucket|AWS|Google Cloud(?: Storage)?|DigitalOcean|Hetzner|Docker|PostgreSQL|Python|WhatsApp|LinkedIn|Twitter|Community|Enterprise(?!-grade)|Standard|HA|CPU|RAM|NVMe|SSL|API|CORS|HTTPS|SSH|SCP|SMS|GB|MB)\b/g;
+    const identifiers = /(?:https?:\/\/[^\s<"')]+|[\w.+-]+@[\w.-]+\.[a-z]+|\b[\w-]+\.(?:txt|sql|log|conf|zip)\b|\b(?:web\.base\.url|SAAS_SECRET_KEY|saas_secret_key|s3:PutBucketCORS|PutBucketCors|PutBucketCORS|NotImplemented)\b)/g;
+    for (const [source, target] of Object.entries(arabic)) {
+      for (const token of source.match(names) || []) expect(target, `${source}: ${token}`).toContain(token);
+      for (const token of source.match(identifiers) || []) expect(target, `${source}: ${token}`).toContain(token);
+      const visible = source.replace(/<[^>]+>|\{\d+\}/g, "");
+      for (const number of visible.match(/\b\d+(?:\.\d+)?\b/g) || []) expect(target, source).toContain(number);
+      expect(target.match(/<[^>]+>/g) || [], source).toEqual(source.match(/<[^>]+>/g) || []);
+      // Scale is a tier name in these messages, and an ordinary verb elsewhere.
+      if (source.includes("HA") && source.includes("Scale")) expect(target, source).toContain("Scale");
+    }
+    for (const sample of [" /web/login 200", "[INFO]", "heartbeat ok", "✓ deployed in 12s", "✓ installed · pip 24.0"]) {
+      expect(arabic[sample as keyof typeof arabic]).toBe(sample);
+    }
+    expect(arabic["e.g. sale, stock, account"]).toContain("sale, stock, account");
+    expect(arabic["pandas openpyxl phonenumbers"]).toBe("pandas openpyxl phonenumbers");
+  });
+
+  it("leaves only intentional technical examples and brand text outside localization in JSX", () => {
+    const allowed = new Set(["ESC", "VELT", "NEX", "⌘K", "my-company.veltnex.com", "v18.0",
+      "deploy.log", "github.com/your-org/odoo-addons", "a1b2c3d", "done", "GET", "my-company",
+      "✓ 12s", "requirements.txt", "sale", "all", "null"]);
+    const files = import.meta.glob("../**/*.tsx", { query: "?raw", import: "default", eager: true });
+    const untranslated: string[] = [];
+    for (const [file, content] of Object.entries(files)) {
+      if (file.includes(".test.") || file.includes("/test/") || file.includes("__tests__")) continue;
+      const source = parse(String(content), { sourceType: "module", plugins: ["jsx", "typescript"] });
+      type AstNode = { type?: string; value?: string; expression?: AstNode; [key: string]: unknown };
+      const visit = (node: unknown, parent?: AstNode) => {
+        if (!node || typeof node !== "object") return;
+        const ast = node as AstNode;
+        let value = "";
+        if (ast.type === "JSXText") value = (ast.value || "").replace(/\s+/g, " ").trim();
+        if (ast.type === "JSXExpressionContainer" && ast.expression?.type === "StringLiteral"
+          && parent?.type !== "JSXAttribute") value = ast.expression.value || "";
+        if (/[a-zA-Z]/.test(value) && !allowed.has(value)) untranslated.push(`${file}: ${value}`);
+        for (const [key, child] of Object.entries(ast)) {
+          if (key === "loc") continue;
+          if (Array.isArray(child)) child.forEach(entry => visit(entry, ast));
+          else visit(child, ast);
+        }
+      };
+      visit(source);
+    }
+    expect(untranslated).toEqual([]);
   });
 });

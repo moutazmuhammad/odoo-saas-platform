@@ -289,7 +289,7 @@ function AreaChart({
           )}
         </span>
         <span className="text-muted">{i18nText("now ")}<span className="font-semibold tabular-nums text-foreground">{fmt(last)}</span>
-          <span className="mx-1.5 opacity-40">·</span>{"peak"}{" "}
+          <span className="mx-1.5 opacity-40">·</span>{i18nText("peak")}{" "}
           <span className="tabular-nums">{fmt(peak)}</span>
         </span>
       </div>

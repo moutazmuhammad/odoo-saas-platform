@@ -395,7 +395,7 @@ export default function Hosting() {
               <span className="text-2xl font-bold text-foreground align-middle">
                 {money(startingFrom, currency)}
               </span>
-              <span className="text-muted">/mo</span>
+              <span className="text-muted">{i18nText("/mo")}</span>
               {selectedRegion && showRegionPicker && (
                 <span className="text-muted">{i18nText(" in ")}{selectedRegion.name}</span>
               )}
@@ -535,12 +535,12 @@ export default function Hosting() {
                 {!customize && maxSave.amount > 0 && (
                   <p className="-mt-3 text-center text-sm text-muted">
                     {config.cycle === "monthly" ? (
-                      <>{i18nText("Switch to ")}<span className="font-medium text-foreground">{"yearly"}</span>{i18nText(" billing and save up to")}{" "}
-                        <span className="font-semibold text-success">{money(maxSave.amount, maxSave.currency)}/yr</span>.
+                      <>{i18nText("Switch to ")}<span className="font-medium text-foreground">{i18nText("yearly")}</span>{i18nText(" billing and save up to")}{" "}
+                        <span className="font-semibold text-success">{money(maxSave.amount, maxSave.currency)}{i18nText("/yr")}</span>.
                       </>
                     ) : (
                       <>{i18nText("You're saving up to")}{" "}
-                        <span className="font-semibold text-success">{money(maxSave.amount, maxSave.currency)}/yr</span>{" "}{i18nText("with yearly billing.")}</>
+                        <span className="font-semibold text-success">{money(maxSave.amount, maxSave.currency)}{i18nText("/yr")}</span>{" "}{i18nText("with yearly billing.")}</>
                     )}
                   </p>
                 )}
@@ -863,7 +863,7 @@ export default function Hosting() {
                       <span className="text-sm">
                         <span className="font-medium">{i18nText("Daily off-site backups")}</span>
                         <FieldHint className="ms-1" text={i18nText("Automatic daily backups of your databases, stored off-site. Priced by the amount of storage actually used.")} />
-                        <span className="ms-1 text-muted">{i18nText("— from ")}{money(meta?.daily_backup_price ?? 0, currency)}/mo</span>
+                        <span className="ms-1 text-muted">{i18nText("— from ")}{money(meta?.daily_backup_price ?? 0, currency)}{i18nText("/mo")}</span>
                       </span>
                     </label>
                   )}

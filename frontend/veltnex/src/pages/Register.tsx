@@ -386,7 +386,7 @@ function OtpStep({
 
       <div className="mt-5 text-center text-sm">
         {seconds > 0 ? (
-          <span className="text-muted">{i18nText("Resend code in ")}{seconds}s</span>
+          <span className="text-muted">{i18nText("Resend code in ")}{seconds}{i18nText("s")}</span>
         ) : (
           <button
             onClick={() => {

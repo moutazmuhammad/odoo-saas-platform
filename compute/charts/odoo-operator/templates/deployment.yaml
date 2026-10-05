@@ -61,6 +61,9 @@ spec:
             {{- range .Values.extraArgs }}
             - {{ . | quote }}
             {{- end }}
+          env:
+            - name: KUBE_FEATURE_WatchListClient
+              value: {{ .Values.kubernetesClient.watchList | quote }}
           ports:
             - name: metrics
               containerPort: 8443

@@ -12,6 +12,11 @@ replicaCount: 1
 # replica is ever actively reconciling at a time.
 leaderElection: false
 
+# Use ordinary list/watch by default for compatibility with MicroK8s/dqlite.
+# Clusters with working streaming initial events may enable this explicitly.
+kubernetesClient:
+  watchList: false
+
 serviceAccount:
   create: true
   name: ""

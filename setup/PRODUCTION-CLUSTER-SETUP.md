@@ -186,7 +186,11 @@ snap install microk8s --classic --channel=1.35/stable
 snap refresh --hold microk8s          # no automatic Kubernetes upgrades
 
 # Use the private network. Without this, the nodes talk over their public IPs.
-ip -4 -br addr | grep -q " ${PRIV[$ME]}/" || echo "!! ${PRIV[$ME]} is not on $ME: fix cluster.env or the hostname"
+# Abort before changing kubelet settings if the address is still an example.
+if ! ip -4 -br addr | grep -q " ${PRIV[$ME]}/"; then
+  echo "${PRIV[$ME]} is not on $ME: fix cluster.env or the hostname"
+  exit 1
+fi
 sed -i '/^--node-ip=/d' /var/snap/microk8s/current/args/kubelet
 echo "--node-ip=${PRIV[$ME]}" >> /var/snap/microk8s/current/args/kubelet
 snap restart microk8s
@@ -664,3 +668,12 @@ Then copy the charts (step 5) and run the step 6 install again.
 - [ ] Step 13 shows `health ok`; kubeconfig copies deleted
 - [ ] Backups to S3; a restore tested
 - [ ] Tests 15.1–15.5 passed
+
+
+## Provisioning stalled before any tenant pods exist
+
+Check the operator lease renewal time, tenant resources, and node service logs. Pod `Running` and node `Ready` values can be stale when Kubernetes watches stop receiving datastore updates; confirm fresh leases and resource changes as well.
+
+The October 5, 2026 test-cluster incident had an invalid duplicate `--node-ip` on node1, stale API cache reads, and stalled datastore watches. The existing `odoo-ensan` request resumed after correcting the private IP, backing up and restarting the datastore watch services, and restarting Kubernetes services/operator with compatible list/watch settings. No tenant resource or database was deleted.
+
+For this MicroK8s cluster, the API-server configuration retains the existing feature gates plus `WatchList=false` and uses `--watch-cache=false`. The operator uses `KUBE_FEATURE_WatchListClient=false`. These settings are a mitigation for the observed watch/cache failure; disabling the server cache increases direct datastore reads. Back up the args files and datastore before changing them, apply changes one node at a time, and verify controller leases, new resource events, operator rollout, and tenant readiness. Do not edit datastore contents or reset the cluster to recover provisioning.

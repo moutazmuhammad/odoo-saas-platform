@@ -265,7 +265,7 @@ export default function Environments() {
     return <div className="space-y-4">
       <h1 className="text-2xl font-bold">{data.project_name}</h1>
       <p className="text-sm text-muted">No environments are available in your assigned scopes yet.</p>
-      {data.can_manage_access && <Link className="inline-block text-primary" to={`/my/instances/${instanceId}/access`}>Manage project access</Link>}
+      {data.can_manage_access && <Link className="inline-block text-primary" to={`/my/instances/${instanceId}/access`}>Manage team & permissions</Link>}
       <div className="flex gap-3">{(["staging", "development"] as const).map(type => data.can_create?.[type] && <Button key={type} disabled={!canCreate} onClick={() => setCreateType(type)}>Create {type} environment</Button>)}</div>
       <CreateEnvDialog instanceId={instanceId} type={createType} onClose={() => setCreateType(null)} onCreated={(_auto, childId) => { setCreateType(null); if (childId) selectEnv(childId); load(); }} />
     </div>;
@@ -276,7 +276,7 @@ export default function Environments() {
 
   return (
     <div className="animate-fade-in">
-      {data.can_manage_access && <Link className="mb-4 inline-block text-sm font-medium text-primary" to={`/my/instances/${instanceId}/access`}>Manage project access →</Link>}
+      {data.can_manage_access && <Link className="mb-4 inline-block text-sm font-medium text-primary" to={`/my/instances/${instanceId}/access`}>Manage team & permissions →</Link>}
       <div className="flex flex-col gap-5 lg:flex-row">
         {/* ───────── Left sidebar: branches (sticky per-project bar) ───── */}
         <aside className="lg:sticky lg:top-20 lg:max-h-[calc(100dvh-14.5rem)] lg:w-64 lg:shrink-0 lg:self-start lg:overflow-y-auto">

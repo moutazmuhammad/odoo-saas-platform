@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 from unittest.mock import patch
+from unittest import TestCase
 from odoo.tests.common import TransactionCase, HttpCase, tagged
 from odoo.exceptions import AccessError, ValidationError
 from .test_iam import IamFixture
@@ -17,6 +18,12 @@ class TestIamMembers(IamFixture, TransactionCase):
         result = self.env['saas.iam.member'].with_user(self.owner)._create_profile('New Teammate', 'iam-new-member@example.com')
         return self.env['saas.iam.member'].sudo().browse(result['id']), result
 
+    def _verify_member_phone(self, member, phone='01012345678'):
+        User = self.env['res.users'].with_user(member.user_id)
+        with patch.object(type(User), '_deliver_phone_code'):
+            User._send_phone_code(phone, self.env.ref('base.eg').id)
+        return User._verify_phone_code(member.user_id.sudo().iam_phone_code)
+
     def test_phone_uniqueness_normalizes_mobile_and_inactive_contacts(self):
         egypt = self.env.ref('base.eg')
         self.owner.partner_id.country_id = egypt
@@ -28,6 +35,153 @@ class TestIamMembers(IamFixture, TransactionCase):
         self.other.partner_id.write({'mobile': False, 'phone': '00201012345678', 'active': False})
         with self.assertRaises(ValidationError):
             Member._create_profile('Duplicate Phone', 'duplicate-phone@example.com', '+201012345678')
+
+    def test_local_phone_uses_owner_country_automatically(self):
+        self.owner.partner_id.country_id = self.env.ref('base.eg')
+        result = self.env['saas.iam.member'].with_user(self.owner)._create_profile(
+            'Local Phone', 'local-phone@example.com', '010 1234 5678')
+        member = self.env['saas.iam.member'].sudo().browse(result['id'])
+        self.assertEqual(member.phone, '+201012345678')
+        self.assertEqual(member.user_id.partner_id.country_id, self.env.ref('base.eg'))
+
+    def test_phone_country_can_differ_from_owner_country(self):
+        self.owner.partner_id.country_id = self.env.ref('base.us')
+        result = self.env['saas.iam.member'].with_user(self.owner)._create_profile(
+            'Egypt Phone', 'egypt-phone@example.com', '01012345678', self.env.ref('base.eg').id)
+        member = self.env['saas.iam.member'].sudo().browse(result['id'])
+        self.assertEqual(member.phone, '+201012345678')
+        self.assertEqual(member.user_id.partner_id.country_id, self.env.ref('base.eg'))
+
+    def test_local_phone_cannot_bypass_uniqueness(self):
+        self.owner.partner_id.country_id = self.env.ref('base.eg')
+        self.other.partner_id.phone = '+201012345678'
+        with self.assertRaises(ValidationError):
+            self.env['saas.iam.member'].with_user(self.owner)._create_profile(
+                'Duplicate Local', 'duplicate-local@example.com', '01012345678')
+        self.assertFalse(self.env['res.users'].sudo().search_count([('login', '=', 'duplicate-local@example.com')]))
+
+    def test_invalid_local_phone_or_country_rejected(self):
+        Member = self.env['saas.iam.member'].with_user(self.owner)
+        with self.assertRaises(ValidationError):
+            Member._create_profile('Invalid Phone', 'invalid-phone@example.com', '123', self.env.ref('base.eg').id)
+        with self.assertRaises(ValidationError):
+            Member._create_profile('Invalid Country', 'invalid-country@example.com', '01012345678', 'invalid')
+
+    def test_phone_setup_cannot_skip_password_change(self):
+        member, _ = self._new_profile()
+        with self.assertRaises(AccessError):
+            self.env['res.users'].with_user(member.user_id)._send_phone_code('01012345678', self.env.ref('base.eg').id)
+
+    def _configure_whatsapp(self):
+        self.env.company.sudo().write({
+            'saas_whatsapp_phone_id': '123456789', 'saas_whatsapp_access_token': 'test-token',
+            'saas_whatsapp_template': 'veltnex_verification', 'saas_whatsapp_language': 'en_US',
+            'saas_whatsapp_api_version': 'v25.0'})
+
+    def test_whatsapp_sends_authentication_template_with_copy_code_button(self):
+        self._configure_whatsapp()
+        with patch('odoo.addons.saas_iam.models.whatsapp.requests.post') as post:
+            post.return_value.ok = True
+            post.return_value.json.return_value = {'messages': [{'id': 'wamid.test'}]}
+            self.env['saas.iam.whatsapp']._send_code('+201012345678', '123456')
+        self.assertEqual(post.call_args.args[0], 'https://graph.facebook.com/v25.0/123456789/messages')
+        payload = post.call_args.kwargs['json']
+        self.assertEqual(payload['to'], '201012345678')
+        self.assertEqual(payload['template']['components'][1]['parameters'][0]['text'], '123456')
+        self.assertFalse(post.call_args.kwargs['allow_redirects'])
+
+    def test_whatsapp_provider_rejection_never_reports_delivery_success(self):
+        from odoo.exceptions import UserError
+        self._configure_whatsapp()
+        with patch('odoo.addons.saas_iam.models.whatsapp.requests.post') as post:
+            post.return_value.ok = False
+            with self.assertRaises(UserError):
+                self.env['saas.iam.whatsapp']._send_code('+201012345678', '123456')
+
+    def test_registration_uses_same_whatsapp_sender(self):
+        with patch.object(type(self.env['saas.iam.whatsapp']), '_send_code') as send:
+            otp = self.env['saas.registration.otp'].sudo()._generate_and_send_phone('+201012345678')
+        send.assert_called_once_with('+201012345678', otp.code)
+        self.assertFalse(otp.verified)
+
+    def test_whatsapp_settings_secrets_are_not_readable_by_teammates(self):
+        self._configure_whatsapp()
+        with self.assertRaises(AccessError):
+            self.env.company.with_user(self.team).read(['saas_whatsapp_access_token'])
+
+    def test_wrong_expired_or_replayed_code_never_unlocks_access(self):
+        from odoo import fields
+        from datetime import timedelta
+        member, _ = self._new_profile()
+        User = self.env['res.users'].with_user(member.user_id)
+        User._change_initial_password('MyOwnStrongPassword123!')
+        with patch.object(type(User), '_deliver_phone_code'):
+            User._send_phone_code('01012345678', self.env.ref('base.eg').id)
+        code = member.user_id.sudo().iam_phone_code
+        wrong = '000000' if code != '000000' else '111111'
+        for _ in range(5):
+            with TestCase.assertRaises(self, ValidationError):
+                User._verify_phone_code(wrong)
+        with self.assertRaises(ValidationError):
+            User._verify_phone_code(code)
+        self.assertFalse(member._ready())
+        with patch.object(type(User), '_deliver_phone_code'):
+            User._send_phone_code('01012345678', self.env.ref('base.eg').id)
+        member.user_id.sudo().iam_phone_code_expires = fields.Datetime.now() - timedelta(seconds=1)
+        with self.assertRaises(ValidationError):
+            User._verify_phone_code(member.user_id.sudo().iam_phone_code)
+        self._verify_member_phone(member)
+        with self.assertRaises(AccessError):
+            User._verify_phone_code(code)
+
+    def test_phone_confirmation_rechecks_duplicate_claim(self):
+        member, _ = self._new_profile()
+        User = self.env['res.users'].with_user(member.user_id)
+        User._change_initial_password('MyOwnStrongPassword123!')
+        with patch.object(type(User), '_deliver_phone_code'):
+            User._send_phone_code('01012345678', self.env.ref('base.eg').id)
+        self.other.partner_id.phone = '+201012345678'
+        with self.assertRaises(ValidationError):
+            User._verify_phone_code(member.user_id.sudo().iam_phone_code)
+        self.assertFalse(member._ready())
+
+    def test_changing_phone_invalidates_previous_code(self):
+        member, _ = self._new_profile()
+        User = self.env['res.users'].with_user(member.user_id)
+        User._change_initial_password('MyOwnStrongPassword123!')
+        with patch.object(type(User), '_deliver_phone_code'), \
+                patch('odoo.addons.saas_iam.models.members.secrets.randbelow', side_effect=[123456, 654321]):
+            User._send_phone_code('01012345678', self.env.ref('base.eg').id)
+            User._send_phone_code('01112345678', self.env.ref('base.eg').id)
+        with self.assertRaises(ValidationError):
+            User._verify_phone_code('123456')
+        User._verify_phone_code('654321')
+        self.assertEqual(member.user_id.partner_id.phone, '+201112345678')
+        self.assertTrue(member._ready())
+
+    def test_whatsapp_failure_keeps_account_locked_and_destroys_old_code(self):
+        from odoo.exceptions import UserError
+        member, _ = self._new_profile()
+        User = self.env['res.users'].with_user(member.user_id)
+        User._change_initial_password('MyOwnStrongPassword123!')
+        with patch.object(type(User), '_deliver_phone_code'):
+            User._send_phone_code('01012345678', self.env.ref('base.eg').id)
+        with patch.object(type(User), '_deliver_phone_code', side_effect=UserError('WhatsApp unavailable')):
+            with TestCase.assertRaises(self, UserError):
+                User._send_phone_code('01112345678', self.env.ref('base.eg').id)
+        self.assertFalse(member.user_id.sudo().iam_phone_code)
+        self.assertFalse(member._ready())
+
+    def test_verified_phone_cannot_be_changed_without_reverification(self):
+        member, _ = self._new_profile()
+        User = self.env['res.users'].with_user(member.user_id)
+        User._change_initial_password('MyOwnStrongPassword123!')
+        self._verify_member_phone(member)
+        self.assertTrue(member._ready())
+        member.user_id.partner_id.phone = '+201112345678'
+        self.assertFalse(member._ready())
+        with self.assertRaises(AccessError):
+            member.user_id.with_user(member.user_id).write({'iam_verified_phone': '+201112345678'})
 
     def test_normal_portal_signup_cannot_reuse_teammate_phone(self):
         self.env['saas.iam.member'].with_user(self.owner)._create_profile('Phone Owner', 'phone-owner@example.com', '+201012345678')
@@ -43,6 +197,7 @@ class TestIamMembers(IamFixture, TransactionCase):
         member, _ = self._new_profile()
         user = member.user_id
         self.env['res.users'].with_user(user)._change_initial_password('MyOwnStrongPassword123!')
+        self._verify_member_phone(member)
         self.assertTrue(self.iam._is_managed_user(user))
         with self.assertRaises(AccessError):
             self.project.with_user(user).sudo().copy({'subdomain': 'iamunauthorized', 'partner_id': user.partner_id.id})
@@ -59,6 +214,7 @@ class TestIamMembers(IamFixture, TransactionCase):
         member, _ = self._new_profile()
         user = member.user_id
         self.env['res.users'].with_user(user)._change_initial_password('MyOwnStrongPassword123!')
+        self._verify_member_phone(member)
         self._grant('viewer', 'staging', user=user)
         grant = self._grant('sql', 'staging', user=user)
         self.assertTrue(self.iam._allowed(self.stage, 'sql.execute', user))
@@ -77,7 +233,7 @@ class TestIamMembers(IamFixture, TransactionCase):
         grant.active = False
         self.assertFalse(self.iam._allowed(self.stage, 'sql.execute', user))
 
-    def test_first_login_only_requires_own_password_and_blocks_temporary_password(self):
+    def test_first_login_requires_password_and_mobile_verification(self):
         member, result = self._new_profile()
         self.assertTrue(member.user_id.share)
         self.assertEqual(member.user_id.iam_managed_owner_id, self.owner.partner_id)
@@ -93,6 +249,9 @@ class TestIamMembers(IamFixture, TransactionCase):
             with self.assertRaises(ValidationError):
                 User._change_initial_password(password)
         User._change_initial_password('MyOwnStrongPassword123!')
+        self.assertFalse(member._ready())
+        self.assertFalse(self.iam._allowed(self.project, 'db.delete', member.user_id))
+        self._verify_member_phone(member)
         self.assertTrue(member._ready())
         self.assertTrue(self.iam._allowed(self.project, 'db.delete', member.user_id))
         with self.assertRaises(AccessError):
@@ -114,6 +273,7 @@ class TestIamMembers(IamFixture, TransactionCase):
     def test_owner_reset_requires_password_change_again_and_cancels_pending_work(self):
         member, result = self._new_profile()
         self.env['res.users'].with_user(member.user_id)._change_initial_password('MyOwnStrongPassword123!')
+        self._verify_member_phone(member)
         self._grant('viewer', user=member.user_id)
         self.assertTrue(self.iam._allowed(self.project, 'project.view', member.user_id))
         with self.assertRaises(AccessError):
@@ -125,11 +285,14 @@ class TestIamMembers(IamFixture, TransactionCase):
         self.assertTrue(member.user_id.iam_initial_password)
         self.assertFalse(self.iam._allowed(self.project, 'project.view', member.user_id))
         self.env['res.users'].with_user(member.user_id)._change_initial_password('MyReplacementPassword123!')
+        self.assertFalse(self.iam._allowed(self.project, 'project.view', member.user_id))
+        self._verify_member_phone(member)
         self.assertTrue(self.iam._allowed(self.project, 'project.view', member.user_id))
 
     def test_shared_account_cannot_be_reset_or_disabled_by_one_customer(self):
         member, result = self._new_profile()
         self.env['res.users'].with_user(member.user_id)._change_initial_password('MyOwnStrongPassword123!')
+        self._verify_member_phone(member)
         with self.assertRaises(ValidationError):
             self.env['saas.iam.member'].with_user(self.other)._create_profile('Unrelated profile', member.user_id.login)
         # Existing shared relationships remain protected across upgrades.
@@ -234,6 +397,23 @@ class TestIamMemberApi(IamFixture, HttpCase):
         completed = self._rpc('/saas/api/v1/iam/password/change', password='MyNewOwnPassword123!')
         self.assertTrue(completed['ok'], completed)
         self.assertFalse(self._rpc('/saas/api/v1/me')['data']['must_change_password'])
+        self.assertTrue(self._rpc('/saas/api/v1/me')['data']['must_verify_phone'])
+        denied = self._rpc('/saas/api/v1/instances/%s/status' % self.project.id)
+        self.assertEqual(denied['code'], 'phone_verification_required')
+        with patch.object(type(self.env['res.users']), '_deliver_phone_code'):
+            sent = self._rpc('/saas/api/v1/iam/phone/send', phone='01012345678', country_id=self.env.ref('base.eg').id)
+        self.assertTrue(sent['ok'], sent)
+        self.assertNotIn('test_otp', sent['data'])
+        profile.user_id.invalidate_recordset()
+        code = profile.user_id.sudo().iam_phone_code
+        wrong = '000000' if code != '000000' else '111111'
+        self.assertFalse(self._rpc('/saas/api/v1/iam/phone/verify', code=wrong)['ok'])
+        profile.user_id.invalidate_recordset()
+        self.assertEqual(profile.user_id.sudo().iam_phone_code_attempts, 1)
+        self.assertEqual(self._rpc('/saas/api/v1/instances')['code'], 'phone_verification_required')
+        verified = self._rpc('/saas/api/v1/iam/phone/verify', code=profile.user_id.sudo().iam_phone_code)
+        self.assertTrue(verified['ok'], verified)
+        self.assertFalse(self._rpc('/saas/api/v1/me')['data']['must_verify_phone'])
         self.assertTrue(self._rpc('/saas/api/v1/instances/%s/status' % self.project.id)['ok'])
         me = self._rpc('/saas/api/v1/me')['data']
         self.assertTrue(me['is_managed_teammate'])

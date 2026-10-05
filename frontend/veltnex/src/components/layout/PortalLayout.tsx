@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 // Keep a direct route to the project list from account pages as well as project pages.
 const NAV = [
   { to: "/my/instances", label: "Projects", icon: LayoutGrid },
-  { to: "/my/access", label: "Project Access", icon: ShieldCheck },
+  { to: "/my/access", label: "Team & permissions", icon: ShieldCheck },
   { to: "/my/billing", label: "Billing", icon: Receipt },
   // Account "Settings" lives in the avatar dropdown — no duplicate in the rail.
 ];

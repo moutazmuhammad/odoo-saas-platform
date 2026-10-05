@@ -17,8 +17,8 @@ describe("Portal navigation", () => {
     await userEvent.setup().click(screen.getByTitle("Projects"));
     await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/my/instances"));
   });
-  it("shows Project Access once on the project code page", () => {
+  it("shows Team & permissions once on the project code page", () => {
     renderWithProviders(<PortalLayout />, { route: "/my/instances/13/environments?tab=code" });
-    expect(screen.getAllByTitle("Project Access")).toHaveLength(1);
+    expect(screen.getAllByTitle("Team & permissions")).toHaveLength(1);
   });
 });

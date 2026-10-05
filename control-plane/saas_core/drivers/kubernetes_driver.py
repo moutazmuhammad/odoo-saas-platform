@@ -334,6 +334,53 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
     def _apps_api(self):
         return k8s_client.AppsV1Api(self._client())
 
+    def require_cluster_ready(self, timeout=4):
+        """Check controllers, not merely API reachability, before accepting work.
+
+        Ready pods can conceal broken watches. A leader must still renew its
+        lease. Managed clusters may hide control-plane leases; the operator
+        deployment and (when enabled) its leader lease are always required.
+        """
+        deployments = self._apps_api().list_deployment_for_all_namespaces(
+            label_selector='app.kubernetes.io/name=odoo-operator',
+            _request_timeout=timeout).items
+        if not deployments:
+            raise RuntimeError('Cluster is not ready: Odoo operator is missing.')
+        coordination = k8s_client.CoordinationV1Api(self._client())
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        def check_lease(namespace, name, required):
+            try:
+                lease = coordination.read_namespaced_lease(
+                    name, namespace, _request_timeout=timeout)
+            except ApiException as exc:
+                if exc.status == 404 and not required:
+                    return
+                raise
+            renewed = lease.spec.renew_time
+            if renewed and renewed.tzinfo is None:
+                renewed = renewed.replace(tzinfo=datetime.timezone.utc)
+            age = (now - renewed).total_seconds() if renewed else None
+            if not lease.spec.holder_identity or age is None or age > 120 or age < -30:
+                raise RuntimeError(
+                    'Cluster controllers are stalled: %s/%s has no recent '
+                    'leader heartbeat. Provisioning will retry after recovery.'
+                    % (namespace, name))
+
+        for deployment in deployments:
+            if not (deployment.status.available_replicas or 0):
+                raise RuntimeError('Cluster is not ready: Odoo operator is unavailable.')
+            managers = [c for c in deployment.spec.template.spec.containers
+                        if c.name == 'manager']
+            if not managers:
+                raise RuntimeError('Cluster is not ready: Odoo operator manager is missing.')
+            # Without an explicit false flag, require a lease (fail closed).
+            if any('--leader-elect=false' not in (c.args or []) for c in managers):
+                check_lease(deployment.metadata.namespace,
+                            'odoo-instance-operator.saas.odoo.example.com', True)
+        for name in ('kube-scheduler', 'kube-controller-manager'):
+            check_lease('kube-system', name, False)
+
     @staticmethod
     def _cr_name(handle_or_spec) -> str:
         # Same normalization the old stub used (container_name is always
@@ -349,7 +396,7 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
     def _get_cr(self, name):
         try:
             return self._custom_api().get_cluster_custom_object(
-                _GROUP, _VERSION, _PLURAL, name)
+                _GROUP, _VERSION, _PLURAL, name, _request_timeout=10)
         except ApiException as e:
             if e.status == 404:
                 return None
@@ -362,7 +409,8 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         provisioned anything in it yet — not an error condition)."""
         try:
             pods = self._core_api().list_namespaced_pod(
-                namespace, label_selector=_WEB_POD_LABEL_SELECTOR % cr_name)
+                namespace, label_selector=_WEB_POD_LABEL_SELECTOR % cr_name,
+                _request_timeout=10)
         except ApiException as e:
             if e.status == 404:
                 return None

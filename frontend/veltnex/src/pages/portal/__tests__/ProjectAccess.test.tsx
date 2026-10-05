@@ -9,7 +9,7 @@ vi.mock("@/lib/api", async (original) => ({ ...await original<typeof import("@/l
   api: { iam: vi.fn(), iamInvite: vi.fn(), iamGrant: vi.fn(), iamRevoke: vi.fn(), iamGroup: vi.fn(), iamMember: vi.fn() } }));
 const mocked = vi.mocked(api, { deep: true });
 const fixture = (): IamData => ({
-  can_manage_groups: true, current_customer_id: 10,
+  can_manage_groups: true, current_customer_id: 10, phone_country_id: 65, phone_countries: [{ id: 65, name: "Egypt", phone_code: 20 }],
   roles: [{ code: "viewer", name: "Project Viewer", permissions: ["project.view"] },
     { code: "logs", name: "Logs Viewer", permissions: ["logs.view"] },
     { code: "terminal", name: "Terminal Operator", permissions: ["terminal.open"] }],
@@ -105,10 +105,11 @@ describe("Project Access", () => {
     await user.click(await screen.findByRole("button", { name: "Add teammate" }));
     await user.type(screen.getByLabelText("name"), "New Teammate");
     await user.type(screen.getByLabelText("email"), "new@example.com");
-    await user.type(screen.getByLabelText("Phone with country code (optional)"), "+201012345678");
+    expect(screen.getByLabelText("Phone country")).toHaveValue("65");
+    await user.type(screen.getByLabelText("Phone (optional)"), "01012345678");
     expect(mocked.iamMember).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Create profile" }));
-    await waitFor(() => expect(mocked.iamMember).toHaveBeenCalledWith({ name: "New Teammate", email: "new@example.com", phone: "+201012345678" }));
+    await waitFor(() => expect(mocked.iamMember).toHaveBeenCalledWith({ name: "New Teammate", email: "new@example.com", phone: "01012345678", country_id: 65 }));
     expect(await screen.findByRole("dialog", { name: "Teammate sign-in details" })).toHaveTextContent("shown only once");
     expect(screen.getByDisplayValue("temporary-secret")).toBeInTheDocument();
   });

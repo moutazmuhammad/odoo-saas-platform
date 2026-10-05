@@ -6,11 +6,11 @@
          a host we already know is down (their deploy would just strand in
          "pending provision"). -->
     <record id="ir_cron_saas_server_health" model="ir.cron">
-        <field name="name">SaaS: Server Health Check (reachability)</field>
+        <field name="name">SaaS: Cluster Controller Health Check</field>
         <field name="model_id" ref="model_saas_server"/>
         <field name="state">code</field>
         <field name="code">model._cron_health_check()</field>
-        <field name="interval_number">5</field>
+        <field name="interval_number">1</field>
         <field name="interval_type">minutes</field>
         <field name="active">True</field>
     </record>

@@ -1,6 +1,6 @@
 # Customer project access
 
-Install `saas_iam` alongside the existing SaaS modules. The portal exposes **Project Access** at `/my/access` and on each hosting project's page. Existing customer owners retain their access automatically; teammates receive only explicitly assigned roles. New owner-created accounts must replace their temporary password before assigned access activates.
+Install `saas_iam` alongside the existing SaaS modules. The portal exposes **Team & permissions** at `/my/access` and on each hosting project's page. Existing customer owners retain their access automatically; teammates receive only explicitly assigned roles. New owner-created accounts must replace their temporary password and verify their mobile number on WhatsApp before assigned access activates.
 
 There are no custom roles, folders, or organization hierarchy. A grant selects a teammate or team group, one or several projects belonging to the same customer, fixed roles, and production, staging, development, or all environments. Roles combine within their assigned scopes. Every role includes access to the basic project/environment details in its scope. A project with only staging access remains discoverable while production details and operations are restricted.
 
@@ -29,19 +29,27 @@ Billing, payments, purchased capacity, and the unrestricted signed Database Mana
 
 ## Teammate profiles
 
-The customer owner selects **Add teammate** in Project Access and enters a name and email; phone is optional. Profiles appear immediately in the Teammates tab and in user/group selectors. New portal accounts receive a generated temporary password shown once to the owner, who shares it privately with the teammate. Existing accounts keep their password and contact data.
+The customer owner selects **Add teammate** in Team & permissions and enters a name and email; phone is optional when creating the profile, with an automatic dialing code from the selected country (defaulting to the owner’s country). A mobile number is required when the teammate completes setup. Profiles appear immediately in the Teammates tab and in user/group selectors. New portal accounts receive a generated temporary password shown once to the owner, who shares it privately with the teammate. Existing accounts keep their password and contact data.
 
-At first login, a new teammate chooses their own password (at least twelve characters and different from the temporary password). No teammate email or phone verification is required. Until the password changes, the backend blocks project permissions and workspace APIs, including requests made outside the frontend. The password change retains the current session. Customer-owner registration remains unchanged.
+At first login, a new teammate chooses their own password (at least twelve characters and different from the temporary password). The teammate then confirms or changes their mobile number and enters a WhatsApp verification code. Until both steps complete, the backend blocks project permissions and workspace APIs, including requests made outside the frontend. The password change retains the current session. Customer-owner registration remains unchanged.
 
 In the Teammates tab, the owner can reset passwords for accounts created and used exclusively for their team. A reset generates a new temporary password shown once, invalidates existing sessions and pending authorized work, and requires another password change at the next login. The owner cannot reset independently created logins or accounts shared with another customer, or take over users with their own projects or billing records. Those accounts manage their own passwords. Accounts managed by another customer join additional projects through an invitation accepted by the teammate, preventing unrelated customers from interfering with the original owner’s account controls.
 
 Deleting a teammate profile revokes the customer's direct roles, group membership and invitations, and invalidates terminal/pending-job access. Accounts owned exclusively by the team are disabled. Shared or independently owned accounts retain their login and other customers' access. Recreating a disabled team account generates a new temporary password and does not restore deleted roles.
 
-The migration identifies accounts created by their own customer owner in the previous profile flow, so those users gain the same management controls. It does not adopt existing independent logins. This flow needs no email or SMS provider.
+The migration identifies accounts created by their own customer owner in the previous profile flow, so those users gain the same management controls. It does not adopt existing independent logins. Phone verification requires Meta WhatsApp Cloud API configuration.
 
 Managed logins remain teammates after changing their password: they cannot buy or create independent projects, access customer billing, or create their own teammate accounts. Their project list and actions depend on explicit grants, including for any historical project accidentally linked to their partner. Creating an authorized staging/development environment within an existing project remains possible with the Environment Creator role and reserved capacity.
 
-New teammate profiles and portal signups reject phones already used by another login account or teammate profile. Checks cover phone/mobile, inactive login accounts, formatting variants, and national formats with a known country; a transaction lock serializes claims for the same normalized number. Contacts without a login do not reserve registration identifiers. Registration creates a new contact after phone verification and never attaches its new login to a matching historical billing contact. This does not verify teammate phone ownership or change existing duplicate contact data. Frontend controls deny access when permission metadata is missing.
+New teammate profiles and portal signups reject phones already used by another login account or teammate profile. Checks cover phone/mobile, inactive login accounts, formatting variants, and national formats with a known country; a transaction lock serializes claims for the same normalized number. Contacts without a login do not reserve registration identifiers. Registration creates a new contact after phone verification and never attaches its new login to a matching historical billing contact. Verification confirms teammate phone ownership; existing duplicate contact data is not rewritten. Frontend controls deny access when permission metadata is missing.
+
+## WhatsApp verification
+
+Configure **Settings → SaaS Manager → WhatsApp phone verification** with the Meta phone number ID, system user access token, approved authentication template name, its exact language, and the supported Graph API version from your Meta app. Use a Copy Code authentication template with a single code variable and a ten-minute expiration. The token and teammate challenge codes use encrypted fields. The same sender handles customer registration and teammate verification; phone codes are never returned in API responses, including when the old sign-up test setting is enabled. Provider credentials and template approval are required before delivery can be verified live.
+
+Teammate codes expire after ten minutes, are bound to one signed-in user and pending phone number, allow five guesses, and are replaced on resend. Delivery and verification endpoints are rate limited. Failed delivery keeps access blocked. Phone uniqueness is checked again when confirming the code. Changing a verified phone or receiving another temporary password requires verification again. Account setup is enforced by the backend and IAM model guards as well as the frontend.
+
+Provider documentation: [Meta Cloud API](https://www.postman.com/meta/whatsapp-business-platform/folder/lczy75a/templates).
 
 ## Invitations and teams
 

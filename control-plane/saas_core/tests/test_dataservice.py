@@ -62,3 +62,38 @@ class TestDataService(TransactionCase):
         with patch('odoo.addons.saas_core.dataservice.service.time.sleep'):
             with self.assertRaises(RuntimeError):
                 ds._wait_until_healthy(driver, 'handle', timeout=-1)
+
+    def _wait_with_cluster_errors(self, errors):
+        from unittest.mock import MagicMock
+        from odoo.addons.saas_core.drivers.base import HealthStatus
+        from odoo.addons.saas_core.dataservice.service import DataService
+        driver = MagicMock()
+        driver.require_cluster_ready.side_effect = errors
+        driver.health.side_effect = [
+            HealthStatus(running=False, status='restarting', detail='Provisioning'),
+            HealthStatus(running=False, status='restarting', detail='Provisioning'),
+            HealthStatus(running=True, status='running', detail='Ready'),
+        ]
+        with patch('odoo.addons.saas_core.dataservice.service.time.sleep'), \
+                patch('odoo.addons.saas_core.dataservice.service.time.monotonic',
+                      side_effect=[0, 1, 31]):
+            DataService(self.env)._wait_until_healthy(driver, 'handle', timeout=600)
+        return driver
+
+    def test_wait_aborts_persistent_controller_failure_in_30_seconds(self):
+        with self.assertRaisesRegex(RuntimeError, 'cluster is not ready'):
+            self._wait_with_cluster_errors([RuntimeError('stalled'), RuntimeError('stalled')])
+
+    def test_wait_tolerates_transient_cluster_failure(self):
+        driver = self._wait_with_cluster_errors([RuntimeError('temporary timeout'), None])
+        self.assertEqual(driver.require_cluster_ready.call_count, 2)
+
+    def test_wait_fails_immediately_on_failed_instance(self):
+        from unittest.mock import MagicMock
+        from odoo.addons.saas_core.drivers.base import HealthStatus
+        from odoo.addons.saas_core.dataservice.service import DataService
+        driver = MagicMock()
+        driver.health.return_value = HealthStatus(running=False, status='dead', detail='Failed')
+        with self.assertRaisesRegex(RuntimeError, 'provisioning failed'):
+            DataService(self.env)._wait_until_healthy(driver, 'handle')
+        driver.require_cluster_ready.assert_not_called()

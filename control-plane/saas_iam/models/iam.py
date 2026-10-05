@@ -82,13 +82,13 @@ class IamService(models.AbstractModel):
         user = user or self.env.user
         if user.id == SUPERUSER_ID:
             return True
-        if user.sudo().iam_initial_password:
+        if user.sudo()._onboarding_pending():
             return False
         return bool(user.active and not user._is_public() and (self._is_platform_admin(user) or (not self._is_managed_user(user) and self._project(instance).partner_id == user.partner_id)))
 
     def _grants(self, project, user=None):
         user = user or self.env.user
-        if not user.active or user._is_public() or user.sudo().iam_initial_password:
+        if not user.active or user._is_public() or user.sudo()._onboarding_pending():
             return self.env['saas.iam.grant']
         profiles = self.env['saas.iam.member'].sudo().with_context(active_test=False).search([
             ('owner_id', '=', self._project(project).partner_id.id), ('user_id', '=', user.id)])
@@ -116,7 +116,7 @@ class IamService(models.AbstractModel):
             return False
         if user.id == SUPERUSER_ID:
             return True
-        if not user.active or user._is_public() or user.sudo().iam_initial_password:
+        if not user.active or user._is_public() or user.sudo()._onboarding_pending():
             return False
         if permission == 'project.discover':
             return self._is_owner(instance, user) or bool(self._grants(instance, user)) or user.has_group('base.group_user') or user.has_group('saas_website.group_saas_support')
@@ -134,7 +134,7 @@ class IamService(models.AbstractModel):
 
     def _visible_project_ids(self, user=None):
         user = user or self.env.user
-        if not user.active or user._is_public() or user.sudo().iam_initial_password:
+        if not user.active or user._is_public() or user.sudo()._onboarding_pending():
             return []
         grants = self.env['saas.iam.grant'].sudo().search([
             ('active', '=', True), '|', ('user_id', '=', user.id),

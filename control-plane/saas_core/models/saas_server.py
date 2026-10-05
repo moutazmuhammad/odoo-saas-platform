@@ -242,16 +242,14 @@ class SaasServer(models.Model):
         return self._probe_kubernetes_reachable(timeout=timeout)
 
     def _probe_kubernetes_reachable(self, timeout=None):
-        """Cheap reachability probe: load this cluster's kubeconfig and make
-        one short-timeout API call. Reuses KubernetesDriver's own
-        client-loading rather than duplicating the kubeconfig-parsing/auth
-        logic here."""
+        """Check API reachability and controller heartbeat freshness."""
         self.ensure_one()
         from ..drivers.kubernetes_driver import KubernetesDriver
         try:
             driver = KubernetesDriver(self)
             driver._core_api().list_namespace(
                 limit=1, _request_timeout=timeout or self._HEALTH_PROBE_TIMEOUT)
+            driver.require_cluster_ready(timeout=timeout or self._HEALTH_PROBE_TIMEOUT)
             return True, ''
         except Exception as e:
             return False, str(e)

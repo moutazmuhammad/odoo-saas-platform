@@ -346,7 +346,7 @@ function OtpStep({
       </div>
 
       <p className="mt-5 text-sm text-muted">
-        Enter the 6-digit code we sent to{" "}
+        Enter the 6-digit code we sent on WhatsApp to{" "}
         <span className="font-medium text-foreground">{form.phone}</span>.
       </p>
 

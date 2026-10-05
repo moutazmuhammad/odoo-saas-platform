@@ -4677,6 +4677,8 @@ finally:
                 "set (Kubernetes Clusters > Connection)."
             ) % (self.subdomain, server.name))
 
+        driver = self._compute_driver()
+        driver.require_cluster_ready()
         self._append_log("Creating Kubernetes instance...")
         from ..drivers.base import ComputeSpec
         replicas = self.compute_tier_id.replicas or 1
@@ -4707,7 +4709,6 @@ finally:
             db_host='',
             env=env,
         )
-        driver = self._compute_driver()
         handle = driver.create(spec)
         self._append_log("Waiting for the instance to become healthy...")
         self._data_service()._wait_until_healthy(driver, handle, timeout=600)

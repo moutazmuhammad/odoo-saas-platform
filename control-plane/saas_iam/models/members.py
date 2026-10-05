@@ -1,7 +1,10 @@
 import re
 import secrets
+import hmac
+from datetime import timedelta
 from odoo import api, fields, models, _
 from odoo.exceptions import AccessDenied, AccessError, ValidationError
+from odoo.addons.saas_core.fields import EncryptedChar
 
 
 class IamMember(models.Model):
@@ -17,7 +20,7 @@ class IamMember(models.Model):
 
     def _ready(self):
         self.ensure_one()
-        return self.active and self.user_id.active and not self.user_id.sudo().iam_initial_password
+        return self.active and self.user_id.active and not self.user_id.sudo()._onboarding_pending()
 
     def _can_manage_login(self):
         """Never let a customer take over an independently owned/shared login."""
@@ -47,18 +50,19 @@ class IamMember(models.Model):
                         (accepted.mapped('user_id') - profiles.mapped('user_id')).filtered('active').ids))
 
     @api.model
-    def _create_profile(self, name, email, phone=None):
+    def _create_profile(self, name, email, phone=None, country_id=None):
         self.env['saas.iam']._require_customer_owner()
         owner = self.env.user.partner_id
         if not isinstance(name, str) or not name.strip() or len(name) > 100:
             raise ValidationError(_('Enter the teammate’s name.'))
         if not isinstance(email, str) or not re.fullmatch(r'[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+', email.strip()) or len(email) > 254:
             raise ValidationError(_('Enter a valid email address.'))
-        phone = self._phone(phone)
+        country = self._phone_country(country_id, owner.country_id)
+        phone = self._phone(phone, country)
         email = email.strip().lower()
         User = self.env['res.users'].sudo().with_context(active_test=False, no_reset_password=True)
         user = User.search([('login', '=ilike', email)], limit=1)
-        self._check_unique_phone(phone, user.partner_id if user else None)
+        self._check_unique_phone(phone, user.partner_id if user else None, country)
         password = None
         if user:
             self.env.cr.execute('SELECT id FROM res_users WHERE id=%s FOR UPDATE', [user.id])
@@ -74,11 +78,13 @@ class IamMember(models.Model):
                 if not old or not old._can_manage_login():
                     raise ValidationError(_('This account cannot be added as a teammate.'))
                 password = secrets.token_urlsafe(18)
-                user.write({'active': True, 'password': password, 'iam_initial_password': True})
+                user.write({'active': True, 'password': password, 'iam_initial_password': True,
+                            'iam_verified_phone': False})
         else:
             password = secrets.token_urlsafe(18)
             user = User.create({'name': name.strip(), 'login': email, 'email': email,
                 'phone': phone, 'password': password, 'iam_initial_password': True,
+                'country_id': country.id if country else False,
                 'iam_managed_owner_id': owner.id,
                 'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])]})
             old = self.browse()
@@ -97,12 +103,31 @@ class IamMember(models.Model):
                 'login_url': self.env['ir.config_parameter'].sudo().get_param('web.base.url', '') + '/login'}
 
     @api.model
-    def _phone(self, phone):
+    def _phone_country(self, country_id=None, default_country=None):
+        country = default_country or self.env.company.country_id
+        if country_id:
+            if isinstance(country_id, bool) or not str(country_id).isdigit():
+                raise ValidationError(_('Choose a valid phone country.'))
+            country = self.env['res.country'].sudo().browse(int(country_id)).exists()
+            if not country:
+                raise ValidationError(_('Choose a valid phone country.'))
+        return country
+
+    @api.model
+    def _phone(self, phone, country=None):
         if phone in (None, False, ''):
             return False
         phone = re.sub(r'[ ()-]', '', phone or '') if isinstance(phone, str) else ''
+        if phone.startswith('00'):
+            phone = '+' + phone[2:]
+        if phone and not phone.startswith('+'):
+            from odoo.addons.phone_validation.tools.phone_validation import phone_format
+            if not country or not country.phone_code:
+                raise ValidationError(_('Choose the country for this phone number.'))
+            phone = phone_format(phone, country.code, country.phone_code,
+                                 force_format='E164', raise_exception=False) or ''
         if not re.fullmatch(r'\+[1-9][0-9]{7,14}', phone):
-            raise ValidationError(_('Enter a phone number with its country code, for example +201012345678.'))
+            raise ValidationError(_('Enter a valid phone number for the selected country.'))
         return phone
 
     @api.model
@@ -156,7 +181,8 @@ class IamMember(models.Model):
         if not member._can_manage_login():
             raise AccessError(_('This is an existing or shared account. Its password is managed by the account holder.'))
         password = secrets.token_urlsafe(18)
-        member.user_id.sudo().write({'password': password, 'iam_initial_password': True})
+        member.user_id.sudo().write({'password': password, 'iam_initial_password': True,
+                                    'iam_verified_phone': False, 'iam_phone_code': False})
         member._invalidate_user_access()
         self.env['saas.iam']._audit('iam.member.password.reset', detail='Profile %s' % member.id)
         return member._credentials(password)
@@ -192,6 +218,79 @@ class IamUser(models.Model):
     _inherit = 'res.users'
     iam_initial_password = fields.Boolean(default=False, groups='base.group_system')
     iam_managed_owner_id = fields.Many2one('res.partner', groups='base.group_system', ondelete='restrict', copy=False)
+    iam_verified_phone = fields.Char(groups='base.group_system', copy=False)
+    iam_phone_pending = fields.Char(groups='base.group_system', copy=False)
+    iam_phone_country_id = fields.Many2one('res.country', groups='base.group_system', copy=False)
+    iam_phone_code = EncryptedChar(groups='base.group_system', copy=False)
+    iam_phone_code_expires = fields.Datetime(groups='base.group_system', copy=False)
+    iam_phone_code_attempts = fields.Integer(groups='base.group_system', copy=False)
+
+    def _needs_phone_verification(self):
+        self.ensure_one()
+        user = self.sudo()
+        return bool(user.iam_managed_owner_id and (
+            not user.iam_verified_phone or user.iam_verified_phone != user.partner_id.phone))
+
+    def _onboarding_pending(self):
+        self.ensure_one()
+        return bool(self.sudo().iam_initial_password or self._needs_phone_verification())
+
+    @api.model
+    def _phone_setup_user(self):
+        user = self.env.user.sudo()
+        self.env.cr.execute('SELECT id FROM res_users WHERE id=%s FOR UPDATE', [user.id])
+        user.invalidate_recordset()
+        if not user.active or user._is_public() or user.iam_initial_password or not user._needs_phone_verification():
+            raise AccessError(_('Change your temporary password first, then verify your mobile number.'))
+        return user
+
+    def _deliver_phone_code(self, phone, code):
+        """Use the shared WhatsApp sender for every phone verification."""
+        self.env['saas.iam.whatsapp']._send_code(phone, code)
+
+    @api.model
+    def _send_phone_code(self, phone, country_id=None):
+        user = self._phone_setup_user()
+        Member = self.env['saas.iam.member']
+        country = Member._phone_country(country_id, user.partner_id.country_id or user.iam_managed_owner_id.country_id)
+        phone = Member._phone(phone, country)
+        if not phone:
+            raise ValidationError(_('Enter your mobile phone number.'))
+        Member._check_unique_phone(phone, user.partner_id, country)
+        code = '%06d' % secrets.randbelow(1000000)
+        # Invalidate any previous challenge even if the new delivery fails.
+        user.write({'iam_phone_code': False, 'iam_phone_pending': False})
+        user._deliver_phone_code(phone, code)
+        user.write({'iam_phone_pending': phone, 'iam_phone_country_id': country.id,
+                    'iam_phone_code': code, 'iam_phone_code_attempts': 0,
+                    'iam_phone_code_expires': fields.Datetime.now() + timedelta(minutes=10)})
+        return {'otp_sent': True, 'phone': phone}
+
+    @api.model
+    def _verify_phone_code(self, code):
+        user = self._phone_setup_user()
+        if (not user.iam_phone_code or not user.iam_phone_pending or
+                not user.iam_phone_code_expires or user.iam_phone_code_expires < fields.Datetime.now() or
+                user.iam_phone_code_attempts >= 5):
+            raise ValidationError(_('The verification code has expired. Request a new code.'))
+        user.iam_phone_code_attempts += 1
+        if not isinstance(code, str) or not re.fullmatch(r'[0-9]{6}', code) or not hmac.compare_digest(user.iam_phone_code, code):
+            raise ValidationError(_('The verification code is incorrect.'))
+        # Recheck uniqueness at confirmation, including another account that
+        # claimed the number while the WhatsApp was in transit.
+        self.env['saas.iam.member']._check_unique_phone(
+            user.iam_phone_pending, user.partner_id, user.iam_phone_country_id)
+        phone = user.iam_phone_pending
+        with self.env.cr.savepoint():
+            user.partner_id.write({'phone': phone, 'mobile': False, 'country_id': user.iam_phone_country_id.id})
+            user.write({'iam_verified_phone': phone, 'iam_phone_code': False,
+                        'iam_phone_pending': False, 'iam_phone_code_expires': False})
+            profiles = self.env['saas.iam.member'].sudo().search([('user_id', '=', user.id)])
+            profiles.write({'phone': phone})
+            for profile in profiles:
+                profile._invalidate_user_access()
+            self.env['saas.iam']._audit('iam.member.phone.verify', detail='User %s' % user.id)
+        return {'verified': True}
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -232,7 +331,8 @@ class IamPasswordGate(models.AbstractModel):
         from odoo.http import request
         path = request.httprequest.path
         allowed = {'/saas/api/v1/me', '/saas/api/v1/auth/login', '/saas/api/v1/auth/logout',
-                   '/saas/api/v1/iam/password/change', '/saas/api/v1/iam/verification/finish'}
+                   '/saas/api/v1/iam/password/change', '/saas/api/v1/iam/verification/finish',
+                   '/saas/api/v1/iam/phone/setup', '/saas/api/v1/iam/phone/send', '/saas/api/v1/iam/phone/verify'}
         managed = bool(request.env.uid and request.env['saas.iam']._is_managed_user())
         customer_paths = ('/hosting/order', '/services/order', '/services/custom-order',
                           '/saas/api/v1/hosting/order', '/saas/api/v1/wallet',
@@ -241,12 +341,14 @@ class IamPasswordGate(models.AbstractModel):
             if endpoint.routing.get('type') == 'json':
                 return {'ok': False, 'error': _('Only the customer owner can create projects or manage billing.'), 'code': 'access_denied'}
             raise AccessError(_('Only the customer owner can create projects or manage billing.'))
-        pending = bool(request.env.uid and request.env.user.sudo().iam_initial_password)
+        pending = bool(request.env.uid and request.env.user.sudo()._onboarding_pending())
         if pending and (path == '/my' or path.startswith('/my/') or path in ('/hosting/order', '/services/order')) and path not in ('/my/change-password', '/my/verify-profile'):
             return request.redirect('/my/change-password')
         if pending and path.startswith('/saas/api/v1/') and path not in allowed:
-            message = _('Change your temporary password before accessing your workspace.')
+            password_pending = request.env.user.sudo().iam_initial_password
+            message = (_('Change your temporary password before accessing your workspace.') if password_pending
+                       else _('Verify your mobile number before accessing your workspace.'))
             if endpoint.routing.get('type') == 'json':
-                return {'ok': False, 'error': message, 'code': 'password_change_required'}
+                return {'ok': False, 'error': message, 'code': 'password_change_required' if password_pending else 'phone_verification_required'}
             raise AccessError(message)
         return super()._dispatch(endpoint)

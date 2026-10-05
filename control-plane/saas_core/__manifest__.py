@@ -1,6 +1,6 @@
 {
     'name': 'SaaS Instance Manager',
-    'version': '18.0.57.0.0',
+    'version': '18.0.57.1.0',
     'category': 'SaaS',
     'summary': 'Provision and manage multi-tenant Odoo instances with Docker containers',
     'description': """

@@ -1,0 +1,27 @@
+<odoo>
+    <record id="whatsapp_settings" model="ir.ui.view">
+        <field name="name">saas.iam.whatsapp.settings</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="saas_core.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//app[@name='saas_core']" position="inside">
+                <block title="WhatsApp phone verification" name="saas_whatsapp" groups="base.group_system">
+                    <setting string="Meta WhatsApp Cloud API" help="Used for customer registration and teammate mobile verification. Enter an approved authentication template with a Copy Code button.">
+                        <div class="content-group">
+                            <label for="saas_whatsapp_phone_id" string="Phone number ID"/>
+                            <field name="saas_whatsapp_phone_id"/>
+                            <label for="saas_whatsapp_access_token" string="Access token"/>
+                            <field name="saas_whatsapp_access_token" password="True"/>
+                            <label for="saas_whatsapp_template" string="Authentication template"/>
+                            <field name="saas_whatsapp_template"/>
+                            <label for="saas_whatsapp_language" string="Template language"/>
+                            <field name="saas_whatsapp_language" placeholder="en_US"/>
+                            <label for="saas_whatsapp_api_version" string="Graph API version"/>
+                            <field name="saas_whatsapp_api_version" placeholder="Version from your Meta app, for example v25.0"/>
+                        </div>
+                    </setting>
+                </block>
+            </xpath>
+        </field>
+    </record>
+</odoo>

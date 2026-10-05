@@ -95,6 +95,14 @@ class TestDeployOnKubernetes(TransactionCase):
         spec = driver.create.call_args.args[0]
         self.assertEqual(spec.env['replicas'], 2)
 
+    def test_deploy_rejects_stalled_cluster_before_creating_resources(self):
+        driver = MagicMock()
+        driver.require_cluster_ready.side_effect = RuntimeError('controllers are stalled')
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver):
+            with self.assertRaisesRegex(RuntimeError, 'controllers are stalled'):
+                self.instance._do_deploy_locked_kubernetes()
+        driver.create.assert_not_called()
+
     def test_deploy_requests_plan_resources(self):
         """The pod is sized from the plan, not the driver's 1 CPU / 2Gi
         defaults."""

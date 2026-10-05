@@ -29,12 +29,30 @@ class DataService:
         phase='Provisioning') and wrongly read that as a failure.
         """
         _MIGRATION_POLL_INTERVAL = 5
-        deadline = time.time() + timeout
+        deadline = time.monotonic() + timeout
+        next_cluster_check = 0
+        cluster_error = None
         health = driver.health(handle)
         while not health.running:
-            if time.time() > deadline:
+            now = time.monotonic()
+            if now > deadline:
                 raise RuntimeError(
                     "instance did not become healthy within %ss "
                     "(status=%s, detail=%s)" % (timeout, health.status, health.detail))
+            if health.status == 'dead':
+                raise RuntimeError('Instance provisioning failed: %s' % health.detail)
+            if now >= next_cluster_check:
+                try:
+                    driver.require_cluster_ready()
+                    cluster_error = None
+                except Exception as exc:
+                    # Tolerate one transient API error; sustained failures
+                    # must not consume the full deployment timeout/retries.
+                    if cluster_error is not None:
+                        raise RuntimeError(
+                            'Deployment cannot continue because the cluster is not ready: %s'
+                            % exc) from exc
+                    cluster_error = exc
+                next_cluster_check = now + 30
             time.sleep(_MIGRATION_POLL_INTERVAL)
             health = driver.health(handle)

@@ -1,4 +1,6 @@
 import itertools
+import datetime
+from types import SimpleNamespace as NS
 from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import TransactionCase, tagged
@@ -76,6 +78,73 @@ class TestServerHealth(TransactionCase):
             ok, err = server._probe_kubernetes_reachable()
         self.assertTrue(ok, err)
         fake_driver._core_api.return_value.list_namespace.assert_called_once()
+        fake_driver.require_cluster_ready.assert_called_once_with(timeout=4)
+
+    def _controller_probe(self, ages, leader_election=True, available=1):
+        from odoo.addons.saas_core.drivers.kubernetes_driver import KubernetesDriver
+        from kubernetes.client.rest import ApiException
+        driver = KubernetesDriver(self._server('controllers'))
+        deployment = NS(
+            metadata=NS(namespace='custom-operator'),
+            status=NS(available_replicas=available),
+            spec=NS(template=NS(spec=NS(containers=[NS(
+                name='manager', args=['--leader-elect=%s' % str(leader_election).lower()])]))))
+        coordination = MagicMock()
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        def lease(name, namespace, **kwargs):
+            if name not in ages:
+                raise ApiException(status=404)
+            age = ages[name]
+            return NS(spec=NS(holder_identity='leader', renew_time=(
+                now - datetime.timedelta(seconds=age) if age is not None else None)))
+
+        coordination.read_namespaced_lease.side_effect = lease
+        with patch.object(driver, '_client'), \
+                patch.object(driver, '_apps_api') as apps, \
+                patch('odoo.addons.saas_core.drivers.kubernetes_driver.k8s_client.CoordinationV1Api',
+                      return_value=coordination):
+            apps.return_value.list_deployment_for_all_namespaces.return_value.items = [deployment]
+            driver.require_cluster_ready()
+        return coordination
+
+    def test_controller_probe_rejects_stale_operator_despite_ready_pod(self):
+        with self.assertRaisesRegex(RuntimeError, 'controllers are stalled'):
+            self._controller_probe({'odoo-instance-operator.saas.odoo.example.com': 180})
+
+    def test_controller_probe_rejects_stale_scheduler(self):
+        with self.assertRaisesRegex(RuntimeError, 'kube-scheduler'):
+            self._controller_probe({
+                'odoo-instance-operator.saas.odoo.example.com': 5, 'kube-scheduler': 180})
+
+    def test_controller_probe_rejects_missing_heartbeat(self):
+        with self.assertRaisesRegex(RuntimeError, 'controllers are stalled'):
+            self._controller_probe({'odoo-instance-operator.saas.odoo.example.com': None})
+
+    def test_controller_probe_accepts_managed_cluster_without_control_plane_leases(self):
+        self._controller_probe({'odoo-instance-operator.saas.odoo.example.com': 5})
+
+    def test_controller_probe_accepts_explicit_single_replica_without_leader_election(self):
+        self._controller_probe({}, leader_election=False)
+
+    def test_controller_probe_requires_operator_lease_when_election_enabled(self):
+        from kubernetes.client.rest import ApiException
+        with self.assertRaises(ApiException):
+            self._controller_probe({})
+
+    def test_controller_probe_rejects_unavailable_operator(self):
+        with self.assertRaisesRegex(RuntimeError, 'operator is unavailable'):
+            self._controller_probe({}, available=0)
+
+    def test_probe_marks_controller_failure_unreachable(self):
+        server = self._server('stalled')
+        fake_driver = MagicMock()
+        fake_driver.require_cluster_ready.side_effect = RuntimeError('stalled controller')
+        with patch('odoo.addons.saas_core.drivers.kubernetes_driver.KubernetesDriver',
+                   return_value=fake_driver):
+            ok, err = server._probe_kubernetes_reachable()
+        self.assertFalse(ok)
+        self.assertIn('stalled controller', err)
 
     def test_probe_kubernetes_reachable_false_on_api_error(self):
         server = self._server('k8s3')

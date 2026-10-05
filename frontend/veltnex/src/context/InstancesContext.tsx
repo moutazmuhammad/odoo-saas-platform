@@ -28,7 +28,7 @@ const InstancesContext = React.createContext<InstancesContextValue | null>(null)
 
 export function InstancesProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user } = useAuth();
-  const workspaceReady = isAuthenticated && !user?.must_change_password;
+  const workspaceReady = isAuthenticated && !user?.must_change_password && !user?.must_verify_phone;
   const [instances, setInstances] = React.useState<ApiInstance[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);

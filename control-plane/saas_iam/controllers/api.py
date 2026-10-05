@@ -2,13 +2,14 @@ from odoo import http, _, fields
 from odoo.http import request
 from odoo.exceptions import AccessError, ValidationError, UserError
 from werkzeug.exceptions import Forbidden
+from contextlib import nullcontext
 from odoo.addons.saas_website.controllers.api import SaasApi, ok, err, _LIST_STATES
 from ..roles import ENVIRONMENTS, ROLE_DEFINITIONS, permissions_for
 
 
-def _response(operation):
+def _response(operation, savepoint=True):
     try:
-        with request.env.cr.savepoint():
+        with request.env.cr.savepoint() if savepoint else nullcontext():
             return ok(operation())
     except (AccessError, ValidationError, UserError, ValueError, TypeError) as exc:
         return err(str(exc), 'access_denied' if isinstance(exc, AccessError) else 'invalid')
@@ -18,12 +19,45 @@ class IamApi(SaasApi):
     def _serialize_user(self, partner):
         data = super()._serialize_user(partner)
         data['must_change_password'] = bool(request.env.user.sudo().iam_initial_password)
+        data['must_verify_phone'] = request.env.user.sudo()._needs_phone_verification()
         data['is_managed_teammate'] = request.env['saas.iam']._is_managed_user()
         data['can_create_projects'] = not data['is_managed_teammate']
         return data
 
+    def _otp_sent_payload(self, otp):
+        # WhatsApp verification must prove possession, including on test sites.
+        return {'otp_sent': True}
+
+    def _phone_options(self):
+        user = request.env.user.sudo()
+        country = user.partner_id.country_id or user.iam_managed_owner_id.country_id or request.env.company.country_id
+        return {
+            'phone_country_id': country.id or None,
+            'phone_countries': [{'id': c.id, 'name': c.name, 'phone_code': c.phone_code}
+                                for c in request.env['res.country'].sudo().search(
+                                    [('phone_code', '>', 0)], order='name')],
+        }
+
+    @http.route('/saas/api/v1/iam/phone/setup', type='json', auth='user')
+    def iam_phone_setup(self):
+        def setup():
+            user = request.env['res.users']._phone_setup_user()
+            return {**self._phone_options(), 'phone': user.partner_id.phone or ''}
+        return _response(setup)
+
+    @http.route('/saas/api/v1/iam/phone/send', type='json', auth='user')
+    def iam_phone_send(self, phone=None, country_id=None):
+        limited = self._rate_limit('iam_phone_send', 4, 600)
+        return limited or _response(lambda: request.env['res.users']._send_phone_code(phone, country_id), savepoint=False)
+
+    @http.route('/saas/api/v1/iam/phone/verify', type='json', auth='user')
+    def iam_phone_verify(self, code=None):
+        limited = self._rate_limit('iam_phone_verify', 6, 600)
+        # Failed guesses must retain the attempt counter in this request.
+        return limited or _response(lambda: request.env['res.users']._verify_phone_code(code), savepoint=False)
+
     @http.route('/saas/api/v1/iam/members', type='json', auth='user')
-    def iam_member(self, name=None, email=None, phone=None, member_id=None, delete=False, reset_password=False):
+    def iam_member(self, name=None, email=None, phone=None, member_id=None, delete=False, reset_password=False, country_id=None):
         def change():
             Member = request.env['saas.iam.member']
             if delete or reset_password:
@@ -34,7 +68,7 @@ class IamApi(SaasApi):
                     raise ValidationError(_('Teammate profile not found.'))
                 member = member.with_user(request.env.user)
                 return member._delete_profile() if delete else member._reset_password()
-            return Member._create_profile(name, email, phone)
+            return Member._create_profile(name, email, phone, country_id=country_id)
         limited = self._rate_limit('iam_member', 30, 3600)
         return limited or _response(change)
 
@@ -146,6 +180,7 @@ class IamApi(SaasApi):
         members = accepted.mapped('user_id') | profiles.mapped('user_id')
         return ok({
             'current_customer_id': request.env.user.partner_id.id,
+            **self._phone_options(),
             'can_manage_groups': bool(projects.filtered(lambda p: p.partner_id == request.env.user.partner_id)),
             'empty_reason': ('no_projects' if not accessible and not iam._is_managed_user() else 'access_not_granted') if not projects else None,
             'roles': [{'code': code, 'name': label, 'permissions': sorted(perms)} for code, (label, perms) in ROLE_DEFINITIONS.items()],
@@ -163,6 +198,8 @@ class IamApi(SaasApi):
                         'editable': g.owner_id == request.env.user.partner_id} for g in groups],
             'profiles': [{'id': m.id, 'user_id': m.user_id.id, 'name': m.name, 'email': m.user_id.login,
                           'phone': m.phone or '', 'customer_id': m.owner_id.id, 'ready': m._ready(),
+                          'must_change_password': bool(m.user_id.sudo().iam_initial_password),
+                          'must_verify_phone': m.user_id.sudo()._needs_phone_verification(),
                           'can_reset_password': m.owner_id == request.env.user.partner_id and m._can_manage_login(),
                           'editable': m.owner_id == request.env.user.partner_id} for m in profiles],
             'members': [{'id': u.id, 'name': u.name, 'email': u.login,

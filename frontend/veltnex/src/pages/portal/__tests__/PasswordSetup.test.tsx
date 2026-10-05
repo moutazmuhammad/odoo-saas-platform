@@ -4,13 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/renderWithProviders";
 import PasswordSetup from "../PasswordSetup";
 import { api, ApiError } from "@/lib/api";
-const auth = vi.hoisted(() => ({ user: { email: "ahmed@example.com", must_change_password: true }, refresh: vi.fn(), logout: vi.fn() }));
+const auth = vi.hoisted(() => ({ user: { email: "ahmed@example.com", must_change_password: true, must_verify_phone: true }, refresh: vi.fn(), logout: vi.fn() }));
 vi.mock("@/context/AuthContext", () => ({ useAuth: () => auth }));
-vi.mock("@/lib/api", async original => ({ ...await original<typeof import("@/lib/api")>(), api: { iamPasswordChange: vi.fn() } }));
+vi.mock("@/lib/api", async original => ({ ...await original<typeof import("@/lib/api")>(), api: { iamPasswordChange: vi.fn(), iamPhoneSetup: vi.fn(), iamPhoneSend: vi.fn(), iamPhoneVerify: vi.fn() } }));
 const mocked = vi.mocked(api, { deep: true });
 describe("First-login password change", () => {
-  beforeEach(() => { vi.clearAllMocks(); auth.user.must_change_password = true; });
-  it("requires matching replacement passwords without email or phone verification", async () => {
+  beforeEach(() => { vi.clearAllMocks(); auth.user.must_change_password = true; auth.user.must_verify_phone = true; mocked.iamPhoneSetup.mockResolvedValue({ phone: "+201012345678", phone_country_id: 65, phone_countries: [{ id: 65, name: "Egypt", phone_code: 20 }] }); });
+  it("requires matching replacement passwords before mobile verification", async () => {
     const user = userEvent.setup();
     renderWithProviders(<PasswordSetup />);
     const continueButton = screen.getByRole("button", { name: "Save password and continue" });
@@ -34,5 +34,39 @@ describe("First-login password change", () => {
     await user.click(screen.getByRole("button", { name: "Save password and continue" }));
     expect(await screen.findByText(/different from your temporary password/)).toBeInTheDocument();
     expect(auth.refresh).not.toHaveBeenCalled();
+  });
+  it("requires WhatsApp verification after password change and lets the teammate change the number", async () => {
+    auth.user.must_change_password = false;
+    mocked.iamPhoneSend.mockResolvedValue({ otp_sent: true, phone: "+201112345678" });
+    mocked.iamPhoneVerify.mockResolvedValue({ verified: true });
+    const user = userEvent.setup();
+    renderWithProviders(<PasswordSetup />);
+    expect(screen.getByRole("heading", { name: "Verify your mobile number" })).toBeInTheDocument();
+    const input = await screen.findByLabelText("Mobile number");
+    await user.clear(input);
+    await user.type(input, "01112345678");
+    await user.click(screen.getByRole("button", { name: "Send verification code" }));
+    await waitFor(() => expect(mocked.iamPhoneSend).toHaveBeenCalledWith("01112345678", 65));
+    expect(auth.refresh).not.toHaveBeenCalled();
+    await user.type(await screen.findByLabelText("Verification code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Verify mobile and continue" }));
+    await waitFor(() => expect(mocked.iamPhoneVerify).toHaveBeenCalledWith("123456"));
+    expect(auth.refresh).toHaveBeenCalled();
+  });
+  it("keeps access blocked when WhatsApp verification fails", async () => {
+    auth.user.must_change_password = false;
+    mocked.iamPhoneSend.mockResolvedValue({ otp_sent: true, phone: "+201012345678" });
+    mocked.iamPhoneVerify.mockRejectedValue(new ApiError("The verification code is incorrect."));
+    const user = userEvent.setup();
+    renderWithProviders(<PasswordSetup />);
+    await screen.findByLabelText("Mobile number");
+    await user.click(screen.getByRole("button", { name: "Send verification code" }));
+    await user.type(await screen.findByLabelText("Verification code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Verify mobile and continue" }));
+    expect(await screen.findByText("The verification code is incorrect.")).toBeInTheDocument();
+    expect(auth.refresh).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Change number" }));
+    expect(screen.queryByLabelText("Verification code")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Mobile number")).toBeInTheDocument();
   });
 });

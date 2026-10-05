@@ -87,6 +87,7 @@ async function rpc<T = unknown>(
 
 export interface ApiUser {
   must_change_password?: boolean;
+  must_verify_phone?: boolean;
   is_managed_teammate?: boolean;
   can_create_projects?: boolean;
   id: number;
@@ -584,18 +585,23 @@ export interface OtpSent {
 
 export interface IamData {
   current_customer_id?: number;
+  phone_country_id?: number | null;
+  phone_countries?: { id: number; name: string; phone_code: number }[];
   can_manage_groups?: boolean;
   empty_reason?: "no_projects" | "access_not_granted" | null;
   roles: { code: string; name: string; permissions: string[] }[];
   projects: { id: number; name: string; customer_id: number; is_owner: boolean; assignable_roles: Record<string, string[]> }[];
   grants: { id: number; project_id: number; role: string; environment: string; user_id: number | null; group_id: number | null; name: string; email: string; pending: boolean; expired: boolean; editable: boolean }[];
   groups: { id: number; name: string; customer_id: number; user_ids: number[]; editable?: boolean }[];
-  profiles?: { id: number; user_id: number; name: string; email: string; phone: string; customer_id: number; ready: boolean; can_reset_password: boolean; editable: boolean }[];
+  profiles?: { id: number; user_id: number; name: string; email: string; phone: string; customer_id: number; ready: boolean; must_change_password?: boolean; must_verify_phone?: boolean; can_reset_password: boolean; editable: boolean }[];
   members: { id: number; name: string; email: string; customer_ids?: number[] }[];
 }
 
 export const api = {
-  iamMember: (params: { name?: string; email?: string; phone?: string; member_id?: number; delete?: boolean; reset_password?: boolean }) => rpc<{ id: number; email: string; temporary_password?: string | null; login_url: string }>("/saas/api/v1/iam/members", params),
+  iamPhoneSetup: () => rpc<{ phone: string; phone_country_id: number | null; phone_countries: { id: number; name: string; phone_code: number }[] }>("/saas/api/v1/iam/phone/setup"),
+  iamPhoneSend: (phone: string, country_id: number) => rpc<{ otp_sent: boolean; phone: string }>("/saas/api/v1/iam/phone/send", { phone, country_id }),
+  iamPhoneVerify: (code: string) => rpc<{ verified: boolean }>("/saas/api/v1/iam/phone/verify", { code }),
+  iamMember: (params: { name?: string; email?: string; phone?: string; country_id?: number; member_id?: number; delete?: boolean; reset_password?: boolean }) => rpc<{ id: number; email: string; temporary_password?: string | null; login_url: string }>("/saas/api/v1/iam/members", params),
   iamPasswordChange: (password: string) => rpc<{ changed: boolean }>("/saas/api/v1/iam/password/change", { password }),
   iam: () => rpc<IamData>("/saas/api/v1/iam"),
   iamInvite: (params: { email: string; project_ids: number[]; roles: string[]; environments: string[]; group_id?: number }) => rpc<{ id: number; invite_url: string }>("/saas/api/v1/iam/invite", params),

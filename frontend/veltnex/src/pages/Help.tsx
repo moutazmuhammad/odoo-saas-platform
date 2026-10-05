@@ -1,5 +1,7 @@
 import { i18nText } from "@/i18n";
 import * as React from "react";
+import { Link } from "react-router-dom";
+import { DocInline } from "@/components/DocInline";
 import { Search, BookOpen, LifeBuoy } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -7,15 +9,17 @@ import { EmptyState } from "@/components/EmptyState";
 import { HELP_TOPICS, type HelpTopic } from "@/lib/helpTopics";
 
 // Group topics by category, preserving first-seen order.
-function grouped(topics: HelpTopic[]): { category: string; topics: HelpTopic[] }[] {
-  const out: { category: string; topics: HelpTopic[] }[] = [];
+function grouped(topics: HelpTopic[]): { category: string; topics: (HelpTopic & { aliases: string[] })[] }[] {
+  const out: { category: string; topics: (HelpTopic & { aliases: string[] })[] }[] = [];
   for (const t of topics) {
     let g = out.find((x) => x.category === t.category);
     if (!g) {
       g = { category: t.category, topics: [] };
       out.push(g);
     }
-    g.topics.push(t);
+    const existing = g.topics.find(topic => topic.article === t.article);
+    if (existing) existing.aliases.push(t.anchor);
+    else g.topics.push({ ...t, aliases: [] });
   }
   return out;
 }
@@ -39,7 +43,8 @@ export default function Help() {
     if (query) return;
     const hash = window.location.hash.replace("#", "");
     if (!hash) return;
-    const el = document.getElementById(hash);
+    const anchor = document.getElementById(hash);
+    const el = anchor?.closest<HTMLElement>("[data-help-topic]") || anchor;
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
       el.classList.add("ring-2", "ring-primary/40", "rounded-xl");
@@ -87,14 +92,16 @@ export default function Help() {
               </h2>
               <div className="mt-4 space-y-4">
                 {g.topics.map((t) => (
-                  <Card key={t.anchor} id={t.anchor} className="scroll-mt-24 p-6">
+                  <Card key={t.anchor} id={t.anchor} data-help-topic className="scroll-mt-24 p-6">
+                    {t.aliases.map(alias => <span key={alias} id={alias} aria-hidden="true" />)}
                     <h3 className="text-lg font-semibold">{t.title}</h3>
                     <p className="mt-1 text-sm font-medium text-primary">{t.tip}</p>
                     <div className="mt-3 space-y-2 text-sm text-muted">
                       {t.body.map((p, i) => (
-                        <p key={i}>{p}</p>
+                        <p key={i}><DocInline text={p} /></p>
                       ))}
                     </div>
+                    <Link to={`/docs/${t.article}`} className="mt-4 inline-block text-sm text-primary hover:underline">{i18nText("Read the complete guide")}</Link>
                   </Card>
                 ))}
               </div>

@@ -1,81 +1,33 @@
 import { i18nText } from "@/i18n";
-import * as React from "react";
-import { Link } from "react-router-dom";
-import { Search, FileText, Clock, BookOpen, ArrowRight } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { Search, FileText, BookOpen, ArrowRight, Download } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
-import { DOC_FOLDERS } from "@/lib/docs-content";
+import { DOC_FOLDERS, docText, searchArticles } from "@/lib/docs-content";
 
 export default function Docs() {
-  const [query, setQuery] = React.useState("");
-
-  const folders = DOC_FOLDERS.map((f) => ({
-    ...f,
-    articles: f.articles.filter((a) =>
-      a.title.toLowerCase().includes(query.toLowerCase())
-    ),
-  })).filter((f) => f.articles.length > 0 || query === "");
-
-  const hasResults = folders.some((f) => f.articles.length > 0);
-
-  return (
-    <div className="mx-auto max-w-7xl animate-fade-in px-4 py-16 sm:px-6 lg:px-8">
-      <div className="text-center">
-        <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
-          <BookOpen className="size-6" />
-        </span>
-        <h1 className="mt-5 text-4xl font-bold tracking-tight">{i18nText("Documentation")}</h1>
-        <p className="mt-3 text-muted">{i18nText("Guides and references to get the most out of VELTNEX.")}</p>
+  const [params, setParams] = useSearchParams();
+  const query = params.get("q") || "";
+  const category = params.get("category") || "all";
+  const folders = searchArticles(query, category);
+  const update = (key: string, value: string) => {
+    const next = new URLSearchParams(params);
+    if (!value || value === "all") next.delete(key); else next.set(key, value);
+    setParams(next, { replace: true });
+  };
+  return <div className="mx-auto max-w-[1500px] px-4 py-10 sm:px-6 lg:px-8">
+    <div className="max-w-3xl"><BookOpen className="size-8 text-primary" /><h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">{i18nText("VELTNEX documentation")}</h1><p className="mt-3 leading-7 text-muted">{i18nText("Practical guides, permission references, and troubleshooting for every step of your Odoo hosting workflow.")}</p></div>
+    <a href="/saas_website/static/customer-docs/VELTNEX-customer-docs.zip" download className="mt-5 inline-flex items-center gap-2 text-sm text-primary hover:underline"><Download className="size-4" />{i18nText("Download all guides in English and Arabic")}</a>
+    <div className="mt-8 flex flex-col gap-8 lg:flex-row">
+      <aside className="lg:w-60 lg:shrink-0"><nav aria-label={i18nText("Documentation categories")} className="flex gap-2 overflow-x-auto pb-2 lg:sticky lg:top-24 lg:flex-col">
+        <button onClick={() => update("category", "all")} aria-pressed={category === "all"} className={`shrink-0 rounded-md px-3 py-2 text-start text-sm ${category === "all" ? "bg-primary/10 font-semibold text-primary" : "text-muted hover:bg-card"}`}>{i18nText("All topics")}</button>
+        {DOC_FOLDERS.map(folder => <button key={folder.id} onClick={() => update("category", folder.id)} aria-pressed={category === folder.id} className={`shrink-0 rounded-md px-3 py-2 text-start text-sm ${category === folder.id ? "bg-primary/10 font-semibold text-primary" : "text-muted hover:bg-card"}`}>{docText(folder.title)}</button>)}
+      </nav></aside>
+      <div className="min-w-0 flex-1"><div className="relative"><Search className="absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" /><Input aria-label={i18nText("Search documentation")} placeholder={i18nText("Search guides, actions, permissions, and errors…")} className="h-12 ps-10" value={query} onChange={e => update("q", e.target.value)} /></div>
+        <p role="status" aria-live="polite" className="mt-3 text-sm text-muted">{i18nText("{0} articles", [folders.reduce((n, f) => n + f.articles.length, 0)])}</p>
+        {folders.length === 0 ? <EmptyState className="mt-10" icon={FileText} title={i18nText("No articles found")} description={i18nText("Try another term or choose All topics.")} /> : <div className="mt-6 space-y-10">{folders.map(folder => <section key={folder.id}><h2 className="text-xl font-semibold">{docText(folder.title)}</h2><p className="mt-1 text-sm leading-6 text-muted">{docText(folder.description)}</p><div className="mt-4 grid gap-3 xl:grid-cols-2">{folder.articles.map(article => <Card key={article.id} className="h-full"><Link to={`/docs/${article.id}`} className="group block h-full p-5"><p className="text-xs font-medium text-primary">{i18nText(article.kind === "reference" ? "Reference" : article.kind === "troubleshooting" ? "Troubleshooting" : "How-to guide")}</p><div className="mt-2 flex items-start justify-between gap-3"><h3 className="font-semibold group-hover:text-primary">{docText(article.title)}</h3><ArrowRight className="mt-1 size-4 shrink-0 text-muted" /></div><p className="mt-2 text-sm leading-6 text-muted">{docText(article.summary)}</p></Link></Card>)}</div></section>)}</div>}
       </div>
-
-      <div className="relative mx-auto mt-8 max-w-xl">
-        <Search className="absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
-        <Input
-          className="h-12 ps-10"
-          placeholder={i18nText("Search the docs…")}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
-
-      {!hasResults ? (
-        <EmptyState
-          className="mt-12"
-          icon={FileText}
-          title={i18nText("No articles found")}
-          description={i18nText("Nothing matches \"{0}\". Try a different search term.", [query])}
-        />
-      ) : (
-        <div className="mt-12 grid gap-6 md:grid-cols-2">
-          {folders.map((folder) => (
-            <Card key={folder.id} className="p-6">
-              <h2 className="text-lg font-semibold">{folder.title}</h2>
-              <p className="mt-1 text-sm text-muted">{folder.description}</p>
-              <ul className="mt-4 divide-y divide-border">
-                {folder.articles.map((a) => (
-                  <li key={a.id}>
-                    <Link to={`/docs/${a.id}`} className="group flex w-full items-center justify-between gap-3 py-3 text-start">
-                      <span className="flex items-center gap-3">
-                        <FileText className="size-4 text-muted" />
-                        <span className="text-sm transition-colors group-hover:text-primary">
-                          {a.title}
-                        </span>
-                      </span>
-                      <span className="flex items-center gap-3 text-xs text-muted">
-                        <span className="hidden items-center gap-1 sm:flex">
-                          <Clock className="size-3" />
-                          {a.readMinutes}{i18nText(" min")}</span>
-                        <ArrowRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ))}
-        </div>
-      )}
     </div>
-  );
+  </div>;
 }

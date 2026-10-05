@@ -264,3 +264,15 @@ html[dir="rtl"] .start-1\/2.-translate-x-1\/2 { --tw-translate-x: 50%; }
 
 /* Keep navigation chrome in the same order in both languages. */
 html[dir="rtl"] :is(header, footer)[dir="ltr"] svg:is(.lucide-arrow-left, .lucide-arrow-right, .lucide-chevron-left, .lucide-chevron-right) { transform: none; }
+
+@media print {
+  body:has(.docs-article) { color: #111; background: #fff; }
+  body:has(.docs-article) :is(header, footer, .docs-navigation) { display: none !important; }
+  .docs-article { max-width: none; padding: 0; }
+  .docs-article > .grid { display: block; }
+  .docs-article article { max-width: none; }
+  .docs-article :is(h1, h2) { break-after: avoid; }
+  .docs-article :is(tr, pre, aside) { break-inside: avoid; }
+  .docs-article .text-muted { color: #444; }
+  .docs-article .overflow-x-auto { overflow: visible; }
+}

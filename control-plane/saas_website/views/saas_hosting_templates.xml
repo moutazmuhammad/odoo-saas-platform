@@ -154,7 +154,7 @@
 
                                     <!-- Subdomain -->
                                     <div class="mb-3">
-                                        <label class="form-label">Subdomain<a href="/help#subdomain" target="_blank" rel="noopener" class="saas-help" title="The name in front of your instance's web address, e.g. &quot;acme&quot; in acme.example.com." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
+                                        <label class="form-label">Subdomain<a href="/help#subdomain" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('subdomain')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
                                         <div class="input-group">
                                             <span class="input-group-text">https://</span>
                                             <input type="text" name="subdomain" id="subdomain-input"
@@ -176,7 +176,7 @@
 
                                     <!-- Odoo Version -->
                                     <div class="mb-3">
-                                        <label class="form-label">Odoo Version<a href="/help#odoo-version" target="_blank" rel="noopener" class="saas-help" title="Which release of Odoo your instance runs (e.g. 17, 18, 19), Community or Enterprise." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
+                                        <label class="form-label">Odoo Version<a href="/help#odoo-version" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('odoo-version')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
                                         <select name="odoo_version_id" class="form-select" required="required">
                                             <option value="">Select version...</option>
                                             <t t-foreach="versions" t-as="ver">
@@ -193,7 +193,7 @@
                                          LIVE via /hosting/configure/quote (no full reload). -->
                                     <t t-if="show_region_picker">
                                         <div class="mb-3">
-                                            <label class="form-label">Region<a href="/help#region" target="_blank" rel="noopener" class="saas-help" title="The data-centre location your instance runs in. Pick the one closest to your users. Fixed after creation." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
+                                            <label class="form-label">Region<a href="/help#region" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('region')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
                                             <select name="region_id" class="form-select"
                                                     id="region-select">
                                                 <t t-foreach="regions" t-as="reg">
@@ -217,7 +217,7 @@
                                          /hosting/configure/quote (no full reload). -->
                                     <t t-if="form_values.get('is_trial') != '1' and show_support_picker">
                                         <div class="mb-3">
-                                            <label class="form-label">Support plan<a href="/help#support-plan" target="_blank" rel="noopener" class="saas-help" title="How fast we promise to respond when you need help. Higher tiers = faster guaranteed response." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
+                                            <label class="form-label">Support plan<a href="/help#support-plan" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('support-plan')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a></label>
                                             <select name="support_code" class="form-select"
                                                     id="support-select">
                                                 <t t-foreach="support_plans" t-as="sp">
@@ -252,7 +252,7 @@
                                                        t-att-checked="daily_backup or None"/>
                                                 <label class="form-check-label" for="daily-backup-toggle">
                                                     <span class="fw-semibold">
-                                                        <i class="fas fa-shield-alt me-1"></i>Add daily backups<a href="/help#daily-backup" target="_blank" rel="noopener" class="saas-help" title="A paid add-on: an automatic encrypted snapshot every day, last 7 days kept, so you can restore." aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
+                                                        <i class="fas fa-shield-alt me-1"></i>Add daily backups<a href="/help#daily-backup" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('daily-backup')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
                                                     </span>
                                                     <div class="small mt-1" style="color:var(--co-text-muted,#71717A);">
                                                         Every database on this instance is dumped daily to encrypted

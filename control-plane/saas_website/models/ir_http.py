@@ -21,6 +21,10 @@ class IrHttp(models.AbstractModel):
             if language in ('en', 'ar'):
                 request.update_context(lang='ar_001' if language == 'ar' else 'en_US')
 
+    def _saas_doc_help_tip(self, anchor):
+        language = "ar" if request.env.lang.startswith("ar") else "en"
+        return _documentation_help().get(anchor, {}).get(language, "")
+
     def _saas_language_destination(self):
         return quote(request.httprequest.full_path, safe='')
 
@@ -84,3 +88,9 @@ def _translate_message(message):
             return match[index + 1]
         return _PLACEHOLDER.sub(substitute, target)
     return message
+
+
+@lru_cache(maxsize=1)
+def _documentation_help():
+    with tools.file_open("saas_website/static/src/docs/help.json", "r") as source:
+        return {topic["anchor"]: topic["tip"] for topic in json.load(source)}

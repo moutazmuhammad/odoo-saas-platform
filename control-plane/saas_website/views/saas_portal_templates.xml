@@ -298,7 +298,7 @@
                                                        t-att-max="custom_config.get('max_workers', 8)"
                                                        step="1" t-att-value="custom_config.get('min_workers', 2)"
                                                        />
-                                                <span>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" title="How many people can use your instance at the same time — more workers = more simultaneous users." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
+                                                <span>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('workers')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
                                             </div>
                                         </div>
                                         <div class="slider-container">
@@ -314,7 +314,7 @@
                                     <div class="slider-group mt-4" id="upgrade-storage-slider-group">
                                         <div class="slider-header">
                                             <div class="slider-label">
-                                                <i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" title="Total space for your database and files (documents, images, attachments). Backups are stored separately." aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
+                                                <i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('storage')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
                                             </div>
                                             <div class="slider-value" id="upgrade-storage-value">
                                                 <input type="number" class="slider-input" id="upgrade-storage-input"
@@ -776,7 +776,7 @@
                                                        t-att-max="custom_config.get('max_workers', 8)"
                                                        step="1" t-att-value="current_workers"
                                                        />
-                                                <span>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" title="How many people can use your instance at the same time — more workers = more simultaneous users." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
+                                                <span>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('workers')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
                                             </div>
                                         </div>
                                         <div class="slider-container">
@@ -800,7 +800,7 @@
                                     <div class="slider-group mt-4" id="upgrade-storage-slider-group">
                                         <div class="slider-header">
                                             <div class="slider-label">
-                                                <i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" title="Total space for your database and files (documents, images, attachments). Backups are stored separately." aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
+                                                <i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('storage')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
                                             </div>
                                             <div class="slider-value" id="upgrade-storage-value">
                                                 <input type="number" class="slider-input" id="upgrade-storage-input"
@@ -985,7 +985,7 @@
                                                        t-att-min="current_workers"
                                                        t-att-max="custom_config.get('max_workers', 8)"
                                                        step="1" t-att-value="current_workers"/>
-                                                <span>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" title="How many people can use your instance at the same time — more workers = more simultaneous users." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
+                                                <span>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('workers')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
                                             </div>
                                         </div>
                                         <div class="slider-container">
@@ -1004,7 +1004,7 @@
                                     <div class="slider-group mt-4" id="upgrade-storage-slider-group">
                                         <div class="slider-header">
                                             <div class="slider-label">
-                                                <i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" title="Total space for your database and files (documents, images, attachments). Backups are stored separately." aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
+                                                <i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('storage')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a>
                                             </div>
                                             <div class="slider-value" id="upgrade-storage-value">
                                                 <input type="number" class="slider-input" id="upgrade-storage-input"

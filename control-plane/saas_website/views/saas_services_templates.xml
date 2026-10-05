@@ -118,11 +118,11 @@
                                 </t>
 
                                 <div class="summary-item">
-                                    <span class="label"><i class="fas fa-cogs me-2"></i>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" title="How many people can use your instance at the same time — more workers = more simultaneous users." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
+                                    <span class="label"><i class="fas fa-cogs me-2"></i>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('workers')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
                                     <span class="value"><t t-esc="plan.workers"/></span>
                                 </div>
                                 <div class="summary-item">
-                                    <span class="label"><i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" title="Total space for your database and files (documents, images, attachments). Backups are stored separately." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
+                                    <span class="label"><i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('storage')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
                                     <span class="value"><t t-esc="int(plan.storage_limit)"/>GB</span>
                                 </div>
                                 <div class="summary-item">
@@ -286,11 +286,11 @@
                                 </div>
 
                                 <div class="summary-item">
-                                    <span class="label"><i class="fas fa-cogs me-2"></i>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" title="How many people can use your instance at the same time — more workers = more simultaneous users." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
+                                    <span class="label"><i class="fas fa-cogs me-2"></i>Workers<a href="/help#workers" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('workers')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
                                     <span class="value"><t t-esc="workers"/></span>
                                 </div>
                                 <div class="summary-item">
-                                    <span class="label"><i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" title="Total space for your database and files (documents, images, attachments). Backups are stored separately." aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
+                                    <span class="label"><i class="fas fa-hdd me-2"></i>Storage<a href="/help#storage" target="_blank" rel="noopener" class="saas-help" t-att-title="request.env['ir.http']._saas_doc_help_tip('storage')" aria-label="Learn more"><i class="fas fa-question-circle"></i></a></span>
                                     <span class="value"><t t-esc="storage"/>GB</span>
                                 </div>
 

@@ -1,0 +1,530 @@
+[
+  {
+    "anchor": "workers",
+    "article": "sizing",
+    "category": {
+      "en": "Plans and capacity",
+      "ar": "الخطط والسعة"
+    },
+    "title": {
+      "en": "Choose Workers and storage",
+      "ar": "اختيار Workers والتخزين"
+    },
+    "tip": {
+      "en": "Size the application based on workload, data, and measured usage.",
+      "ar": "حدّد الموارد حسب عبء العمل وحجم البيانات والاستخدام الفعلي."
+    },
+    "body": [
+      {
+        "en": "Workers are Odoo request-handling processes, not a fixed number of licensed users. Concurrency also depends on CPU, RAM, query cost, custom modules, and background tasks. Storage covers the instance’s database and application files, including attachments. Snapshot objects are stored separately.",
+        "ar": "Workers هي عمليات معالجة طلبات Odoo وليست عددًا ثابتًا من المستخدمين المرخّصين. وتتأثر القدرة على العمل المتزامن أيضًا بـ CPU وRAM وكلفة الاستعلامات والوحدات المخصصة والمهام الخلفية. يشمل التخزين قاعدة البيانات وملفات التطبيق والمرفقات، بينما تُخزّن ملفات اللقطات بشكل مستقل."
+      }
+    ]
+  },
+  {
+    "anchor": "storage",
+    "article": "storage-capacity",
+    "category": {
+      "en": "Plans and capacity",
+      "ar": "الخطط والسعة"
+    },
+    "title": {
+      "en": "Manage storage capacity and blocks",
+      "ar": "إدارة سعة التخزين والإضافات"
+    },
+    "tip": {
+      "en": "Respond to capacity warnings and safely release unused storage.",
+      "ar": "تعامل مع تنبيهات السعة وحرّر التخزين غير المستخدم بأمان."
+    },
+    "body": [
+      {
+        "en": "The capacity checker warns at 80% usage and starts a grace period at 100%. The default storage grace period is 7 days and can be changed by the platform. Continued over-capacity usage after that period can pause the workspace. These checks use measured usage and periodic jobs, so displayed values are not an instantaneous hard quota.",
+        "ar": "يصدر تنبيه السعة عند استخدام 80% ويبدأ مهلة عند بلوغ 100%. المهلة الافتراضية للتخزين 7 أيام، ويمكن للمنصة تعديلها. استمرار تجاوز السعة بعد المهلة قد يوقف مساحة العمل مؤقتًا. تعتمد الفحوص على قياسات ومهام دورية، لذلك لا تمثل القيم المعروضة حدًا فوريًا صارمًا."
+      }
+    ]
+  },
+  {
+    "anchor": "region",
+    "article": "region-version",
+    "category": {
+      "en": "Plans and capacity",
+      "ar": "الخطط والسعة"
+    },
+    "title": {
+      "en": "Choose a region, Odoo version, and edition",
+      "ar": "اختيار المنطقة وإصدار Odoo ونسخته"
+    },
+    "tip": {
+      "en": "Match application compatibility and infrastructure availability.",
+      "ar": "وازن بين توافق التطبيق وإتاحة البنية."
+    },
+    "body": [
+      {
+        "en": "Choose among active regions offered in the configurator. A nearby location can reduce network latency, but the actual placement also depends on healthy available capacity. Region is not a self-service move setting after creation; moving requires a planned new deployment and data transfer.",
+        "ar": "اختر من المناطق النشطة في صفحة الإعداد. قد يخفّض الموقع الأقرب زمن الاتصال، لكن تخصيص الموارد يعتمد أيضًا على السعة المتاحة وحالة البنية. لا يوجد إعداد لنقل المنطقة مباشرة بعد الإنشاء؛ ويتطلب النقل تجهيزًا جديدًا مخططًا ونقل البيانات."
+      }
+    ]
+  },
+  {
+    "anchor": "odoo-version",
+    "article": "region-version",
+    "category": {
+      "en": "Plans and capacity",
+      "ar": "الخطط والسعة"
+    },
+    "title": {
+      "en": "Choose a region, Odoo version, and edition",
+      "ar": "اختيار المنطقة وإصدار Odoo ونسخته"
+    },
+    "tip": {
+      "en": "Match application compatibility and infrastructure availability.",
+      "ar": "وازن بين توافق التطبيق وإتاحة البنية."
+    },
+    "body": [
+      {
+        "en": "Choose among active regions offered in the configurator. A nearby location can reduce network latency, but the actual placement also depends on healthy available capacity. Region is not a self-service move setting after creation; moving requires a planned new deployment and data transfer.",
+        "ar": "اختر من المناطق النشطة في صفحة الإعداد. قد يخفّض الموقع الأقرب زمن الاتصال، لكن تخصيص الموارد يعتمد أيضًا على السعة المتاحة وحالة البنية. لا يوجد إعداد لنقل المنطقة مباشرة بعد الإنشاء؛ ويتطلب النقل تجهيزًا جديدًا مخططًا ونقل البيانات."
+      }
+    ]
+  },
+  {
+    "anchor": "billing-period",
+    "article": "billing-options",
+    "category": {
+      "en": "Billing and payments",
+      "ar": "الفوترة والمدفوعات"
+    },
+    "title": {
+      "en": "Monthly and yearly billing",
+      "ar": "الفوترة الشهرية والسنوية"
+    },
+    "tip": {
+      "en": "Review subscription cycles and separately billed add-ons.",
+      "ar": "راجع دورات الاشتراك والإضافات التي تُفوتر بشكل مستقل."
+    },
+    "body": [
+      {
+        "en": "Monthly billing charges one cycle at a time. Yearly billing is paid upfront for the annual cycle; any saving is displayed in the configurator and can vary with the active catalog. The checkout total is the authoritative quote, including applicable add-ons and invoice treatment. Changing between periods uses the plan-change workflow.",
+        "ar": "تُحاسب الفوترة الشهرية على دورة واحدة في كل مرة، بينما تُدفع الدورة السنوية مقدمًا. يظهر التوفير، إن وجد، في صفحة الإعداد وقد يختلف حسب الكتالوج الفعّال. إجمالي الدفع هو التسعير المعتمد بما يشمل الإضافات ومعالجة الفاتورة. يُغيّر نوع الدورة عبر مسار تغيير الخطة."
+      }
+    ]
+  },
+  {
+    "anchor": "yearly-discount",
+    "article": "billing-options",
+    "category": {
+      "en": "Billing and payments",
+      "ar": "الفوترة والمدفوعات"
+    },
+    "title": {
+      "en": "Monthly and yearly billing",
+      "ar": "الفوترة الشهرية والسنوية"
+    },
+    "tip": {
+      "en": "Review subscription cycles and separately billed add-ons.",
+      "ar": "راجع دورات الاشتراك والإضافات التي تُفوتر بشكل مستقل."
+    },
+    "body": [
+      {
+        "en": "Monthly billing charges one cycle at a time. Yearly billing is paid upfront for the annual cycle; any saving is displayed in the configurator and can vary with the active catalog. The checkout total is the authoritative quote, including applicable add-ons and invoice treatment. Changing between periods uses the plan-change workflow.",
+        "ar": "تُحاسب الفوترة الشهرية على دورة واحدة في كل مرة، بينما تُدفع الدورة السنوية مقدمًا. يظهر التوفير، إن وجد، في صفحة الإعداد وقد يختلف حسب الكتالوج الفعّال. إجمالي الدفع هو التسعير المعتمد بما يشمل الإضافات ومعالجة الفاتورة. يُغيّر نوع الدورة عبر مسار تغيير الخطة."
+      }
+    ]
+  },
+  {
+    "anchor": "subdomain",
+    "article": "access-urls",
+    "category": {
+      "en": "Projects and lifecycle",
+      "ar": "المشاريع ودورة الخدمة"
+    },
+    "title": {
+      "en": "Instance addresses, HTTPS, and website access",
+      "ar": "عناوين Instance وHTTPS والوصول للموقع"
+    },
+    "tip": {
+      "en": "Understand subdomains, secure transport, public pages, and application login.",
+      "ar": "افهم النطاقات الفرعية والاتصال الآمن والصفحات العامة ودخول التطبيق."
+    },
+    "body": [
+      {
+        "en": "Choose an available subdomain and a platform-provided Domain during configuration. The resulting address identifies the instance. Environment names can receive a project-derived unique subdomain. Names and database prefixes are technical identifiers; avoid renaming assumptions after creation.",
+        "ar": "اختر نطاقًا فرعيًا متاحًا وDomain توفره المنصة أثناء الإعداد. يحدد العنوان الناتج Instance، وقد تحصل البيئات على نطاق فرعي فريد مشتق من المشروع. الأسماء وبادئات القواعد معرّفات تقنية؛ فلا تفترض إمكان تغييرها بعد الإنشاء."
+      }
+    ]
+  },
+  {
+    "anchor": "repo",
+    "article": "custom-code",
+    "category": {
+      "en": "Code and Deployment",
+      "ar": "الكود وDeployment"
+    },
+    "title": {
+      "en": "Connect a Git repository",
+      "ar": "ربط مستودع Git"
+    },
+    "tip": {
+      "en": "Configure project code, private credentials, and branch inheritance.",
+      "ar": "اضبط كود المشروع واعتماد المستودع الخاص وتوارث الفروع."
+    },
+    "body": [
+      {
+        "en": "This is a hosting feature. Repository configuration requires **Project Administrator** or owner access and a running or stopped instance. A Deployment Operator can deploy existing configuration but cannot change the project repository settings. GitHub, GitLab, Bitbucket, and supported Gitea integrations have different provider permissions and API behavior.",
+        "ar": "هذه خاصية للاستضافة. يتطلب ضبط المستودع دور **مدير المشروع** أو حساب المالك وInstance تعمل أو متوقفة. يستطيع مسؤول Deployment نشر الإعداد الموجود، لكنه لا يغيّر إعدادات مستودع المشروع. تختلف صلاحيات المزوّد وسلوك API بين GitHub وGitLab وBitbucket وتكاملات Gitea المدعومة."
+      }
+    ]
+  },
+  {
+    "anchor": "daily-backup",
+    "article": "daily-backups",
+    "category": {
+      "en": "Backups and recovery",
+      "ar": "النسخ الاحتياطي والاستعادة"
+    },
+    "title": {
+      "en": "Enable automatic daily snapshots",
+      "ar": "تفعيل اللقطات اليومية التلقائية"
+    },
+    "tip": {
+      "en": "Understand coverage, monthly billing, retention, and payment pauses.",
+      "ar": "تعرّف على المحتويات والفوترة الشهرية والاحتفاظ والتوقف بسبب الدفع."
+    },
+    "body": [
+      {
+        "en": "Daily snapshots are an optional paid add-on for eligible non-trial instances. Hosting snapshots capture full-instance data and recovery metadata, including databases and files. They are different from a one-off backup of one database. The default policy keeps 7 recent daily snapshots; actual capture times and available copies depend on successful scheduled runs and platform settings.",
+        "ar": "اللقطات اليومية إضافة مدفوعة اختيارية للـ Instances المؤهلة غير التجريبية. تشمل لقطات الاستضافة بيانات البيئة الكاملة ومعلومات الاستعادة، بما فيها القواعد والملفات. وهي مختلفة عن نسخة يدوية لقاعدة واحدة. تحتفظ السياسة الافتراضية بـ 7 لقطات يومية حديثة؛ ويتوقف توقيت الالتقاط والنسخ المتاحة على نجاح المهام المجدولة وإعدادات المنصة."
+      }
+    ]
+  },
+  {
+    "anchor": "compute-tiers",
+    "article": "compute-tiers",
+    "category": {
+      "en": "Plans and capacity",
+      "ar": "الخطط والسعة"
+    },
+    "title": {
+      "en": "Change compute tiers",
+      "ar": "تغيير فئة موارد التشغيل"
+    },
+    "tip": {
+      "en": "Understand replica-based tiers and their billing behavior.",
+      "ar": "افهم الفئات القائمة على عدد النسخ التشغيلية وطريقة فوترة تغييراتها."
+    },
+    "body": [
+      {
+        "en": "Compute tiers apply to the Kubernetes backend and define application replica counts and their price. The platform publishes the available names, such as Standard, HA, or Scale. A larger replica count is not a guarantee of a specific availability SLA or a replacement for sizing Workers, CPU, RAM, and storage correctly.",
+        "ar": "تنطبق فئات موارد التشغيل على Kubernetes، وتحدد عدد نسخ التطبيق التشغيلية وتكلفتها. تنشر المنصة الفئات المتاحة، مثل Standard أو HA أو Scale. زيادة عدد النسخ لا تضمن اتفاقية توافر محددة، ولا تُغني عن اختيار Workers وCPU وRAM والتخزين بشكل مناسب."
+      }
+    ]
+  },
+  {
+    "anchor": "support-plan",
+    "article": "support-plans",
+    "category": {
+      "en": "Billing and payments",
+      "ar": "الفوترة والمدفوعات"
+    },
+    "title": {
+      "en": "Choose a support plan and request help",
+      "ar": "اختيار خطة الدعم وطلب المساعدة"
+    },
+    "tip": {
+      "en": "Use the published support terms and provide actionable diagnostics.",
+      "ar": "اعتمد شروط الدعم المنشورة وأرسل معلومات تساعد على التشخيص."
+    },
+    "body": [
+      {
+        "en": "The configurator lists active support plans, their descriptions, and charges. A free tier can be best-effort; paid tiers can offer different response targets. Use the plan’s published terms for the exact commitment. A response target is not a guaranteed resolution time, uptime SLA, or unlimited development service.",
+        "ar": "تعرض صفحة الإعداد خطط الدعم النشطة ووصفها ورسومها. قد تكون الخطة المجانية حسب الإمكانات، وقد تتضمن المدفوعة أهداف استجابة مختلفة. اعتمد الشروط المنشورة للخطة لمعرفة الالتزام المحدد. هدف الاستجابة ليس ضمانًا لمدة الحل أو اتفاقية توافر أو خدمة تطوير غير محدودة."
+      }
+    ]
+  },
+  {
+    "anchor": "trial",
+    "article": "free-trial",
+    "category": {
+      "en": "Get started",
+      "ar": "البدء مع المنصة"
+    },
+    "title": {
+      "en": "Use a free trial",
+      "ar": "استخدام الفترة التجريبية"
+    },
+    "tip": {
+      "en": "Understand availability, restrictions, and upgrading a trial.",
+      "ar": "تعرّف على إتاحة التجربة وحدودها والانتقال إلى اشتراك مدفوع."
+    },
+    "body": [
+      {
+        "en": "Trials are offered only when enabled and when an eligible trial plan is available. The duration and eligibility are configured by the platform. Use the expiry date shown in your dashboard. Trial accounts cannot buy daily backups, paid compute upgrades, or additional environment slots before upgrading.",
+        "ar": "تتاح التجربة عند تفعيلها ووجود خطة تجريبية مؤهلة. تضبط المنصة المدة وشروط الاستحقاق؛ واعتمد على تاريخ الانتهاء المعروض في لوحة التحكم. يلزم الانتقال إلى خطة مدفوعة قبل شراء النسخ اليومية أو ترقيات موارد التشغيل المدفوعة أو سعة بيئات إضافية."
+      }
+    ]
+  },
+  {
+    "anchor": "proration",
+    "article": "optional-charges",
+    "category": {
+      "en": "Billing and payments",
+      "ar": "الفوترة والمدفوعات"
+    },
+    "title": {
+      "en": "Decline optional charges and understand proration",
+      "ar": "رفض الرسوم الاختيارية وفهم التسعير النسبي"
+    },
+    "tip": {
+      "en": "Cancel an optional purchase without confusing it with a renewal obligation.",
+      "ar": "ألغِ شراءً اختياريًا دون الخلط بينه وبين فاتورة التجديد."
+    },
+    "body": [
+      {
+        "en": "A Decline or cancel-charge action appears only for eligible unpaid optional invoices, such as a requested upgrade or capacity/add-on purchase. It cancels that request and handles linked reserved credit. It is not a way to decline an active subscription renewal or undo an already applied paid change.",
+        "ar": "يظهر رفض الرسوم أو إلغاؤها للفواتير الاختيارية غير المدفوعة المؤهلة فقط، مثل طلب ترقية أو شراء سعة أو إضافة. يلغي الإجراء الطلب ويعالج الرصيد المحجوز المرتبط به. لا يُستخدم لرفض تجديد اشتراك فعّال أو عكس تغيير مدفوع طُبّق بالفعل."
+      }
+    ]
+  },
+  {
+    "anchor": "invoice-status",
+    "article": "invoices",
+    "category": {
+      "en": "Billing and payments",
+      "ar": "الفوترة والمدفوعات"
+    },
+    "title": {
+      "en": "View and pay invoices",
+      "ar": "عرض الفواتير وسدادها"
+    },
+    "tip": {
+      "en": "Read invoice state, line items, balance, and payment results.",
+      "ar": "اقرأ حالة الفاتورة وبنودها ورصيدها ونتيجة الدفع."
+    },
+    "body": [
+      {
+        "en": "Open Billing using the customer owner account. Select an invoice to view its items, dates, total, and outstanding amount. Use the payment action or PDF download where available. Teammates’ project roles do not expose the owner’s financial records.",
+        "ar": "افتح الفوترة بحساب مالك العميل. اختر فاتورة لعرض البنود والتواريخ والإجمالي والمبلغ المتبقي، واستخدم الدفع أو تنزيل PDF عند إتاحتهما. أدوار المشاريع للأعضاء لا تكشف سجلات المالك المالية."
+      }
+    ]
+  },
+  {
+    "anchor": "decline-invoice",
+    "article": "optional-charges",
+    "category": {
+      "en": "Billing and payments",
+      "ar": "الفوترة والمدفوعات"
+    },
+    "title": {
+      "en": "Decline optional charges and understand proration",
+      "ar": "رفض الرسوم الاختيارية وفهم التسعير النسبي"
+    },
+    "tip": {
+      "en": "Cancel an optional purchase without confusing it with a renewal obligation.",
+      "ar": "ألغِ شراءً اختياريًا دون الخلط بينه وبين فاتورة التجديد."
+    },
+    "body": [
+      {
+        "en": "A Decline or cancel-charge action appears only for eligible unpaid optional invoices, such as a requested upgrade or capacity/add-on purchase. It cancels that request and handles linked reserved credit. It is not a way to decline an active subscription renewal or undo an already applied paid change.",
+        "ar": "يظهر رفض الرسوم أو إلغاؤها للفواتير الاختيارية غير المدفوعة المؤهلة فقط، مثل طلب ترقية أو شراء سعة أو إضافة. يلغي الإجراء الطلب ويعالج الرصيد المحجوز المرتبط به. لا يُستخدم لرفض تجديد اشتراك فعّال أو عكس تغيير مدفوع طُبّق بالفعل."
+      }
+    ]
+  },
+  {
+    "anchor": "change-plan",
+    "article": "change-plan",
+    "category": {
+      "en": "Plans and capacity",
+      "ar": "الخطط والسعة"
+    },
+    "title": {
+      "en": "Change a subscription plan",
+      "ar": "تغيير خطة الاشتراك"
+    },
+    "tip": {
+      "en": "Understand payment-gated upgrades and scheduled downgrades.",
+      "ar": "افهم الترقيات المرتبطة بالدفع والانتقال المجدول إلى خطة أقل."
+    },
+    "body": [
+      {
+        "en": "Plan and purchased-capacity changes are owner billing actions. A Project Administrator teammate does not gain these permissions. Review the current plan, usage, billing period, and any pending invoice or scheduled change.",
+        "ar": "تغيير الخطة والسعة المشتراة من صلاحيات فوترة المالك. لا يمنح دور مدير المشروع لعضو الفريق هذه الصلاحيات. راجع الخطة الحالية والاستخدام ودورة الفوترة وأي فاتورة أو تغيير مجدول."
+      }
+    ]
+  },
+  {
+    "anchor": "reactivate",
+    "article": "reactivate",
+    "category": {
+      "en": "Projects and lifecycle",
+      "ar": "المشاريع ودورة الخدمة"
+    },
+    "title": {
+      "en": "Cancel and reactivate a project",
+      "ar": "إلغاء المشروع وإعادة تفعيله"
+    },
+    "tip": {
+      "en": "Understand cascading deletion, retained data, and recovery conditions.",
+      "ar": "افهم حذف البيئات التابعة وشروط الاحتفاظ بالبيانات والاستعادة."
+    },
+    "body": [
+      {
+        "en": "Production subscription cancellation and reactivation are customer-owner billing actions. The current portal does not expose a general active-subscription cancellation button. Contact support as the owner to arrange cancellation; declining an optional unpaid invoice is a separate workflow and is not active subscription cancellation.",
+        "ar": "إلغاء اشتراك Production وإعادة تفعيله من إجراءات فوترة مالك العميل. لا تعرض اللوحة الحالية زرًا عامًا لإلغاء اشتراك فعّال. تواصل مع الدعم بصفتك المالك لترتيب الإلغاء؛ فرفض فاتورة اختيارية غير مدفوعة إجراء مستقل وليس إلغاءً لاشتراك فعّال."
+      }
+    ]
+  },
+  {
+    "anchor": "snapshots",
+    "article": "daily-backups",
+    "category": {
+      "en": "Backups and recovery",
+      "ar": "النسخ الاحتياطي والاستعادة"
+    },
+    "title": {
+      "en": "Enable automatic daily snapshots",
+      "ar": "تفعيل اللقطات اليومية التلقائية"
+    },
+    "tip": {
+      "en": "Understand coverage, monthly billing, retention, and payment pauses.",
+      "ar": "تعرّف على المحتويات والفوترة الشهرية والاحتفاظ والتوقف بسبب الدفع."
+    },
+    "body": [
+      {
+        "en": "Daily snapshots are an optional paid add-on for eligible non-trial instances. Hosting snapshots capture full-instance data and recovery metadata, including databases and files. They are different from a one-off backup of one database. The default policy keeps 7 recent daily snapshots; actual capture times and available copies depend on successful scheduled runs and platform settings.",
+        "ar": "اللقطات اليومية إضافة مدفوعة اختيارية للـ Instances المؤهلة غير التجريبية. تشمل لقطات الاستضافة بيانات البيئة الكاملة ومعلومات الاستعادة، بما فيها القواعد والملفات. وهي مختلفة عن نسخة يدوية لقاعدة واحدة. تحتفظ السياسة الافتراضية بـ 7 لقطات يومية حديثة؛ ويتوقف توقيت الالتقاط والنسخ المتاحة على نجاح المهام المجدولة وإعدادات المنصة."
+      }
+    ]
+  },
+  {
+    "anchor": "restore",
+    "article": "restore",
+    "category": {
+      "en": "Backups and recovery",
+      "ar": "النسخ الاحتياطي والاستعادة"
+    },
+    "title": {
+      "en": "Restore a full-instance snapshot",
+      "ar": "استعادة لقطة كاملة لـ Instance"
+    },
+    "tip": {
+      "en": "Replace current data with a previous snapshot and verify recovery.",
+      "ar": "استبدل البيانات الحالية بلقطة سابقة وتحقق من الاستعادة."
+    },
+    "body": [
+      {
+        "en": "Use a running instance, an available completed snapshot, and **Database Restore Operator** access. Review the snapshot’s date and environment. Snapshot restoration is an instance-wide operation; use local database restore when only one database should be replaced.",
+        "ar": "استخدم Instance تعمل ولقطة مكتملة متاحة ودور **مسؤول استعادة قواعد البيانات**. راجع تاريخ اللقطة وبيئتها. استعادة اللقطة تشمل Instance بالكامل؛ استخدم استعادة قاعدة محلية إذا أردت استبدال قاعدة واحدة فقط."
+      }
+    ]
+  },
+  {
+    "anchor": "cpu-usage",
+    "article": "monitoring",
+    "category": {
+      "en": "Monitoring and developer tools",
+      "ar": "المراقبة وأدوات التطوير"
+    },
+    "title": {
+      "en": "Monitor resource usage",
+      "ar": "مراقبة استخدام الموارد"
+    },
+    "tip": {
+      "en": "Read live metrics and performance history without treating missing data as zero load.",
+      "ar": "اقرأ المقاييس المباشرة والسجل دون تفسير غياب البيانات باعتباره استخدامًا صفريًا."
+    },
+    "body": [
+      {
+        "en": "Project viewing access includes CPU, RAM, and storage information. Live metrics distinguish Odoo and database resource shares where available. The Metrics tab provides 1h, 6h, 24h, 7d, and 14d windows. Values are relative to the resource package and can be sampled or cached; they are not per-user performance measurements.",
+        "ar": "يشمل عرض المشروع معلومات CPU وRAM والتخزين. تميّز المقاييس المباشرة بين حصة Odoo وحصة قاعدة البيانات عند توفرها. يعرض تبويب المقاييس فترات 1h و6h و24h و7d و14d. تُقاس القيم بالنسبة إلى الموارد المخصصة وقد تكون عينات أو قياسات مخزّنة مؤقتًا؛ وليست قياسًا لأداء كل مستخدم."
+      }
+    ]
+  },
+  {
+    "anchor": "ram-usage",
+    "article": "monitoring",
+    "category": {
+      "en": "Monitoring and developer tools",
+      "ar": "المراقبة وأدوات التطوير"
+    },
+    "title": {
+      "en": "Monitor resource usage",
+      "ar": "مراقبة استخدام الموارد"
+    },
+    "tip": {
+      "en": "Read live metrics and performance history without treating missing data as zero load.",
+      "ar": "اقرأ المقاييس المباشرة والسجل دون تفسير غياب البيانات باعتباره استخدامًا صفريًا."
+    },
+    "body": [
+      {
+        "en": "Project viewing access includes CPU, RAM, and storage information. Live metrics distinguish Odoo and database resource shares where available. The Metrics tab provides 1h, 6h, 24h, 7d, and 14d windows. Values are relative to the resource package and can be sampled or cached; they are not per-user performance measurements.",
+        "ar": "يشمل عرض المشروع معلومات CPU وRAM والتخزين. تميّز المقاييس المباشرة بين حصة Odoo وحصة قاعدة البيانات عند توفرها. يعرض تبويب المقاييس فترات 1h و6h و24h و7d و14d. تُقاس القيم بالنسبة إلى الموارد المخصصة وقد تكون عينات أو قياسات مخزّنة مؤقتًا؛ وليست قياسًا لأداء كل مستخدم."
+      }
+    ]
+  },
+  {
+    "anchor": "storage-usage",
+    "article": "storage-capacity",
+    "category": {
+      "en": "Plans and capacity",
+      "ar": "الخطط والسعة"
+    },
+    "title": {
+      "en": "Manage storage capacity and blocks",
+      "ar": "إدارة سعة التخزين والإضافات"
+    },
+    "tip": {
+      "en": "Respond to capacity warnings and safely release unused storage.",
+      "ar": "تعامل مع تنبيهات السعة وحرّر التخزين غير المستخدم بأمان."
+    },
+    "body": [
+      {
+        "en": "The capacity checker warns at 80% usage and starts a grace period at 100%. The default storage grace period is 7 days and can be changed by the platform. Continued over-capacity usage after that period can pause the workspace. These checks use measured usage and periodic jobs, so displayed values are not an instantaneous hard quota.",
+        "ar": "يصدر تنبيه السعة عند استخدام 80% ويبدأ مهلة عند بلوغ 100%. المهلة الافتراضية للتخزين 7 أيام، ويمكن للمنصة تعديلها. استمرار تجاوز السعة بعد المهلة قد يوقف مساحة العمل مؤقتًا. تعتمد الفحوص على قياسات ومهام دورية، لذلك لا تمثل القيم المعروضة حدًا فوريًا صارمًا."
+      }
+    ]
+  },
+  {
+    "anchor": "logs",
+    "article": "application-logs",
+    "category": {
+      "en": "Monitoring and developer tools",
+      "ar": "المراقبة وأدوات التطوير"
+    },
+    "title": {
+      "en": "View and download application logs",
+      "ar": "عرض سجلات التطبيق وتنزيلها"
+    },
+    "tip": {
+      "en": "Stream current runtime output and preserve useful evidence.",
+      "ar": "تابع مخرجات التشغيل واحفظ المعلومات المفيدة للتشخيص."
+    },
+    "body": [
+      {
+        "en": "Logs are a hosting-only feature and require a running environment and **Logs Viewer**. Open Logs for the selected environment. Severity colors distinguish errors, warnings, debug output, and normal messages. Use Pause/Resume, auto-scroll, clear, and download controls to inspect the visible output. Clear affects the browser view, not a permanent server-log deletion request.",
+        "ar": "السجلات خاصية للاستضافة وتتطلب بيئة تعمل ودور **قارئ السجلات**. افتح السجلات للبيئة المختارة. تميّز الألوان الأخطاء والتنبيهات ورسائل Debug والرسائل العادية. استخدم الإيقاف المؤقت والاستئناف والتمرير التلقائي والمسح والتنزيل لمراجعة المخرجات. المسح يزيل عرض المتصفح ولا يطلب حذف سجلات الخادم الدائمة."
+      }
+    ]
+  },
+  {
+    "anchor": "create-database",
+    "article": "manage-databases",
+    "category": {
+      "en": "Databases",
+      "ar": "قواعد البيانات"
+    },
+    "title": {
+      "en": "Create and open a database",
+      "ar": "إنشاء قاعدة بيانات وفتحها"
+    },
+    "tip": {
+      "en": "Initialize your application and understand the Production database limit.",
+      "ar": "جهّز تطبيقك وافهم حد قواعد البيانات في Production."
+    },
+    "body": [
+      {
+        "en": "Production hosting allows one customer database. You can delete it and create another, or restore into it with replacement. Staging and Development do not use this one-database limit, but they share their environment’s storage allowance. Existing legacy extra databases are not proof that creating another is allowed.",
+        "ar": "تسمح استضافة Production بقاعدة بيانات واحدة للعميل. يمكنك حذفها وإنشاء أخرى أو استعادتها مع الاستبدال. لا يطبق هذا الحد على Staging وDevelopment، لكن قواعدهما تستهلك سعة بيئتها. وجود قواعد إضافية من إعداد قديم لا يعني السماح بإنشاء قاعدة أخرى."
+      }
+    ]
+  }
+]

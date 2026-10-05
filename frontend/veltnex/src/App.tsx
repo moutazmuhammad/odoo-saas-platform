@@ -12,8 +12,8 @@ import Home from "./pages/Home";
 import Services from "./pages/Services";
 import ServiceDetail from "./pages/ServiceDetail";
 import Hosting from "./pages/Hosting";
-import Docs from "./pages/Docs";
-import DocArticle from "./pages/DocArticle";
+const Docs = React.lazy(() => import("./pages/Docs"));
+const DocArticle = React.lazy(() => import("./pages/DocArticle"));
 import Help from "./pages/Help";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -83,8 +83,8 @@ export default function App() {
         <Route path="/services/register" element={<RequireSection section="services"><Register /></RequireSection>} />
         <Route path="/services/:id" element={<RequireSection section="services"><ServiceDetail /></RequireSection>} />
         <Route path="/hosting" element={<RequireSection section="hosting"><Hosting /></RequireSection>} />
-        <Route path="/docs" element={<Docs />} />
-        <Route path="/docs/:slug" element={<DocArticle />} />
+        <Route path="/docs" element={<React.Suspense fallback={<Spinner label={i18nText("Loading…")} />}><Docs /></React.Suspense>} />
+        <Route path="/docs/:slug" element={<React.Suspense fallback={<Spinner label={i18nText("Loading…")} />}><DocArticle /></React.Suspense>} />
         <Route path="/help" element={<Help />} />
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />

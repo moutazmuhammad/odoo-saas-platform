@@ -1547,7 +1547,7 @@ function DeleteEnvDialog({
         <div className="text-sm">
           <p className="font-medium text-foreground">{i18nText("Delete the {0} server {1}?", [i18nText(env?.environment_label || ""), env?.name ?? ""])}
           </p>
-          <p className="mt-1 text-muted">{i18nText("This permanently destroys the server and ")}<strong>{i18nText("all of its data — databases, files, and logs")}</strong>{i18nText(". Any unused time on your current cycle is credited back to your wallet. This can't be undone.")}</p>
+          <p className="mt-1 text-muted">{i18nText("This permanently destroys the server and ")}<strong>{i18nText("all of its data — databases, files, and logs")}</strong>{i18nText(". Deleting the server frees its reserved slot for reuse. The slot stays billable until you release it. This can't be undone.")}</p>
         </div>
       </div>
       <label className="mt-5 flex items-start gap-2.5 rounded-lg border border-border p-3 text-sm">

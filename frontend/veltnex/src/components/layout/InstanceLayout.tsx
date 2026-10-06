@@ -46,7 +46,7 @@ export default function InstanceLayout() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="truncate text-2xl font-bold tracking-tight">{inst.name}</h1>
-              <RuntimeStatusBadge instance={inst} showDetail />
+              <RuntimeStatusBadge instance={inst} />
               {inst.is_hosting && (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted">
                   {inst.environment_label}

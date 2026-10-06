@@ -9,18 +9,18 @@ describe("Production availability badge", () => {
     render(<RuntimeStatusBadge instance={{
       state: "running", state_label: "Running", runtime_state: "unreachable",
       runtime_checked_at: new Date().toISOString(), runtime_received_at: Date.now(), runtime_message: "Tenant URL is unreachable.",
-    }} showDetail />);
+    }} />);
     expect(screen.getByText("Unreachable")).toBeInTheDocument();
     expect(screen.queryByText("Running")).not.toBeInTheDocument();
-    expect(screen.getByText(/Last checked/)).toBeInTheDocument();
   });
-  it("explains a fresh unknown observation caused by cluster access failure", () => {
-    render(<RuntimeStatusBadge instance={{
+  it("shows only the status to customers, without technical details", () => {
+    const { container } = render(<RuntimeStatusBadge instance={{
       state: "running", runtime_state: "unknown", runtime_checked_at: new Date().toISOString(), runtime_received_at: Date.now(),
       runtime_message: "Cannot check the tenant workload: cluster access failed.",
-    }} showDetail />);
-    expect(screen.getByText(/cluster access failed/)).toBeInTheDocument();
-    expect(screen.queryByText(/not been checked recently/)).not.toBeInTheDocument();
+    }} />);
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    expect(container.textContent).toBe("Unknown");
+    expect(container.querySelector("[title]")).toBeNull();
   });
   it("removes green online status when no fresh observation arrives", () => {
     vi.useFakeTimers();

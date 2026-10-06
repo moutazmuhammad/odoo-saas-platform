@@ -868,7 +868,7 @@ function MainPanel({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-xl font-bold tracking-tight">{env.name}</h1>
-            <RuntimeStatusBadge instance={{ ...env, ...status }} showDetail />
+            <RuntimeStatusBadge instance={{ ...env, ...status }} />
             <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">
               {i18nText(env.environment_label)}
             </span>

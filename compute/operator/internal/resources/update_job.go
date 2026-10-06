@@ -45,10 +45,10 @@ done`
 // serving pod is switched to that image; every database must succeed. It
 // is not retried: a failed migration needs a fix and a new token, not a
 // loop.
-func OdooUpdateJob(instance *saasv1alpha1.OdooInstance) *batchv1.Job {
+func OdooUpdateJob(instance *saasv1alpha1.OdooInstance, platform Platform) *batchv1.Job {
 	command := []string{"sh", "-c", updateScript, "update-modules"}
 	args := updateDatabases(instance)
-	job := odooOneShotJob(instance, OdooUpdateJobName(instance), UpdateJobComponent, "update-modules",
+	job := odooOneShotJob(instance, platform, OdooUpdateJobName(instance), UpdateJobComponent, "update-modules",
 		OdooUpdateConfigMapName(instance), command, args, corev1.RestartPolicyNever, ptr.To(int32(0)),
 		ptr.To(int64(updateJobDeadlineSeconds)))
 	container := &job.Spec.Template.Spec.Containers[0]

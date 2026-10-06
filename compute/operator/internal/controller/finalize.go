@@ -69,7 +69,7 @@ func (r *OdooInstanceReconciler) finalizeInstance(ctx context.Context, instance 
 // runFinalBackup runs the backup CronJob's pod spec as a one-off Job and
 // waits (bounded) for it to complete before namespace teardown proceeds.
 func (r *OdooInstanceReconciler) runFinalBackup(ctx context.Context, instance *saasv1alpha1.OdooInstance) error {
-	cronJob := resources.BackupCronJob(instance, r.effectiveBackupToolImage(instance))
+	cronJob := resources.BackupCronJob(instance, r.platform())
 
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -94,13 +94,6 @@ func (r *OdooInstanceReconciler) runFinalBackup(ctx context.Context, instance *s
 		}
 		return current.Status.Succeeded > 0, nil
 	})
-}
-
-func (r *OdooInstanceReconciler) effectiveBackupToolImage(instance *saasv1alpha1.OdooInstance) string {
-	if r.BackupToolImage != "" {
-		return r.BackupToolImage
-	}
-	return resources.DefaultBackupToolImage
 }
 
 const (

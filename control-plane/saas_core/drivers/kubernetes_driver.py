@@ -50,7 +50,7 @@ from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream as k8s_stream
 
 from .base import ComputeDriver, ComputeSpec, ComputeHandle, ExecResult, HealthStatus
-from .k8s_builds import ImageBuildMixin, read_pod_log
+from .k8s_builds import ImageBuildMixin, read_pod_log, docker_config_json, _TENANT_PULL_SECRET
 
 # Kubernetes exec subresource WebSocket sub-channel indices (v4/v5
 # channel.k8s.io protocol) — STDIN=0/STDOUT=1/STDERR=2/ERROR=3/RESIZE=4.
@@ -243,11 +243,11 @@ _ADMIN_SECRET_NAME = 'odoo-admin-credentials'
 # namespace, ServiceAccount and its role binding by hand (setup guide,
 # "Staff cluster terminal"); the control plane never grants permissions,
 # it only starts the pod. The pod ends after _TOOLBOX_LIFETIME and is
-# recreated on the next open. Keep the image's kubectl within one minor
-# version of the clusters.
+# recreated on the next open. Its image is the cluster's toolbox_image
+# (keep its kubectl within one minor version of the cluster).
 _TOOLBOX_NAMESPACE = 'saas-toolbox'
 _TOOLBOX_NAME = 'saas-toolbox'
-_TOOLBOX_IMAGE = 'alpine/k8s:1.35.6'
+_TOOLBOX_PULL_SECRET = 'saas-toolbox-registry'
 _TOOLBOX_LIFETIME = 8 * 3600
 _TOOLBOX_START_TIMEOUT = 180
 _POD_LABEL_SELECTOR = 'app.kubernetes.io/name=odoo,app.kubernetes.io/instance=%s'
@@ -265,6 +265,9 @@ _BACKUP_CRONJOB_NAME = 'odoo-backup'
 # into the CR itself.
 _BACKUP_SECRET_NAME = 'odoo-backup-object-storage'
 
+_IMAGE_PULL_ERRORS = ('ErrImagePull', 'ImagePullBackOff')
+
+
 class ToolboxNotSetUp(RuntimeError):
     """The cluster's saas-toolbox ServiceAccount hasn't been created yet."""
 
@@ -281,6 +284,8 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
     def __init__(self, server, connection=None):
         self.server = server
         self._api_client = None
+        # Tenant namespaces whose pull Secret this driver already wrote.
+        self._pull_secret_synced = set()
 
     # -- API client / naming helpers -----------------------------------------
     def _client(self):
@@ -413,6 +418,18 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         candidates = ready or running or active or list(pods.items)
         return candidates[0] if candidates else None
 
+    def _sync_tenant_pull_secret(self, namespace, force=False):
+        """Best-effort write of the tenant pull Secret (see
+        _ensure_tenant_pull_secret); never fails the caller."""
+        if namespace in self._pull_secret_synced and not force:
+            return
+        try:
+            if self._ensure_tenant_pull_secret(namespace):
+                self._pull_secret_synced.add(namespace)
+        except Exception:
+            _logger.warning("Writing the registry pull Secret in %s failed",
+                            namespace, exc_info=True)
+
     # -- lifecycle ------------------------------------------------------------
     def create(self, spec: ComputeSpec) -> ComputeHandle:
         """Create the OdooInstance CR. Idempotent against a retried call
@@ -457,6 +474,9 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             else:
                 raise RuntimeError(
                     'creating OdooInstance %s failed: %s' % (name, e)) from e
+        # The operator creates the namespace asynchronously, so this usually
+        # finds none yet; health() keeps retrying until the Secret is in.
+        self._sync_tenant_pull_secret(self._namespace_for(spec))
         return ComputeHandle(
             server_id=self.server.id, container_name=spec.container_name,
             instance_path=self._namespace_for(spec), host='',
@@ -505,13 +525,18 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             }
 
         filestore = {'size': spec.env.get('filestore_size') or '5Gi'}
+        image = {'repository': repository, 'tag': tag}
+        if self._registry_pull_auth():
+            # Any image may come from the cluster's private registry; the
+            # Secret itself is written once the namespace exists.
+            image['pullSecretRefs'] = [{'name': _TENANT_PULL_SECRET}]
         body = {
             'apiVersion': '%s/%s' % (_GROUP, _VERSION),
             'kind': 'OdooInstance',
             'metadata': {'name': name},
             'spec': {
                 'version': odoo_version,
-                'image': {'repository': repository, 'tag': tag},
+                'image': image,
                 'domain': {
                     'hostname': domain,
                     'tls': tls,
@@ -1190,6 +1215,7 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 # Past its lifetime, or crashed: replace it.
                 core.delete_namespaced_pod(_TOOLBOX_NAME, _TOOLBOX_NAMESPACE, grace_period_seconds=0)
             elif pod is None:
+                self._sync_toolbox_pull_secret(core)
                 core.create_namespaced_pod(_TOOLBOX_NAMESPACE, self._toolbox_pod_body())
             if time.time() > deadline:
                 raise RuntimeError(
@@ -1197,8 +1223,26 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                     % (_TOOLBOX_START_TIMEOUT, phase or 'not created'))
             time.sleep(2)
 
+    def _sync_toolbox_pull_secret(self, core):
+        """The toolbox image's pull Secret, from the cluster's registry
+        credentials (none = public toolbox image)."""
+        auth = self._registry_pull_auth()
+        if not auth:
+            return
+        body = k8s_client.V1Secret(
+            metadata=k8s_client.V1ObjectMeta(name=_TOOLBOX_PULL_SECRET, labels={
+                'app.kubernetes.io/managed-by': 'saas-control-plane'}),
+            type='kubernetes.io/dockerconfigjson',
+            string_data={'.dockerconfigjson': docker_config_json(*auth)})
+        try:
+            core.replace_namespaced_secret(_TOOLBOX_PULL_SECRET, _TOOLBOX_NAMESPACE, body)
+        except ApiException as e:
+            if e.status != 404:
+                raise
+            core.create_namespaced_secret(_TOOLBOX_NAMESPACE, body)
+
     def _toolbox_pod_body(self) -> dict:
-        return {
+        body = {
             'metadata': {'name': _TOOLBOX_NAME, 'labels': {
                 'app.kubernetes.io/name': _TOOLBOX_NAME,
                 'app.kubernetes.io/managed-by': 'saas-control-plane'}},
@@ -1209,7 +1253,7 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 'terminationGracePeriodSeconds': 5,
                 'containers': [{
                     'name': 'toolbox',
-                    'image': _TOOLBOX_IMAGE,
+                    'image': self.server._toolbox_image(),
                     'command': ['sh', '-c',
                                 "trap 'exit 0' TERM; while :; do sleep 3600 & wait $!; done"],
                     'env': [{'name': 'PS1', 'value': '[%s] \\w \\$ ' % self.server.name}],
@@ -1220,6 +1264,9 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 }],
             },
         }
+        if self._registry_pull_auth():
+            body['spec']['imagePullSecrets'] = [{'name': _TOOLBOX_PULL_SECRET}]
+        return body
 
     def logs(self, handle: ComputeHandle, *, tail: Optional[int] = None) -> str:
         namespace = handle.instance_path or self._namespace_for(handle)
@@ -1266,6 +1313,9 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         namespace = handle.instance_path or self._namespace_for(handle)
         pod = self._first_pod(namespace, name)
         suspended = bool((cr.get('spec') or {}).get('suspended')) or phase == 'Suspended'
+        if pod is None and not suspended:
+            # Still provisioning (create() ran before the namespace existed).
+            self._sync_tenant_pull_secret(namespace)
         if pod is None:
             # The CR exists, so the operator owns recreating the pod (e.g.
             # after an eviction). 'missing' is not 'not_found': reconcile must
@@ -1283,6 +1333,11 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             status = 'exited'
         restart_count = 0
         detail = phase
+        if any(cs.state and cs.state.waiting and cs.state.waiting.reason in _IMAGE_PULL_ERRORS
+               for cs in (pod.status.container_statuses or [])):
+            # Missing or outdated (rotated credentials) pull Secret: rewrite
+            # it; the kubelet's next pull retry picks it up.
+            self._sync_tenant_pull_secret(namespace, force=True)
         for cs in (pod.status.container_statuses or []):
             if cs.name not in (_CONTAINER_NAME, 'cron'):
                 continue

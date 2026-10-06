@@ -483,6 +483,38 @@ class TestImageBuildDriver(TransactionCase):
                       [r['to'][0].get('namespaceSelector', {}).get('matchLabels')
                        for r in policy['spec']['egress']])
 
+    def test_build_pod_pulls_with_registry_credentials(self):
+        self.driver.start_image_build(
+            name='build-3-acme', repos=[], dockerfile='FROM x', requirements='',
+            base_image='registry.example.com/odoo:18.0', image_ref='reg.ns.svc:5000/t:1',
+            builder_image='registry.example.com/buildkit', git_image='registry.example.com/git',
+            registry_host='registry.example.com', registry_push_host='reg.ns.svc:5000',
+            registry_username='u', registry_password='p')
+        job = self.batch.create_namespaced_job.call_args.args[1]
+        spec = job['spec']['template']['spec']
+        self.assertEqual(spec['imagePullSecrets'], [{'name': 'build-3-acme-pull'}])
+        secrets = {c.args[1].metadata.name: c.args[1]
+                   for c in self.core.create_namespaced_secret.call_args_list}
+        pull = secrets['build-3-acme-pull']
+        self.assertEqual(pull.type, 'kubernetes.io/dockerconfigjson')
+        self.assertEqual(set(json.loads(pull.string_data['.dockerconfigjson'])['auths']),
+                         {'registry.example.com'})
+        # BuildKit can push to the push host and pull FROM the pull host.
+        auths = json.loads(secrets['build-3-acme'].string_data['config.json'])['auths']
+        self.assertEqual(set(auths), {'reg.ns.svc:5000', 'registry.example.com'})
+        # Both Secrets are cleaned up with the Job.
+        self.assertEqual({c.args[0] for c in self.core.patch_namespaced_secret.call_args_list},
+                         {'build-3-acme', 'build-3-acme-pull'})
+
+    def test_build_pod_without_credentials_has_no_pull_secret(self):
+        self.driver.start_image_build(
+            name='build-4-acme', repos=[], dockerfile='FROM x', requirements='',
+            base_image='x', image_ref='r/x:t', builder_image='b', git_image='g',
+            registry_host='r')
+        spec = self.batch.create_namespaced_job.call_args.args[1]['spec']['template']['spec']
+        self.assertNotIn('imagePullSecrets', spec)
+        self.core.create_namespaced_secret.assert_called_once()
+
     def test_start_image_build_is_idempotent_on_retry(self):
         from kubernetes.client.rest import ApiException
         self.core.create_namespaced_secret.side_effect = ApiException(status=409)
@@ -529,6 +561,23 @@ class TestImageBuildDriver(TransactionCase):
         self.assertEqual(patch_body['spec']['addonsPaths'], ['/opt/tenant-addons/x'])
         self.core.replace_namespaced_secret.assert_called_once()
 
+    def test_plain_image_deploy_uses_the_cluster_credentials(self):
+        """A rollback to the plain version image keeps the pull Secret when
+        the cluster has a private registry, and drops it otherwise."""
+        self.driver.server._registry_pull_auth.return_value = ('reg.example.com', 'u', 'p')
+        self.driver.deploy_image(_handle(), repository='reg.example.com/odoo', tag='18.0',
+                                 addons_paths=[], update_token='build-2', modules=[])
+        patch_body = self.custom.patch_cluster_custom_object.call_args.args[4]
+        self.assertEqual(patch_body['spec']['image']['pullSecretRefs'], [{'name': 'tenant-registry'}])
+        secret = self.core.replace_namespaced_secret.call_args.args[2]
+        self.assertIn('reg.example.com', secret.string_data['.dockerconfigjson'])
+
+        self.driver.server._registry_pull_auth.return_value = None
+        self.driver.deploy_image(_handle(), repository='odoo', tag='18.0',
+                                 addons_paths=[], update_token='build-3', modules=[])
+        patch_body = self.custom.patch_cluster_custom_object.call_args.args[4]
+        self.assertIsNone(patch_body['spec']['image']['pullSecretRefs'])
+
     def _cr(self, generation, applied, cond_reason, cond_generation):
         self.custom.get_cluster_custom_object.return_value = {
             'metadata': {'generation': generation},
@@ -561,3 +610,9 @@ class TestDockerConfigJson(TransactionCase):
         auths = json.loads(docker_config_json('docker.io', 'u', 'p'))['auths']
         self.assertEqual(set(auths), {'docker.io', 'https://index.docker.io/v1/'})
         self.assertEqual(set(json.loads(docker_config_json('ghcr.io', 'u', 'p'))['auths']), {'ghcr.io'})
+
+    def test_several_hosts_share_the_credentials(self):
+        from ..drivers.k8s_builds import docker_config_json
+        auths = json.loads(docker_config_json(['docker.io', 'ghcr.io', None], 'u', 'p'))['auths']
+        self.assertEqual(set(auths), {'docker.io', 'ghcr.io', 'https://index.docker.io/v1/'})
+        self.assertEqual(auths['docker.io'], auths['ghcr.io'])

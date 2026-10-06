@@ -17,9 +17,9 @@ import (
 // exactly the same toolchain BackupCronJob's image already requires (see
 // backup.go), just exercised in reverse. In practice a platform can ship a
 // single image providing both `run-backup.sh` and `run-restore.sh`; this
-// is kept as an independently overridable default (--restore-tool-image)
-// in case a platform ever wants to version backup and restore tooling
-// separately.
+// is kept as an independently overridable default (--restore-tool-image,
+// falling back to --backup-tool-image) in case a platform ever wants to
+// version backup and restore tooling separately.
 const DefaultRestoreToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.5"
 
 // OdooRestoreJobName is the name of the one-time restore Job.
@@ -59,7 +59,7 @@ func OdooRestoreJobName(instance *saasv1alpha1.OdooInstance) string {
 // this platform's backup abstraction already defines for this tenant; a
 // platform that also enables spec.backup with Destination.Type=PVC on a
 // restored instance will have both mechanisms share that single volume.
-func OdooRestoreJob(instance *saasv1alpha1.OdooInstance, restoreToolImage string) *batchv1.Job {
+func OdooRestoreJob(instance *saasv1alpha1.OdooInstance, platform Platform) *batchv1.Job {
 	labels := WithComponent(instance, "restore")
 	source := instance.Spec.Restore.Source
 
@@ -141,6 +141,7 @@ func OdooRestoreJob(instance *saasv1alpha1.OdooInstance, restoreToolImage string
 					ServiceAccountName:            OdooServiceAccountName(instance),
 					AutomountServiceAccountToken:  ptr.To(false),
 					TerminationGracePeriodSeconds: ptr.To(int64(60)),
+					ImagePullSecrets:              platform.imagePullSecrets(instance),
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: ptr.To(true),
 						SeccompProfile: &corev1.SeccompProfile{
@@ -160,7 +161,7 @@ func OdooRestoreJob(instance *saasv1alpha1.OdooInstance, restoreToolImage string
 							// itself: use genericHardenedSecurityContext (no
 							// pinned numeric UID), never containerSecurityContext
 							// — see that function's own doc comment for why.
-							Image:           restoreToolImage,
+							Image:           platform.restoreToolImage(),
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Command:         []string{"/usr/local/bin/run-restore.sh"},
 							Env:             env,

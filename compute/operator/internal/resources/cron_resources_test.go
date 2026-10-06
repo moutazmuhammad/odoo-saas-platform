@@ -9,7 +9,7 @@ import (
 func TestCronSidecarIsSmallerAndDoesNotServeHTTP(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Resources.Limits = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("2Gi")}
-	pod := OdooDeployment(instance).Spec.Template.Spec
+	pod := OdooDeployment(instance, Platform{}).Spec.Template.Spec
 	if len(pod.Containers) != 2 {
 		t.Fatal("expected one web and one cron container in one pod")
 	}
@@ -49,7 +49,7 @@ func TestCronLimitsStayCappedOnVerticalResize(t *testing.T) {
 		t.Fatal("cron RAM grew with the large web limit")
 	}
 	instance.Spec.Workers.MaxCronThreads = 0
-	pod := OdooDeployment(instance).Spec.Template.Spec
+	pod := OdooDeployment(instance, Platform{}).Spec.Template.Spec
 	if len(pod.Containers) != 1 || !containsArg(pod.Containers[0].Args, "--max-cron-threads=0") {
 		t.Fatal("explicitly disabled cron still reserves resources")
 	}

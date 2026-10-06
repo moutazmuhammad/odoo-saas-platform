@@ -93,7 +93,15 @@ const (
 	ReasonDeleting           = "Deleting"
 	ReasonReplicasIgnored    = "LegacyReplicasIgnored"
 
+	ReasonPlatformPullSecretMissing = "PlatformPullSecretMissing"
+
 	// ConditionReplicasIgnored is True while a legacy spec.replicas above
 	// one is being treated as one. Absent otherwise.
 	ConditionReplicasIgnored = "ReplicasIgnored"
+
+	// ConditionPlatformPullSecretMissing is True while --platform-pull-secret
+	// is set but its source Secret cannot be copied into the tenant
+	// namespace. Pods still list it and pull whatever is public meanwhile.
+	// Absent otherwise.
+	ConditionPlatformPullSecretMissing = "PlatformPullSecretMissing"
 )

@@ -14,11 +14,11 @@ Every statement cites the code it comes from. Paths are from the repo root. Line
 | **Backup tool** `docker.io/moutazmuhammad/odoo-saas-backup-tool` | `compute/tools/backup-tool/Dockerfile` | You, by hand (`docker build`) | Docker Hub, public | `DefaultBackupToolImage` / `DefaultRestoreToolImage` constants, or the chart's `backup.toolImage` / `restore.toolImage` | Backup CronJob + restore Job in each tenant namespace |
 | **Odoo base** (per version) `docker.io/library/odoo:<ver>` | Third-party (official Odoo image) | Nobody, pulled | Docker Hub, public | `saas.odoo.version` fields `docker_image` + `docker_image_tag` | Tenant pod (`odoo`, `render-config`, cron, shell), init/update Jobs, build `inspect` step |
 | **Tenant image** `<registry_host>/<registry_prefix>/tenant-<sub>:<ver>-b<build id>` | `control-plane/saas_core/templates/build/Dockerfile.jinja` | The control plane, at runtime, as a Job inside the cluster | The cluster's registry (cluster form, **Image Builds** tab) | `saas_instance_build.py:197` | Same pods as the Odoo base, for tenants with Git repos |
-| PostgreSQL `docker.io/library/postgres:<16>` | Third-party | Pulled | Docker Hub | `spec.database.version` (default `"16"`), hard-coded repo | Tenant `postgresql` StatefulSet |
-| CNPG Postgres `ghcr.io/cloudnative-pg/postgresql:<ver>` | Third-party | Pulled | GHCR | hard-coded repo | Only with `spec.database.mode: CloudNativePG` (the control plane never sets it) |
+| PostgreSQL `docker.io/library/postgres:<16>` | Third-party | Pulled | Docker Hub | `spec.database.version` (default `"16"`); repository from the chart's `images.postgresRepository` | Tenant `postgresql` StatefulSet |
+| CNPG Postgres `ghcr.io/cloudnative-pg/postgresql:<ver>` | Third-party | Pulled | GHCR | chart `images.cnpgPostgresRepository` | Only with `spec.database.mode: CloudNativePG` (the control plane never sets it) |
 | BuildKit `moby/buildkit:v0.16.0-rootless` | Third-party | Pulled | Docker Hub | cluster field `builder_image` | Build Job `build` container (`odoo-builds` ns) |
 | Git `alpine/git:v2.45.2` | Third-party | Pulled | Docker Hub | cluster field `git_image` | Build Job `fetch` init container |
-| Toolbox `alpine/k8s:1.35.6` | Third-party | Pulled | Docker Hub | hard-coded constant | Staff cluster terminal pod (`saas-toolbox` ns) |
+| Toolbox `alpine/k8s:1.35.6` | Third-party | Pulled | Docker Hub | cluster field `toolbox_image` | Staff cluster terminal pod (`saas-toolbox` ns) |
 | Traefik, cert-manager, Prometheus (+ config-reloader), Longhorn | Third-party, charts vendored in `compute/charts/vendor/` | Pulled | docker.io / quay.io | each chart's `values.yaml` / `appVersion` | `ingress`, `cert-manager`, `monitoring`, `longhorn-system` |
 | Test registry `registry:2.8.3` | Third-party | Pulled | Docker Hub | `compute/examples/test-registry/registry.yaml:46` | Test clusters only |
 
@@ -124,15 +124,17 @@ What happens when a customer pushes to a connected repo, or presses Redeploy (`m
 
 ### Registry auth
 
-| Where | Mechanism | Code |
-|---|---|---|
-| Build push | `config.json` key in the per-build Secret, mounted at `/home/user/.docker`, credentials for the **push host only** | `k8s_builds.py:167-169, 219-222` |
-| Docker Hub | the same auth is also written under the legacy key `https://index.docker.io/v1/` (BuildKit looks Docker Hub up there) | `k8s_builds.py:54-63` |
-| Tenant pull | Secret `tenant-registry` (`kubernetes.io/dockerconfigjson`, **pull host**) in `odoo-tenant-<name>`, created/replaced by the control plane | `k8s_builds.py:36, 391-402` |
-| Pod use | Web pod, init Job and update Job get `imagePullSecrets: spec.image.pullSecretRefs` | `compute/operator/internal/resources/deployment.go:123-131`, `init_job.go:71` |
-| Plain HTTP | `registry_insecure` adds `http = true` to `buildkitd.toml` and `registry.insecure=true` to the push | `k8s_builds.py:189-195`, `build.sh` |
+| Where | Mechanism |
+|---|---|
+| Build push and `FROM` | `config.json` in the per-build Secret, mounted at `/home/user/.docker`, with credentials for the push host **and** the pull host (`registry_host`) when they differ. Docker Hub also gets the legacy key `https://index.docker.io/v1/`, which BuildKit uses. |
+| Build pod pulls (git, Odoo base for `inspect`, BuildKit) | A per-build `kubernetes.io/dockerconfigjson` Secret `<job>-pull` for `registry_host`, listed in the build pod's `imagePullSecrets`. It is owned by the Job and deleted with it. |
+| Tenant pull | Secret `tenant-registry` in `odoo-tenant-<name>`, written by the control plane for **every** tenant whenever the cluster has registry credentials: on create (retried from `health()` until the namespace exists, and again on any `ErrImagePull`/`ImagePullBackOff`) and on every image change, including a rollback to the plain version image. `spec.image.pullSecretRefs: [tenant-registry]`. |
+| Platform pull | Operator flag `--platform-pull-secret` (chart `platformPullSecret`): a dockerconfigjson Secret in `odoo-system` that the operator copies into each tenant namespace as `odoo-platform-pull`. |
+| Pod use | The operator lists `pullSecretRefs` + `odoo-platform-pull` on **every** tenant pod: web Deployment, init/update Jobs, backup CronJob and final-backup Job, restore Job, the Managed PostgreSQL StatefulSet and CNPG `spec.imagePullSecrets`. |
+| Staff terminal | With registry credentials, Secret `saas-toolbox-registry` in `saas-toolbox`, listed on the toolbox pod. Image: cluster field `toolbox_image`. |
+| Plain HTTP | `registry_insecure` adds `http = true` to `buildkitd.toml` and `registry.insecure=true` to the push |
 
-No username on the cluster form = no Secret and no `pullSecretRefs` (the registry must then allow anonymous push/pull).
+No username on the cluster form means no Secrets and no `pullSecretRefs`: the registry must then allow anonymous push and pull, as Docker Hub public does.
 
 ---
 
@@ -163,12 +165,13 @@ For Docker Hub, use `--docker-server=https://index.docker.io/v1/` in the Secret 
 
 ```bash
 REG=registry.digitalocean.com/my-registry     # or ghcr.io/my-org, docker.io/my-org
-for img in odoo-saas-operator:0.1.28 odoo-saas-backup-tool:0.1.5; do
+for img in odoo-saas-operator:0.1.29 odoo-saas-backup-tool:0.1.5; do
   docker pull docker.io/moutazmuhammad/$img
   docker tag  docker.io/moutazmuhammad/$img $REG/$img
   docker push $REG/$img
 done
 # Odoo per version (only if you also host the base privately, see 4.5)
+# Optional mirrors: postgres:16, moby/buildkit:v0.16.0-rootless, alpine/git:v2.45.2, alpine/k8s:1.35.6 (4.6)
 docker pull docker.io/library/odoo:20.0 && docker tag docker.io/library/odoo:20.0 $REG/odoo:20.0 && docker push $REG/odoo:20.0
 ```
 
@@ -207,44 +210,54 @@ helm upgrade --install odoo-operator compute/charts/odoo-operator -n odoo-system
 
 Put the same keys into your values file so later upgrades keep them.
 
-### 4.4 Backup tool image (GAP)
+### 4.4 Platform images: backup tool, PostgreSQL, Odoo base
 
-Point the operator at the private copy with `backup.toolImage` / `restore.toolImage` (2.2). **But the pod can't pull it:** the backup CronJob and restore Job set no `imagePullSecrets` (`compute/operator/internal/resources/backup.go:110-128`, `restore.go:140-163`), and their ServiceAccount `odoo` has none either (`tenancy.go:38-46`). The tenant namespace usually has no registry Secret at all (`tenant-registry` exists only for tenants with Git builds).
-
-**Workaround (per tenant, manual):** create the Secret in the tenant namespace and attach it to the `odoo` ServiceAccount. The operator applies the ServiceAccount with server-side apply and doesn't own `imagePullSecrets` (`compute/operator/internal/controller/apply.go:27-28`), so the patch stays.
+One pull Secret in `odoo-system` covers every platform image the operator runs in tenant namespaces:
 
 ```bash
-NS=odoo-tenant-<name>
-kubectl -n $NS create secret docker-registry tool-registry --docker-server=<host> \
-  --docker-username=<user> --docker-password=<read-only token>
-kubectl -n $NS patch serviceaccount odoo -p '{"imagePullSecrets":[{"name":"tool-registry"}]}'
+kubectl -n odoo-system create secret docker-registry platform-pull \
+  --docker-server=<host> --docker-username=<user> --docker-password=<read-only token>
 ```
 
-**Code fix needed** for it to be automatic: an operator flag (e.g. `--tool-image-pull-secret`, a Secret in `odoo-system`) that the controller copies into each tenant namespace and adds to `PodSpec.ImagePullSecrets` in `BackupCronJob` and `OdooRestoreJob` (or to the `odoo` ServiceAccount in `resources.ServiceAccount`).
+Then, in your operator values file (e.g. `compute/examples/doks/operator-values.yaml`):
 
-Until then, keep the backup tool public (it contains only our scripts, no secrets).
+```yaml
+platformPullSecret: platform-pull
+images:
+  backupTool: <host>/<path>/odoo-saas-backup-tool:0.1.5
+  postgresRepository: <host>/<path>/postgres            # tag stays spec.database.version
+  cnpgPostgresRepository: <host>/<path>/cnpg-postgresql # only if you use CloudNativePG
+```
 
-### 4.5 Odoo base images (GAP)
+```bash
+helm upgrade odoo-operator compute/charts/odoo-operator -n odoo-system -f <values file> --wait
+```
 
-You can set the version's `docker_image` to a private repository, but:
+The operator copies `platform-pull` into each tenant namespace as `odoo-platform-pull` on its next reconcile. If the source Secret is missing, tenants keep running and show the `PlatformPullSecretMissing` condition and a Warning event.
 
-- **Tenants without Git repos get no pull Secret.** The OdooInstance is created with only `repository` + `tag` (`drivers/kubernetes_driver.py:492-514`); a deploy of the plain version image passes no registry (`saas_instance_build.py:281`) and clears `pullSecretRefs` (`k8s_builds.py:377-378`). Their pods fail with `ImagePullBackOff`.
-- **The build Job sets no `imagePullSecrets`** (`k8s_builds.py:233-271`), so its `inspect` init container (which runs the base image) can't pull it either.
-- **BuildKit only has credentials for the push host** (`k8s_builds.py:167-169`). `FROM <private base>` works only when the base lives on that same registry host with the same credentials.
+**Turning it on changes every tenant's pod template**, so all web Deployments roll (rolling, zero downtime, but they need node headroom). PostgreSQL StatefulSets use `OnDelete` and don't restart.
 
-So: keep the Odoo base public (the official `docker.io/library/odoo`, or a public mirror) until the code passes the cluster's registry Secret for every tenant and build pod. The fix: always call `_upsert_pull_secret` + set `pullSecretRefs` when the cluster has registry credentials (create and deploy), and add `imagePullSecrets` to the build Job pod (Secret in `odoo-builds`).
+**Odoo base images:** set the version's `docker_image` (Odoo Versions menu) to the private copy. New tenants pull it with `odoo-platform-pull`, and with `tenant-registry` too when it's on the same registry as the tenant images. Builds pull it through the per-build pull Secret and BuildKit's `config.json`, so keep the base on the cluster's `registry_host`.
+
+### 4.5 One registry for everything (recommended)
+
+Use one private registry, one read/write token on the cluster form (tenant images, builds, toolbox), and one read-only token as `platform-pull` (operator side). Mirror every image from 4.1 into it, then:
+
+1. Cluster form, **Image Builds** tab: registry fields (4.2), plus `builder_image`, `git_image` and `toolbox_image` pointing at the mirrors.
+2. The operator values from 4.3 and 4.4.
+3. Odoo Versions: `docker_image` = the mirrored Odoo repository.
+4. Optional, against Docker Hub rate limits: the vendored charts' own image settings (4.6).
 
 ### 4.6 Third-party images (optional mirroring)
 
-| Image | Can it be redirected? |
+| Image | How to redirect |
 |---|---|
-| BuildKit, Git | Yes: cluster fields `builder_image` / `git_image`. **But** the build pod has no `imagePullSecrets`, so the mirror must be public or anonymous-pullable. |
-| PostgreSQL `docker.io/library/postgres` | No: hard-coded (`database.go:87`, also the `prepare-shared-data` init container, `database.go:174`); the StatefulSet sets no pull secret and uses the `default` ServiceAccount. Code change needed. |
-| CNPG `ghcr.io/cloudnative-pg/postgresql` | No: hard-coded (`cnpg.go:55`). Not used by the control plane. |
-| Toolbox `alpine/k8s:1.35.6` | No: hard-coded (`kubernetes_driver.py:250`). A private copy would also need a Secret on the hand-made `saas-toolbox` ServiceAccount (the pod uses it, `kubernetes_driver.py:1206`). |
-| Traefik, cert-manager, Prometheus, Longhorn | Yes, through their vendored chart values: `image.registry/repository/tag` and `deployment.imagePullSecrets` (Traefik), `imageRegistry`/`imageNamespace` and `global.imagePullSecrets` (cert-manager), `server.image` / `configmapReload.prometheus.image` and `imagePullSecrets` (Prometheus), `global.imagePullSecrets` (Longhorn). |
+| BuildKit, Git | Cluster fields `builder_image` / `git_image`; pulled with the per-build pull Secret |
+| Toolbox | Cluster field `toolbox_image`; pulled with `saas-toolbox-registry` |
+| PostgreSQL / CNPG | Chart `images.postgresRepository` / `images.cnpgPostgresRepository`; pulled with `odoo-platform-pull` |
+| Traefik, cert-manager, Prometheus, Longhorn | Their vendored chart values: `image.registry/repository/tag` and `deployment.imagePullSecrets` (Traefik), `imageRegistry`/`imageNamespace` and `global.imagePullSecrets` (cert-manager), `server.image` / `configmapReload.prometheus.image` and `imagePullSecrets` (Prometheus), `global.imagePullSecrets` (Longhorn) |
 
-Mirroring mostly protects against Docker Hub's anonymous pull rate limit. Nodes pull `odoo` and `postgres` anonymously today.
+Mirroring mostly protects against Docker Hub's anonymous pull rate limit.
 
 ### 4.7 Verify
 
@@ -257,7 +270,7 @@ kubectl -n <ns> describe pod <pod> | sed -n '/Events/,$p'   # "pull access denie
 kubectl -n odoo-system get deploy odoo-operator -o jsonpath='{.spec.template.spec.imagePullSecrets}'
 kubectl -n odoo-tenant-<name> get deploy -o jsonpath='{..imagePullSecrets}'
 kubectl -n odoo-tenant-<name> get sa odoo -o jsonpath='{.imagePullSecrets}'
-kubectl -n odoo-tenant-<name> get secret tenant-registry
+kubectl -n odoo-tenant-<name> get secret tenant-registry odoo-platform-pull
 
 # The Secret really decodes to the right host/user
 kubectl -n odoo-tenant-<name> get secret tenant-registry \
@@ -272,20 +285,15 @@ Checklist:
 
 - [ ] Operator pod Running with the private image (`kubectl -n odoo-system get pod -o wide`, `describe` shows the new image)
 - [ ] A Git build pushes, and the tenant rolls to `<host>/<prefix>/tenant-<sub>:...-b<id>`
-- [ ] A manual backup Job pulls the backup tool (needs 4.4 workaround if private)
-- [ ] A new tenant **without** repos starts (fails if the Odoo base is private, 4.5)
+- [ ] A manual backup Job pulls the backup tool
+- [ ] A new tenant **without** repos starts from the private Odoo base
+- [ ] No tenant shows the `PlatformPullSecretMissing` condition (`kubectl get odooinstances -A -o yaml | grep -c PlatformPullSecretMissing` is 0)
 - [ ] Docker Hub `tenant-*` repos are private (`docker logout && docker pull <tenant image>` must fail)
 
 ---
 
-## 5. Known gaps (blocking a fully private setup)
+## 5. Requirements
 
-| # | Gap | Where |
-|---|---|---|
-| 1 | Backup/restore Jobs have no `imagePullSecrets`; their `odoo` ServiceAccount has none; no tool pull secret option | `compute/operator/internal/resources/backup.go:110-128`, `restore.go:140-163`, `tenancy.go:38-46` |
-| 2 | Tenants without Git repos never get a pull Secret: create sets no `pullSecretRefs`, plain-image deploy clears it | `control-plane/saas_core/drivers/kubernetes_driver.py:492-514`, `models/saas_instance_build.py:281`, `drivers/k8s_builds.py:377-378` |
-| 3 | Build Job pod has no `imagePullSecrets` (git, base-image `inspect`, BuildKit images must be public) | `control-plane/saas_core/drivers/k8s_builds.py:233-271` |
-| 4 | BuildKit `config.json` has credentials for the push host only; a private base on another registry can't be pulled by `FROM` | `control-plane/saas_core/drivers/k8s_builds.py:167-169` |
-| 5 | PostgreSQL / CNPG images hard-coded, no override, no pull secret | `compute/operator/internal/resources/database.go:87,174`, `cnpg.go:55` |
-| 6 | Toolbox image hard-coded | `control-plane/saas_core/drivers/kubernetes_driver.py:250` |
-| 7 | CRD doc says the controller copies `pullSecretRefs` into the tenant namespace; it doesn't (the control plane does) | `compute/operator/api/v1alpha1/odooinstance_types.go:155-158` |
+A fully private setup needs control plane `saas_core` 18.0.58.4.0 or later, and operator 0.1.29 / chart 0.4.16 or later. Older versions could not pass pull secrets to backup/restore Jobs, plain-image tenants, build pods or PostgreSQL.
+
+Existing tenants get `pullSecretRefs` on their next image change, and the operator-side `odoo-platform-pull` on their next reconcile.

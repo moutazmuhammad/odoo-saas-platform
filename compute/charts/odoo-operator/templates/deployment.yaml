@@ -51,11 +51,20 @@ spec:
             {{- if .Values.networking.ingressClassName }}
             - --ingress-class-name={{ .Values.networking.ingressClassName }}
             {{- end }}
-            {{- if .Values.backup.toolImage }}
-            - --backup-tool-image={{ .Values.backup.toolImage }}
+            {{- with (.Values.images.backupTool | default .Values.backup.toolImage) }}
+            - --backup-tool-image={{ . }}
             {{- end }}
             {{- if .Values.restore.toolImage }}
             - --restore-tool-image={{ .Values.restore.toolImage }}
+            {{- end }}
+            {{- with .Values.images.postgresRepository }}
+            - --postgres-image-repository={{ . }}
+            {{- end }}
+            {{- with .Values.images.cnpgPostgresRepository }}
+            - --cnpg-postgres-image-repository={{ . }}
+            {{- end }}
+            {{- with .Values.platformPullSecret }}
+            - --platform-pull-secret={{ . }}
             {{- end }}
             - --supported-odoo-versions={{ join "," .Values.supportedOdooVersions }}
             - --allow-mutable-tags={{ .Values.allowMutableTags }}
@@ -63,6 +72,10 @@ spec:
             - {{ . | quote }}
             {{- end }}
           env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: KUBE_FEATURE_WatchListClient
               value: {{ .Values.kubernetesClient.watchList | quote }}
           ports:

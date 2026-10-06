@@ -40,7 +40,7 @@ func (r *OdooInstanceReconciler) reconcileBackup(ctx context.Context, instance *
 		}
 	}
 
-	cronJob := resources.BackupCronJob(instance, r.effectiveBackupToolImage(instance))
+	cronJob := resources.BackupCronJob(instance, r.platform())
 	setOwner(instance, cronJob)
 	if err := r.apply(ctx, cronJob); err != nil {
 		return err

@@ -16,6 +16,8 @@ def _make_driver(kubeconfig='apiVersion: v1\nkind: Config\n'):
     server.id = 7
     server.name = 'k8s-test-server'
     server._kubeconfig_yaml.return_value = kubeconfig
+    server._registry_pull_auth.return_value = None  # public images only
+    server._toolbox_image.return_value = 'alpine/k8s:1.35.6'
     driver = KubernetesDriver(server)
     driver._api_client = MagicMock()
     return driver, server
@@ -115,6 +117,72 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(handle.server_id, server.id)
         self.assertEqual(handle.container_name, 'odoo_acme')
         self.assertEqual(handle.instance_path, 'odoo-tenant-odoo-acme')
+
+    # -------- private registry: tenant pull Secret --------------------------
+    def _spec(self):
+        from odoo.addons.saas_core.drivers.base import ComputeSpec
+        return ComputeSpec(
+            container_name='odoo_acme', image='reg.example.com/odoo:18.0', instance_path='/x',
+            http_port=8069, longpolling_port=8072, db_name='acme', db_host='db',
+            env={'domain': 'acme.example.com'})
+
+    def test_create_without_registry_credentials_sets_no_pull_secret(self):
+        driver, _server = _make_driver()
+        custom, core = MagicMock(), MagicMock()
+        driver._custom_api = MagicMock(return_value=custom)
+        driver._core_api = MagicMock(return_value=core)
+        driver.create(self._spec())
+        body = custom.create_cluster_custom_object.call_args.args[3]
+        self.assertNotIn('pullSecretRefs', body['spec']['image'])
+        core.replace_namespaced_secret.assert_not_called()
+        core.create_namespaced_secret.assert_not_called()
+
+    def test_create_with_registry_credentials_writes_pull_secret_once_namespace_exists(self):
+        driver, server = _make_driver()
+        server._registry_pull_auth.return_value = ('reg.example.com', 'u', 'p')
+        custom, core = MagicMock(), MagicMock()
+        driver._custom_api = MagicMock(return_value=custom)
+        driver._core_api = MagicMock(return_value=core)
+        # Right after create the operator hasn't made the namespace yet.
+        core.replace_namespaced_secret.side_effect = ApiException(status=404)
+        core.create_namespaced_secret.side_effect = ApiException(status=404)
+        handle = driver.create(self._spec())
+        body = custom.create_cluster_custom_object.call_args.args[3]
+        self.assertEqual(body['spec']['image']['pullSecretRefs'], [{'name': 'tenant-registry'}])
+        core.create_namespaced_secret.assert_called_once()
+
+        # The provisioning wait loop's health() polls write it once it can.
+        core.replace_namespaced_secret.side_effect = None
+        driver._get_cr = MagicMock(return_value={'status': {'phase': 'Provisioning'}})
+        driver._first_pod = MagicMock(return_value=None)
+        driver.health(handle)
+        name, ns, secret = core.replace_namespaced_secret.call_args.args
+        self.assertEqual((name, ns), ('tenant-registry', 'odoo-tenant-odoo-acme'))
+        self.assertEqual(secret.type, 'kubernetes.io/dockerconfigjson')
+        self.assertIn('reg.example.com', secret.string_data['.dockerconfigjson'])
+        driver.health(handle)
+        self.assertEqual(core.replace_namespaced_secret.call_count, 2)  # not again
+
+    def test_health_rewrites_pull_secret_on_image_pull_error(self):
+        driver, server = _make_driver()
+        server._registry_pull_auth.return_value = ('reg.example.com', 'u', 'p')
+        core = MagicMock()
+        driver._core_api = MagicMock(return_value=core)
+        driver._get_cr = MagicMock(return_value={'status': {'phase': 'Provisioning'}})
+        driver._first_pod = MagicMock(return_value=_fake_pod(waiting_reason='ImagePullBackOff'))
+        driver.health(_handle())
+        driver.health(_handle())
+        self.assertEqual(core.replace_namespaced_secret.call_count, 2)
+
+    def test_health_pull_secret_failure_does_not_break_health(self):
+        driver, server = _make_driver()
+        server._registry_pull_auth.return_value = ('reg.example.com', 'u', 'p')
+        core = MagicMock()
+        core.replace_namespaced_secret.side_effect = ApiException(status=403)
+        driver._core_api = MagicMock(return_value=core)
+        driver._get_cr = MagicMock(return_value={'status': {'phase': 'Provisioning'}})
+        driver._first_pod = MagicMock(return_value=None)
+        self.assertEqual(driver.health(_handle()).status, 'missing')
 
     def test_create_sets_database_filter_when_given(self):
         from odoo.addons.saas_core.drivers.base import ComputeSpec
@@ -625,6 +693,27 @@ class TestKubernetesDriver(TransactionCase):
             driver._ensure_toolbox_pod()
             core.delete_namespaced_pod.assert_called_once()
             core.create_namespaced_pod.assert_called_once()
+
+    def test_toolbox_uses_cluster_image_and_registry_credentials(self):
+        with patch('odoo.addons.saas_core.drivers.kubernetes_driver.time.sleep'):
+            driver, core = self._toolbox_driver([None, 'Running'])
+            driver.server._toolbox_image.return_value = 'reg.example.com/k8s:1.35.6'
+            driver._ensure_toolbox_pod()
+            body = core.create_namespaced_pod.call_args.args[1]
+            self.assertEqual(body['spec']['containers'][0]['image'], 'reg.example.com/k8s:1.35.6')
+            self.assertNotIn('imagePullSecrets', body['spec'])
+            core.replace_namespaced_secret.assert_not_called()
+
+            driver, core = self._toolbox_driver([None, 'Running'])
+            driver.server._registry_pull_auth.return_value = ('reg.example.com', 'u', 'p')
+            core.replace_namespaced_secret.side_effect = ApiException(status=404)
+            driver._ensure_toolbox_pod()
+            body = core.create_namespaced_pod.call_args.args[1]
+            self.assertEqual(body['spec']['imagePullSecrets'], [{'name': 'saas-toolbox-registry'}])
+            ns, secret = core.create_namespaced_secret.call_args.args
+            self.assertEqual(ns, 'saas-toolbox')
+            self.assertEqual(secret.metadata.name, 'saas-toolbox-registry')
+            self.assertEqual(secret.type, 'kubernetes.io/dockerconfigjson')
 
     def test_toolbox_never_grants_permissions(self):
         """Role bindings are an operator's manual step (setup guide 12.4)."""

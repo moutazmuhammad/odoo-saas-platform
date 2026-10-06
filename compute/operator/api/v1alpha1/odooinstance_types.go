@@ -152,9 +152,12 @@ type ImageSpec struct {
 	// +kubebuilder:default=IfNotPresent
 	PullPolicy corev1.PullPolicy `json:"pullPolicy,omitempty"`
 
-	// PullSecretRefs references image pull secrets required by the
-	// registry hosting this image, copied into the tenant namespace by the
-	// controller if not already present there.
+	// PullSecretRefs names image pull Secrets for the registry hosting this
+	// image. They must already exist in the tenant namespace: the control
+	// plane writes the tenant registry Secret there; the controller never
+	// copies them. They are listed on every tenant pod, together with the
+	// operator's own "odoo-platform-pull" Secret when --platform-pull-secret
+	// is set (that one the controller does copy in itself).
 	// +optional
 	PullSecretRefs []corev1.LocalObjectReference `json:"pullSecretRefs,omitempty"`
 }

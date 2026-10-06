@@ -110,7 +110,7 @@ func (r *OdooInstanceReconciler) reconcileUpdateJob(ctx context.Context, instanc
 		if !apierrors.IsNotFound(err) {
 			return updateResult{}, err
 		}
-		job := resources.OdooUpdateJob(instance)
+		job := resources.OdooUpdateJob(instance, r.platform())
 		setOwner(instance, job)
 		if err := r.apply(ctx, job); err != nil {
 			return updateResult{}, fmt.Errorf("applying update Job: %w", err)

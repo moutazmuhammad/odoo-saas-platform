@@ -47,7 +47,7 @@ func (r *OdooInstanceReconciler) reconcileInitJob(ctx context.Context, instance 
 		if !apierrors.IsNotFound(err) {
 			return schemaGateResult{}, err
 		}
-		job := resources.OdooInitJob(instance)
+		job := resources.OdooInitJob(instance, r.platform())
 		setOwner(instance, job)
 		if err := r.apply(ctx, job); err != nil {
 			return schemaGateResult{}, fmt.Errorf("applying database-init Job: %w", err)

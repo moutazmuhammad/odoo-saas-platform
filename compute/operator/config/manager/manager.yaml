@@ -40,10 +40,15 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: docker.io/moutazmuhammad/odoo-saas-operator:0.1.28
+          image: docker.io/moutazmuhammad/odoo-saas-operator:0.1.29
           args:
             - --leader-elect=false
             - --networking-provider=gateway-api
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

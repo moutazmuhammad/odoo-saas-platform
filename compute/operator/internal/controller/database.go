@@ -67,7 +67,7 @@ func (r *OdooInstanceReconciler) reconcileManagedDatabase(ctx context.Context, i
 		return databaseResult{}, err
 	}
 
-	sts := resources.DatabaseStatefulSet(instance)
+	sts := resources.DatabaseStatefulSet(instance, r.platform())
 	setOwner(instance, sts)
 	var live appsv1.StatefulSet
 	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: sts.Name}, &live); err == nil {
@@ -107,7 +107,7 @@ func (r *OdooInstanceReconciler) reconcileManagedDatabase(ctx context.Context, i
 func (r *OdooInstanceReconciler) reconcileCloudNativePGDatabase(ctx context.Context, instance *saasv1alpha1.OdooInstance) (databaseResult, error) {
 	ns := resources.TenantNamespace(instance)
 
-	cluster := resources.CloudNativePGCluster(instance)
+	cluster := resources.CloudNativePGCluster(instance, r.platform())
 	setOwner(instance, cluster)
 	if err := r.apply(ctx, cluster); err != nil {
 		return databaseResult{}, fmt.Errorf("applying CloudNativePG Cluster (is the CloudNativePG operator installed?): %w", err)
@@ -251,7 +251,7 @@ func (r *OdooInstanceReconciler) syncDatabasePod(ctx context.Context, instance *
 	if pod.DeletionTimestamp != nil || len(pod.Spec.Containers) == 0 {
 		return nil
 	}
-	desired := resources.DatabaseStatefulSet(instance).Spec.Template.Spec.Containers[0]
+	desired := resources.DatabaseStatefulSet(instance, r.platform()).Spec.Template.Spec.Containers[0]
 	current := pod.Spec.Containers[0]
 	if current.Image != desired.Image {
 		return client.IgnoreNotFound(r.Delete(ctx, &pod))

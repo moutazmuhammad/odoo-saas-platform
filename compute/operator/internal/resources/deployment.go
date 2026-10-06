@@ -23,7 +23,7 @@ func OdooCronDeploymentName(instance *saasv1alpha1.OdooInstance) string {
 }
 
 // OdooDeployment builds one pod with separate web and smaller cron containers.
-func OdooDeployment(instance *saasv1alpha1.OdooInstance) *appsv1.Deployment {
+func OdooDeployment(instance *saasv1alpha1.OdooInstance, platform Platform) *appsv1.Deployment {
 	name := OdooDeploymentName(instance)
 	workers := instance.Spec.Workers.Count
 	cronThreads := int32(0)
@@ -33,7 +33,7 @@ func OdooDeployment(instance *saasv1alpha1.OdooInstance) *appsv1.Deployment {
 	labels := mergeLabels(CommonLabels(instance), map[string]string{"saas.odoo.example.com/role": roleLabelVal})
 	selector := mergeLabels(SelectorLabels(instance), map[string]string{"saas.odoo.example.com/role": roleLabelVal})
 
-	podSpec := odooPodSpec(instance, selector, workers, cronThreads, exposesHTTP)
+	podSpec := odooPodSpec(instance, platform, selector, workers, cronThreads, exposesHTTP)
 
 	return &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"},
@@ -67,7 +67,7 @@ func OdooDeployment(instance *saasv1alpha1.OdooInstance) *appsv1.Deployment {
 	}
 }
 
-func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string, workers, cronThreads int32, exposesHTTP bool) corev1.PodSpec {
+func odooPodSpec(instance *saasv1alpha1.OdooInstance, platform Platform, selector map[string]string, workers, cronThreads int32, exposesHTTP bool) corev1.PodSpec {
 	args := []string{
 		"-c", "/etc/odoo/odoo.conf",
 		fmt.Sprintf("--workers=%d", workers),
@@ -120,15 +120,12 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 
 	probe := odooProbe(exposesHTTP)
 
-	pullSecrets := make([]corev1.LocalObjectReference, 0, len(instance.Spec.Image.PullSecretRefs))
-	pullSecrets = append(pullSecrets, instance.Spec.Image.PullSecretRefs...)
-
 	pod := corev1.PodSpec{
 		Affinity:                      filestoreCoLocation(instance, selector, true),
 		ServiceAccountName:            OdooServiceAccountName(instance),
 		AutomountServiceAccountToken:  ptr.To(false),
 		TerminationGracePeriodSeconds: ptr.To(int64(60)),
-		ImagePullSecrets:              pullSecrets,
+		ImagePullSecrets:              platform.imagePullSecrets(instance),
 		SecurityContext: &corev1.PodSecurityContext{
 			RunAsNonRoot: ptr.To(true),
 			SeccompProfile: &corev1.SeccompProfile{

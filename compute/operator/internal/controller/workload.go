@@ -103,7 +103,7 @@ func (r *OdooInstanceReconciler) reconcileWorkload(ctx context.Context, instance
 		return err
 	}
 
-	web := resources.OdooDeployment(instance)
+	web := resources.OdooDeployment(instance, r.platform())
 	setOwner(instance, web)
 	if err := r.apply(ctx, web); err != nil {
 		return err

@@ -136,7 +136,7 @@ func TestTenantNetworkPolicy_TLSEnabled_StillAllowsOdooPorts(t *testing.T) {
 func TestOdooDeployment_WebRole_DisablesCronInWebContainer(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Replicas = ptr.To(int32(1))
-	dep := OdooDeployment(instance)
+	dep := OdooDeployment(instance, Platform{})
 
 	container := dep.Spec.Template.Spec.Containers[0]
 	if !containsArg(container.Args, "--max-cron-threads=0") {
@@ -145,7 +145,7 @@ func TestOdooDeployment_WebRole_DisablesCronInWebContainer(t *testing.T) {
 }
 
 func TestOdooDeployment_ZeroDowntimeRollout(t *testing.T) {
-	dep := OdooDeployment(testInstance())
+	dep := OdooDeployment(testInstance(), Platform{})
 
 	ru := dep.Spec.Strategy.RollingUpdate
 	if ru == nil || ru.MaxUnavailable.IntValue() != 0 || ru.MaxSurge.IntValue() != 1 {
@@ -164,7 +164,7 @@ func TestOdooDeployment_ZeroDowntimeRollout(t *testing.T) {
 func TestOdooDeployment_AlwaysUsesOnePodAndRunsCron(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Replicas = ptr.To(int32(3))
-	dep := OdooDeployment(instance)
+	dep := OdooDeployment(instance, Platform{})
 	if *dep.Spec.Replicas != 1 {
 		t.Fatal("builder created horizontal replicas")
 	}
@@ -174,7 +174,7 @@ func TestOdooDeployment_AlwaysUsesOnePodAndRunsCron(t *testing.T) {
 }
 
 func TestOdooDeployment_CronHasNoReadinessProbe(t *testing.T) {
-	dep := OdooDeployment(testInstance())
+	dep := OdooDeployment(testInstance(), Platform{})
 	for _, c := range dep.Spec.Template.Spec.Containers {
 		if c.Name != "cron" {
 			continue
@@ -192,7 +192,7 @@ func TestOdooDeployment_CronHasNoReadinessProbe(t *testing.T) {
 
 func TestOdooDeployment_PinsVerifiedNonRootUser(t *testing.T) {
 	instance := testInstance()
-	dep := OdooDeployment(instance)
+	dep := OdooDeployment(instance, Platform{})
 	for _, c := range append(dep.Spec.Template.Spec.InitContainers, dep.Spec.Template.Spec.Containers...) {
 		if c.SecurityContext == nil || c.SecurityContext.RunAsUser == nil {
 			t.Errorf("container %q has no explicit RunAsUser; the official Odoo image declares a non-numeric USER and will fail runAsNonRoot verification without one", c.Name)
@@ -240,7 +240,7 @@ func TestOdooRestoreJob_ObjectStorageSource_WiresCredentialsNoPVCMount(t *testin
 		},
 	}
 
-	job := OdooRestoreJob(instance, "ghcr.io/example/restore-tool:v1")
+	job := OdooRestoreJob(instance, Platform{RestoreToolImage: "ghcr.io/example/restore-tool:v1"})
 	if job.Name != "odoo-restore" {
 		t.Errorf("OdooRestoreJob() name = %q, want %q", job.Name, "odoo-restore")
 	}
@@ -272,7 +272,7 @@ func TestOdooRestoreJob_PVCSource_MountsBackupPVCReadOnly(t *testing.T) {
 		},
 	}
 
-	job := OdooRestoreJob(instance, "ghcr.io/example/restore-tool:v1")
+	job := OdooRestoreJob(instance, Platform{RestoreToolImage: "ghcr.io/example/restore-tool:v1"})
 
 	var found *corev1.Volume
 	for i := range job.Spec.Template.Spec.Volumes {
@@ -310,7 +310,7 @@ func TestOdooRestoreJob_FilestoreMountedWritable(t *testing.T) {
 		},
 	}
 
-	job := OdooRestoreJob(instance, "ghcr.io/example/restore-tool:v1")
+	job := OdooRestoreJob(instance, Platform{RestoreToolImage: "ghcr.io/example/restore-tool:v1"})
 	container := job.Spec.Template.Spec.Containers[0]
 	for _, m := range container.VolumeMounts {
 		if m.Name == "filestore" {
@@ -374,11 +374,11 @@ func TestOdooConf_DatabaseFilterOverride(t *testing.T) {
 
 func TestOdooDeployment_DatabaseFilterChangeRollsPods(t *testing.T) {
 	instance := testInstance()
-	if ann := OdooDeployment(instance).Spec.Template.Annotations; len(ann) != 1 || ann[AnnotationPlatformAddons] == "" {
+	if ann := OdooDeployment(instance, Platform{}).Spec.Template.Annotations; len(ann) != 1 || ann[AnnotationPlatformAddons] == "" {
 		t.Errorf("no filter: pod template annotations = %v, want only the platform-addons hash", ann)
 	}
 	instance.Spec.DatabaseFilter = "^acme_.+$"
-	ann := OdooDeployment(instance).Spec.Template.Annotations
+	ann := OdooDeployment(instance, Platform{}).Spec.Template.Annotations
 	if ann[AnnotationDatabaseFilter] != "^acme_.+$" {
 		t.Errorf("pod template annotations = %v, want the database filter", ann)
 	}
@@ -390,7 +390,7 @@ func TestOdooUpdateJob_UpgradesOwnAndExtraDatabasesOneByOne(t *testing.T) {
 		Token: "build-1", Modules: []string{"sale", "stock"},
 		Databases: []string{"acme_prod", "odoo", "acme_test", "acme_prod"},
 	}
-	c := OdooUpdateJob(instance).Spec.Template.Spec.Containers[0]
+	c := OdooUpdateJob(instance, Platform{}).Spec.Template.Spec.Containers[0]
 	if len(c.Command) != 4 || c.Command[0] != "sh" || !strings.Contains(c.Command[2], `-d "$db" -u "$SAAS_MODULES"`) {
 		t.Errorf("update Job command = %v, want a per-database loop", c.Command)
 	}
@@ -405,14 +405,14 @@ func TestOdooUpdateJob_UpgradesOwnAndExtraDatabasesOneByOne(t *testing.T) {
 func TestOdooUpdateJob_DefaultsToOwnDatabase(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Update = &saasv1alpha1.UpdateSpec{Token: "build-1", Modules: []string{"sale"}}
-	args := OdooUpdateJob(instance).Spec.Template.Spec.Containers[0].Args
+	args := OdooUpdateJob(instance, Platform{}).Spec.Template.Spec.Containers[0].Args
 	if strings.Join(args, ",") != "odoo" {
 		t.Errorf("update Job args = %v, want [odoo]", args)
 	}
 }
 
 func TestOdooInitJob_KeepsImageEntrypoint(t *testing.T) {
-	if cmd := OdooInitJob(testInstance()).Spec.Template.Spec.Containers[0].Command; cmd != nil {
+	if cmd := OdooInitJob(testInstance(), Platform{}).Spec.Template.Spec.Containers[0].Command; cmd != nil {
 		t.Errorf("init Job command = %v, want the image entrypoint", cmd)
 	}
 }
@@ -446,7 +446,7 @@ func TestOdooConf_DatabaseManagerOn(t *testing.T) {
 func TestOdooDeployment_DatabaseManager_LoadsPlatformAddon(t *testing.T) {
 	instance := dbmInstance()
 	instance.Spec.AddonsPaths = []string{"/opt/tenant-addons/repo"}
-	dep := OdooDeployment(instance)
+	dep := OdooDeployment(instance, Platform{})
 	odoo := dep.Spec.Template.Spec.Containers[0]
 	args := strings.Join(odoo.Args, " ")
 	if !strings.Contains(args, "--load=base,web,saas_tenant_dbm") ||
@@ -467,11 +467,11 @@ func TestOdooDeployment_DatabaseManager_LoadsPlatformAddon(t *testing.T) {
 	// gates the raw /web/database/* endpoints, so even instances
 	// without spec.databaseManager must load it (there it hard-locks
 	// every endpoint because no DBM key is configured).
-	defaultArgs := strings.Join(OdooDeployment(testInstance()).Spec.Template.Spec.Containers[0].Args, " ")
+	defaultArgs := strings.Join(OdooDeployment(testInstance(), Platform{}).Spec.Template.Spec.Containers[0].Args, " ")
 	if !strings.Contains(defaultArgs, "--load=base,web,saas_tenant_dbm") {
 		t.Errorf("default instance args = %v, want saas_tenant_dbm loaded", defaultArgs)
 	}
-	if OdooDeployment(testInstance()).Spec.Template.Annotations[AnnotationPlatformAddons] == "" {
+	if OdooDeployment(testInstance(), Platform{}).Spec.Template.Annotations[AnnotationPlatformAddons] == "" {
 		t.Error("platform-addons hash annotation must be set on every instance")
 	}
 }
@@ -496,7 +496,7 @@ func TestPlatformAddonsConfigMap_ShipsTheAddonFiles(t *testing.T) {
 func TestOdooDeployment_Shell_SidecarWithoutSecrets(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Shell = true
-	pod := OdooDeployment(instance).Spec.Template.Spec
+	pod := OdooDeployment(instance, Platform{}).Spec.Template.Spec
 	if len(pod.Containers) != 3 || pod.Containers[1].Name != ShellContainerName {
 		t.Fatalf("containers = %v, want odoo + shell + cron", pod.Containers)
 	}
@@ -511,13 +511,13 @@ func TestOdooDeployment_Shell_SidecarWithoutSecrets(t *testing.T) {
 			t.Errorf("the shell must not get secret env: %v", e)
 		}
 	}
-	if len(OdooDeployment(testInstance()).Spec.Template.Spec.Containers) != 2 {
+	if len(OdooDeployment(testInstance(), Platform{}).Spec.Template.Spec.Containers) != 2 {
 		t.Error("no shell sidecar unless spec.shell is set")
 	}
 }
 
 func TestOdooDeployment_LivenessOutlastsOdooRequestLimit(t *testing.T) {
-	odoo := OdooDeployment(testInstance()).Spec.Template.Spec.Containers[0]
+	odoo := OdooDeployment(testInstance(), Platform{}).Spec.Template.Spec.Containers[0]
 	live := odoo.LivenessProbe
 	if window := live.PeriodSeconds * live.FailureThreshold; window <= 1800 {
 		t.Errorf("liveness gives up after %ds, must exceed Odoo's 1800s limit_time_real", window)
@@ -537,7 +537,7 @@ func dbSized(cpu, mem string) *saasv1alpha1.OdooInstance {
 }
 
 func TestDatabaseStatefulSet_SizedFromSpecAndTuned(t *testing.T) {
-	sts := DatabaseStatefulSet(dbSized("500m", "1Gi"))
+	sts := DatabaseStatefulSet(dbSized("500m", "1Gi"), Platform{})
 	c := sts.Spec.Template.Spec.Containers[0]
 	if got := c.Resources.Limits[corev1.ResourceMemory]; got.String() != "1Gi" {
 		t.Errorf("memory limit = %s, want 1Gi", got.String())
@@ -559,7 +559,7 @@ func TestDatabaseStatefulSet_SizedFromSpecAndTuned(t *testing.T) {
 }
 
 func TestDatabaseStatefulSet_DefaultsWithoutSpec(t *testing.T) {
-	c := DatabaseStatefulSet(testInstance()).Spec.Template.Spec.Containers[0]
+	c := DatabaseStatefulSet(testInstance(), Platform{}).Spec.Template.Spec.Containers[0]
 	if got := c.Resources.Limits[corev1.ResourceCPU]; got.String() != "2" {
 		t.Errorf("default cpu limit = %s, want 2", got.String())
 	}
@@ -571,7 +571,7 @@ func TestDatabaseStatefulSet_DefaultsWithoutSpec(t *testing.T) {
 func TestOdooDeployment_PerProcessMemoryLimits(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Resources.Limits = corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1000Mi")}
-	args := strings.Join(OdooDeployment(instance).Spec.Template.Spec.Containers[0].Args, " ")
+	args := strings.Join(OdooDeployment(instance, Platform{}).Spec.Template.Spec.Containers[0].Args, " ")
 	limit := int64(1000 * 1024 * 1024)
 	for _, want := range []string{
 		"--limit-memory-soft=" + strconvI(limit*60/100),
@@ -589,7 +589,7 @@ func TestOdooDeployment_PerProcessMemoryLimits(t *testing.T) {
 }
 
 func TestCloudNativePGCluster_CarriesDatabaseResources(t *testing.T) {
-	u := CloudNativePGCluster(dbSized("1", "2Gi"))
+	u := CloudNativePGCluster(dbSized("1", "2Gi"), Platform{})
 	got, _, _ := unstructuredNestedString(u.Object, "spec", "resources", "limits", "memory")
 	if got != "2Gi" {
 		t.Errorf("CNPG memory limit = %q, want 2Gi", got)
@@ -627,7 +627,7 @@ func unstructuredNestedString(obj map[string]interface{}, fields ...string) (str
 
 func TestOdooDeployment_RWOFilestoreKeepsPodsOnOneNode(t *testing.T) {
 	instance := testInstance()
-	aff := OdooDeployment(instance).Spec.Template.Spec.Affinity
+	aff := OdooDeployment(instance, Platform{}).Spec.Template.Spec.Affinity
 	if aff == nil || aff.PodAffinity == nil || len(aff.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution) != 1 {
 		t.Fatalf("web pods with an RWO filestore need required same-node affinity, got %+v", aff)
 	}
@@ -636,7 +636,7 @@ func TestOdooDeployment_RWOFilestoreKeepsPodsOnOneNode(t *testing.T) {
 		t.Errorf("affinity term = %+v", term)
 	}
 	instance.Spec.Storage.Filestore.AccessMode = saasv1alpha1.FilestoreAccessModeRWX
-	if OdooDeployment(instance).Spec.Template.Spec.Affinity != nil {
+	if OdooDeployment(instance, Platform{}).Spec.Template.Spec.Affinity != nil {
 		t.Error("RWX filestore: pods may spread across nodes")
 	}
 }
@@ -647,8 +647,8 @@ func TestBackupAndRestorePassHostingPrefix(t *testing.T) {
 	instance.Spec.DatabaseManager = &saasv1alpha1.DatabaseManagerSpec{Prefix: "acme_"}
 	instance.Spec.Backup = saasv1alpha1.BackupSpec{Schedule: "0 2 * * *", Destination: saasv1alpha1.BackupDestinationSpec{Type: saasv1alpha1.BackupDestinationPVC}}
 	instance.Spec.Restore = &saasv1alpha1.RestoreSpec{Source: saasv1alpha1.RestoreSourceSpec{BackupDestinationSpec: saasv1alpha1.BackupDestinationSpec{Type: saasv1alpha1.BackupDestinationPVC}}}
-	backup := BackupCronJob(instance, DefaultBackupToolImage).Spec.JobTemplate.Spec.Template.Spec.Containers[0]
-	restore := OdooRestoreJob(instance, DefaultRestoreToolImage).Spec.Template.Spec.Containers[0]
+	backup := BackupCronJob(instance, Platform{}).Spec.JobTemplate.Spec.Template.Spec.Containers[0]
+	restore := OdooRestoreJob(instance, Platform{}).Spec.Template.Spec.Containers[0]
 	for _, c := range []corev1.Container{backup, restore} {
 		if got := envValue(c.Env, "DATABASE_PREFIX"); got != "acme_" {
 			t.Errorf("DATABASE_PREFIX = %q, want acme_", got)

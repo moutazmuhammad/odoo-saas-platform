@@ -29,7 +29,7 @@ func OdooInitJobName(instance *saasv1alpha1.OdooInstance) string {
 // (see internal/controller/workload.go) so customers never see the
 // `KeyError: 'ir.http'` 500s a partially-initialized pod would otherwise
 // serve during the gap between pod start and schema creation.
-func OdooInitJob(instance *saasv1alpha1.OdooInstance) *batchv1.Job {
+func OdooInitJob(instance *saasv1alpha1.OdooInstance, platform Platform) *batchv1.Job {
 	args := []string{
 		"-c", "/etc/odoo/odoo.conf",
 		"-d", OdooDatabaseName(instance),
@@ -37,7 +37,7 @@ func OdooInitJob(instance *saasv1alpha1.OdooInstance) *batchv1.Job {
 		"--without-demo=all",
 		"--stop-after-init",
 	}
-	return odooOneShotJob(instance, OdooInitJobName(instance), "init", "init-db",
+	return odooOneShotJob(instance, platform, OdooInitJobName(instance), "init", "init-db",
 		OdooConfigMapName(instance), nil, args, corev1.RestartPolicyOnFailure, ptr.To(int32(3)), nil)
 }
 
@@ -45,7 +45,7 @@ func OdooInitJob(instance *saasv1alpha1.OdooInstance) *batchv1.Job {
 // update Jobs: render odoo.conf from configMapName in an init container,
 // then run Odoo once with args (and command, when set, instead of the
 // image's entrypoint) against the tenant database and filestore.
-func odooOneShotJob(instance *saasv1alpha1.OdooInstance, name, component, containerName, configMapName string,
+func odooOneShotJob(instance *saasv1alpha1.OdooInstance, platform Platform, name, component, containerName, configMapName string,
 	command, args []string, restartPolicy corev1.RestartPolicy, backoffLimit *int32, activeDeadlineSeconds *int64) *batchv1.Job {
 	labels := WithComponent(instance, component)
 	image := instance.Spec.Image.Repository + ":" + instance.Spec.Image.Tag
@@ -68,7 +68,7 @@ func odooOneShotJob(instance *saasv1alpha1.OdooInstance, name, component, contai
 					ServiceAccountName:            OdooServiceAccountName(instance),
 					AutomountServiceAccountToken:  ptr.To(false),
 					TerminationGracePeriodSeconds: ptr.To(int64(60)),
-					ImagePullSecrets:              instance.Spec.Image.PullSecretRefs,
+					ImagePullSecrets:              platform.imagePullSecrets(instance),
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: ptr.To(true),
 						SeccompProfile: &corev1.SeccompProfile{

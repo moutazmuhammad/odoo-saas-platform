@@ -2,9 +2,29 @@
 
 image:
   repository: docker.io/moutazmuhammad/odoo-saas-operator
-  tag: "0.1.28"
+  tag: "0.1.29"
   pullPolicy: IfNotPresent
+# Pull secrets for the operator pod itself (Secrets in the release
+# namespace).
 imagePullSecrets: []
+
+# Name of a kubernetes.io/dockerconfigjson Secret in the release namespace
+# holding credentials for the platform's own images (backup tool,
+# PostgreSQL, a private Odoo base). The operator copies it into every
+# tenant namespace as "odoo-platform-pull" and lists it on every tenant
+# pod. Empty disables it. Usually the same Secret as imagePullSecrets.
+platformPullSecret: ""
+
+# Images the operator runs inside tenant namespaces. Empty keeps the
+# operator's compiled-in default. PostgreSQL entries are repositories only:
+# the tag is always the instance's spec.database.version.
+images:
+  # Backup and restore Jobs (overrides backup.toolImage below).
+  backupTool: ""
+  # Managed PostgreSQL (default docker.io/library/postgres).
+  postgresRepository: ""
+  # CloudNativePG operand (default ghcr.io/cloudnative-pg/postgresql).
+  cnpgPostgresRepository: ""
 
 
 # Use ordinary list/watch by default for compatibility with MicroK8s/dqlite.
@@ -79,12 +99,13 @@ allowMutableTags: false
 
 backup:
   # Overrides internal/resources.DefaultBackupToolImage. Leave empty to use
-  # the compiled-in default.
+  # the compiled-in default. Superseded by images.backupTool; kept for
+  # existing installs.
   toolImage: ""
 
 restore:
   # Overrides internal/resources.DefaultRestoreToolImage. Leave empty to
-  # use the compiled-in default. Only used by instances that set
+  # use the backup tool image. Only used by instances that set
   # spec.restore (see docs/architecture.md, "Restoring an Existing
   # Backup").
   toolImage: ""

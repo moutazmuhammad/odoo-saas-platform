@@ -21,28 +21,24 @@ import (
 //
 // Idempotent for the same reason reconcileInitJob is: it never recreates
 // the Job once observed Succeeded (BackoffLimit alone governs in-Job
-// retries), and Server-Side-Applying the same desired Job object on every
-// reconcile is a no-op once the Job exists (a Job's pod template is
-// immutable after creation), so "reconcile ran N times" never means "the
-// restore ran N times." Combined with spec.restore's CRD-level immutability
-// (see OdooInstanceSpec.Restore), the restore Job's desired shape can never
-// change out from under an already-running or already-succeeded restore
-// either.
+// retries), so "reconcile ran N times" never means "the restore ran N
+// times." Like the init Job it is only ever created, never re-applied: a
+// Job's pod template is immutable, and operator-wide inputs to it (tool
+// image, platform pull secret) may change after the restore ran.
 func (r *OdooInstanceReconciler) reconcileRestore(ctx context.Context, instance *saasv1alpha1.OdooInstance) (schemaGateResult, error) {
 	ns := resources.TenantNamespace(instance)
 
-	job := resources.OdooRestoreJob(instance, r.effectiveRestoreToolImage(instance))
-	setOwner(instance, job)
-	if err := r.apply(ctx, job); err != nil {
-		return schemaGateResult{}, fmt.Errorf("applying restore Job: %w", err)
-	}
-
 	var live batchv1.Job
 	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: resources.OdooRestoreJobName(instance)}, &live); err != nil {
-		if apierrors.IsNotFound(err) {
-			return schemaGateResult{reason: "RestorePending", message: "restore Job not yet observed"}, nil
+		if !apierrors.IsNotFound(err) {
+			return schemaGateResult{}, err
 		}
-		return schemaGateResult{}, err
+		job := resources.OdooRestoreJob(instance, r.platform())
+		setOwner(instance, job)
+		if err := r.apply(ctx, job); err != nil {
+			return schemaGateResult{}, fmt.Errorf("applying restore Job: %w", err)
+		}
+		return schemaGateResult{reason: "RestorePending", message: "restore Job created"}, nil
 	}
 
 	if live.Status.Succeeded > 0 {
@@ -58,11 +54,4 @@ func (r *OdooInstanceReconciler) reconcileRestore(ctx context.Context, instance 
 		}
 	}
 	return schemaGateResult{reason: "RestoreRunning", message: "restoring database and filestore from backup"}, nil
-}
-
-func (r *OdooInstanceReconciler) effectiveRestoreToolImage(instance *saasv1alpha1.OdooInstance) string {
-	if r.RestoreToolImage != "" {
-		return r.RestoreToolImage
-	}
-	return resources.DefaultRestoreToolImage
 }

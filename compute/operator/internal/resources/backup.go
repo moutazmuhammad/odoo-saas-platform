@@ -21,7 +21,8 @@ import (
 // the platform having published this image.
 //
 // Overridable per operator deployment via the --backup-tool-image flag
-// (see cmd/main.go); this constant is only the compiled-in default.
+// (see cmd/main.go and Platform); this constant is only the compiled-in
+// default.
 const DefaultBackupToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.5"
 
 // BackupCronJob builds the scheduled backup CronJob. Each run coordinates a
@@ -38,7 +39,7 @@ const DefaultBackupToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0
 // in FilestoreSpec; it disappears once an instance's filestore is RWX or
 // is moved to object storage (see docs/architecture.md, "Filestore
 // Architecture").
-func BackupCronJob(instance *saasv1alpha1.OdooInstance, backupToolImage string) *batchv1.CronJob {
+func BackupCronJob(instance *saasv1alpha1.OdooInstance, platform Platform) *batchv1.CronJob {
 	labels := WithComponent(instance, "backup")
 
 	dbPrefix := ""
@@ -113,6 +114,7 @@ func BackupCronJob(instance *saasv1alpha1.OdooInstance, backupToolImage string) 
 				RestartPolicy:                corev1.RestartPolicyOnFailure,
 				ServiceAccountName:           OdooServiceAccountName(instance),
 				AutomountServiceAccountToken: ptr.To(false),
+				ImagePullSecrets:             platform.imagePullSecrets(instance),
 				Affinity:                     podAffinity,
 				SecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot:        ptr.To(true),
@@ -125,7 +127,7 @@ func BackupCronJob(instance *saasv1alpha1.OdooInstance, backupToolImage string) 
 				Containers: []corev1.Container{
 					{
 						Name:            "backup",
-						Image:           backupToolImage,
+						Image:           platform.backupToolImage(),
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Command:         []string{"/usr/local/bin/run-backup.sh"},
 						Env:             env,

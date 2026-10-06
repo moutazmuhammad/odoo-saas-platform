@@ -75,7 +75,7 @@ func TestSuspensionStopsComputePreservesStorageAndResumesJobs(t *testing.T) {
 		t.Fatal("user-paused job resumed unexpectedly")
 	}
 	instance.Spec.Suspended = false
-	if *resources.DatabaseStatefulSet(instance).Spec.Replicas != 1 || *resources.BackupCronJob(instance, "backup:test").Spec.Suspend {
+	if *resources.DatabaseStatefulSet(instance, resources.Platform{}).Spec.Replicas != 1 || *resources.BackupCronJob(instance, resources.Platform{BackupToolImage: "backup:test"}).Spec.Suspend {
 		t.Fatal("resume desired state remains suspended")
 	}
 }
@@ -131,7 +131,7 @@ func TestSuspensionHibernatesCNPGAndLeavesExternalDatabaseAlone(t *testing.T) {
 	for _, mode := range []saasv1alpha1.DatabaseMode{saasv1alpha1.DatabaseModeCloudNativePG, saasv1alpha1.DatabaseModeExternal} {
 		instance := validSpecInstance()
 		instance.Spec.Database.Mode = mode
-		cluster := resources.CloudNativePGCluster(instance)
+		cluster := resources.CloudNativePGCluster(instance, resources.Platform{})
 		scheme := runtime.NewScheme()
 		_ = appsv1.AddToScheme(scheme)
 		_ = batchv1.AddToScheme(scheme)
@@ -150,7 +150,7 @@ func TestSuspensionHibernatesCNPGAndLeavesExternalDatabaseAlone(t *testing.T) {
 		if cluster.GetAnnotations()["cnpg.io/hibernation"] != want {
 			t.Fatalf("mode %s: wrong database state", mode)
 		}
-		if resources.CloudNativePGCluster(instance).GetAnnotations()["cnpg.io/hibernation"] != "off" {
+		if resources.CloudNativePGCluster(instance, resources.Platform{}).GetAnnotations()["cnpg.io/hibernation"] != "off" {
 			t.Fatal("CNPG resume leaves hibernation enabled")
 		}
 	}

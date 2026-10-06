@@ -28,6 +28,7 @@ import (
 
 	saasv1alpha1 "github.com/freightright/odoo-saas-platform/operator/api/v1alpha1"
 	"github.com/freightright/odoo-saas-platform/operator/internal/controller"
+	"github.com/freightright/odoo-saas-platform/operator/internal/resources"
 )
 
 var (
@@ -62,19 +63,22 @@ func init() {
 
 func main() {
 	var (
-		metricsAddr          string
-		probeAddr            string
-		enableLeaderElection bool
-		networkingProvider   string
-		gatewayNamespace     string
-		gatewayName          string
-		gatewaySelectorCSV   string
-		ingressClassName     string
-		backupToolImage      string
-		restoreToolImage     string
-		supportedVersionsCSV string
-		allowMutableTags     bool
-		secureMetrics        bool
+		metricsAddr           string
+		probeAddr             string
+		enableLeaderElection  bool
+		networkingProvider    string
+		gatewayNamespace      string
+		gatewayName           string
+		gatewaySelectorCSV    string
+		ingressClassName      string
+		backupToolImage       string
+		restoreToolImage      string
+		postgresImageRepo     string
+		cnpgPostgresImageRepo string
+		platformPullSecret    string
+		supportedVersionsCSV  string
+		allowMutableTags      bool
+		secureMetrics         bool
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8443", "The address the metrics endpoint binds to.")
@@ -89,7 +93,15 @@ func main() {
 		"Comma-separated key=value labels matching the shared Gateway's own pods, used to scope the tenant NetworkPolicy ingress-allow rule.")
 	flag.StringVar(&ingressClassName, "ingress-class-name", "", "IngressClassName used when --networking-provider=ingress.")
 	flag.StringVar(&backupToolImage, "backup-tool-image", "", "Overrides the default backup CronJob image.")
-	flag.StringVar(&restoreToolImage, "restore-tool-image", "", "Overrides the default restore-from-backup Job image.")
+	flag.StringVar(&restoreToolImage, "restore-tool-image", "",
+		"Overrides the default restore-from-backup Job image (defaults to --backup-tool-image when that is set).")
+	flag.StringVar(&postgresImageRepo, "postgres-image-repository", resources.DefaultPostgresImageRepository,
+		"Managed PostgreSQL image repository; the tag is always spec.database.version.")
+	flag.StringVar(&cnpgPostgresImageRepo, "cnpg-postgres-image-repository", resources.DefaultCNPGPostgresImageRepository,
+		"CloudNativePG PostgreSQL image repository; the tag is always spec.database.version.")
+	flag.StringVar(&platformPullSecret, "platform-pull-secret", "",
+		"Name of a kubernetes.io/dockerconfigjson Secret in the operator's namespace (POD_NAMESPACE), copied into "+
+			"every tenant namespace as \""+resources.PlatformPullSecretName+"\" and listed on every tenant pod. Empty disables it.")
 	flag.StringVar(&supportedVersionsCSV, "supported-odoo-versions", "17.0,18.0,19.0,20.0",
 		"Comma-separated list of Odoo versions instances may request. Empty disables the check.")
 	flag.BoolVar(&allowMutableTags, "allow-mutable-tags", false,
@@ -129,17 +141,25 @@ func main() {
 	}
 
 	reconciler := &controller.OdooInstanceReconciler{
-		Client:                mgr.GetClient(),
-		Scheme:                mgr.GetScheme(),
-		Recorder:              mgr.GetEventRecorderFor("odoo-instance-controller"),
-		NetworkingProvider:    networkingProvider,
-		GatewayNamespace:      gatewayNamespace,
-		GatewayName:           gatewayName,
-		GatewaySelector:       parseSelector(gatewaySelectorCSV),
-		BackupToolImage:       backupToolImage,
-		RestoreToolImage:      restoreToolImage,
-		SupportedOdooVersions: supportedVersions,
-		AllowMutableTags:      allowMutableTags,
+		Client:                      mgr.GetClient(),
+		Scheme:                      mgr.GetScheme(),
+		Recorder:                    mgr.GetEventRecorderFor("odoo-instance-controller"),
+		NetworkingProvider:          networkingProvider,
+		GatewayNamespace:            gatewayNamespace,
+		GatewayName:                 gatewayName,
+		GatewaySelector:             parseSelector(gatewaySelectorCSV),
+		BackupToolImage:             backupToolImage,
+		RestoreToolImage:            restoreToolImage,
+		PostgresImageRepository:     postgresImageRepo,
+		CNPGPostgresImageRepository: cnpgPostgresImageRepo,
+		PlatformPullSecret:          platformPullSecret,
+		OperatorNamespace:           operatorNamespace(),
+		SupportedOdooVersions:       supportedVersions,
+		AllowMutableTags:            allowMutableTags,
+	}
+	if platformPullSecret != "" && reconciler.OperatorNamespace == "" {
+		setupLog.Error(nil, "--platform-pull-secret requires POD_NAMESPACE (set it via the downward API)")
+		os.Exit(1)
 	}
 	if ingressClassName != "" {
 		reconciler.IngressClassName = ptr.To(ingressClassName)
@@ -181,4 +201,10 @@ func parseSelector(csv string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// operatorNamespace is the namespace the operator runs in, from the
+// POD_NAMESPACE downward-API variable.
+func operatorNamespace() string {
+	return os.Getenv("POD_NAMESPACE")
 }

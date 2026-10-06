@@ -96,7 +96,7 @@ func (r *OdooInstanceReconciler) suspendTenantWorkloads(ctx context.Context, ins
 		// External databases may be shared; never stop another tenant's server.
 		return false, nil
 	case saasv1alpha1.DatabaseModeCloudNativePG:
-		cluster := resources.CloudNativePGCluster(instance)
+		cluster := resources.CloudNativePGCluster(instance, r.platform())
 		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), cluster); err != nil {
 			if apierrors.IsNotFound(err) {
 				return false, nil

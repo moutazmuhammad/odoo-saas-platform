@@ -54,6 +54,19 @@ type OdooInstanceReconciler struct {
 	BackupToolImage string
 	// RestoreToolImage overrides resources.DefaultRestoreToolImage.
 	RestoreToolImage string
+	// PostgresImageRepository overrides
+	// resources.DefaultPostgresImageRepository.
+	PostgresImageRepository string
+	// CNPGPostgresImageRepository overrides
+	// resources.DefaultCNPGPostgresImageRepository.
+	CNPGPostgresImageRepository string
+	// PlatformPullSecret names a kubernetes.io/dockerconfigjson Secret in
+	// OperatorNamespace, copied into every tenant namespace as
+	// resources.PlatformPullSecretName and listed on every tenant pod.
+	// Empty disables it.
+	PlatformPullSecret string
+	// OperatorNamespace is the namespace the operator runs in.
+	OperatorNamespace string
 
 	// SupportedOdooVersions restricts spec.version to a known-good list.
 	// Empty means "no restriction" (development convenience only).
@@ -166,6 +179,9 @@ func (r *OdooInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if err := r.reconcileTenancy(ctx, &instance); err != nil {
 		return r.handleReconcileError(ctx, &instance, "TenancyReconcileFailed", err)
+	}
+	if err := r.reconcilePlatformPullSecret(ctx, &instance); err != nil {
+		return r.handleReconcileError(ctx, &instance, "PlatformPullSecretReconcileFailed", err)
 	}
 
 	dbResult, err := r.reconcileDatabase(ctx, &instance)

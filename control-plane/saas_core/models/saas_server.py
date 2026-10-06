@@ -113,6 +113,11 @@ class SaasServer(models.Model):
         string='Git Image', default='alpine/git:v2.45.2',
         groups='saas_core.group_saas_manager',
         help='Image the build Job clones repositories with.')
+    toolbox_image = fields.Char(
+        string='Toolbox Image', default='alpine/k8s:1.35.6',
+        groups='saas_core.group_saas_manager',
+        help='kubectl + helm image of the staff cluster terminal. Keep its '
+             'kubectl within one minor version of the cluster.')
 
     # ---------- Monitoring (Prometheus) ----------
     # Read through the Kubernetes API service proxy with this cluster's
@@ -289,6 +294,19 @@ class SaasServer(models.Model):
             vals['kubeconfig_enc'] = upload.decode('ascii') if isinstance(upload, bytes) else upload
             vals['kubeconfig_file'] = False
         return vals
+
+    def _registry_pull_auth(self):
+        """(host, username, password) the cluster pulls private images
+        with, or None when no registry credentials are configured."""
+        self.ensure_one()
+        rec = self.sudo()
+        if not (rec.registry_host and rec.registry_username):
+            return None
+        return rec.registry_host, rec.registry_username, rec.registry_password or ''
+
+    def _toolbox_image(self):
+        self.ensure_one()
+        return self.sudo().toolbox_image or 'alpine/k8s:1.35.6'
 
     def _kubeconfig_yaml(self):
         """The kubeconfig YAML text (decrypted, base64-decoded), or ''."""

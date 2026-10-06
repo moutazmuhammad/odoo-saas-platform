@@ -34,6 +34,9 @@ from kubernetes.client.rest import ApiException
 BUILD_NAMESPACE = 'odoo-builds'
 _BUILD_LABEL = 'saas.odoo.example.com/build'
 _TENANT_PULL_SECRET = 'tenant-registry'
+# Per-build dockerconfigjson Secret (<job name> + suffix) the build pod's
+# images (git, Odoo base, BuildKit) are pulled with.
+_BUILD_PULL_SECRET_SUFFIX = '-pull'
 _DIGEST_MARKER = 'SAAS_BUILD_DIGEST '
 _RESULT_MARKER = 'SAAS_BUILD_RESULT '
 _TEMPLATES = os.path.join(
@@ -55,11 +58,16 @@ _DOCKER_HUB_HOSTS = ('docker.io', 'index.docker.io', 'registry-1.docker.io')
 
 
 def docker_config_json(host, username, password):
+    """A Docker ``config.json`` with the same credentials for ``host`` — one
+    registry host, or a list of them (e.g. the push and the pull host)."""
     auth = base64.b64encode(('%s:%s' % (username, password)).encode()).decode()
-    auths = {host: {'auth': auth}}
-    if host in _DOCKER_HUB_HOSTS:
-        # BuildKit and the docker CLI look Docker Hub up under its legacy key.
-        auths['https://index.docker.io/v1/'] = {'auth': auth}
+    hosts = [host] if isinstance(host, str) else [h for h in host if h]
+    auths = {}
+    for h in hosts:
+        auths[h] = {'auth': auth}
+        if h in _DOCKER_HUB_HOSTS:
+            # BuildKit and the docker CLI look Docker Hub up under its legacy key.
+            auths['https://index.docker.io/v1/'] = {'auth': auth}
     return json.dumps({'auths': auths})
 
 
@@ -164,9 +172,27 @@ class ImageBuildMixin:
         labels = {_BUILD_LABEL: name, 'app.kubernetes.io/managed-by': 'saas-control-plane'}
 
         secret_data = {'REPO_URL_%d' % i: r['url'] for i, r in enumerate(repos)}
+        pull_secret = None
         if registry_username:
+            # BuildKit pushes to the push host and pulls FROM images (e.g. a
+            # base image mirrored into the same private registry) by the
+            # pull host: it needs credentials for both.
+            hosts = []
+            for h in (registry_push_host, registry_host):
+                if h and h not in hosts:
+                    hosts.append(h)
             secret_data['config.json'] = docker_config_json(
-                registry_push_host or registry_host, registry_username, registry_password or '')
+                hosts, registry_username, registry_password or '')
+            if registry_host:
+                # The kubelet pulls the build pod's own images with this.
+                pull_secret = name + _BUILD_PULL_SECRET_SUFFIX
+                self._create_or_replace(
+                    core.create_namespaced_secret, core.replace_namespaced_secret,
+                    pull_secret, k8s_client.V1Secret(
+                        metadata=k8s_client.V1ObjectMeta(name=pull_secret, labels=labels),
+                        type='kubernetes.io/dockerconfigjson',
+                        string_data={'.dockerconfigjson': docker_config_json(
+                            registry_host, registry_username, registry_password or '')}))
         # Idempotent: a retried job step (e.g. after a DB serialization
         # failure rolled back the first attempt's bookkeeping) must reuse
         # what the first attempt already created in the cluster.
@@ -272,6 +298,8 @@ class ImageBuildMixin:
                 },
             },
         }
+        if pull_secret:
+            job['spec']['template']['spec']['imagePullSecrets'] = [{'name': pull_secret}]
         batch = self._batch_api()
         try:
             created = batch.create_namespaced_job(BUILD_NAMESPACE, job)
@@ -283,6 +311,8 @@ class ImageBuildMixin:
                   'uid': created.metadata.uid, 'blockOwnerDeletion': False}]
         patch = {'metadata': {'ownerReferences': owner}}
         core.patch_namespaced_secret(name, BUILD_NAMESPACE, patch)
+        if pull_secret:
+            core.patch_namespaced_secret(pull_secret, BUILD_NAMESPACE, patch)
         core.patch_namespaced_config_map(name, BUILD_NAMESPACE, patch)
         return name
 
@@ -347,7 +377,7 @@ class ImageBuildMixin:
         return ''
 
     def cleanup_build(self, name: str) -> None:
-        """Delete build Job ``name`` (its Secret/ConfigMap/pod follow via
+        """Delete build Job ``name`` (its Secrets/ConfigMap/pod follow via
         owner references)."""
         try:
             self._batch_api().delete_namespaced_job(
@@ -368,8 +398,15 @@ class ImageBuildMixin:
         """Point the instance at a built image. The operator upgrades
         ``modules`` against it first — in its own database plus
         ``databases`` (a hosting instance's customer databases) — then
-        rolls the pods (see module doc)."""
+        rolls the pods (see module doc).
+
+        Without explicit credentials (e.g. a rollback to the plain version
+        image) the cluster's registry credentials apply: any image may come
+        from the private registry."""
         image = {'repository': repository, 'tag': tag}
+        if not registry_username:
+            registry_host, registry_username, registry_password = \
+                self._registry_pull_auth() or (None, None, None)
         if registry_username:
             namespace = handle.instance_path or self._namespace_for(handle)
             self._upsert_pull_secret(namespace, registry_host, registry_username, registry_password or '')
@@ -387,6 +424,27 @@ class ImageBuildMixin:
                 'saas.odoo.example.com', 'v1alpha1', 'odooinstances', self._cr_name(handle), patch)
         except ApiException as e:
             raise RuntimeError('deploying image to %s failed: %s' % (self._cr_name(handle), e)) from e
+
+    def _registry_pull_auth(self):
+        """The cluster's (host, username, password) for private images, or
+        None (public images only)."""
+        return self.server._registry_pull_auth()
+
+    def _ensure_tenant_pull_secret(self, namespace) -> bool:
+        """Write the cluster's registry credentials as the tenant's pull
+        Secret. False when there are none, or the operator hasn't created
+        the namespace yet (callers retry later)."""
+        auth = self._registry_pull_auth()
+        if not auth:
+            return False
+        try:
+            self._upsert_pull_secret(namespace, *auth)
+        except ApiException as e:
+            # The create after a 404 replace: the namespace itself is missing.
+            if e.status == 404:
+                return False
+            raise RuntimeError('creating pull Secret in %s failed: %s' % (namespace, e)) from e
+        return True
 
     def _upsert_pull_secret(self, namespace, host, username, password):
         body = k8s_client.V1Secret(

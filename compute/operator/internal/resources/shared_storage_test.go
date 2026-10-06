@@ -9,7 +9,7 @@ import (
 func TestSharedStorageUsesOneClaimAndIsolatedDirectories(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Storage.SharedWithDatabase = true
-	sts := DatabaseStatefulSet(instance)
+	sts := DatabaseStatefulSet(instance, Platform{})
 	if len(sts.Spec.VolumeClaimTemplates) != 0 {
 		t.Fatal("shared database must not provision a second claim")
 	}
@@ -45,10 +45,10 @@ func TestSharedStorageUsesOneClaimAndIsolatedDirectories(t *testing.T) {
 	restored := instance.DeepCopy()
 	restored.Spec.Restore = &saasv1alpha1.RestoreSpec{}
 	consumers := []corev1.PodSpec{
-		OdooDeployment(instance).Spec.Template.Spec,
-		OdooInitJob(instance).Spec.Template.Spec,
-		OdooRestoreJob(restored, DefaultRestoreToolImage).Spec.Template.Spec,
-		BackupCronJob(instance, DefaultBackupToolImage).Spec.JobTemplate.Spec.Template.Spec,
+		OdooDeployment(instance, Platform{}).Spec.Template.Spec,
+		OdooInitJob(instance, Platform{}).Spec.Template.Spec,
+		OdooRestoreJob(restored, Platform{}).Spec.Template.Spec,
+		BackupCronJob(instance, Platform{}).Spec.JobTemplate.Spec.Template.Spec,
 	}
 	for _, p := range consumers {
 		if p.Affinity == nil || p.Affinity.PodAffinity == nil || len(p.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution) == 0 {
@@ -66,7 +66,7 @@ func TestSharedStorageUsesOneClaimAndIsolatedDirectories(t *testing.T) {
 		}
 	}
 	instance.Spec.Shell = true
-	web := OdooDeployment(instance).Spec.Template.Spec
+	web := OdooDeployment(instance, Platform{}).Spec.Template.Spec
 	for _, c := range web.Containers {
 		for _, m := range c.VolumeMounts {
 			if m.Name == "filestore" && m.SubPath != "odoo" {

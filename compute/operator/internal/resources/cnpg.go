@@ -26,7 +26,7 @@ const (
 // (named "<cluster-name>-app"); the controller reads it back to populate
 // this instance's own DatabaseSecretName, so Odoo always consumes
 // credentials through the same Secret shape regardless of database mode.
-func CloudNativePGCluster(instance *saasv1alpha1.OdooInstance) *unstructured.Unstructured {
+func CloudNativePGCluster(instance *saasv1alpha1.OdooInstance, platform Platform) *unstructured.Unstructured {
 	sizeStr := "20Gi"
 	var storageClass string
 	if instance.Spec.Database.Storage != nil {
@@ -52,7 +52,7 @@ func CloudNativePGCluster(instance *saasv1alpha1.OdooInstance) *unstructured.Uns
 	bootstrap := map[string]interface{}{"initdb": map[string]interface{}{"database": OdooDatabaseName(instance), "owner": "odoo"}}
 	spec := map[string]interface{}{
 		"instances":             int64(1),
-		"imageName":             "ghcr.io/cloudnative-pg/postgresql:" + instance.Spec.Database.Version,
+		"imageName":             platform.cnpgPostgresImage(instance.Spec.Database.Version),
 		"storage":               storage,
 		"bootstrap":             bootstrap,
 		"enableSuperuserAccess": false,
@@ -85,6 +85,15 @@ func CloudNativePGCluster(instance *saasv1alpha1.OdooInstance) *unstructured.Uns
 	}
 	if r := instance.Spec.Database.Resources; r != nil {
 		spec["resources"] = resourcesToMap(*r)
+	}
+	// CloudNativePG attaches these to the Cluster's own ServiceAccount, so
+	// adding one never restarts the database pod.
+	if refs := platform.imagePullSecrets(instance); len(refs) > 0 {
+		secrets := make([]interface{}, 0, len(refs))
+		for _, ref := range refs {
+			secrets = append(secrets, map[string]interface{}{"name": ref.Name})
+		}
+		spec["imagePullSecrets"] = secrets
 	}
 	_ = unstructured.SetNestedMap(u.Object, spec, "spec")
 	return u

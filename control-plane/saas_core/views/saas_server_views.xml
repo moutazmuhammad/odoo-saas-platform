@@ -63,8 +63,11 @@
                     <notebook>
                         <page string="Image Builds" name="image_builds">
                             <p class="text-muted">
-                                Needed only if customers deploy their own Git
-                                repositories on this cluster.
+                                Needed if customers deploy their own Git
+                                repositories on this cluster. Registry
+                                credentials are also used to pull every
+                                tenant, build and toolbox image, so the
+                                platform images can live in a private registry.
                             </p>
                             <group>
                                 <group>
@@ -80,6 +83,7 @@
                                     <field name="registry_insecure"/>
                                     <field name="builder_image"/>
                                     <field name="git_image"/>
+                                    <field name="toolbox_image"/>
                                 </group>
                             </group>
                         </page>

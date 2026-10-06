@@ -40,6 +40,16 @@
       "items": { "type": "string", "pattern": "^[0-9]+\\.0$" }
     },
     "allowMutableTags": { "type": "boolean" },
+    "platformPullSecret": { "type": "string" },
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backupTool": { "type": "string" },
+        "postgresRepository": { "type": "string" },
+        "cnpgPostgresRepository": { "type": "string" }
+      }
+    },
     "resources": { "type": "object" },
     "metrics": {
       "type": "object",

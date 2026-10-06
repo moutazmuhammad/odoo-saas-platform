@@ -29,7 +29,7 @@ import (
 // Connection details are wired via secretKeyRef against DatabaseSecretName,
 // not passed as literal values, so this builder never handles the
 // plaintext password itself.
-func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance) *appsv1.StatefulSet {
+func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance, platform Platform) *appsv1.StatefulSet {
 	labels := WithComponent(instance, "database")
 
 	var storageClass *string
@@ -73,6 +73,7 @@ func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance) *appsv1.StatefulSe
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
 					AutomountServiceAccountToken: ptr.To(false),
+					ImagePullSecrets:             platform.imagePullSecrets(instance),
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: ptr.To(true),
 						RunAsUser:    ptr.To(int64(999)),
@@ -84,7 +85,7 @@ func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance) *appsv1.StatefulSe
 					Containers: []corev1.Container{
 						{
 							Name:            "postgresql",
-							Image:           "docker.io/library/postgres:" + instance.Spec.Database.Version,
+							Image:           platform.postgresImage(instance.Spec.Database.Version),
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env: []corev1.EnvVar{
 								{Name: "POSTGRES_DB", ValueFrom: ptr.To(envFrom("dbname"))},

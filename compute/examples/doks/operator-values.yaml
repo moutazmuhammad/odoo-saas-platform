@@ -1,0 +1,13 @@
+# odoo-operator values for DOKS: tenants are exposed through the vendored
+# Traefik (namespace "ingress") behind the DigitalOcean Load Balancer.
+#
+#   kubectl apply --server-side --force-conflicts -f compute/charts/odoo-operator/crds/
+#   helm upgrade --install odoo-operator compute/charts/odoo-operator \
+#     -n odoo-system --create-namespace -f compute/examples/doks/operator-values.yaml
+networking:
+  provider: ingress
+  ingressClassName: traefik
+  gateway:
+    namespace: ingress
+    podSelector:
+      app.kubernetes.io/name: traefik

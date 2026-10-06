@@ -1,0 +1,21 @@
+# Traefik for a DOKS cluster: one DigitalOcean Load Balancer in front, the
+# "traefik" IngressClass the operator uses, namespace "ingress".
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+  name: traefik
+providers:
+  kubernetesIngress:
+    publishedService:
+      enabled: true   # Ingress status gets the LB address; the operator waits for it
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/do-loadbalancer-name: saas-ingress
+ports:
+  web:
+    port: 8000
+    exposedPort: 80
+  websecure:
+    port: 8443
+    exposedPort: 443

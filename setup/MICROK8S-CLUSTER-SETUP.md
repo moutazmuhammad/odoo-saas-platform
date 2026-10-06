@@ -2,9 +2,9 @@
 
 This guide turns a fresh Ubuntu server into a Kubernetes cluster that the SaaS control plane can deploy customer Odoo instances onto. Each tenant becomes an `OdooInstance` resource. The operator turns it into a namespace with Postgres, Odoo, an Ingress with a Let's Encrypt certificate, and backups.
 
-> **For production, use `PRODUCTION-CLUSTER-SETUP.md` instead.** This guide is for test and small single-node clusters.
+> **For production or any HA cluster (3+ nodes), use `PRODUCTION-CLUSTER-SETUP.md` instead.** It covers HA MicroK8s (dqlite), Longhorn, the load balancer, upgrades and node recovery. This guide is for test and small single-node clusters.
 
-Sections 1–8 set up one node, like the current test cluster. Section 9 adds a second node, and section 10 covers three or more. Section 11 explains what changes on a managed cluster (GKE, EKS, AKS, DigitalOcean, …).
+Sections 1–8 set up one node, like the current test cluster. Section 9 adds a second (worker) node to a test cluster. Section 10 points to the HA guide for three or more. Section 11 explains what changes on a managed cluster (GKE, EKS, AKS, DigitalOcean, …).
 
 ## How it fits together
 
@@ -122,8 +122,8 @@ kubectl -n odoo-system logs deploy/odoo-operator --tail=5   # "Starting workers"
 
 - `operator-values.yaml` selects `networking.provider: ingress` with class `traefik`. Use the chart default `gateway-api` only when the Gateway API CRDs and a Gateway exist.
 - Images come from Docker Hub, public for now:
-  - `docker.io/moutazmuhammad/odoo-saas-operator:0.1.18`
-  - `docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.3`, used by the backup and restore Jobs and compiled in as the default.
+  - `docker.io/moutazmuhammad/odoo-saas-operator:0.1.28` (chart 0.4.15: one replica, `Recreate` rollout, leader election off)
+  - `docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.5`, used by the backup and restore Jobs and compiled in as the default.
 
   With a private registry, set `imagePullSecrets` in the values.
 - **Upgrading the operator** later means re-running the two commands above: CRDs first, then `helm upgrade`.
@@ -196,7 +196,7 @@ After registering the cluster in the control plane (see `SAAS-SERVER-SETUP.md`, 
 
 ```bash
 kubectl get odooinstances -A                          # PHASE Ready, READY True
-kubectl -n odoo-tenant-odoo-<sub> get pods            # odoo-*, postgresql-0 Running
+kubectl -n odoo-tenant-odoo-<sub> get pods            # odoo-* 2/2 (web + cron), postgresql-0 Running
 curl -sI https://<sub>.apps.example.com/web/login     # HTTP/2 200
 echo | openssl s_client -connect <sub>.apps.example.com:443 \
   -servername <sub>.apps.example.com 2>/dev/null | openssl x509 -noout -issuer
@@ -291,8 +291,8 @@ For real multi-node use, install a network StorageClass and make it the default.
 
 Other points:
 
-- **Tenants with 2+ replicas** need `spec.storage.filestore.accessMode: ReadWriteMany`, and the operator refuses anything else. That requires an RWX-capable class, such as Longhorn RWX or NFS. hostpath can't do it.
-- **Rolling updates with network RWO volumes:** if the new pod lands on the other node, it can't attach the volume and the rollout hangs (PLAN.txt 3.7, still open). Test an update on each node before you rely on it.
+- **One pod per tenant:** each tenant runs one Odoo pod (web + cron sidecar) and one PostgreSQL pod sharing one data volume (`SINGLE-INSTANCE-ARCHITECTURE.md`, `STORAGE-COST-FIX.md`). No tenant needs ReadWriteMany.
+- **Rolling updates:** the replacement pod is pinned to the node that holds the tenant's volume, so that node needs room for a second Odoo pod during an update.
 - **Shared volumes:** Prometheus (section 5) and the test registry (section 6) also use hostpath volumes, so they stay on the node they started on. The registry is still reachable from both nodes at `localhost:32000` through its NodePort.
 
 ### 9.6 Control plane side
@@ -309,13 +309,11 @@ microk8s remove-node node2                                       # on node1
 
 With hostpath storage, move node2's tenants off first (backup and restore). Otherwise draining leaves them `Pending`, with their data still on node2.
 
-## 10. Three or more nodes / production notes
+## 10. Three or more nodes / production
 
-- **HA:** join nodes 2 and 3 **without** `--worker`. With 3 control-plane nodes, MicroK8s turns on HA automatically (`microk8s status` shows `high-availability: yes`), and the cluster survives the loss of one. Any extra nodes beyond that can join with `--worker`. For the control plane to survive losing node1, put a load balancer or DNS name in front of the API servers, use it in the kubeconfig, and add it to the certificate (section 7). Do the same for ingress: a load balancer, or an `A` record per node.
-- **Storage:** network storage is required (see 9.5).
-- **Backups:** tenant backups need an S3/GCS bucket configured in the control plane. The backup Job runs in each tenant namespace.
-- **Upgrades:** `sudo snap refresh microk8s --channel=<next>/stable`, one minor version at a time, one node at a time (drain → refresh → uncordon).
-- **Credentials:** keep the kubeconfig and the registry password only in the control plane. Rotate them if they were ever shared.
+Use [PRODUCTION-CLUSTER-SETUP.md](PRODUCTION-CLUSTER-SETUP.md). It builds the cluster from blank servers instead of growing this one: 3 control-plane nodes (HA dqlite, `high-availability: yes`), Longhorn instead of hostpath, a load balancer, an API address that fails over, the API watch settings, the ServiceAccount kubeconfig, upgrades and node recovery.
+
+A single-node cluster built with this guide can't be turned into that safely in place: its tenant volumes are hostpath (node-local). Build the HA cluster, register it as a second cluster, and move tenants by backup and restore.
 
 ## 11. Other clusters: GKE, EKS, AKS, DigitalOcean, …
 

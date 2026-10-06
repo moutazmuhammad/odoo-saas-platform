@@ -289,7 +289,7 @@ Builds push `<host>/<prefix>/tenant-<sub>:<tag>`, and tenants pull the same imag
 | GHCR | `ghcr.io` | your org | a user | a token with `write:packages` |
 | DO Container Registry | `registry.digitalocean.com` | your registry name | any | a DO API token |
 
-Leave *Push Host* empty and *Plain-HTTP* off.
+Leave *Push Host* empty and *Plain-HTTP* off. Which images exist, how each is built, and how to move all of them to a private registry: [IMAGES-AND-REGISTRY.md](IMAGES-AND-REGISTRY.md).
 
 **Docker Hub on a free plan creates public repositories:** anyone can then pull a tenant image, including the customer's custom addons. Use a private repository/plan (or GHCR / DOCR) before real customers.
 

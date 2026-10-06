@@ -12,7 +12,7 @@
 # Produces one timestamped run containing db.dump (pg_dump custom format),
 # filestore.tar.gz, and manifest.json tying them together — the same triple
 # restore consumes, so a database dump can never be paired with a mismatched
-# filestore snapshot (see docs/architecture.md, "Backups").
+# filestore snapshot (see setup/01-ARCHITECTURE.md, "Backups").
 set -euo pipefail
 source /usr/local/lib/lib-objectstorage.sh
 

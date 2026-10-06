@@ -172,7 +172,7 @@ type TLSSpec struct {
 	// with omitempty, cause the JSON encoder to drop the key entirely
 	// (Go's encoding/json treats bool-false as "empty"), and the API
 	// server's CRD default would then silently re-flip it back to true.
-	// See docs/architecture.md ("A CRD Defaulting Gotcha").
+	// See setup/01-ARCHITECTURE.md ("A CRD Defaulting Gotcha").
 	// +kubebuilder:default=true
 	Enabled bool `json:"enabled"`
 
@@ -244,7 +244,7 @@ type DatabaseManagerSpec struct {
 // Kubernetes pod replicas: Odoo's own prefork/gevent worker model runs
 // multiple OS processes inside a single pod to serve concurrent HTTP
 // requests, with one dedicated process for longpolling/gevent (live chat,
-// bus) and a small pool of cron workers. See docs/architecture.md ("Odoo
+// bus) and a small pool of cron workers. See setup/01-ARCHITECTURE.md ("Odoo
 // Worker Model") for the full explanation of how this interacts with
 // the CPU and memory limits of the single pod.
 type WorkersSpec struct {
@@ -259,7 +259,7 @@ type WorkersSpec struct {
 	// a client round-tripping this object with Count explicitly set to 0
 	// would have the key dropped and the API server would silently
 	// re-default it to 2. See TLSSpec.Enabled's comment for the general
-	// pattern (docs/architecture.md, "A CRD Defaulting Gotcha").
+	// pattern (setup/01-ARCHITECTURE.md, "A CRD Defaulting Gotcha").
 	// +kubebuilder:default=2
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=32
@@ -440,7 +440,7 @@ type TenancySpec struct {
 type OdooInstanceSpec struct {
 	// Version is the Odoo major version for this instance, e.g. "17.0",
 	// "18.0", "19.0". Changing Version triggers a controlled image update;
-	// see docs/architecture.md ("Upgrade Strategy") for how this differs
+	// see setup/01-ARCHITECTURE.md ("Upgrade Strategy") for how this differs
 	// from a routine image tag bump.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^[0-9]+\.0$`
@@ -469,7 +469,7 @@ type OdooInstanceSpec struct {
 	// image was built with. It is informational/validation metadata only:
 	// addons are baked into Image at build time by the platform's image
 	// pipeline, never installed or downloaded at runtime. See
-	// docs/architecture.md ("Addons & Image Strategy").
+	// setup/01-ARCHITECTURE.md ("Addons & Image Strategy").
 	// +optional
 	Addons []AddonSpec `json:"addons,omitempty"`
 
@@ -740,7 +740,7 @@ type OdooInstanceStatus struct {
 // It is deliberately cluster-scoped: creating one causes the controller to
 // provision a dedicated, isolated tenant namespace (namespace-per-tenant)
 // rather than requiring the SaaS API to pre-create and manage namespaces
-// itself. See docs/architecture.md ("Multi-Tenancy Model") for the
+// itself. See setup/01-ARCHITECTURE.md ("Multi-Tenancy Model") for the
 // trade-offs behind this decision.
 type OdooInstance struct {
 	metav1.TypeMeta   `json:",inline"`

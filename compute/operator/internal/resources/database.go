@@ -17,7 +17,7 @@ import (
 // volumeClaimTemplate/identity contract for a genuinely stateful, singleton
 // workload — the same property that makes a Deployment the *wrong* choice
 // is exactly why it is the *right* choice for PostgreSQL. See
-// docs/architecture.md ("Question 2: Deployment or StatefulSet").
+// setup/01-ARCHITECTURE.md ("Question 2: Deployment or StatefulSet").
 //
 // This built-in mode is intentionally minimal (single instance, no
 // streaming replication/failover) and is meant as the zero-dependency

@@ -1,17 +1,18 @@
-# Production cluster setup (HA MicroK8s)
+# MicroK8s cluster setup (HA, plus a single-node variant)
 
-Step by step: from blank Ubuntu 24.04 servers to a highly available MicroK8s cluster (3 control-plane nodes, HA dqlite datastore) that runs the tenant Odoo instances, registered in the SaaS control plane and passing a test tenant.
+Step by step: from blank Ubuntu 24.04 servers to a MicroK8s cluster that runs the tenant Odoo instances, registered in the SaaS control plane and passing a test tenant.
+
+- **Production:** 3+ nodes, highly available (3 control-plane nodes, HA dqlite datastore). Follow every step.
+- **Test / small:** 1 node. Follow the same steps with the changes in [Single-node test variant](#single-node-test-variant), near the end.
+
+Before this guide: [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (how it works) and [02-SAAS-SERVER-SETUP.md](02-SAAS-SERVER-SETUP.md) (the control-plane server, needed from step 13). On DigitalOcean Kubernetes instead: [03b-DOKS-CLUSTER-SETUP.md](03b-DOKS-CLUSTER-SETUP.md).
 
 **How to use this guide**
 
 - You write your values **once**, in `/root/cluster.env` on each node (step 2). Every block after that reads them, so you paste the blocks as they are.
 - Each block says where it runs: **every node**, **node1**, **your workstation**, or the **SaaS server**. On the nodes, work as `root`.
 - After step 2, `kubectl` and `helm` are aliases for `microk8s kubectl` and `microk8s helm3`.
-- Tested on DigitalOcean, Ubuntu 24.04, MicroK8s 1.35, Longhorn 1.12.1, operator 0.1.28 (chart 0.4.15).
-
-Other guides: `SAAS-SERVER-SETUP.md` (the control-plane server), `MICROK8S-CLUSTER-SETUP.md` (a single-node test cluster), `RUN-GUIDE.txt` (dev).
-
-Upgrading an existing installation: read [SINGLE-INSTANCE-ARCHITECTURE.md](SINGLE-INSTANCE-ARCHITECTURE.md) (one Odoo pod per tenant, vertical scaling) and [STORAGE-COST-FIX.md](STORAGE-COST-FIX.md) (one shared tenant volume) first.
+- Tested on DigitalOcean, Ubuntu 24.04, MicroK8s 1.35, Longhorn 1.12.1. Current operator: 0.1.29 (chart 0.4.16, `compute/charts/odoo-operator`).
 
 ---
 
@@ -42,9 +43,9 @@ Upgrading an existing installation: read [SINGLE-INSTANCE-ARCHITECTURE.md](SINGL
 
 The **cluster** is HA. A **tenant** is not:
 
-- **One pod per tenant.** Each tenant runs one Odoo pod (web + cron sidecar) and one PostgreSQL pod on the same node (they share one `ReadWriteOnce` data volume). When that node dies, the tenant is down until Kubernetes reschedules it on another node: about 5–10 minutes (300 s eviction timeout, then volume re-attach and Odoo start).
+- **One pod per tenant** ([01-ARCHITECTURE.md](01-ARCHITECTURE.md), section 3). Each tenant runs one Odoo pod (web + cron sidecar) and one PostgreSQL pod on the same node (they share one `ReadWriteOnce` data volume). When that node dies, the tenant is down until Kubernetes reschedules it on another node: about 5–10 minutes (300 s eviction timeout, then volume re-attach and Odoo start).
 - **Node maintenance interrupts tenants too.** Draining a node (upgrades, reboots) restarts its tenants elsewhere: a short outage per tenant. Zero-downtime applies to tenant **updates** (the new pod starts beside the old one on the same node before the old one stops), not to node maintenance.
-- **Longhorn replicas.** The current low-cost policy (`STORAGE-COST-FIX.md`, `SINGLE-INSTANCE-ARCHITECTURE.md`) is **one** Longhorn replica per volume. With one replica, a volume whose replica sits on a lost node is **unavailable until that node comes back**, and **lost** if its disk is gone; then the tenant comes back only from its latest S3 backup. For real data HA, use `REPLICAS=2` (survives one node) or `3` (survives one node even during a rebuild). Each replica is a full copy, so disk use and cost scale with it.
+- **Longhorn replicas.** The current low-cost policy ([01-ARCHITECTURE.md](01-ARCHITECTURE.md), section 4.2) is **one** Longhorn replica per volume. With one replica, a volume whose replica sits on a lost node is **unavailable until that node comes back**, and **lost** if its disk is gone; then the tenant comes back only from its latest S3 backup. For real data HA, use `REPLICAS=2` (survives one node) or `3` (survives one node even during a rebuild). Each replica is a full copy, so disk use and cost scale with it.
 - **The operator is a single replica** (`Recreate` rollout, leader election off, so two operators never reconcile at once). If its node dies, provisioning and updates pause until it is rescheduled, and the control plane marks the cluster unhealthy meanwhile. Running tenants keep serving.
 - **Losing two of three control-plane nodes** loses dqlite quorum: the API stops (tenants already running keep serving traffic). See step 16, "Lost quorum".
 
@@ -363,7 +364,7 @@ kubectl -n longhorn-system rollout status ds/longhorn-csi-plugin --timeout=10m
 - `defaultClassReplicaCount` / `defaultReplicaCount`: copies per volume, from `REPLICAS` (see the Overview for the trade-off).
 - `nodeDownPodDeletionPolicy`: when a node dies, the tenant restarts elsewhere without manual help (if its volume has a healthy replica).
 - `nodeDrainPolicy=block-for-eviction-if-contains-last-replica`: with one replica, `kubectl drain` first copies a volume's only replica to another node, so maintenance never strands data. Drains take longer (they wait for the copy).
-- `storageOverProvisioningPercentage=200`: new Managed tenants use one PVC for PostgreSQL and Odoo, sized to the whole package; legacy tenants keep separate volumes until migrated (`STORAGE-COST-FIX.md`). 200% is kept for existing thin-provisioned volumes; it is not a second storage allowance. Watch real disk use (act at 70%).
+- `storageOverProvisioningPercentage=200`: new Managed tenants use one PVC for PostgreSQL and Odoo, sized to the whole package; legacy tenants keep separate volumes until migrated ([01-ARCHITECTURE.md](01-ARCHITECTURE.md), section 4.1). 200% is kept for existing thin-provisioned volumes; it is not a second storage allowance. Watch real disk use (act at 70%).
 
 **Check:** a test volume is written, with `REPLICAS` copies on different nodes, then deleted:
 
@@ -494,7 +495,7 @@ kubectl get crd odooinstances.saas.odoo.example.com                  # exists
 kubectl -n odoo-system get pods -o wide                              # 1 Running (a single replica, by design)
 kubectl -n odoo-system get deploy odoo-operator \
   -o jsonpath='{.spec.strategy.type} {.spec.template.spec.containers[0].image}{"\n"}'
-                                                                     # Recreate docker.io/moutazmuhammad/odoo-saas-operator:0.1.28
+                                                                     # Recreate docker.io/moutazmuhammad/odoo-saas-operator:0.1.29
 kubectl -n odoo-system logs deploy/odoo-operator --tail=20 | grep -i "starting workers"
 ```
 
@@ -520,9 +521,9 @@ The cluster record uses namespace `monitoring` and service `prometheus-server:80
 
 ## 11. Image registry (only if customers deploy Git repos)
 
-Use a private registry with a fixed token: GHCR, Docker Hub (private), Harbor, or GCP Artifact Registry. Not the in-cluster test registry (single-node, plain HTTP), and not AWS ECR, whose tokens expire every 12 hours. Put it in the cluster's *Image Builds* tab: host, push host, path prefix (your org), and a push/pull-only token. Leave plain-HTTP off.
+Use a private registry with a fixed token: GHCR, Docker Hub (private), Harbor, or GCP Artifact Registry. Not the in-cluster test registry (single-node, plain HTTP), and not AWS ECR, whose tokens expire every 12 hours. Put it in the cluster's *Image Builds* tab: host, push host, path prefix (your org), and a push/pull-only token. Leave plain-HTTP off. Registry fields per provider and the private-registry procedure: [04-IMAGES-AND-REGISTRY.md](04-IMAGES-AND-REGISTRY.md).
 
-Builds use temporary pod storage (up to about 24 GiB ephemeral per build, `STORAGE-COST-FIX.md`): keep that much free on the node OS disks.
+Builds use temporary pod storage (up to about 24 GiB ephemeral per build, [01-ARCHITECTURE.md](01-ARCHITECTURE.md), section 4.3): keep that much free on the node OS disks.
 
 ---
 
@@ -697,7 +698,7 @@ Then repeat 13.2 and 13.3.
 **Notes:**
 - For a test catalog (Odoo versions, the "Odoo Hosting" product, plans), install the **SaaS Demo Catalog** app (`saas_demo_data`) from Apps.
 - A second cluster in the same region: repeat 12.3 on that cluster, then 13.2 and 13.3 with a new `CLUSTER_NAME` and that cluster's own `BASE_DOMAIN` (its wildcard DNS points at its own load balancer).
-- Still to set in the backend (`SAAS-SERVER-SETUP.md`, step 8): backup storage (step 14), a payment provider, mail, and the registry (step 11) if you use it.
+- Still to set in the backend ([02-SAAS-SERVER-SETUP.md](02-SAAS-SERVER-SETUP.md), step 8): backup storage (step 14), a payment provider, mail, and the registry (step 11) if you use it.
 
 ---
 
@@ -839,7 +840,7 @@ kubectl -n longhorn-system get volumes.longhorn.io \
 
 ## Appendix: managed Kubernetes (GKE / EKS / AKS / DOKS)
 
-For DigitalOcean there is a complete guide: [DOKS-CLUSTER-SETUP.md](DOKS-CLUSTER-SETUP.md). For other providers, adapt it with this table:
+For DigitalOcean there is a complete guide: [03b-DOKS-CLUSTER-SETUP.md](03b-DOKS-CLUSTER-SETUP.md). For other providers, adapt it with this table:
 
 | Step | Change |
 |---|---|
@@ -851,6 +852,60 @@ For DigitalOcean there is a complete guide: [DOKS-CLUSTER-SETUP.md](DOKS-CLUSTER
 | 12 | Skip 12.1–12.2. Restrict the API to the SaaS server's IP. 12.3 is required (with `server` from your kubeconfig). |
 | 14.2, 16 | Skip the MicroK8s parts; the provider handles control-plane backups and upgrades. |
 
+Cloud notes:
+
+- **Kubeconfig:** a kubeconfig downloaded from GKE/EKS/AKS runs a login helper (`gke-gcloud-auth-plugin`, `aws eks get-token`, `kubelogin`) that the SaaS server doesn't have. Always build the ServiceAccount kubeconfig of 12.3, with `server` from `kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'`.
+- **EKS:** install the EBS CSI driver add-on and make `gp3` the default StorageClass. The LB has a hostname, so use a `CNAME` for `*.apps.example.com`. Avoid ECR (12-hour tokens).
+- **Zones:** a cloud disk lives in one zone. Use a single-zone node pool (or regional disks), or a tenant can't move to a node in another zone and its rolling update can hang.
+- **Cost:** only the ingress controller gets a `LoadBalancer` Service. Never give tenants their own.
+
+---
+
+## Single-node test variant
+
+One server, for tests or a few small tenants. It is **not** HA: a reboot or Kubernetes upgrade stops every tenant. Follow steps 0–16 with these changes:
+
+| Step | Change for one node |
+|---|---|
+| 0 | One server: 4+ vCPU, 8+ GB RAM, 80+ GB disk (2 vCPU / 4 GB for a few tiny tenants). No load balancer. No domain? Use `<ip-with-dashes>.nip.io` (e.g. `203-0-113-10.nip.io`) as the base domain. |
+| 1 | Same firewall, without the VPC rule. |
+| 2.2 | `NODES="node1"`, only `node1` in `PRIV`/`PUB`, `REPLICAS=1`, `LB_IP` and `API_HOST` = node1's public IP. |
+| 2.4 | With `hostpath-storage` (step 6 below), the Longhorn packages and modules are optional. |
+| 4 | Skip the join and the Calico patch. `microk8s status` shows `high-availability: no`: expected. Still do 4.1. |
+| 5 + 6 | Either Longhorn with `REPLICAS=1` (step 6 as written; lets you add nodes later), or the simpler `microk8s enable hostpath-storage` and skip step 6 (volumes are node-local for good). |
+| 7 | 7.1 as written (one IP). Skip 7.2. 7.3: one `A` record to the node's public IP (nothing to do for nip.io). |
+| 11 | Optional in-cluster registry, below. |
+| 12 | 12.1: `API_HOST` = node1's public IP. 12.2 on the one node. |
+| 15 | Run 15.1, 15.4, 15.6 and 15.7. Skip 15.2, 15.3 and 15.5 (they need other nodes). |
+| 16 | Drain/upgrade/reboot = downtime for every tenant. Skip the node-loss and quorum procedures. |
+
+**In-cluster test registry (step 11, test only):** plain HTTP, single node.
+
+```bash
+apt-get install -y apache2-utils
+kubectl create namespace container-registry
+kubectl -n container-registry create secret generic registry-auth \
+  --from-literal=htpasswd="$(htpasswd -nbB saasbuild '<choose-a-password>')"
+kubectl apply -f $REPO/compute/examples/test-registry/registry.yaml
+kubectl -n container-registry rollout status deploy/registry
+```
+
+| *Image Builds* field | Value |
+|---|---|
+| Registry Host | `localhost:32000` (what the node pulls from) |
+| Registry Push Host | `registry.container-registry.svc.cluster.local:5000` |
+| Username / Password | `saasbuild` / the password above |
+| Plain-HTTP Registry | on |
+
+**Adding a worker node later.** A second node adds capacity, not failover: node1 still holds the API and datastore.
+
+1. Build it with steps 2–3 (add it to `cluster.env` on both nodes). Between the nodes, TCP 25000, 16443, 10250 and UDP 4789 must be open (the VPC rule of step 1).
+2. Join it with the `--worker` line from `microk8s add-node` on node1. Run 7.1 again.
+3. Storage: with Longhorn, nothing else. With `hostpath-storage`, check `kubectl get sc microk8s-hostpath -o jsonpath='{.volumeBindingMode}'` is `WaitForFirstConsumer` and every PV has a node affinity; otherwise `kubectl cordon` the new node, or a tenant pod could start there with an empty volume. Hostpath tenants can only move by backup and restore.
+4. Remove it: `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data`, `microk8s leave` on it, `microk8s remove-node <node>` on node1.
+
+**Moving to HA.** A single-node cluster can't be turned into the 3-node HA cluster in place. Build the HA cluster with this guide, register it as a second cluster (step 13, new `CLUSTER_NAME` and base domain), and move tenants by backup and restore.
+
 ---
 
 ## Final checklist
@@ -861,7 +916,7 @@ For DigitalOcean there is a complete guide: [DOKS-CLUSTER-SETUP.md](DOKS-CLUSTER
 - [ ] SSH keys only; `microk8s` snap held; clocks synced
 - [ ] Longhorn is the default StorageClass; test volume passed; replica count chosen on purpose (`REPLICAS`) and the trade-off accepted
 - [ ] `*.apps.example.com` resolves to the LB; `letsencrypt-prod` READY
-- [ ] Operator: 1 pod Running, `Recreate`, image 0.1.28; Prometheus PVC Bound
+- [ ] Operator: 1 pod Running, `Recreate`, image 0.1.29; Prometheus PVC Bound
 - [ ] `API_HOST` reaches every control-plane node and is in every node's certificate
 - [ ] Step 13 shows `health ok`; kubeconfig copies deleted
 - [ ] Tenant backups to S3 scheduled; a restore tested; a cluster-state backup (14.2) stored off the cluster

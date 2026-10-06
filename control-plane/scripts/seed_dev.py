@@ -27,7 +27,7 @@ now = fields.Datetime.now()
 # any real infra. A live probe (at actual action_deploy() time — the
 # region picker never triggers one) will correctly fail to connect,
 # matching this project's "mock provisioning" contract: no real
-# provisioning ever happens in seed-only mode (see TEST-CLUSTER-SETUP.md).
+# provisioning ever happens in seed-only mode (see setup/05-DEVELOPMENT.md, section 3).
 _MOCK_KUBECONFIG_YAML = """\
 apiVersion: v1
 kind: Config

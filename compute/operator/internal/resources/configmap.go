@@ -23,7 +23,7 @@ import (
 // further escaping.
 // Note: `workers` and `max_cron_threads` are deliberately NOT baked into
 // this template. They differ between the "web" and "cron" Deployment roles
-// (see deployment.go and docs/architecture.md, "Odoo Worker Model") and are
+// (see deployment.go and setup/01-ARCHITECTURE.md, "Odoo Worker Model") and are
 // instead passed as CLI flags on each Deployment's container command,
 // which Odoo applies as overrides on top of this config file.
 const odooConfTemplate = `[options]

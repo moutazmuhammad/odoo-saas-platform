@@ -7,7 +7,7 @@ description: |
   this chart only if your platform manages tenants declaratively through
   Git (e.g. one Argo CD Application or Flux HelmRelease per customer)
   rather than through direct API calls against the OdooInstance CRD from a
-  SaaS control-plane backend. See docs/architecture.md ("SaaS API
+  SaaS control-plane backend. See setup/01-ARCHITECTURE.md ("SaaS API
   Integration Contract") for the trade-off between the two approaches; the
   platform's primary, recommended integration path is the CRD itself, not
   this chart.

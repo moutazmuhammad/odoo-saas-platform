@@ -130,7 +130,7 @@ func (r *OdooInstanceReconciler) validateSpec(instance *saasv1alpha1.OdooInstanc
 // heuristic, not a security boundary by itself; combined with
 // AllowMutableTags=false it nudges the platform's build pipeline towards
 // immutable, reproducible image references as described in
-// docs/architecture.md ("Addons & Image Strategy").
+// setup/01-ARCHITECTURE.md ("Addons & Image Strategy").
 func isMutableTag(tag string) bool {
 	switch tag {
 	case "latest", "main", "master", "edge", "dev", "nightly":

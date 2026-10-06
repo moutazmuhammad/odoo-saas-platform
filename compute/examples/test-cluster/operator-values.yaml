@@ -11,3 +11,8 @@
 networking:
   provider: ingress
   ingressClassName: traefik
+  # Only Traefik (MicroK8s ingress addon) may reach tenant pods.
+  gateway:
+    namespace: ingress
+    podSelector:
+      app.kubernetes.io/name: traefik

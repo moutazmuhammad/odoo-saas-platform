@@ -2,7 +2,17 @@
 
 From an empty DigitalOcean account to a cluster that takes customer orders from the SaaS control plane.
 
-For your own servers instead, use [the MicroK8s HA guide](PRODUCTION-CLUSTER-SETUP.md). The control-plane side (steps 9–12) is the same for both.
+Before this guide: [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (how it works) and [02-SAAS-SERVER-SETUP.md](02-SAAS-SERVER-SETUP.md) (install the SaaS server first; step 9 here runs on it). For your own servers instead, use [03a-MICROK8S-CLUSTER-SETUP.md](03a-MICROK8S-CLUSTER-SETUP.md).
+
+The control-plane side is the same in both cluster guides:
+
+| What | This guide | MicroK8s guide |
+|---|---|---|
+| Control-plane ServiceAccount, staff terminal, kubeconfig | 7–8 | 12.3–12.4 |
+| Register the cluster in the control plane (same script) | 9 | 13 |
+| Backend settings (backup storage, catalog, payments) | 10 | 13 notes, 14.1 |
+| Image registry | 11 | 11 |
+| Test before taking customers | 12 | 15 |
 
 What you end up with:
 
@@ -22,7 +32,7 @@ Every chart is in the repo (`compute/charts/...`) and every values file is in `c
 ## 0. What you need
 
 - A DigitalOcean account and a domain whose DNS you control (example: `apps.example.com`).
-- The SaaS server already installed ([SAAS-SERVER-SETUP.md](SAAS-SERVER-SETUP.md)), with SSH access as root.
+- The SaaS server already installed ([02-SAAS-SERVER-SETUP.md](02-SAAS-SERVER-SETUP.md)), with SSH access as root.
 - On your workstation: `kubectl` (1.30+), `helm` (3.x), and this repository.
 - An image registry account if customers deploy their own Git repositories (step 11).
 
@@ -121,7 +131,7 @@ kubectl get clusterissuer letsencrypt-prod      # READY True
 
 ## 5. The Odoo operator
 
-The operator image is public on Docker Hub (`docker.io/moutazmuhammad/odoo-saas-operator`, the tag in `compute/charts/odoo-operator/values.yaml`). Helm doesn't install or upgrade CRDs from `crds/` on upgrades, so apply them first:
+The operator image is public on Docker Hub (`docker.io/moutazmuhammad/odoo-saas-operator`, the tag in `compute/charts/odoo-operator/values.yaml`: 0.1.29, chart 0.4.16). Helm doesn't install or upgrade CRDs from `crds/` on upgrades, so apply them first:
 
 ```bash
 kubectl apply --server-side --force-conflicts -f compute/charts/odoo-operator/crds/
@@ -271,7 +281,7 @@ rm -f /tmp/register_cluster.py /tmp/kubeconfig-prod
 
 ## 10. Backend settings
 
-In the backend (see [SAAS-SERVER-SETUP.md](SAAS-SERVER-SETUP.md), step 8):
+In the backend (see [02-SAAS-SERVER-SETUP.md](02-SAAS-SERVER-SETUP.md), step 8):
 
 - **Backup storage (required):** Settings → SaaS Manager → backup storage. Use a DigitalOcean Spaces (S3) bucket with a key that can access only that bucket.
 - **Catalog:** Odoo versions, the hosting product and plans. For tests, install the *SaaS Demo Catalog* app (`saas_demo_data`).
@@ -289,7 +299,7 @@ Builds push `<host>/<prefix>/tenant-<sub>:<tag>`, and tenants pull the same imag
 | GHCR | `ghcr.io` | your org | a user | a token with `write:packages` |
 | DO Container Registry | `registry.digitalocean.com` | your registry name | any | a DO API token |
 
-Leave *Push Host* empty and *Plain-HTTP* off. Which images exist, how each is built, and how to move all of them to a private registry: [IMAGES-AND-REGISTRY.md](IMAGES-AND-REGISTRY.md).
+Leave *Push Host* empty and *Plain-HTTP* off. Which images exist, how each is built, and how to move all of them to a private registry: [04-IMAGES-AND-REGISTRY.md](04-IMAGES-AND-REGISTRY.md).
 
 **Docker Hub on a free plan creates public repositories:** anyone can then pull a tenant image, including the customer's custom addons. Use a private repository/plan (or GHCR / DOCR) before real customers.
 

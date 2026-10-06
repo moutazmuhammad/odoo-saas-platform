@@ -17,7 +17,7 @@ import (
 // decision, not a tenant one: every instance on a given operator
 // installation is routed the same way, through the same shared entry
 // point, which is what lets the platform scale from 1 to 1000+ tenants
-// without a per-tenant LoadBalancer. See docs/architecture.md
+// without a per-tenant LoadBalancer. See setup/01-ARCHITECTURE.md
 // ("Networking").
 const (
 	NetworkingProviderGatewayAPI = "gateway-api"

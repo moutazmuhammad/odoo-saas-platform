@@ -14,7 +14,7 @@ package v1alpha1
 // its zero value only when `omitempty` is set, so those fields are always
 // serialized explicitly. That is what makes this controller's own writes
 // safe against silently clobbering an explicit customer choice back to a
-// CRD default (see docs/architecture.md, "A CRD Defaulting Gotcha") — but
+// CRD default (see setup/01-ARCHITECTURE.md, "A CRD Defaulting Gotcha") — but
 // its direct consequence is that any Go client constructing a partial
 // OdooInstanceSpec struct literal gets the Go zero value for those fields
 // (false/0), NOT the CRD's documented default, unless it fills them in

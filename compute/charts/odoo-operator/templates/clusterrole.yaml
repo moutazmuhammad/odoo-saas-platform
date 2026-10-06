@@ -10,7 +10,7 @@
 # wildcard apiGroups/resources/verbs, no secrets read across all
 # namespaces (RBAC here is intentionally cluster-scoped only because
 # OdooInstance's child resources span tenant namespaces the operator
-# itself creates — see docs/architecture.md, "Security").
+# itself creates — see setup/01-ARCHITECTURE.md, "Security").
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

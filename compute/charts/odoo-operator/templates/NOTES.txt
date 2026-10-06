@@ -17,7 +17,7 @@ This release is configured to route tenants through the Gateway API. Make
 sure a Gateway named "{{ .Values.networking.gateway.name }}" exists in
 namespace "{{ .Values.networking.gateway.namespace }}" — the operator does
 not create the shared Gateway itself, only per-tenant HTTPRoutes attached
-to it. See docs/architecture.md ("Networking") for the shared-gateway
+to it. See setup/01-ARCHITECTURE.md ("Networking") for the shared-gateway
 rationale.
 {{- else }}
 
@@ -26,5 +26,5 @@ This release is configured to route tenants through classic Ingress
 an Ingress controller for that class is installed.
 {{- end }}
 
-See docs/architecture.md for the full provisioning/update/delete lifecycle
+See setup/01-ARCHITECTURE.md for the full provisioning/update/delete lifecycle
 and the SaaS API integration contract.

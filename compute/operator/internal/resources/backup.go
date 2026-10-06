@@ -29,7 +29,7 @@ const DefaultBackupToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0
 // database dump and a filestore archive into one timestamped, atomically
 // published directory (or object-storage prefix) plus a manifest.json
 // tying the two together, so restore never mixes a database snapshot with
-// a mismatched filestore snapshot. See docs/architecture.md ("Backups").
+// a mismatched filestore snapshot. See setup/01-ARCHITECTURE.md ("Backups").
 //
 // Known limitation (documented rather than hidden): when Destination.Type
 // is PVC, the backup Pod must run on the same node as the Odoo pod that
@@ -37,7 +37,7 @@ const DefaultBackupToolImage = "docker.io/moutazmuhammad/odoo-saas-backup-tool:0
 // why a pod affinity to the Odoo selector is required below. This is a
 // direct consequence of the RWO-by-default filestore trade-off described
 // in FilestoreSpec; it disappears once an instance's filestore is RWX or
-// is moved to object storage (see docs/architecture.md, "Filestore
+// is moved to object storage (see setup/01-ARCHITECTURE.md, "Filestore
 // Architecture").
 func BackupCronJob(instance *saasv1alpha1.OdooInstance, platform Platform) *batchv1.CronJob {
 	labels := WithComponent(instance, "backup")

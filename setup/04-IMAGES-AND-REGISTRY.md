@@ -1,6 +1,6 @@
 # Images and registries
 
-Which container images the platform runs, which ones we build (and how), and how to move to a **private registry**.
+Which container images the platform runs, which ones we build (and how), and how to move to a **private registry**. Reference for [03a](03a-MICROK8S-CLUSTER-SETUP.md) / [03b](03b-DOKS-CLUSTER-SETUP.md) step 11; local builds: [05-DEVELOPMENT.md](05-DEVELOPMENT.md).
 
 Every statement cites the code it comes from. Paths are from the repo root. Line numbers are from commit `8c10c89`.
 
@@ -88,7 +88,7 @@ helm upgrade odoo-operator compute/charts/odoo-operator -n odoo-system \
   --set restore.toolImage=docker.io/moutazmuhammad/odoo-saas-backup-tool:0.1.6 --wait
 ```
 
-Also update `setup/MICROK8S-CLUSTER-SETUP.md:126`.
+Also update any guide that cites the backup-tool tag (`git grep -n backup-tool: setup/`).
 
 ### 2.3 Odoo versions (no build)
 

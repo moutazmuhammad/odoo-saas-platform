@@ -716,7 +716,7 @@ class TestKubernetesDriver(TransactionCase):
             self.assertEqual(secret.type, 'kubernetes.io/dockerconfigjson')
 
     def test_toolbox_never_grants_permissions(self):
-        """Role bindings are an operator's manual step (setup guide 12.4)."""
+        """Role bindings are an operator's manual step (setup/03a step 12.4, 03b step 7.2)."""
         import inspect
         from odoo.addons.saas_core.drivers import kubernetes_driver
         src = inspect.getsource(kubernetes_driver.KubernetesDriver._ensure_toolbox_pod) + \

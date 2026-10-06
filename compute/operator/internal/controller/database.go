@@ -27,7 +27,7 @@ type databaseResult struct {
 // reconcileDatabase is the single place that branches on
 // spec.database.mode. Every other part of the controller only ever deals
 // with "is the database ready, and what Secret holds its credentials" —
-// this is the abstraction boundary described in docs/architecture.md
+// this is the abstraction boundary described in setup/01-ARCHITECTURE.md
 // ("Database Architecture") that lets the platform swap Managed ->
 // CloudNativePG -> External without ever touching the OdooInstance API.
 func (r *OdooInstanceReconciler) reconcileDatabase(ctx context.Context, instance *saasv1alpha1.OdooInstance) (databaseResult, error) {

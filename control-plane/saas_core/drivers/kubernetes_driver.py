@@ -240,8 +240,9 @@ _ADMIN_SECRET_NAME = 'odoo-admin-credentials'
 
 # Staff cluster terminal: a toolbox pod with kubectl + helm running as the
 # ServiceAccount saas-toolbox/saas-toolbox. An operator creates that
-# namespace, ServiceAccount and its role binding by hand (setup guide,
-# "Staff cluster terminal"); the control plane never grants permissions,
+# namespace, ServiceAccount and its role binding by hand
+# (setup/03a-MICROK8S-CLUSTER-SETUP.md step 12.4, setup/03b-DOKS-CLUSTER-SETUP.md
+# step 7.2); the control plane never grants permissions,
 # it only starts the pod. The pod ends after _TOOLBOX_LIFETIME and is
 # recreated on the next open. Its image is the cluster's toolbox_image
 # (keep its kubectl within one minor version of the cluster).
@@ -439,7 +440,7 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         mid-poll on a slow deploy (image pull + CNPG/managed-Postgres
         bring-up + init Job legitimately take minutes, easily exceeding
         the default ``limit_time_real_cron`` ~120s — see
-        `TEST-CLUSTER-SETUP.md` §10 for the config fix), orphaning the
+        `limit_time_real_cron` in setup/02-SAAS-SERVER-SETUP.md step 4), orphaning the
         `saas.job` row at `state='running'` with no error recorded; the
         next pickup of that job re-runs `_do_deploy_locked_kubernetes`
         from the top, calling `create()` again against a CR that was
@@ -1197,7 +1198,8 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             if e.status == 404:
                 raise ToolboxNotSetUp(
                     "Cluster '%s' has no %s/%s ServiceAccount yet. Create it once "
-                    "(setup guide, \"Staff cluster terminal\")."
+                    "(setup/03a-MICROK8S-CLUSTER-SETUP.md step 12.4, or "
+                    "setup/03b-DOKS-CLUSTER-SETUP.md step 7.2)."
                     % (self.server.name, _TOOLBOX_NAMESPACE, _TOOLBOX_NAME)) from e
             raise
         deadline = time.time() + _TOOLBOX_START_TIMEOUT

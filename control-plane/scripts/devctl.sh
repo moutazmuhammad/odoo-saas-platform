@@ -77,7 +77,7 @@ case "${1:-}" in
       --data-file="$REPO/.coverage" \
       --source="$REPO/saas_core,$REPO/saas_billing,$REPO/saas_website" \
       --omit="*/tests/*,*/migrations/*" \
-      odoo-bin -c "$CONF" -d saas_test -i saas_core,saas_billing,saas_website \
+      odoo-bin -c "$CONF" -d saas_test -i saas_core,saas_billing,saas_website,saas_iam \
       --test-enable --test-tags=/saas_core,/saas_billing,/saas_website --without-demo=False \
       --db-filter='^saas_test$' --http-port=8093 --http-interface=127.0.0.1 \
       --log-level=test --logfile="$LOGDIR/test.log" --stop-after-init
@@ -109,7 +109,7 @@ case "${1:-}" in
   reset)  # DANGER: drop + reinit the DB, then reseed
     odoo_down; pg_up
     "$PGBIN/psql" -h 127.0.0.1 -p $PGPORT -U odoo -d postgres -c "DROP DATABASE IF EXISTS $DB;"
-    cd "$ODOO"; "$VENV/bin/python" odoo-bin -c "$CONF" -d "$DB" -i saas_core,saas_billing,saas_website,payment_demo --without-demo=False --stop-after-init
+    cd "$ODOO"; "$VENV/bin/python" odoo-bin -c "$CONF" -d "$DB" -i saas_core,saas_billing,saas_website,saas_iam,payment_demo --without-demo=False --stop-after-init
     "$VENV/bin/python" odoo-bin shell -c "$CONF" -d "$DB" --no-http --log-level=warn < "$REPO/scripts/seed_dev.py" ;;
   *) echo "usage: $0 {up|down|status|logs|seed|shell|reset}"; exit 1 ;;
 esac

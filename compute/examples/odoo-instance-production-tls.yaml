@@ -1,6 +1,6 @@
 # Production-style example: TLS via cert-manager, scheduled backups to
 # object storage, an explicit ResourceQuota, and platform-built addons
-# baked into the image (see docs/architecture.md, "Addons & Image
+# baked into the image (see setup/01-ARCHITECTURE.md, "Addons & Image
 # Strategy" — addons are never installed at runtime from this list).
 apiVersion: saas.odoo.example.com/v1alpha1
 kind: OdooInstance

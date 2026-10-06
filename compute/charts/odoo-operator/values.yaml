@@ -72,7 +72,7 @@ metrics:
     enabled: false
     interval: 30s
 
-# Platform-wide networking configuration. See docs/architecture.md
+# Platform-wide networking configuration. See setup/01-ARCHITECTURE.md
 # ("Networking") for why this is an operator-level setting rather than a
 # per-tenant OdooInstance field.
 networking:
@@ -106,7 +106,7 @@ backup:
 restore:
   # Overrides internal/resources.DefaultRestoreToolImage. Leave empty to
   # use the backup tool image. Only used by instances that set
-  # spec.restore (see docs/architecture.md, "Restoring an Existing
+  # spec.restore (see setup/01-ARCHITECTURE.md, "Restoring an Existing
   # Backup").
   toolImage: ""
 

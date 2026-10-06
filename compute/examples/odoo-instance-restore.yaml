@@ -6,17 +6,17 @@
 # turn into a second restore against a live instance.
 #
 # The controller runs a one-time restore Job (the direct inverse of the
-# backup CronJob described in docs/architecture.md, "Backups") in place of
+# backup CronJob described in setup/01-ARCHITECTURE.md, "Backups") in place of
 # the ordinary odoo-init Job: it downloads the database dump + filestore
 # archive identified below, restores them into this instance's own
 # database/filestore PVC, and only then creates the web Deployment — see
-# docs/architecture.md, "Restoring an Existing Backup".
+# setup/01-ARCHITECTURE.md, "Restoring an Existing Backup".
 #
 # spec.restore.source reuses the exact same storage abstraction as
 # spec.backup.destination (BackupDestinationSpec): Type is "PVC" or
 # "ObjectStorage". This example uses ObjectStorage, since that is the
 # common case for onboarding a customer's backup from outside the
-# platform; see that section of docs/architecture.md for the PVC-source
+# platform; see that section of setup/01-ARCHITECTURE.md for the PVC-source
 # alternative and its preconditions.
 apiVersion: saas.odoo.example.com/v1alpha1
 kind: OdooInstance

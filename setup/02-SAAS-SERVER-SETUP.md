@@ -1,21 +1,22 @@
 # Running the SaaS control plane on a server
 
-The control plane is Odoo 18 plus three addons:
+The control plane is Odoo 18 plus four addons (how they fit together: [01-ARCHITECTURE.md](01-ARCHITECTURE.md)):
 
 | Addon | What it covers |
 |---|---|
 | `saas_core` | instances, clusters, job queue |
 | `saas_billing` | plans, invoices, wallet, payments |
 | `saas_website` | portal and JSON API; also serves the prebuilt React SPA |
+| `saas_iam` | project team members, roles and environment scopes ([docs/iam.md](../docs/iam.md)) |
 
 It runs as two processes on one server:
 
 - **`odoo`**: the web server (prefork workers plus cron).
 - **`saas-jobs`**: the durable-job worker. It runs deploys, restores, backups and database operations outside Odoo's time limits.
 
-It manages tenants on Kubernetes clusters; see `PRODUCTION-CLUSTER-SETUP.md` (your own servers, HA MicroK8s), `DOKS-CLUSTER-SETUP.md` (DigitalOcean Kubernetes) or `MICROK8S-CLUSTER-SETUP.md` (single-node test). It never needs SSH to them, only each cluster's kubeconfig.
+It manages tenants on Kubernetes clusters, set up after this guide with [03a-MICROK8S-CLUSTER-SETUP.md](03a-MICROK8S-CLUSTER-SETUP.md) (your own servers: HA or single node) or [03b-DOKS-CLUSTER-SETUP.md](03b-DOKS-CLUSTER-SETUP.md) (DigitalOcean Kubernetes). It never needs SSH to them, only each cluster's kubeconfig.
 
-This guide installs natively on Ubuntu 24.04 with systemd. Running the control plane as containers is PLAN.txt 3.3.
+This guide installs natively on Ubuntu 24.04 with systemd. There is no container image for the control plane.
 
 ## 0. What you need
 
@@ -106,16 +107,16 @@ sudo chown root:odoo /etc/odoo/saas.conf && sudo chmod 640 /etc/odoo/saas.conf
 ```
 
 - `saas_secret_key` must be set before the first cluster is registered. Without it, secrets are stored unencrypted.
-- Each open live-log or terminal view holds one worker for up to 300s. Size `workers` for the number of admins and customers watching at once; see PLAN.txt 2.3.
+- Each open live-log or terminal view holds one worker for up to 300s. Size `workers` for the number of admins and customers watching at once.
 
 ## 5. Create the database
 
 ```bash
 sudo -iu odoo /opt/saas/venv/bin/python /opt/saas/odoo18/odoo-bin -c /etc/odoo/saas.conf \
-  -d saas -i saas_core,saas_billing,saas_website --without-demo=all --stop-after-init
+  -d saas -i saas_core,saas_billing,saas_website,saas_iam --without-demo=all --stop-after-init
 ```
 
-Do **not** run `scripts/seed_dev.py` on a real server: it creates fake customers, regions and instances. Do not install `payment_demo` either.
+Do **not** run `control-plane/scripts/seed_dev.py` on a real server: it creates fake customers, regions and instances. Do not install `payment_demo` either.
 
 ## 6. Services
 
@@ -213,25 +214,25 @@ sudo certbot --nginx -d saas.example.com      # adds 443 + renewal
 sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
 ```
 
-- Give tenants (not this server) their own wildcard domain; see the cluster guide.
+- Give tenants (not this server) their own wildcard domain; see the cluster guide (03a step 7.3, 03b step 3).
 
 ## 8. First configuration (backend: `https://saas.example.com/web`)
 
 1. **Log in:** as `admin` / `admin`, and change the password immediately.
-2. **Groups:** on the Users form, *SaaS* sets User or Manager, and *SaaS Terminal* sets Pod Shell (terminals into tenant pods) or Cluster Shell (kubectl on whole clusters; needs `PRODUCTION-CLUSTER-SETUP.md` step 12.4). The `admin` user gets Manager and Cluster Shell on install.
+2. **Groups:** on the Users form, *SaaS* sets User or Manager, and *SaaS Terminal* sets Pod Shell (terminals into tenant pods) or Cluster Shell (kubectl on whole clusters; needs the cluster's toolbox ServiceAccount: [03a](03a-MICROK8S-CLUSTER-SETUP.md) step 12.4 or [03b](03b-DOKS-CLUSTER-SETUP.md) step 7.2). The `admin` user gets Manager and Cluster Shell on install.
 3. **Mail:** Settings → Technical → Outgoing Mail Servers (SMTP). Set the company email.
 4. **SaaS Manager settings:** Settings → SaaS Manager:
    - support email;
    - trial length;
    - backup storage (provider, keys, bucket, region/endpoint);
    - pricing rates.
-5. **Payments:** Invoicing/Website → Payment Providers. Enable the real provider with its keys and test a small real charge (PLAN.txt 3.1).
+5. **Payments:** Invoicing/Website → Payment Providers. Enable the real provider with its keys and test a small real charge.
 6. **Catalog** (*SaaS Manager → Catalog*; for a test catalog, install the **SaaS Demo Catalog** app instead):
    - *Odoo versions*: e.g. `18.0`, image `odoo`, tag `18.0`, hosting version on.
    - *Products*: e.g. "Odoo Hosting" with *Is hosting* on.
    - *Plans*: CPU/RAM/workers/storage limits and prices, linked to products.
    - *Scaling*: adjust the plan CPU/RAM limits; each tenant runs one Odoo pod and one PostgreSQL instance.
-7. **Register each cluster** (from `PRODUCTION-CLUSTER-SETUP.md` step 13, or `DOKS-CLUSTER-SETUP.md` step 9). That step has a copy-paste script. To do it by hand in the backend instead (*SaaS Manager → Configuration*):
+7. **Register each cluster** ([03a](03a-MICROK8S-CLUSTER-SETUP.md) step 13, or [03b](03b-DOKS-CLUSTER-SETUP.md) step 9). That step has a copy-paste script. To do it by hand in the backend instead (*SaaS Manager → Configuration*):
    1. *Regions*: the location customers pick (name, code).
    2. *Kubernetes Clusters*: the region, upload the kubeconfig, the TLS ClusterIssuer, the node IP. Fill the *Image Builds* tab if Git repos are used. A region can have several clusters.
    3. *Base Domains*: the tenant wildcard domain (e.g. `apps.example.com`) and the cluster its DNS points at.
@@ -249,7 +250,7 @@ sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
 sudo -iu odoo git -C ~/platform pull
 sudo systemctl stop saas-jobs saas-odoo
 sudo -iu odoo /opt/saas/venv/bin/python /opt/saas/odoo18/odoo-bin -c /etc/odoo/saas.conf \
-  -d saas -u saas_core,saas_billing,saas_website --stop-after-init
+  -d saas -u saas_core,saas_billing,saas_website,saas_iam --stop-after-init
 sudo systemctl start saas-odoo saas-jobs
 ```
 

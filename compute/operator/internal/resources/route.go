@@ -10,7 +10,7 @@ import (
 
 // HTTPRoute builds a Gateway API HTTPRoute binding instance.Spec.Domain.Hostname
 // to the Odoo Service, parented to the shared platform Gateway. This is the
-// preferred routing mechanism (see docs/architecture.md, "Networking"):
+// preferred routing mechanism (see setup/01-ARCHITECTURE.md, "Networking"):
 // one shared Gateway/load balancer serves every tenant, and each
 // OdooInstance only ever describes its own hostname, never a
 // provider-specific Ingress/LoadBalancer resource.

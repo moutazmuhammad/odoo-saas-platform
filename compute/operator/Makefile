@@ -91,7 +91,7 @@ deploy: manifests ## Install the operator (CRDs + RBAC + Deployment) via its Hel
 		--set image.tag=$(IMG_TAG)
 
 .PHONY: undeploy
-undeploy: ## Uninstall the operator Helm release (leaves CRDs and tenant data in place; see docs/architecture.md "Uninstall").
+undeploy: ## Uninstall the operator Helm release (leaves CRDs and tenant data in place; see setup/01-ARCHITECTURE.md "Uninstall").
 	helm uninstall odoo-operator --namespace odoo-system
 
 ##@ Tooling

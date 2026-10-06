@@ -1,6 +1,6 @@
 # Minimal example: single-replica instance with a Managed (operator-owned)
 # PostgreSQL database, Gateway API routing, and no backups. This is what
-# `docs/architecture.md`'s walkthrough uses.
+# `setup/01-ARCHITECTURE.md`'s walkthrough uses.
 apiVersion: saas.odoo.example.com/v1alpha1
 kind: OdooInstance
 metadata:

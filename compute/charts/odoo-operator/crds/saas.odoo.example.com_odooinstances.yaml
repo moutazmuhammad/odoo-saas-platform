@@ -41,7 +41,7 @@ spec:
           It is deliberately cluster-scoped: creating one causes the controller to
           provision a dedicated, isolated tenant namespace (namespace-per-tenant)
           rather than requiring the SaaS API to pre-create and manage namespaces
-          itself. See docs/architecture.md ("Multi-Tenancy Model") for the
+          itself. See setup/01-ARCHITECTURE.md ("Multi-Tenancy Model") for the
           trade-offs behind this decision.
         properties:
           apiVersion:
@@ -79,7 +79,7 @@ spec:
                   image was built with. It is informational/validation metadata only:
                   addons are baked into Image at build time by the platform's image
                   pipeline, never installed or downloaded at runtime. See
-                  docs/architecture.md ("Addons & Image Strategy").
+                  setup/01-ARCHITECTURE.md ("Addons & Image Strategy").
                 items:
                   description: AddonSpec records one addon expected to be present
                     in Image.
@@ -360,7 +360,7 @@ spec:
                           with omitempty, cause the JSON encoder to drop the key entirely
                           (Go's encoding/json treats bool-false as "empty"), and the API
                           server's CRD default would then silently re-flip it back to true.
-                          See docs/architecture.md ("A CRD Defaulting Gotcha").
+                          See setup/01-ARCHITECTURE.md ("A CRD Defaulting Gotcha").
                         type: boolean
                       issuerRef:
                         description: |-
@@ -746,7 +746,7 @@ spec:
                 description: |-
                   Version is the Odoo major version for this instance, e.g. "17.0",
                   "18.0", "19.0". Changing Version triggers a controlled image update;
-                  see docs/architecture.md ("Upgrade Strategy") for how this differs
+                  see setup/01-ARCHITECTURE.md ("Upgrade Strategy") for how this differs
                   from a routine image tag bump.
                 pattern: ^[0-9]+\.0$
                 type: string
@@ -770,7 +770,7 @@ spec:
                       a client round-tripping this object with Count explicitly set to 0
                       would have the key dropped and the API server would silently
                       re-default it to 2. See TLSSpec.Enabled's comment for the general
-                      pattern (docs/architecture.md, "A CRD Defaulting Gotcha").
+                      pattern (setup/01-ARCHITECTURE.md, "A CRD Defaulting Gotcha").
                     format: int32
                     maximum: 32
                     minimum: 0

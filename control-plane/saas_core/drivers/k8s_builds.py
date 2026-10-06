@@ -51,9 +51,16 @@ def _template(name):
         return fh.read()
 
 
+_DOCKER_HUB_HOSTS = ('docker.io', 'index.docker.io', 'registry-1.docker.io')
+
+
 def docker_config_json(host, username, password):
     auth = base64.b64encode(('%s:%s' % (username, password)).encode()).decode()
-    return json.dumps({'auths': {host: {'auth': auth}}})
+    auths = {host: {'auth': auth}}
+    if host in _DOCKER_HUB_HOSTS:
+        # BuildKit and the docker CLI look Docker Hub up under its legacy key.
+        auths['https://index.docker.io/v1/'] = {'auth': auth}
+    return json.dumps({'auths': auths})
 
 
 def read_pod_log(core, pod_name, namespace, container, tail=None):

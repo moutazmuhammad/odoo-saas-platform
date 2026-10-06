@@ -552,3 +552,12 @@ class TestImageBuildDriver(TransactionCase):
     def test_update_status_applied(self):
         self._cr(5, 'build-2', 'UpdateApplied', 5)
         self.assertEqual(self.driver.update_status(_handle())['state'], 'applied')
+
+
+@tagged('post_install', '-at_install')
+class TestDockerConfigJson(TransactionCase):
+    def test_docker_hub_gets_legacy_index_key(self):
+        from ..drivers.k8s_builds import docker_config_json
+        auths = json.loads(docker_config_json('docker.io', 'u', 'p'))['auths']
+        self.assertEqual(set(auths), {'docker.io', 'https://index.docker.io/v1/'})
+        self.assertEqual(set(json.loads(docker_config_json('ghcr.io', 'u', 'p'))['auths']), {'ghcr.io'})

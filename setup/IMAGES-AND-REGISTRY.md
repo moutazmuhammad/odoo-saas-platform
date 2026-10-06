@@ -26,19 +26,9 @@ Sources: `compute/charts/odoo-operator/values.yaml:3-7`, `compute/operator/inter
 
 **We build exactly three images:** the operator, the backup tool (both by hand) and the tenant images (automatically, per Git push). The Odoo image itself is the official one, unchanged.
 
-### Not used any more (ssh_docker leftovers)
+### Removed leftovers
 
-Nothing on the Kubernetes path references these. They are kept only by old tests or by nothing at all:
-
-| File | Status |
-|---|---|
-| `control-plane/saas_core/docker/Dockerfile.odoo-light`, `build-all.sh` | `odoo-light:<ver>` = official image minus the Odoo source, which the old Docker hosts mounted from `/opt/odoo-source`. No Kubernetes code uses it. |
-| `control-plane/saas_core/docker/Dockerfile.odoo-base`, `build-base-image.sh` | Baked `/opt/odoo-source/<ver>` into `odoo-light` and pushed to the old localhost registry from `/etc/saas/registry.env`. Unused. |
-| `control-plane/saas_core/docker/setup-source.sh`, `provision-registry.sh`, `provision-build-sandbox.sh`, `provision-object-storage.sh` | Host setup for the old Docker servers (source clones, `registry:2` on 127.0.0.1, iptables build sandbox, MinIO + JuiceFS). Unused. |
-| `control-plane/saas_core/templates/Dockerfile.tenant.jinja`, `docker-compose.yml.jinja` | Only rendered by tests (`tests/test_object_filestore.py:62-101`, `tests/test_container_hardening.py:11`) through `_render_template` (`models/saas_instance.py:3607`), which has no other caller. Dead. |
-| `saas.instance._get_container_uid` (`models/saas_instance.py:1614`) | Runs `docker run` over SSH; no caller. Dead. |
-
-They can be deleted in a cleanup commit, together with the two tests above.
+The old Docker-host files (`control-plane/saas_core/docker/`: `Dockerfile.odoo-light`, `Dockerfile.odoo-base` and their build/provision scripts; the `docker-compose.yml`, `Dockerfile.tenant`, `odoo.conf` and nginx templates) were deleted. Nothing on the Kubernetes path used them. Only `control-plane/saas_core/templates/build/` remains: the tenant build pipeline below.
 
 ---
 
@@ -75,7 +65,7 @@ helm upgrade odoo-operator compute/charts/odoo-operator -n odoo-system \
   -f compute/examples/doks/operator-values.yaml --wait
 ```
 
-Do not use `make deploy`: it points at `charts/odoo-operator` relative to `compute/operator`, which does not exist (`Makefile:84`).
+`make deploy IMG=...` (from `compute/operator`) runs the same `helm upgrade --install` with that image; apply the CRDs first.
 
 ### 2.2 Backup tool
 
@@ -299,4 +289,3 @@ Checklist:
 | 5 | PostgreSQL / CNPG images hard-coded, no override, no pull secret | `compute/operator/internal/resources/database.go:87,174`, `cnpg.go:55` |
 | 6 | Toolbox image hard-coded | `control-plane/saas_core/drivers/kubernetes_driver.py:250` |
 | 7 | CRD doc says the controller copies `pullSecretRefs` into the tenant namespace; it doesn't (the control plane does) | `compute/operator/api/v1alpha1/odooinstance_types.go:155-158` |
-| 8 | `make deploy` uses a non-existent chart path, and `cut -d:` breaks an `IMG` with a registry port | `compute/operator/Makefile:84-87` |

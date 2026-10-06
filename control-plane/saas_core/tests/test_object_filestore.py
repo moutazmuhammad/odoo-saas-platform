@@ -4,20 +4,13 @@ from odoo.tests.common import TransactionCase, tagged
 @tagged('post_install', '-at_install')
 class TestObjectFilestore(TransactionCase):
     """Phase 2.1.3: object-storage filestore — server capability flag, the
-    computed JuiceFS path, and the conditional docker-compose volume.
+    computed JuiceFS path.
 
     The 2.1.4 (DataService.migrate_filestore_to_object_store), 2.1.6
     (_hosting_clone_filestore) and 2.2 (immutable tenant image build:
     _tenant_base_image/_build_and_push_tenant_image/_image_build_cmd/
-    rollback_image) test groups that used to live here were removed: all
-    of those methods were ssh_docker-only (docker exec / SSH-based image
-    build+push) and were removed along with that backend. The Jinja
-    template-rendering tests (docker-compose.yml.jinja / odoo.conf.jinja /
-    Dockerfile.tenant.jinja) are kept — they exercise _render_template
-    directly with an explicit context, not the deleted orchestration
-    methods, so they still pass and still document the templates'
-    immutable-vs-legacy-mode behavior for whenever that pipeline is
-    rebuilt for Kubernetes.
+    rollback_image) test groups that used to live here were removed with
+    the ssh_docker backend, as were the Docker-host template tests.
     """
 
     def setUp(self):
@@ -55,50 +48,3 @@ class TestObjectFilestore(TransactionCase):
         # <mount>/<partner>/<sub>/filestore, and stays under the mount
         self.assertTrue(path.startswith('/mnt/jfs/'))
         self.assertTrue(path.endswith('/ofobj/filestore'))
-
-    def test_compose_includes_filestore_volume_only_when_set(self):
-        inst = self._instance('ofrender', self.env['saas.server'].sudo().create(
-            {'name': 'of-render'}))
-        with_mount = inst._render_template('docker-compose.yml.jinja', {
-            'odoo_version': '18.0', 'subdomain': 'ofrender', 'xmlrpc_port': 8069,
-            'longpolling_port': 8072, 'filestore_mount': '/mnt/jfs/p/ofrender/filestore'})
-        self.assertIn('/mnt/jfs/p/ofrender/filestore:/var/lib/odoo/filestore', with_mount)
-        without = inst._render_template('docker-compose.yml.jinja', {
-            'odoo_version': '18.0', 'subdomain': 'ofrender', 'xmlrpc_port': 8069,
-            'longpolling_port': 8072, 'filestore_mount': ''})
-        self.assertNotIn(':/var/lib/odoo/filestore', without)
-
-    def test_compose_immutable_mode_skips_mounts(self):
-        inst = self._instance('immut', self.env['saas.server'].sudo().create(
-            {'name': 'immut-srv'}))
-        img = '127.0.0.1:5000/tenant-immut@sha256:abc'
-        immutable = inst._render_template('docker-compose.yml.jinja', {
-            'odoo_version': '18.0', 'subdomain': 'immut', 'xmlrpc_port': 8069,
-            'longpolling_port': 8072, 'tenant_image': img})
-        self.assertIn('image: %s' % img, immutable)
-        self.assertNotIn('/opt/odoo-source/', immutable)        # no source mount
-        self.assertNotIn(':/mnt/extra-addons', immutable)       # no addons mount
-        self.assertNotIn('requirements.txt:/etc/odoo', immutable)
-        # legacy mode keeps the mounts
-        legacy = inst._render_template('docker-compose.yml.jinja', {
-            'odoo_version': '18.0', 'subdomain': 'immut', 'xmlrpc_port': 8069,
-            'longpolling_port': 8072, 'odoo_image': 'odoo-light', 'tenant_image': ''})
-        self.assertIn('/opt/odoo-source/18.0:/opt/odoo', legacy)
-        self.assertIn(':/mnt/extra-addons', legacy)
-
-    def test_immutable_addons_path_and_bake_dir(self):
-        inst = self._instance('adn', self.env['saas.server'].sudo().create(
-            {'name': 'adn-srv'}))
-        # odoo.conf: immutable mode points addons_path at the baked /opt/tenant-addons
-        conf_immut = inst._render_template('odoo.conf.jinja', {
-            'immutable': True, 'repo_addons_paths': ['/opt/tenant-addons/myrepo']})
-        self.assertIn('/opt/tenant-addons', conf_immut)
-        self.assertNotIn('/mnt/extra-addons', conf_immut)
-        conf_legacy = inst._render_template('odoo.conf.jinja', {
-            'immutable': False, 'repo_addons_paths': []})
-        self.assertIn('/mnt/extra-addons', conf_legacy)
-        # Dockerfile bakes custom modules to the non-VOLUME /opt/tenant-addons
-        df = inst._render_template('Dockerfile.tenant.jinja', {
-            'base_image': 'b', 'pip_packages': False, 'has_addons': True})
-        self.assertIn('/opt/tenant-addons', df)
-        self.assertNotIn(':/mnt/extra-addons', df)

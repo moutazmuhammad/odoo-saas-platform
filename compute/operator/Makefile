@@ -79,12 +79,16 @@ install: manifests ## Install CRDs into the cluster pointed at by the current ku
 uninstall: manifests ## Remove CRDs (and, by cascade, every OdooInstance) from the cluster.
 	kubectl delete -f config/crd/bases --ignore-not-found
 
+# The tag is what follows the last ':' (a registry port like host:5000 stays
+# in the repository).
+IMG_TAG = $(lastword $(subst :, ,$(IMG)))
+
 .PHONY: deploy
 deploy: manifests ## Install the operator (CRDs + RBAC + Deployment) via its Helm chart.
-	helm upgrade --install odoo-operator charts/odoo-operator \
+	helm upgrade --install odoo-operator ../charts/odoo-operator \
 		--namespace odoo-system --create-namespace \
-		--set image.repository=$(shell echo ${IMG} | cut -d: -f1) \
-		--set image.tag=$(shell echo ${IMG} | cut -d: -f2)
+		--set image.repository=$(patsubst %:$(IMG_TAG),%,$(IMG)) \
+		--set image.tag=$(IMG_TAG)
 
 .PHONY: undeploy
 undeploy: ## Uninstall the operator Helm release (leaves CRDs and tenant data in place; see docs/architecture.md "Uninstall").

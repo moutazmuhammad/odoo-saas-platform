@@ -12,7 +12,6 @@ import string
 import threading
 import time
 import uuid
-from jinja2 import Environment, FileSystemLoader
 
 from odoo import api, fields, models, _
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -39,16 +38,6 @@ def _hosting_template_build_lock(instance_id):
             _HOSTING_TEMPLATE_BUILD_LOCKS[instance_id] = lock
         return lock
 
-
-TEMPLATES_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    'templates',
-)
-
-_JINJA_ENV = Environment(
-    loader=FileSystemLoader(TEMPLATES_PATH),
-    keep_trailing_newline=True,
-)
 
 SUBDOMAIN_RE = re.compile(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')
 DB_USER_RE = re.compile(r'^[a-z_][a-z0-9_]*$')
@@ -1610,25 +1599,6 @@ class SaasInstance(models.Model):
         """
         self.ensure_one()
         return self.docker_server_id.private_ip_v4 or self.docker_server_id.ip_v4
-
-    def _get_container_uid(self, ssh):
-        """Return the UID of the default user inside the Docker image.
-
-        Uses ``--entrypoint`` to bypass the custom entrypoint (which
-        requires mounted volumes) and runs a plain ``id -u``.  Falls
-        back to 101 (the default in the official Odoo images) if
-        detection fails.
-        """
-        self.ensure_one()
-        odoo_image = self.odoo_version_id._get_docker_image()
-        exit_code, uid_out, _ = ssh.execute(
-            'docker run --rm --entrypoint id %s -u 2>/dev/null'
-            % shlex.quote(odoo_image)
-        )
-        uid = uid_out.strip()
-        if exit_code != 0 or not uid.isdigit():
-            return '101'
-        return uid
 
     # ------------------------------------------------------------------
     # Phase 5: hosting self-service database operations + PG-level
@@ -3603,11 +3573,6 @@ finally:
             if nl >= 0 and nl < len(new_log) - 1:
                 new_log = '... [truncated] ...\n' + new_log[nl + 1:]
         self.provisioning_log = new_log
-
-    def _render_template(self, template_name, context):
-        """Render a Jinja2 template from the templates/ directory."""
-        template = _JINJA_ENV.get_template(template_name)
-        return template.render(context)
 
     # Advisory-lock namespace for server allocation (distinct from the port
     # allocator's 0x5AA5_0001) — serializes concurrent allocations per region.

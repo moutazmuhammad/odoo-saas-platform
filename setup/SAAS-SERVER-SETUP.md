@@ -13,7 +13,7 @@ It runs as two processes on one server:
 - **`odoo`**: the web server (prefork workers plus cron).
 - **`saas-jobs`**: the durable-job worker. It runs deploys, restores, backups and database operations outside Odoo's time limits.
 
-It manages tenants on Kubernetes clusters; see `PRODUCTION-CLUSTER-SETUP.md` (production) or `MICROK8S-CLUSTER-SETUP.md` (test). It never needs SSH to them, only each cluster's kubeconfig.
+It manages tenants on Kubernetes clusters; see `PRODUCTION-CLUSTER-SETUP.md` (your own servers, HA MicroK8s), `DOKS-CLUSTER-SETUP.md` (DigitalOcean Kubernetes) or `MICROK8S-CLUSTER-SETUP.md` (single-node test). It never needs SSH to them, only each cluster's kubeconfig.
 
 This guide installs natively on Ubuntu 24.04 with systemd. Running the control plane as containers is PLAN.txt 3.3.
 
@@ -231,7 +231,7 @@ sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
    - *Products*: e.g. "Odoo Hosting" with *Is hosting* on.
    - *Plans*: CPU/RAM/workers/storage limits and prices, linked to products.
    - *Scaling*: adjust the plan CPU/RAM limits; each tenant runs one Odoo pod and one PostgreSQL instance.
-7. **Register each cluster** (from `PRODUCTION-CLUSTER-SETUP.md`, step 13). That step has a copy-paste script. To do it by hand in the backend instead (*SaaS Manager → Configuration*):
+7. **Register each cluster** (from `PRODUCTION-CLUSTER-SETUP.md` step 13, or `DOKS-CLUSTER-SETUP.md` step 9). That step has a copy-paste script. To do it by hand in the backend instead (*SaaS Manager → Configuration*):
    1. *Regions*: the location customers pick (name, code).
    2. *Kubernetes Clusters*: the region, upload the kubeconfig, the TLS ClusterIssuer, the node IP. Fill the *Image Builds* tab if Git repos are used. A region can have several clusters.
    3. *Base Domains*: the tenant wildcard domain (e.g. `apps.example.com`) and the cluster its DNS points at.

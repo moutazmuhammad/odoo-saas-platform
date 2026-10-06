@@ -839,6 +839,8 @@ kubectl -n longhorn-system get volumes.longhorn.io \
 
 ## Appendix: managed Kubernetes (GKE / EKS / AKS / DOKS)
 
+For DigitalOcean there is a complete guide: [DOKS-CLUSTER-SETUP.md](DOKS-CLUSTER-SETUP.md). For other providers, adapt it with this table:
+
 | Step | Change |
 |---|---|
 | 1–4 | Create a cluster with 3+ nodes in one zone (on GKE: Standard, not Autopilot). The provider runs the API with HA. Skip 4.1. |

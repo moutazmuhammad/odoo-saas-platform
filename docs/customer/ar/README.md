@@ -31,7 +31,6 @@
 - [اختيار المنطقة وإصدار Odoo ونسخته](region-version.md)
 - [تغيير خطة الاشتراك](change-plan.md)
 - [إدارة سعة التخزين والإضافات](storage-capacity.md)
-- [تغيير فئة موارد التشغيل](compute-tiers.md)
 
 ## بيئات Staging وDevelopment
 

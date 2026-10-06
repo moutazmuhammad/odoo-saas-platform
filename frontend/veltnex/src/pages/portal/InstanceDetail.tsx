@@ -16,7 +16,6 @@ import {
   CreditCard,
   ArrowUpCircle,
   Clock,
-  ShieldCheck,
 } from "lucide-react";
 import { GitBranch } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -72,7 +71,6 @@ export default function InstanceDetail() {
   const [live, setLive] = React.useState<{ cpu: number; ram: number } | null>(null);
   const [cpuHist, setCpuHist] = React.useState<number[]>([]);
   const [ramHist, setRamHist] = React.useState<number[]>([]);
-  const [changingTier, setChangingTier] = React.useState<number | null>(null);
 
   const load = React.useCallback(async () => {
     try {
@@ -98,12 +96,12 @@ export default function InstanceDetail() {
   // Live status polling (state + usage) — resilient (backoff / pause-hidden /
   // stop-on-auth) via usePolling.
   const _fast = instance ? TRANSITIONAL.has(instance.state) : false;
-  const _pollStatus = !!instance && (_fast || instance.state === "running");
+  const _pollStatus = !!instance && (_fast || ["running", "stopped", "suspended", "failed"].includes(instance.state));
   usePolling(
     async () => {
       const s = await api.instanceStatus(instanceId);
       setInstance((prev) =>
-        prev ? { ...prev, state: s.state, state_label: s.state_label, url: s.url || prev.url, usage: s.usage || prev.usage } : prev
+        prev ? { ...prev, ...s, url: s.url || prev.url, usage: s.usage || prev.usage } : prev
       );
     },
     { interval: _fast ? 4000 : 10000, enabled: _pollStatus }
@@ -180,25 +178,6 @@ export default function InstanceDetail() {
       toast.error(i18nText("Couldn't cancel"), e instanceof ApiError ? e.message : i18nText("Please try again."));
     } finally {
       setCancelling(false);
-    }
-  };
-
-  const changeComputeTier = async (tierId: number) => {
-    setChangingTier(tierId);
-    try {
-      const { checkout_url, applied } = await api.computeTierChange(instanceId, tierId);
-      if (checkout_url) {
-        window.location.href = checkout_url;
-        return;
-      }
-      if (applied) {
-        toast.success(i18nText("Compute tier changed"), i18nText("Scaling in the background — this can take a few minutes."));
-        await load();
-      }
-    } catch (e) {
-      toast.error(i18nText("Couldn't change compute tier"), e instanceof ApiError ? e.message : i18nText("Please try again."));
-    } finally {
-      setChangingTier(null);
     }
   };
 
@@ -363,15 +342,6 @@ export default function InstanceDetail() {
         </Button>
       </Card>}
 
-      {hasPermission(instance.permissions, "billing.manage") && instance.compute_driver === "kubernetes" && (
-        <ComputeTierCard
-          instance={instance}
-          changingTier={changingTier}
-          onChange={changeComputeTier}
-          onCheckout={() => (window.location.href = `/my/instances/${id}/compute-tier/checkout`)}
-        />
-      )}
-
       {hasPermission(instance.permissions, "billing.manage") && !instance.is_trial && <BillingPanel instance={instance} onChange={load} />}
 
       <Dialog
@@ -395,86 +365,6 @@ export default function InstanceDetail() {
   );
 }
 
-function ComputeTierCard({
-  instance,
-  changingTier,
-  onChange,
-  onCheckout,
-}: {
-  instance: ApiInstance;
-  changingTier: number | null;
-  onChange: (tierId: number) => void;
-  onCheckout: () => void;
-}) {
-  const tiers = instance.compute_tiers || [];
-  const current = instance.compute_tier;
-  const pending = instance.compute_tier_pending;
-  if (!tiers.length) return null;
-
-  return (
-    <Card className="mt-4 p-5">
-      <div className="flex items-center justify-between">
-        <p className="font-medium">{i18nText("Compute Tier")}<HelpHint anchor="compute-tiers" className="ms-1.5" />
-        </p>
-        {current && (
-          <span className="inline-flex items-center gap-1.5 text-xs text-success">
-            <ShieldCheck className="size-3.5" /> {current.name}
-          </span>
-        )}
-      </div>
-
-      {pending && (
-        <div className="mt-3 flex flex-col gap-2 rounded-lg border border-info/40 bg-info/5 p-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-2">
-            <Clock className="mt-0.5 size-4 shrink-0 text-info" />
-            <p className="text-xs text-muted">{i18nText("Payment pending for the ")}<strong>{pending.name}</strong>{i18nText(" tier.")}</p>
-          </div>
-          <Button size="sm" className="shrink-0" onClick={onCheckout}>{i18nText("Complete checkout")}</Button>
-        </div>
-      )}
-
-      <div className="mt-3 grid gap-3 sm:grid-cols-3">
-        {tiers.map((tier) => {
-          const isCurrent = current?.id === tier.id;
-          const isUpgrade = !current || tier.replicas > current.replicas;
-          return (
-            <div
-              key={tier.id}
-              className={cn(
-                "flex flex-col gap-2 rounded-lg border p-3",
-                isCurrent ? "border-success/50 bg-success/5" : "border-border",
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">{tier.name}</p>
-              </div>
-              <p className="text-xs text-muted">
-                {tier.price > 0 ? `${tier.price}/month` : i18nText("Included")}
-              </p>
-              {tier.description && (
-                <p className="text-xs text-muted">{tier.description}</p>
-              )}
-              {isCurrent ? (
-                <span className="mt-1 text-center text-xs font-medium text-success">{i18nText("Current tier")}</span>
-              ) : (
-                <ActionButton
-                  size="sm"
-                  variant={isUpgrade ? "default" : "secondary"}
-                  loading={changingTier === tier.id}
-                  loadingText={i18nText("Starting\u2026")}
-                  onClick={() => onChange(tier.id)}
-                  disabled={changingTier !== null && changingTier !== tier.id}
-                >
-                  {isUpgrade ? i18nText("Upgrade") : i18nText("Downgrade")}
-                </ActionButton>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </Card>
-  );
-}
 
 function UsageCard({
   icon: Icon,

@@ -7,11 +7,6 @@
               parent="saas_core.saas_master_menu_catalog"
               action="saas_core.saas_plan_action"
               sequence="20"/>
-    <menuitem id="saas_master_menu_compute_tiers"
-              name="Compute Tiers"
-              parent="saas_core.saas_master_menu_catalog"
-              action="saas_core.saas_compute_tier_action"
-              sequence="30"/>
     <menuitem id="saas_master_menu_addons"
               name="Add-ons"
               parent="saas_core.saas_master_menu_catalog"

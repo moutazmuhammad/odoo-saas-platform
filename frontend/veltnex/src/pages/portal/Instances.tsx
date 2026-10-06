@@ -1,10 +1,12 @@
+import { useRuntimeClock } from "@/hooks/useRuntimeClock";
+import { isOnline, displayRuntimeStatus } from "@/lib/runtime-status";
 import { i18nText } from "@/i18n";
 import * as React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Server, Plus, Search, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { StatusBadge } from "@/components/StatusBadge";
+import { RuntimeStatusBadge } from "@/components/RuntimeStatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { AlertBanner } from "@/components/AlertBanner";
 import { PageHeader } from "@/components/PageHeader";
@@ -22,6 +24,7 @@ const projectLink = (i: ApiInstance) =>
   i.is_hosting ? `/my/instances/${i.id}/environments` : `/my/instances/${i.id}`;
 
 export default function Instances() {
+  const runtimeNow = useRuntimeClock();
   const { instances, loading, error } = useInstances();
   const { user } = useAuth();
   const canCreate = user?.can_create_projects !== false;
@@ -51,13 +54,13 @@ export default function Instances() {
   const [query, setQuery] = React.useState("");
   const [onlyRunning, setOnlyRunning] = React.useState(false);
 
-  const runningTotal = customerProjects.filter((i) => i.state === "running").length;
+  const runningTotal = customerProjects.filter((i) => isOnline(i, runtimeNow)).length;
 
   const filtered = customerProjects.filter((i) => {
     const q = query.toLowerCase();
     const matchesQuery =
       i.name.toLowerCase().includes(q) || (i.region || "").toLowerCase().includes(q);
-    return matchesQuery && (!onlyRunning || i.state === "running");
+    return matchesQuery && (!onlyRunning || isOnline(i, runtimeNow));
   });
 
   const columns: Column<ApiInstance>[] = [
@@ -81,7 +84,7 @@ export default function Instances() {
     { key: "type", header: i18nText("Type"), hideBelow: "sm", sortValue: (i) => (i.is_hosting ? 0 : 1), className: "text-muted", render: (i) => (i.is_hosting ? i18nText("Hosting") : i18nText("Service")) },
     { key: "region", header: i18nText("Region"), hideBelow: "md", className: "text-muted", render: (i) => i.region || "—" },
     { key: "size", header: i18nText("Size"), hideBelow: "lg", className: "text-muted", render: (i) => i18nText("{0} workers · {1}", [i.workers, formatBytes(i.storage_gb)]) },
-    { key: "status", header: i18nText("Status"), sortValue: (i) => i.state, render: (i) => <StatusBadge status={i.state} label={i.state_label} /> },
+    { key: "status", header: i18nText("Status"), sortValue: (i) => displayRuntimeStatus(i), render: (i) => <RuntimeStatusBadge instance={i} /> },
     { key: "created", header: i18nText("Created"), hideBelow: "md", className: "text-muted", sortValue: (i) => i.created, render: (i) => (i.created ? formatDate(i.created) : "—") },
     { key: "go", header: "", align: "right", width: "44px", render: () => <ChevronRight className="size-4 text-muted" /> },
   ];
@@ -125,7 +128,7 @@ export default function Instances() {
             <div className="ms-auto inline-flex rounded-md border border-border p-0.5">
               {([
                 { key: false, label: i18nText("All") },
-                { key: true, label: `Running (${runningTotal})` },
+                { key: true, label: `Online (${runningTotal})` },
               ] as const).map((opt) => (
                 <button
                   key={String(opt.key)}

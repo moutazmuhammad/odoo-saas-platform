@@ -2,8 +2,7 @@
 <odoo>
 
     <!-- The commercial half of saas_core's instance list/form: sale order
-         and invoice links, the billing flow buttons, the pending plan /
-         compute-tier changes, the margin summary and the paid retained-
+         and invoice links, the billing flow buttons, the pending plan changes, the margin summary and the paid retained-
          backup restore. Pulled out of the base views because the fields
          and methods they use are declared in this addon, which loads
          after saas_core. -->
@@ -81,10 +80,6 @@
                        invisible="not pending_plan_id"/>
                 <field name="pending_change_invoice_id" readonly="1"
                        invisible="not pending_change_invoice_id"/>
-            </xpath>
-            <xpath expr="//field[@name='compute_tier_id']" position="after">
-                <field name="pending_compute_tier_id" readonly="1"
-                       invisible="not pending_compute_tier_id"/>
             </xpath>
             <xpath expr="//group[@name='reconciliation_margin']" position="inside">
                 <group string="Margin / month">

@@ -1,6 +1,6 @@
 import { i18nText } from "@/i18n";
 import { Link, useSearchParams } from "react-router-dom";
-import { Search, FileText, BookOpen, ArrowRight, Download } from "lucide-react";
+import { Search, FileText, BookOpen, ArrowRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/EmptyState";
@@ -18,7 +18,6 @@ export default function Docs() {
   };
   return <div className="mx-auto max-w-[1500px] px-4 py-10 sm:px-6 lg:px-8">
     <div className="max-w-3xl"><BookOpen className="size-8 text-primary" /><h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">{i18nText("VELTNEX documentation")}</h1><p className="mt-3 leading-7 text-muted">{i18nText("Practical guides, permission references, and troubleshooting for every step of your Odoo hosting workflow.")}</p></div>
-    <a href="/saas_website/static/customer-docs/VELTNEX-customer-docs.zip" download className="mt-5 inline-flex items-center gap-2 text-sm text-primary hover:underline"><Download className="size-4" />{i18nText("Download all guides in English and Arabic")}</a>
     <div className="mt-8 flex flex-col gap-8 lg:flex-row">
       <aside className="lg:w-60 lg:shrink-0"><nav aria-label={i18nText("Documentation categories")} className="flex gap-2 overflow-x-auto pb-2 lg:sticky lg:top-24 lg:flex-col">
         <button onClick={() => update("category", "all")} aria-pressed={category === "all"} className={`shrink-0 rounded-md px-3 py-2 text-start text-sm ${category === "all" ? "bg-primary/10 font-semibold text-primary" : "text-muted hover:bg-card"}`}>{i18nText("All topics")}</button>

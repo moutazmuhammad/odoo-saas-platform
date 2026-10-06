@@ -91,9 +91,8 @@ func (r *OdooInstanceReconciler) reconcileConfig(ctx context.Context, instance *
 	return r.apply(ctx, addons)
 }
 
-// reconcileWorkload applies the Odoo Service and the web Deployment (plus a
-// dedicated cron Deployment when replicas > 1 — see
-// resources.NeedsCronDeployment). The caller (Reconcile) only invokes this
+// reconcileWorkload applies the Odoo Service and single web/cron Deployment.
+// The caller (Reconcile) only invokes this
 // once the database-init Job has succeeded: creating these earlier would
 // let customers observe Odoo pods serving `KeyError: 'ir.http'` 500s
 // against a database with no schema yet.
@@ -104,39 +103,28 @@ func (r *OdooInstanceReconciler) reconcileWorkload(ctx context.Context, instance
 		return err
 	}
 
-	web := resources.OdooDeployment(instance, resources.RoleWeb)
+	web := resources.OdooDeployment(instance)
 	setOwner(instance, web)
 	if err := r.apply(ctx, web); err != nil {
 		return err
 	}
 
 	ns := resources.TenantNamespace(instance)
-	if resources.NeedsCronDeployment(instance) {
-		cron := resources.OdooDeployment(instance, resources.RoleCron)
-		setOwner(instance, cron)
-		if err := r.apply(ctx, cron); err != nil {
+	// Remove the retired dedicated cron workload; this instance runs cron itself.
+	var existing appsv1.Deployment
+	err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: resources.OdooCronDeploymentName(instance)}, &existing)
+	if err == nil {
+		if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
-	} else {
-		// A previous reconcile may have created the cron Deployment before
-		// replicas was scaled back down to 1; remove it so cron does not
-		// run in two places at once.
-		var existing appsv1.Deployment
-		err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: resources.OdooCronDeploymentName(instance)}, &existing)
-		if err == nil {
-			if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
-				return err
-			}
-		} else if !apierrors.IsNotFound(err) {
-			return err
-		}
+	} else if !apierrors.IsNotFound(err) {
+		return err
 	}
 
 	return nil
 }
 
-// workloadStatus aggregates readiness across the web (and, when present,
-// cron) Deployments.
+// workloadStatus reports readiness of the single Odoo deployment.
 func (r *OdooInstanceReconciler) workloadStatus(ctx context.Context, instance *saasv1alpha1.OdooInstance) (ready bool, readyReplicas, totalReplicas int32, image string, err error) {
 	ns := resources.TenantNamespace(instance)
 
@@ -155,38 +143,12 @@ func (r *OdooInstanceReconciler) workloadStatus(ctx context.Context, instance *s
 	}
 	webReady := web.Status.ReadyReplicas >= 1 && web.Status.ReadyReplicas == web.Status.Replicas
 
-	if !resources.NeedsCronDeployment(instance) {
-		return webReady, readyReplicas, totalReplicas, image, nil
-	}
-
-	var cron appsv1.Deployment
-	if err = r.Get(ctx, types.NamespacedName{Namespace: ns, Name: resources.OdooCronDeploymentName(instance)}, &cron); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, readyReplicas, totalReplicas, image, nil
-		}
-		return false, 0, 0, "", err
-	}
-	cronReady := cron.Status.ReadyReplicas >= 1
-	return webReady && cronReady, readyReplicas, totalReplicas, image, nil
+	return webReady, readyReplicas, totalReplicas, image, nil
 }
 
-// reconcilePDB creates/removes the PodDisruptionBudget to match the
-// current replica count (see resources.PodDisruptionBudget docs for why it
-// is only meaningful above one replica).
+// reconcilePDB removes retired multi-pod disruption budgets.
 func (r *OdooInstanceReconciler) reconcilePDB(ctx context.Context, instance *saasv1alpha1.OdooInstance) error {
-	ns := resources.TenantNamespace(instance)
-	replicas := int32(1)
-	if instance.Spec.Replicas != nil {
-		replicas = *instance.Spec.Replicas
-	}
-
-	if replicas <= 1 {
-		return r.deletePDBIfExists(ctx, ns, resources.PodDisruptionBudgetName(instance))
-	}
-
-	pdb := resources.PodDisruptionBudget(instance)
-	setOwner(instance, pdb)
-	return r.apply(ctx, pdb)
+	return r.deletePDBIfExists(ctx, resources.TenantNamespace(instance), resources.PodDisruptionBudgetName(instance))
 }
 
 func (r *OdooInstanceReconciler) deletePDBIfExists(ctx context.Context, namespace, name string) error {

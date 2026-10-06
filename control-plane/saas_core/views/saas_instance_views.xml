@@ -7,7 +7,7 @@
         <field name="model">saas.instance</field>
         <field name="arch" type="xml">
             <list string="SaaS Instances"
-                  decoration-success="state == 'running'"
+                  decoration-success="runtime_display_state == 'online'"
                   decoration-danger="state in ('cancelled', 'cancelled_by_client', 'failed')"
                   decoration-warning="state in ('suspended', 'pending_provision')"
                   decoration-muted="state in ('draft', 'stopped')"
@@ -21,12 +21,17 @@
                 <field name="compute_driver" optional="show"/>
                 <field name="db_server_id" optional="show"/>
                 <field name="is_overcommitted" optional="hide"/>
-                <field name="state" widget="badge"
-                       decoration-success="state == 'running'"
+                <field name="state" string="Lifecycle" widget="badge"
+                       decoration-success="runtime_display_state == 'online'"
                        decoration-danger="state in ('cancelled', 'cancelled_by_client', 'failed')"
                        decoration-warning="state in ('suspended', 'pending_provision')"
                        decoration-muted="state == 'stopped'"
                        decoration-info="state in ('draft', 'provisioning')"/>
+                <field name="runtime_display_state" widget="badge"
+                       decoration-success="runtime_display_state == 'online'"
+                       decoration-danger="runtime_display_state == 'unavailable'"
+                       decoration-warning="runtime_display_state in ('unreachable', 'stopping')"/>
+                <field name="runtime_checked_at" optional="show"/>
                 <field name="last_error" optional="hide"/>
                 <field name="last_error_date" optional="hide"/>
             </list>
@@ -149,7 +154,6 @@
                         <field name="db_password" password="True"/>
                     </group>
                     <group string="Kubernetes Configuration" invisible="compute_driver != 'kubernetes'">
-                        <field name="compute_tier_id" options="{'no_create_edit': True}"/>
                     </group>
 
                     <!-- Resource Usage -->
@@ -181,6 +185,11 @@
                             <field name="desired_state"/>
                             <field name="actual_state"/>
                             <field name="last_reconcile"/>
+                            <field name="runtime_display_state"/>
+                            <field name="runtime_message"/>
+                            <field name="runtime_workload"/>
+                            <field name="runtime_reachability"/>
+                            <field name="runtime_checked_at"/>
                             <field name="deploy_image"/>
                         </group>
                     </group>

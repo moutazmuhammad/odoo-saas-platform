@@ -1,3 +1,6 @@
+import { usePolling } from "@/hooks/usePolling";
+import { useRuntimeClock } from "@/hooks/useRuntimeClock";
+import { isOnline, displayRuntimeStatus } from "@/lib/runtime-status";
 import { getLocale } from "@/i18n";
 import { i18nText } from "@/i18n";
 import * as React from "react";
@@ -15,7 +18,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Skeleton, SkeletonCard } from "@/components/ui/skeleton";
-import { StatusBadge } from "@/components/StatusBadge";
+import { RuntimeStatusBadge } from "@/components/RuntimeStatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { AlertBanner } from "@/components/AlertBanner";
 import { CustomerFilter } from "@/components/CustomerFilter";
@@ -44,6 +47,7 @@ function projectLink(i: ApiInstance) {
 }
 
 export default function Dashboard() {
+  const runtimeNow = useRuntimeClock();
   const { user } = useAuth();
   const isStaff = !!(user?.is_staff || user?.is_internal);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -75,6 +79,8 @@ export default function Dashboard() {
     load();
   }, [load]);
 
+  usePolling(load, { interval: 30000 });
+
   const confirmCancel = async () => {
     if (!cancelTarget) return;
     setCancelling(true);
@@ -99,7 +105,7 @@ export default function Dashboard() {
     [data, isStaff, customerId],
   );
   const total = customerProjects.length;
-  const running = customerProjects.filter((i) => i.state === "running").length;
+  const running = customerProjects.filter((i) => isOnline(i, runtimeNow)).length;
   const wallet = data?.wallet?.total ?? data?.stats.wallet_balance ?? 0;
   // The projects grid excludes awaiting-payment orders (they're surfaced in
   // "Needs your attention" instead) so the customer's project list stays clean.
@@ -194,7 +200,7 @@ export default function Dashboard() {
               </div>
               <p className="mt-2 text-2xl font-bold tracking-tight">
                 {running}
-                <span className="text-base font-medium text-muted"> / {total}{i18nText(" running")}</span>
+                <span className="text-base font-medium text-muted"> / {total}{i18nText(" online")}</span>
               </p>
               <div className="mt-3 flex gap-1">
                 {Array.from({ length: Math.max(total, 1) }).map((_, i) => (
@@ -278,7 +284,7 @@ export default function Dashboard() {
                         {isStaff && <p className="truncate text-xs text-muted">{i.customer?.name || "—"}</p>}
                         <p className="truncate text-xs text-muted">{i.region || i.domain}</p>
                       </div>
-                      <StatusBadge status={i.state} label={i.state_label} />
+                      <RuntimeStatusBadge instance={i} />
                     </div>
                     <p className="mt-4 text-xs text-muted">{i.is_hosting ? i18nText("Hosting project") : i18nText("Managed service")}</p>
                   </Card>

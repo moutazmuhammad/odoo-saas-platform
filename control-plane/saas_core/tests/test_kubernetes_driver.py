@@ -30,9 +30,12 @@ def _handle(namespace='odoo-tenant-odoo-acme'):
 def _fake_pod(phase='Running', restart_count=0, waiting_reason=None, name='odoo-acme-xyz'):
     pod = MagicMock()
     pod.metadata.name = name
+    pod.metadata.deletion_timestamp = None
+    pod.status.conditions = [MagicMock(type="Ready", status="True")]
     pod.status.phase = phase
     cs = MagicMock()
     cs.name = 'odoo'
+    cs.ready = True
     cs.restart_count = restart_count
     if waiting_reason:
         cs.state.waiting.reason = waiting_reason
@@ -107,6 +110,7 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(body['spec']['domain']['hostname'], 'acme.example.com')
         self.assertTrue(body['spec']['domain']['tls']['enabled'])
         self.assertEqual(body['spec']['storage']['filestore']['size'], '10Gi')
+        self.assertTrue(body['spec']['storage']['sharedWithDatabase'])
 
         self.assertEqual(handle.server_id, server.id)
         self.assertEqual(handle.container_name, 'odoo_acme')
@@ -158,34 +162,16 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(body['spec']['replicas'], 1)
         self.assertNotIn('accessMode', body['spec']['storage']['filestore'])
 
-    def test_create_with_replicas_2_requests_rwx_storage(self):
-        """A compute tier above 1 replica (saas.instance.compute_tier_id,
-        e.g. HA=2/Scale=4) — RWX is REQUIRED alongside it (the operator
-        rejects RWO with replicas > 1, see FilestoreSpec's own comment in
-        odoo_types.go) so this driver must always set both together."""
+    def test_create_rejects_horizontal_scaling(self):
         from odoo.addons.saas_core.drivers.base import ComputeSpec
         driver, _server = _make_driver()
-        custom_api = MagicMock()
-        driver._custom_api = MagicMock(return_value=custom_api)
-        spec = ComputeSpec(
-            container_name='odoo_ha', image='odoo:18.0', instance_path='/x',
-            http_port=8069, longpolling_port=8072, db_name='ha', db_host='db',
-            env={'domain': 'ha.example.com', 'replicas': 2})
-        driver.create(spec)
-        body = custom_api.create_cluster_custom_object.call_args.args[3]
-        self.assertEqual(body['spec']['replicas'], 2)
-        self.assertEqual(
-            body['spec']['storage']['filestore']['accessMode'], 'ReadWriteMany')
-
-    # -------- scale() (compute tier replica count) --------------------------
-    def test_scale_patches_replicas(self):
-        driver, _server = _make_driver()
-        custom_api = MagicMock()
-        driver._custom_api = MagicMock(return_value=custom_api)
-        driver.scale(_handle(), 2)
-        custom_api.patch_cluster_custom_object.assert_called_once_with(
-            'saas.odoo.example.com', 'v1alpha1', 'odooinstances', 'odoo-acme',
-            {'spec': {'replicas': 2}})
+        driver._custom_api = MagicMock()
+        with self.assertRaises(ValueError):
+            driver._build_odoo_instance('odoo-acme', ComputeSpec(
+                container_name='odoo-acme', image='odoo:18.0', instance_path='',
+                http_port=8069, longpolling_port=8072, db_name='acme', db_host='db',
+                env={'domain': 'acme.example.com', 'replicas': 2}))
+        driver._custom_api().create_cluster_custom_object.assert_not_called()
 
     def test_trigger_backup_waits_for_the_operator_cronjob(self):
         """A just-enabled backup's CronJob appears asynchronously: wait for
@@ -201,6 +187,17 @@ class TestKubernetesDriver(TransactionCase):
             name = driver.trigger_backup_now(_handle())
         self.assertTrue(name.startswith('odoo-backup-manual-'))
         batch.create_namespaced_job.assert_called_once()
+
+    def test_trigger_backup_rejects_suspended_schedule(self):
+        driver, _server = _make_driver()
+        batch = MagicMock()
+        cron = MagicMock()
+        cron.spec.suspend = True
+        batch.read_namespaced_cron_job.return_value = cron
+        driver._batch_api = MagicMock(return_value=batch)
+        with self.assertRaisesRegex(RuntimeError, 'Backups are paused'):
+            driver.trigger_backup_now(_handle())
+        batch.create_namespaced_job.assert_not_called()
 
     def test_trigger_backup_gives_up_after_the_wait(self):
         driver, _server = _make_driver()
@@ -259,14 +256,6 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(spec['workers'], {'count': 0, 'maxCronThreads': 1})
         self.assertEqual(spec['resources']['limits']['cpu'], '500m')
 
-    def test_scale_raises_on_api_error(self):
-        driver, _server = _make_driver()
-        custom_api = MagicMock()
-        custom_api.patch_cluster_custom_object.side_effect = ApiException(
-            status=422, reason='Invalid')
-        driver._custom_api = MagicMock(return_value=custom_api)
-        with self.assertRaises(RuntimeError):
-            driver.scale(_handle(), 2)
 
     def test_create_requires_domain(self):
         from odoo.addons.saas_core.drivers.base import ComputeSpec
@@ -471,6 +460,56 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(hs.status, 'running')
         self.assertEqual(hs.restart_count, 2)
 
+    def test_health_ready_phase_with_missing_pod_is_not_running(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={'status': {'phase': 'Ready'}})
+        driver._first_pod = MagicMock(return_value=None)
+        # 'missing', not 'not_found': the operator recreates the pod, so the
+        # reconciler must not call start() for an evicted/rescheduled pod.
+        self.assertEqual(driver.health(_handle()).status, 'missing')
+
+    def test_health_ready_phase_with_unready_pod_is_not_running(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={'status': {'phase': 'Ready'}})
+        pod = _fake_pod()
+        pod.status.container_statuses[0].ready = False
+        driver._first_pod = MagicMock(return_value=pod)
+        health = driver.health(_handle())
+        self.assertFalse(health.running)
+        self.assertEqual(health.status, 'starting')
+
+    def test_health_serving_pod_overrides_stale_phase(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={'status': {'phase': 'Degraded'}})
+        driver._first_pod = MagicMock(return_value=_fake_pod())
+        self.assertTrue(driver.health(_handle()).running)
+
+    def test_health_terminating_pod_is_not_running(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={'status': {'phase': 'Ready'}})
+        pod = _fake_pod()
+        pod.metadata.deletion_timestamp = '2026-10-06T00:00:00Z'
+        driver._first_pod = MagicMock(return_value=pod)
+        health = driver.health(_handle())
+        self.assertFalse(health.running)
+        self.assertEqual(health.status, 'terminating')
+
+    def test_health_suspension_waits_for_live_pod_to_stop(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={'spec': {'suspended': True}, 'status': {'phase': 'Suspended'}})
+        driver._first_pod = MagicMock(return_value=_fake_pod())
+        self.assertTrue(driver.health(_handle()).running)
+        driver._first_pod.return_value = None
+        self.assertEqual(driver.health(_handle()).status, 'exited')
+
+    def test_first_pod_prefers_ready_replica_during_rollout(self):
+        driver, _server = _make_driver()
+        new, serving = _fake_pod(), _fake_pod(name='serving')
+        new.status.container_statuses[0].ready = False
+        driver._core_api = MagicMock()
+        driver._core_api().list_namespaced_pod.return_value.items = [new, serving]
+        self.assertIs(driver._first_pod('tenant', 'acme'), serving)
+
     def test_health_not_found_when_cr_missing(self):
         driver, _server = _make_driver()
         driver._get_cr = MagicMock(return_value=None)
@@ -494,6 +533,20 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(hs.restart_count, 5)
 
     # -------- logs() ----------------------------------------------------
+    def test_health_detects_cron_sidecar_crash_loop(self):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={'status': {'phase': 'Ready'}})
+        pod = _fake_pod(restart_count=1)
+        cron_pod = _fake_pod(restart_count=3, waiting_reason='CrashLoopBackOff')
+        cron_status = cron_pod.status.container_statuses[0]
+        cron_status.name = 'cron'
+        pod.status.container_statuses.append(cron_status)
+        driver._first_pod = MagicMock(return_value=pod)
+        health = driver.health(_handle())
+        self.assertEqual(health.status, 'restarting')
+        self.assertFalse(health.running)
+        self.assertEqual(health.restart_count, 4)
+
     def test_logs_reads_pod_log(self):
         driver, _server = _make_driver()
         driver._first_pod = MagicMock(return_value=_fake_pod())
@@ -689,7 +742,7 @@ class TestKubernetesDriver(TransactionCase):
         queries = [dict(c[1]['query_params'])['query']
                    for c in driver._api_client.call_api.call_args_list]
         # Odoo: web and cron pods, not one-off Jobs; the database separately.
-        self.assertIn('container="odoo"', queries[0])
+        self.assertIn('container=~"odoo|cron"', queries[0])
         self.assertIn('pod!~"odoo-(init|update|restore)-.+"', queries[0])
         self.assertTrue(queries[0].startswith('sum by (namespace)'))
         self.assertIn('container=~"postgresql|postgres"', queries[2])

@@ -1291,61 +1291,6 @@
           "control-plane/saas_core/models/saas_instance.py",
           "control-plane/saas_billing/models/saas_instance.py"
         ]
-      },
-      {
-        "id": "compute-tiers",
-        "title": {
-          "en": "Change compute tiers",
-          "ar": "تغيير فئة موارد التشغيل"
-        },
-        "summary": {
-          "en": "Understand replica-based tiers and their billing behavior.",
-          "ar": "افهم الفئات القائمة على عدد النسخ التشغيلية وطريقة فوترة تغييراتها."
-        },
-        "kind": "guide",
-        "reviewed": "2026-10-05",
-        "sections": [
-          {
-            "id": "tiers",
-            "title": {
-              "en": "What a compute tier changes",
-              "ar": "ما الذي تغيّره الفئة؟"
-            },
-            "blocks": [
-              {
-                "type": "paragraph",
-                "text": {
-                  "en": "Compute tiers apply to the Kubernetes backend and define application replica counts and their price. The platform publishes the available names, such as Standard, HA, or Scale. A larger replica count is not a guarantee of a specific availability SLA or a replacement for sizing Workers, CPU, RAM, and storage correctly.",
-                  "ar": "تنطبق فئات موارد التشغيل على Kubernetes، وتحدد عدد نسخ التطبيق التشغيلية وتكلفتها. تنشر المنصة الفئات المتاحة، مثل Standard أو HA أو Scale. زيادة عدد النسخ لا تضمن اتفاقية توافر محددة، ولا تُغني عن اختيار Workers وCPU وRAM والتخزين بشكل مناسب."
-                }
-              }
-            ]
-          },
-          {
-            "id": "change",
-            "title": {
-              "en": "Change a tier",
-              "ar": "خطوات التغيير"
-            },
-            "blocks": [
-              {
-                "type": "paragraph",
-                "text": {
-                  "en": "From the instance overview, select an available tier. Moving to more replicas in a priced tier requires a prorated invoice to be paid first. A free, lower-replica, or lateral change can be queued without a charge and does not refund the current period. Wait for the infrastructure change before evaluating the new replica count.",
-                  "ar": "اختر فئة متاحة من ملخص Instance. تتطلب الزيادة إلى عدد أكبر من النسخ في فئة مدفوعة تسوية فاتورة تناسب المدة المتبقية أولًا. وقد يُجدول التغيير إلى فئة مجانية أو عدد أقل أو مماثل دون رسوم، لكنه لا يعيد قيمة الفترة الحالية. انتظر تطبيق التغيير قبل التحقق من عدد النسخ الجديد."
-                }
-              }
-            ]
-          }
-        ],
-        "related": [
-          "monitoring",
-          "optional-charges"
-        ],
-        "sources": [
-          "control-plane/saas_billing/models/saas_instance.py",
-          "control-plane/saas_core/models/saas_compute_tier.py"
-        ]
       }
     ]
   },
@@ -4373,7 +4318,7 @@
               {
                 "type": "paragraph",
                 "text": {
-                  "en": "Mid-cycle purchases can be prorated to the renewal date. Plan upgrades account for unused prepaid value through the quote, invoices, and wallet. Releasing unused environment slots can credit their remaining cycle value to the wallet. Deleting the server alone keeps its slot reserved. Lower compute tiers do not refund the current period. Review the actual charge and credit shown before confirming.",
+                  "en": "Mid-cycle purchases can be prorated to the renewal date. Plan upgrades account for unused prepaid value through the quote, invoices, and wallet. Releasing unused environment slots can credit their remaining cycle value to the wallet. Deleting the server alone keeps its slot reserved. Review the actual charge and credit shown before confirming.",
                   "ar": "قد تُحسب مشتريات منتصف الدورة حسب المدة المتبقية إلى التجديد. تراعي ترقية الخطة القيمة المدفوعة للوقت غير المستخدم عبر التسعير والفواتير والمحفظة. قد يضيف تحرير الأماكن الشاغرة للبيئات قيمة المدة المتبقية إلى المحفظة. حذف الخادم وحده يُبقي المكان محجوزًا. فئات التشغيل الأقل لا تعيد قيمة الفترة الحالية. راجع الرسوم والرصيد الفعليين قبل التأكيد."
                 }
               }
@@ -4383,7 +4328,6 @@
         "related": [
           "change-plan",
           "environment-slots",
-          "compute-tiers",
           "wallet"
         ],
         "sources": [

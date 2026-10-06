@@ -17,7 +17,6 @@ ORIGIN_SUBSCRIPTION = 'SAAS:SUBSCRIPTION:%s'
 ORIGIN_PLAN_UPGRADE = 'SAAS:UPGRADE:%s'
 ORIGIN_DATA_RESTORATION = 'SAAS:RESTORATION:%s'
 ORIGIN_BACKUP_ADDON = 'SAAS:BACKUP-ADDON:%s'
-ORIGIN_COMPUTE_TIER = 'SAAS:COMPUTE-TIER:%s'
 ORIGIN_STORAGE_BLOCK = 'SAAS:STORAGE-BLOCK:%s'
 # Adding a Staging/Development environment server: the prorated activation
 # invoice that gates provisioning of a child env (mirrors STORAGE-BLOCK).
@@ -33,8 +32,8 @@ OPTIONAL_INVOICE_ORIGIN_PREFIXES = (
     # Adding an env server is opt-in — an unpaid env invoice must not suspend
     # the project; the child simply stays unprovisioned until paid.
     'SAAS:ENVIRONMENT:',
-    # A compute-tier upgrade is opt-in — an unpaid upgrade invoice must not
-    # suspend the instance; it simply stays on its current tier until paid.
+    # Historical replica-tier invoices remain optional for dunning;
+    # the removed feature must never suspend an otherwise paid instance.
     'SAAS:COMPUTE-TIER:',
 )
 # Days past a daily-backup add-on invoice's due date before snapshots are
@@ -156,27 +155,7 @@ class SaasInstance(models.Model):
         help='Most recent month the daily-backup add-on was billed for.',
     )
 
-    pending_compute_tier_id = fields.Many2one(
-        'saas.compute.tier',
-        string='Pending Compute Tier',
-        copy=False,
-        ondelete='set null',
-        help='Target tier of an in-progress UPGRADE, gated by '
-             'compute_tier_pending_invoice_id. Set when the customer '
-             'requests an upgrade; cleared (and compute_tier_id updated) '
-             'once the invoice is paid and the scale succeeds.',
-    )
 
-    compute_tier_pending_invoice_id = fields.Many2one(
-        'account.move',
-        string='Compute Tier Pending Invoice',
-        tracking=True,
-        copy=False,
-        ondelete='set null',
-        help='Unpaid invoice gating a compute-tier UPGRADE (downgrades are '
-             'immediate and free — see action_change_compute_tier). '
-             'Cleared once the invoice transitions to paid / in_payment.',
-    )
 
     # ---------- Saved card + auto-renewal ----------
     # ``payment_token_id`` holds the saved card that renewal crons
@@ -353,7 +332,7 @@ class SaasInstance(models.Model):
     monthly_revenue = fields.Monetary(
         string='Revenue / month', compute='_compute_margin',
         currency_field='margin_currency_id', store=True,
-        help='Monthly-equivalent recurring revenue: plan, support, compute tier, '
+        help='Monthly-equivalent recurring revenue: plan, support, '
              'storage blocks, daily backups and staging/dev slots, period-normalized. '
              'Child environments bill via the parent, so their own revenue is 0.')
 
@@ -374,7 +353,8 @@ class SaasInstance(models.Model):
     def _instance_infra_cost(self):
         """Own monthly infra cost from the server rate card (excludes
         children): the whole package it reserves (all Odoo pods +
-        PostgreSQL, saas.plan._package) plus the storage it really uses."""
+        PostgreSQL, saas.plan._package). Paused tenants retain at least
+        their allocated storage allowance but no dedicated compute cost."""
         self.ensure_one()
         srv = self.docker_server_id
         if not srv:
@@ -383,13 +363,18 @@ class SaasInstance(models.Model):
         cpu = pkg.get('total_cpu_m', 0) / 1000.0
         ram_gb = pkg.get('total_mem_mi', 0) / 1024.0
         storage_gb = self.storage_used_gb or 0.0
+        if self.state in ('stopped', 'suspended'):
+            # Dedicated tenant workloads are scaled to zero by the operator.
+            # Retained block volumes still bill for allocated capacity.
+            cpu = ram_gb = 0.0
+            storage_gb = max(storage_gb, pkg.get('storage_gb', 0))
         return (cpu * (srv.cost_per_cpu_month or 0.0)
                 + ram_gb * (srv.cost_per_gb_ram_month or 0.0)
                 + storage_gb * (srv.cost_per_gb_storage_month or 0.0))
 
     def _instance_monthly_revenue(self):
         """Monthly-equivalent recurring revenue: every line a renewal bills
-        (plan, support, compute tier, storage blocks, daily backups,
+        (plan, support, storage blocks, daily backups,
         staging/dev slots). Children bill via the parent, so they
         contribute 0 (their cost rolls up to the parent's margin)."""
         self.ensure_one()
@@ -402,26 +387,24 @@ class SaasInstance(models.Model):
         months = 12 if period == 'yearly' else 1
         base = (plan.yearly_price or plan.price * 12) / 12.0 \
             if period == 'yearly' else plan.price
-        # Support, tier, blocks and backups are flat monthly prices (×12 on
+        # Support, blocks and backups are flat monthly prices (×12 on
         # a yearly bill), so they're the same per month whatever the period.
         support = self.support_plan_id.monthly_price if self.support_plan_id else 0.0
-        tier = self.compute_tier_id.monthly_price if self.compute_tier_id else 0.0
         _block_gb, block_price = self.env['saas.pricing.engine'].storage_block_config()
         blocks = (self.extra_storage_blocks or 0) * (block_price or 0.0)
         backups = self._get_daily_backup_price() if self.daily_backup_enabled else 0.0
         slots = (self.staging_slots or 0) + (self.dev_slots or 0)
         envs = slots * self._env_server_price(period) / months if slots else 0.0
-        return sum(v or 0.0 for v in (base, support, tier, blocks, backups, envs))
+        return sum(v or 0.0 for v in (base, support, blocks, backups, envs))
 
     @api.depends('plan_id', 'plan_id.workers', 'plan_id.cpu_limit', 'plan_id.ram_limit',
-                 'billing_period', 'storage_used_gb',
+                 'billing_period', 'storage_used_gb', 'state', 'plan_id.storage_limit',
                  'support_plan_id', 'support_plan_id.monthly_price',
-                 'compute_tier_id', 'compute_tier_id.replicas', 'compute_tier_id.monthly_price',
                  'extra_storage_blocks', 'daily_backup_enabled', 'staging_slots', 'dev_slots',
                  'docker_server_id.cost_per_cpu_month',
                  'docker_server_id.cost_per_gb_ram_month',
                  'docker_server_id.cost_per_gb_storage_month',
-                 'child_env_ids.storage_used_gb', 'child_env_ids.plan_id')
+                 'child_env_ids.storage_used_gb', 'child_env_ids.plan_id', 'child_env_ids.state')
     def _compute_margin(self):
         company_cur = self.env.company.currency_id
         engine = self.env['saas.pricing.engine']
@@ -668,25 +651,6 @@ class SaasInstance(models.Model):
             used_bytes=used_bytes,
         )
 
-    def _get_compute_tier_product(self):
-        """Return the singleton product.product for a compute-tier upgrade
-        invoice. Created on first use, same as the daily-backup product —
-        one generic product, the actual tier name/price go on the order
-        line (see action_change_compute_tier)."""
-        product = self.env['product.product'].sudo().search(
-            [('default_code', '=', 'SAAS-COMPUTE-TIER')], limit=1,
-        )
-        if not product:
-            product = self.env['product.product'].sudo().create({
-                'name': 'Compute Tier Upgrade',
-                'default_code': 'SAAS-COMPUTE-TIER',
-                'type': 'service',
-                'list_price': 0.0,
-                'sale_ok': True,
-                'purchase_ok': False,
-                'taxes_id': [(5, 0, 0)],
-            })
-        return product
 
     def _get_retained_snapshot_fee(self):
         """One-off charge for restoring the snapshot retained after the
@@ -812,104 +776,6 @@ class SaasInstance(models.Model):
         )
         return invoice
 
-    def action_change_compute_tier(self, tier_id):
-        """Change this instance's compute tier (Standard/HA/Scale/...).
-
-        A tier with MORE replicas than the current one is an upgrade: it
-        costs more, so it's gated behind a prorated activation invoice —
-        same shape as ``action_purchase_daily_backup`` — and the actual
-        scale only happens once that invoice is paid (see the
-        ``account.move`` payment hook). A tier with FEWER replicas (or an
-        equally/less expensive one, including any free tier) applies
-        immediately with no charge and no refund for the current period —
-        there is nothing to gate payment behind.
-        """
-        self.ensure_one()
-        if self.docker_server_id.compute_driver != 'kubernetes':
-            raise UserError(_(
-                "Compute tiers require the Kubernetes backend."
-            ))
-        tier = self.env['saas.compute.tier'].sudo().browse(tier_id)
-        if not tier.exists() or not tier.active:
-            raise UserError(_("That compute tier is not available."))
-        current = self.compute_tier_id
-        if current == tier:
-            raise UserError(_(
-                "'%s' is already on the %s tier."
-            ) % (self.subdomain, tier.name))
-
-        current_replicas = current.replicas if current else 1
-        if tier.monthly_price <= 0 or tier.replicas <= current_replicas:
-            # Free tier, downgrade, or lateral move — nothing to charge.
-            self.env['saas.job'].enqueue(
-                self, '_do_scale_compute_tier', args=(tier.id,),
-                channel='deploy', lock_key='instance:%s' % self.id,
-                max_attempts=1, idempotent=False,
-                on_error='_on_compute_tier_scale_error')
-            self._append_log(
-                "Compute tier change to '%s' (%d replica(s)) queued — no "
-                "charge." % (tier.name, tier.replicas))
-            return True
-
-        # Upgrade to a priced tier: pay first, same proration math as the
-        # daily-backup/HA activation flow.
-        if self.is_trial:
-            raise UserError(_(
-                "Compute tier upgrades can't be purchased on a trial plan."
-            ))
-        if self.compute_tier_pending_invoice_id:
-            existing = self.compute_tier_pending_invoice_id
-            if existing.state == 'posted' and existing.payment_state not in (
-                'paid', 'in_payment', 'reversed', 'invoicing_legacy',
-            ):
-                return existing
-            self.compute_tier_pending_invoice_id = False
-
-        today = fields.Date.today()
-        period = self.billing_period or 'monthly'
-        period_label = 'Yearly' if period == 'yearly' else 'Monthly'
-        months = self.env['saas.pricing.engine'].period_months(period)
-        full = months * tier.monthly_price
-        charge = full
-        if self.next_invoice_date and self.last_invoice_date:
-            total_days = (self.next_invoice_date - self.last_invoice_date).days
-            left = (self.next_invoice_date - today).days
-            if total_days > 0 and 0 < left < total_days:
-                charge = round(full * left / total_days, 2)
-
-        product = self._get_compute_tier_product()
-        pricelist = self.partner_id.property_product_pricelist
-        line_name = _(
-            'Compute Tier Upgrade: %s (%s) — %s (prorated to your renewal date)'
-        ) % (tier.name, period_label, self.name or self.subdomain)
-        order_lines = [(0, 0, {
-            'product_id': product.id,
-            'name': line_name,
-            'product_uom_qty': 1,
-            'price_unit': charge,
-        })]
-
-        order_vals = {
-            'partner_id': self.partner_id.id,
-            'origin': ORIGIN_COMPUTE_TIER % (self.name or self.subdomain),
-            'order_line': order_lines,
-        }
-        if pricelist:
-            order_vals['pricelist_id'] = pricelist.id
-        order = self.env['sale.order'].sudo().create(order_vals)
-        order.action_confirm()
-        invoice = order._create_invoices()
-        invoice.action_post()
-        self.write({
-            'compute_tier_pending_invoice_id': invoice.id,
-            'pending_compute_tier_id': tier.id,
-        })
-        self._append_log(
-            "Compute tier upgrade to '%s' activation invoice %s created — "
-            "%s period, prorated catch-up %.2f (full %.2f)." % (
-                tier.name, invoice.name, period_label, charge, full)
-        )
-        return invoice
 
     def _get_billing_product(self):
         """Return the default product.product used on SaaS sale order lines.
@@ -985,32 +851,6 @@ class SaasInstance(models.Model):
             'price_unit': price,
         })
 
-    def _compute_tier_order_line(self, period, period_label):
-        """Sale-order line tuple for the instance's compute tier, or None.
-
-        Same shape as ``_support_order_line`` — once a priced tier is
-        selected it's simply billed every renewal at its flat monthly
-        price, same cycle as the plan (x12 on a yearly plan). No separate
-        next-invoice-date tracking needed: unlike the daily-backup add-on
-        (which can be turned on mid-cycle independently), a tier change
-        is always synced to now via action_change_compute_tier's own
-        proration, so it's already aligned to the plan's cycle by the
-        time the first renewal rolls around. The default (free) tier
-        adds nothing, so this is behaviour-neutral until a priced tier is
-        picked."""
-        self.ensure_one()
-        tier = self.compute_tier_id
-        if not tier or tier.monthly_price <= 0:
-            return None
-        months = 12 if period == 'yearly' else 1
-        return (0, 0, {
-            'product_id': self._get_compute_tier_product().id,
-            'name': _('Compute Tier: %s (%s) — %s') % (
-                tier.name, period_label, self.name or self.subdomain,
-            ),
-            'product_uom_qty': months,
-            'price_unit': tier.monthly_price,
-        })
 
     # ==================================================================
     #  Storage blocks (v47) — a PURCHASED recurring add-on that expands
@@ -1647,10 +1487,6 @@ class SaasInstance(models.Model):
             self.daily_backup_last_invoice_date = today
             self.daily_backup_next_invoice_date = self.next_invoice_date
 
-        # The compute tier needs no equivalent anchoring — see
-        # _compute_tier_order_line's docstring: it's always billed on the
-        # SAME cycle as the plan, no independent next-invoice-date to
-        # align.
 
     # ============================================================
     # Saved card + auto-renewal
@@ -2201,13 +2037,6 @@ class SaasInstance(models.Model):
                 # price 0 / backups off between the check and here — don't
                 # advance the backup date for a line we didn't add.
                 merge_snapshot = False
-
-        # Compute tier: same simple always-included shape as the support
-        # plan above — no merge/alignment tracking needed (see
-        # _compute_tier_order_line's docstring).
-        tier_line = self._compute_tier_order_line(period, period_label)
-        if tier_line:
-            order_lines.append(tier_line)
 
         # v47: storage is billed ONLY for blocks the customer deliberately
         # PURCHASED (extra_storage_blocks) — never an automatic usage-based
@@ -3150,13 +2979,6 @@ class SaasInstance(models.Model):
             'daily_backup_pending_invoice_id': False,
             'daily_backup_next_invoice_date': False,
             'daily_backup_last_invoice_date': False,
-            # Compute tier is reset the same way — a fresh commitment
-            # re-provisions at the default (free) tier; the customer
-            # re-selects (and pays for) a higher tier again if they still
-            # want one.
-            'compute_tier_id': self.env['saas.compute.tier'].get_default().id,
-            'pending_compute_tier_id': False,
-            'compute_tier_pending_invoice_id': False,
             # Saved card + auto-renew are tied to the previous
             # subscription. Reactivation is a fresh commitment; force
             # the customer to opt in again so the new subscription
@@ -3186,12 +3008,6 @@ class SaasInstance(models.Model):
 
     # ========== saas_core hook implementations ==========
 
-    def _do_scale_compute_tier(self, tier_id):
-        res = super()._do_scale_compute_tier(tier_id)
-        # A paid upgrade stays pending until the scale really succeeded
-        # (super raises otherwise), then the pending marker is cleared.
-        self.write({'pending_compute_tier_id': False})
-        return res
 
     def _teardown_billing_vals(self):
         vals = super()._teardown_billing_vals()
@@ -3199,8 +3015,6 @@ class SaasInstance(models.Model):
             'daily_backup_pending_invoice_id': False,
             'daily_backup_next_invoice_date': False,
             'daily_backup_last_invoice_date': False,
-            'pending_compute_tier_id': False,
-            'compute_tier_pending_invoice_id': False,
         })
         return vals
 

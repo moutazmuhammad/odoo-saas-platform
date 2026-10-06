@@ -127,41 +127,6 @@ class AccountMove(models.Model):
                 "be included on your subscription renewal from now on."
             ))
 
-        # --- Handle compute-tier upgrade payments ---
-        # Same activation shape as daily backups above, but paying for a
-        # tier upgrade also has a real infrastructure side effect (scaling
-        # the instance's pod replicas) that can take a few minutes and
-        # must be health-gated — so that part runs as a background
-        # saas.job rather than inline here, and compute_tier_id is only
-        # updated by the job itself once the scale succeeds (see
-        # _do_scale_compute_tier). No next-invoice-date bookkeeping needed
-        # here (unlike daily backups): the tier is billed every renewal
-        # unconditionally once set — see _compute_tier_order_line.
-        tier_instances = self.env['saas.instance'].search([
-            ('compute_tier_pending_invoice_id', 'in', paid_invoices.ids),
-        ])
-        for instance in tier_instances:
-            tier = instance.pending_compute_tier_id
-            _logger.info(
-                "SaaS instance %s: compute tier upgrade to '%s' paid "
-                "(invoice %s), scaling.",
-                instance.subdomain, tier.name,
-                instance.compute_tier_pending_invoice_id.name,
-            )
-            instance._capture_payment_token_from_invoice(
-                instance.compute_tier_pending_invoice_id,
-            )
-            instance.write({'compute_tier_pending_invoice_id': False})
-            instance._append_log(
-                "Compute tier upgrade to '%s' payment received — scaling "
-                "in the background." % tier.name
-            )
-            self.env['saas.job'].enqueue(
-                instance, '_do_scale_compute_tier', args=(tier.id,),
-                channel='deploy', lock_key='instance:%s' % instance.id,
-                max_attempts=1, idempotent=False,
-                on_error='_on_compute_tier_scale_error')
-
         # --- Handle storage-block purchases (v47) ---
         block_instances = self.env['saas.instance'].search([
             ('storage_block_pending_invoice_id', 'in', paid_invoices.ids),

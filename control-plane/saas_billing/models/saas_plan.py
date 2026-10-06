@@ -12,7 +12,7 @@ class SaasPlan(models.Model):
     saas_product_ids stays in saas_core (it drives both resource sizing
     via _onchange_workers_resources AND this addon's _kind()/pricing —
     splitting it further would add cross-boundary decorator entanglement
-    for no benefit, the same reasoning as saas.compute.tier/saas.product
+    for no benefit, the same reasoning as saas.product
     staying entirely in core).
     """
     _inherit = 'saas.plan'

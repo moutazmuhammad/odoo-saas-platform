@@ -1,4 +1,5 @@
 import { i18nText, translateMessage } from "@/i18n";
+import { stampRuntimeReceipt } from "./runtime-status";
 /**
  * Client for the saas_website JSON API (Odoo `type='json'` / JSON-RPC 2.0).
  *
@@ -79,9 +80,9 @@ async function rpc<T = unknown>(
       if (code === "auth_required") onUnauthorized?.();
       throw new ApiError(result.error || i18nText("Request failed."), code);
     }
-    return result.data as T;
+    return stampRuntimeReceipt(result.data as T);
   }
-  return result as T;
+  return stampRuntimeReceipt(result as T);
 }
 
 /* ────────────────────────────── Types ────────────────────────────── */
@@ -235,15 +236,6 @@ export interface ApiBackup {
   format?: string;
 }
 
-export interface ApiComputeTier {
-  id: number;
-  name: string;
-  code: string;
-  replicas: number;
-  price: number;
-  description: string;
-}
-
 export interface ApiInvoice {
   id: number;
   number: string;
@@ -324,7 +316,19 @@ export interface WalletData {
 /** Odoo.sh-style environment: Production or a Staging/Development server. */
 export type EnvironmentType = "production" | "staging" | "development";
 
-export interface EnvChild {
+export interface RuntimeHealth {
+  runtime_state?: "online" | "starting" | "stopping" | "unavailable" | "unreachable" | "unknown" | "stopped" | "suspended" | null;
+  runtime_reason?: string;
+  runtime_message?: string;
+  runtime_workload?: string;
+  runtime_reachability?: "reachable" | "unreachable" | "unknown";
+  runtime_checked_at?: string | null;
+  runtime_stale?: boolean;
+  /** Client-side: browser time (ms) the observation was received; see stampRuntimeReceipt. */
+  runtime_received_at?: number;
+}
+
+export interface EnvChild extends RuntimeHealth {
   permissions?: string[];
   id: number;
   name: string;
@@ -378,7 +382,7 @@ export interface ProjectPriceResult extends PriceResult {
   project_total: number;
 }
 
-export interface ApiInstance {
+export interface ApiInstance extends RuntimeHealth {
   permissions?: string[];
   can_manage_access?: boolean;
   is_project_owner?: boolean;
@@ -418,9 +422,6 @@ export interface ApiInstance {
   daily_backup_price?: number;
   daily_backup_next_invoice_date?: string;
   compute_driver?: "kubernetes" | "ssh_docker";
-  compute_tier?: ApiComputeTier | null;
-  compute_tiers?: ApiComputeTier[];
-  compute_tier_pending?: ApiComputeTier | null;
   last_error?: string;
   repo?: { url: string; branch: string; has_token: boolean; state: string };
   pending_plan?: string;
@@ -460,7 +461,7 @@ export interface DashboardData {
   };
 }
 
-export interface StatusData {
+export interface StatusData extends RuntimeHealth {
   id: number;
   state: InstanceState;
   state_label: string;
@@ -488,10 +489,6 @@ export interface MetricSample {
 /** What the customer's package reserves: Odoo pods + PostgreSQL + storage. */
 export interface PackageSummary {
   workers: number;
-  replicas: number;
-  /** Package flavour shown to the customer instead of a replica count:
-   *  "Standard" / "HA" / "Scale". */
-  tier?: string;
   cpu_cores: number;
   ram_mb: number;
   odoo_cpu_cores: number;
@@ -776,9 +773,6 @@ export const api = {
     rpc<{ backup_id: number }>(`/saas/api/v1/instances/${id}/databases/backup`, { name, format }),
   dailyBackupEnable: (id: number) =>
     rpc<{ checkout_url: string }>(`/saas/api/v1/instances/${id}/daily-backup/enable`),
-  computeTierChange: (id: number, tierId: number) =>
-    rpc<{ checkout_url?: string; applied?: boolean }>(
-      `/saas/api/v1/instances/${id}/compute-tier/change`, { tier_id: tierId }),
   setRepo: (
     id: number,
     p: { repo_url: string; repo_branch: string; git_token?: string }

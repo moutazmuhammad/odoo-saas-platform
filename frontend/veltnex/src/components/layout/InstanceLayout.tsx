@@ -3,7 +3,7 @@ import { PermissionContext } from "@/lib/permissions";
 import { Outlet, useParams, Link } from "react-router-dom";
 import { GitBranch, Globe, ExternalLink, ArrowLeft } from "lucide-react";
 import { useInstances } from "@/context/InstancesContext";
-import { StatusBadge } from "@/components/StatusBadge";
+import { RuntimeStatusBadge } from "@/components/RuntimeStatusBadge";
 import { CopyButton } from "@/components/CopyButton";
 import { Spinner } from "@/components/Spinner";
 
@@ -46,7 +46,7 @@ export default function InstanceLayout() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="truncate text-2xl font-bold tracking-tight">{inst.name}</h1>
-              <StatusBadge status={inst.state} label={inst.state_label} />
+              <RuntimeStatusBadge instance={inst} showDetail />
               {inst.is_hosting && (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted">
                   {inst.environment_label}

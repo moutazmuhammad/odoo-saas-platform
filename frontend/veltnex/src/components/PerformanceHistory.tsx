@@ -149,7 +149,7 @@ export function PerformanceHistory({
 
       {pkg && (
         <p className="mt-2 text-xs text-muted">{i18nText("Your package: ")}{pkg.workers}{i18nText(" worker")}{pkg.workers === 1 ? "" : "s"}
-          {pkg.tier ? ` · ${pkg.tier}` : ""} · {pkg.storage_gb}{i18nText(" GB storage, including the managed PostgreSQL database.")}</p>
+           · {pkg.storage_gb}{i18nText(" GB storage, including the managed PostgreSQL database.")}</p>
       )}
 
       {/* Live readout — current CPU / Memory / Disk, refreshed every few secs. */}

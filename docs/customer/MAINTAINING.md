@@ -21,7 +21,7 @@ npm --prefix frontend/veltnex test
 npm --prefix frontend/veltnex run build
 ```
 
-The generator validates unique IDs, real source paths, related links, section IDs, complete bilingual text, table dimensions, technical names, numbers, inline code and links. It exports customer Markdown under `en/` and `ar/`, the downloadable ZIP, and help excerpts used by React and native QWeb. Do not edit generated files independently.
+The generator validates unique IDs, real source paths, related links, section IDs, complete bilingual text, table dimensions, technical names, numbers, inline code and links. It exports customer Markdown under `en/` and `ar/` and help excerpts used by React and native QWeb. Customer guides are read on the website; no bulk-download archive is published. Do not edit generated files independently.
 
 The documentation routes load the full catalog in a separate frontend chunk. Other pages use only the smaller generated help excerpts. Print styling hides navigation and preserves code direction. Runtime logs and terminals are not translated.
 

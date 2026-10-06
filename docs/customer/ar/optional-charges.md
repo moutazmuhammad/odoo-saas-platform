@@ -16,5 +16,4 @@
 
 - [تغيير خطة الاشتراك](change-plan.md)
 - [حجز سعة البيئات وتحريرها](environment-slots.md)
-- [تغيير فئة موارد التشغيل](compute-tiers.md)
 - [فهم رصيد حسابك](wallet.md)

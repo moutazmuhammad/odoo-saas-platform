@@ -68,6 +68,10 @@ spec:
               the API only ever creates/updates/deletes this object and reads back
               OdooInstanceStatus. It never creates Deployments, Services, PVCs,
               Secrets, or Jobs directly.
+              Replicas above one predate the single-replica rule. A transition rule
+              (oldSelf) keeps such legacy objects editable: replicas may stay at its
+              old value or move to 1, never to any other value. Transition rules do not
+              run on create; the controller treats any replicas as 1 regardless.
             properties:
               addons:
                 description: |-
@@ -98,26 +102,6 @@ spec:
                   type: string
                 maxItems: 32
                 type: array
-              autoscaling:
-                description: Autoscaling is reserved for future use; see AutoscalingSpec.
-                properties:
-                  enabled:
-                    default: false
-                    description: |-
-                      Enabled requests Horizontal Pod Autoscaling for the stateless web
-                      tier. Not yet implemented by the controller; validated but rejected
-                      by the webhook in this API version.
-                    type: boolean
-                  maxReplicas:
-                    format: int32
-                    type: integer
-                  minReplicas:
-                    format: int32
-                    type: integer
-                  targetCPUUtilizationPercentage:
-                    format: int32
-                    type: integer
-                type: object
               backup:
                 description: Backup configures scheduled database/filestore backups.
                 properties:
@@ -292,6 +276,7 @@ spec:
                       size:
                         description: Size is the requested persistent volume size,
                           e.g. "50Gi".
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         type: string
                       storageClassName:
                         description: |-
@@ -493,12 +478,10 @@ spec:
               replicas:
                 default: 1
                 description: |-
-                  Replicas is the number of Odoo pod replicas. Defaults to 1, which is
-                  the recommended topology (see WorkersSpec and FilestoreSpec docs).
-                  Values greater than 1 require storage.filestore.accessMode set to
-                  ReadWriteMany; the webhook rejects the combination otherwise.
+                  Replicas is fixed at one. Scale through resources requests/limits.
+                  Legacy objects may still hold a larger value; it is treated as 1 (see
+                  the transition rule on OdooInstanceSpec).
                 format: int32
-                maximum: 10
                 minimum: 1
                 type: integer
               resources:
@@ -645,14 +628,8 @@ spec:
                     properties:
                       accessMode:
                         default: ReadWriteOnce
-                        description: |-
-                          AccessMode is the PVC access mode. ReadWriteOnce (default) is
-                          required whenever spec.replicas is 1, which is the recommended
-                          topology for Odoo (see architecture docs: cron workers and the
-                          filestore are effectively singletons). ReadWriteMany is only
-                          accepted when the operator can also verify replicas > 1 is
-                          intentional; the controller rejects RWO with replicas > 1 and warns
-                          prominently (Degraded condition) rather than corrupting data.
+                        description: AccessMode defaults to ReadWriteOnce for the
+                          single Odoo pod.
                         enum:
                         - ReadWriteOnce
                         - ReadWriteMany
@@ -660,6 +637,7 @@ spec:
                       size:
                         description: Size is the requested persistent volume size,
                           e.g. "100Gi".
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         type: string
                       storageClassName:
                         description: |-
@@ -669,6 +647,18 @@ spec:
                     required:
                     - size
                     type: object
+                  sharedWithDatabase:
+                    default: false
+                    description: |-
+                      SharedWithDatabase stores Managed PostgreSQL and Odoo data in isolated
+                      subdirectories of the same filestore PVC. Its size is the entire
+                      tenant storage budget. False preserves legacy separate-volume layouts.
+                      Immutable: switching a live layout requires backup/restore migration.
+                    type: boolean
+                    x-kubernetes-validations:
+                    - message: storage.sharedWithDatabase is immutable; migrate using
+                        backup and restore
+                      rule: self == oldSelf
                 required:
                 - filestore
                 type: object
@@ -676,8 +666,9 @@ spec:
                 default: false
                 description: |-
                   Suspended pauses the instance without deleting any data: the
-                  controller scales the Odoo workload to zero replicas, keeps the
-                  database/filestore/backups intact, and reports phase "Suspended".
+                  controller stops Odoo and its dedicated database and pauses tenant
+                  jobs/backups. Persistent volumes remain intact for reactivation.
+                  External databases are not stopped because they may be shared.
                   Intended for billing suspension flows.
                 type: boolean
               tenancy:
@@ -785,11 +776,10 @@ spec:
                     default: 1
                     description: |-
                       MaxCronThreads is the number of Odoo cron worker threads
-                      (`--max-cron-threads`). Cron workers run scheduled jobs (e.g.
-                      invoicing, mail queues) and must not be scaled per pod replica: only
-                      one pod in the deployment should run cron threads > 0 to avoid
-                      duplicate job execution, which the controller enforces by pinning
-                      cron execution to the first replica.
+                      (`--max-cron-threads`). Cron workers run scheduled actions (e.g.
+                      invoicing, mail queues). They run in a separate, smaller
+                      resource-limited "cron" container inside the single Odoo pod; the web
+                      container itself runs no cron threads. Set to 0 to disable cron.
 
                       Deliberately no `omitempty`; see Count's comment above for why an
                       explicit 0 must survive a Go client round-trip against a non-zero
@@ -809,6 +799,12 @@ spec:
             - storage
             - version
             type: object
+            x-kubernetes-validations:
+            - message: only one Odoo replica is supported; increase resources instead
+              rule: '!has(self.replicas) || self.replicas == 1 || (has(oldSelf.replicas)
+                && oldSelf.replicas == self.replicas)'
+            - message: shared storage requires a Managed database
+              rule: '!self.storage.sharedWithDatabase || self.database.mode == ''Managed'''
           status:
             description: |-
               OdooInstanceStatus is the observed state of an OdooInstance, and the only

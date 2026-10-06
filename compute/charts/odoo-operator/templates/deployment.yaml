@@ -6,11 +6,12 @@ metadata:
   labels:
     {{- include "odoo-operator.labels" . | nindent 4 }}
 spec:
-  # More than 1 replica requires leaderElection: true (values.yaml) so only
-  # one instance actively reconciles; extra replicas otherwise stand by
-  # purely for faster failover, not for load-splitting (this controller is
-  # not sharded).
-  replicas: {{ .Values.replicaCount }}
+  replicas: 1
+  # Leader election is off, so a rolling update would briefly run the old
+  # and new operator side by side, both reconciling the same instances.
+  # Recreate stops the old pod before the new one starts.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "odoo-operator.selectorLabels" . | nindent 6 }}
@@ -41,7 +42,7 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           args:
-            - --leader-elect={{ .Values.leaderElection }}
+            - --leader-elect=false
             - --metrics-secure={{ .Values.metrics.secure }}
             - --networking-provider={{ .Values.networking.provider }}
             - --gateway-namespace={{ .Values.networking.gateway.namespace }}

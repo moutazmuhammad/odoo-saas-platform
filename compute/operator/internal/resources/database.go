@@ -23,7 +23,7 @@ import (
 // streaming replication/failover) and is meant as the zero-dependency
 // default for early-stage platform adoption. Production deployments should
 // migrate a tenant to DatabaseModeCloudNativePG, which provisions a real
-// `Cluster` CR (HA, PITR, automated failover) behind the exact same
+// single-instance `Cluster` CR (PITR and managed recovery) behind the same
 // OdooInstance API — see internal/controller/database.go.
 //
 // Connection details are wired via secretKeyRef against DatabaseSecretName,
@@ -32,13 +32,18 @@ import (
 func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance) *appsv1.StatefulSet {
 	labels := WithComponent(instance, "database")
 
-	sizeStr := "20Gi"
 	var storageClass *string
 	if instance.Spec.Database.Storage != nil {
-		sizeStr = instance.Spec.Database.Storage.Size
 		storageClass = instance.Spec.Database.Storage.StorageClassName
 	}
-	size := resource.MustParse(sizeStr)
+	// An unparsable size never reaches here: the CRD pattern and
+	// validateSpec reject it first. Fall back rather than panic regardless.
+	size := resource.MustParse("20Gi")
+	if instance.Spec.Database.Storage != nil {
+		if q, err := resource.ParseQuantity(instance.Spec.Database.Storage.Size); err == nil {
+			size = q
+		}
+	}
 
 	envFrom := func(key string) corev1.EnvVarSource {
 		return corev1.EnvVarSource{
@@ -49,7 +54,7 @@ func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance) *appsv1.StatefulSe
 		}
 	}
 
-	return &appsv1.StatefulSet{
+	sts := &appsv1.StatefulSet{
 		TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "StatefulSet"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      DatabaseStatefulSetName(instance),
@@ -148,6 +153,32 @@ func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance) *appsv1.StatefulSe
 			},
 		},
 	}
+	if instance.Spec.Storage.SharedWithDatabase {
+		sts.Spec.VolumeClaimTemplates = nil
+		pod := &sts.Spec.Template.Spec
+		pod.SecurityContext.FSGroup = ptr.To(int64(odooImageGID))
+		pod.SecurityContext.FSGroupChangePolicy = ptr.To(corev1.FSGroupChangeOnRootMismatch)
+		pod.Affinity = sharedDataCoLocation(instance)
+		pod.Volumes = append(pod.Volumes, corev1.Volume{Name: DatabasePVCName(instance), VolumeSource: corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: FilestorePVCName(instance)},
+		}})
+		pod.Containers[0].VolumeMounts[0].SubPath = "postgres"
+		// Non-root creation preserves PostgreSQL's required data ownership.
+		// All consumers use one fsGroup and skip recursive ownership changes
+		// while the volume root matches; but if it ever mismatches, the
+		// kubelet's recursive fsGroup pass makes every directory group
+		// writable, and PostgreSQL refuses to start unless PGDATA (a
+		// subdirectory, never the volume root) is 0700 or 0750. So restore
+		// 0700 on PGDATA before every start.
+		pod.InitContainers = []corev1.Container{{
+			Name: "prepare-shared-data", Image: pod.Containers[0].Image,
+			Command:         []string{"sh", "-ec", "mkdir -p /tenant-data/postgres; chmod 700 /tenant-data/postgres; if [ -d /tenant-data/postgres/pgdata ]; then chmod 700 /tenant-data/postgres/pgdata; fi; if [ ! -d /tenant-data/odoo ]; then mkdir -m 2770 /tenant-data/odoo; fi"},
+			VolumeMounts:    []corev1.VolumeMount{{Name: DatabasePVCName(instance), MountPath: "/tenant-data"}},
+			SecurityContext: &corev1.SecurityContext{RunAsUser: ptr.To(int64(999)), RunAsNonRoot: ptr.To(true), AllowPrivilegeEscalation: ptr.To(false), ReadOnlyRootFilesystem: ptr.To(true), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
+			Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m"), corev1.ResourceMemory: resource.MustParse("32Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")}},
+		}}
+	}
+	return sts
 }
 
 // DatabasePodName is the managed PostgreSQL StatefulSet's only pod.
@@ -158,17 +189,29 @@ func DatabasePodName(instance *saasv1alpha1.OdooInstance) string {
 // DatabaseDataPVCName is the PVC the StatefulSet's volume claim template
 // created for that pod.
 func DatabaseDataPVCName(instance *saasv1alpha1.OdooInstance) string {
+	if instance.Spec.Storage.SharedWithDatabase {
+		return FilestorePVCName(instance)
+	}
 	return DatabasePVCName(instance) + "-" + DatabasePodName(instance)
 }
 
 // DatabaseStorageSize is the requested database volume size (default 20Gi).
-func DatabaseStorageSize(instance *saasv1alpha1.OdooInstance) resource.Quantity {
-	if instance.Spec.Database.Storage != nil && instance.Spec.Database.Storage.Size != "" {
-		if q, err := resource.ParseQuantity(instance.Spec.Database.Storage.Size); err == nil {
-			return q
+func DatabaseStorageSize(instance *saasv1alpha1.OdooInstance) (resource.Quantity, error) {
+	if instance.Spec.Storage.SharedWithDatabase {
+		q, err := resource.ParseQuantity(instance.Spec.Storage.Filestore.Size)
+		if err != nil {
+			return resource.Quantity{}, fmt.Errorf("invalid spec.storage.filestore.size %q: %w", instance.Spec.Storage.Filestore.Size, err)
 		}
+		return q, nil
 	}
-	return resource.MustParse("20Gi")
+	if instance.Spec.Database.Storage != nil && instance.Spec.Database.Storage.Size != "" {
+		q, err := resource.ParseQuantity(instance.Spec.Database.Storage.Size)
+		if err != nil {
+			return resource.Quantity{}, fmt.Errorf("invalid spec.database.storage.size %q: %w", instance.Spec.Database.Storage.Size, err)
+		}
+		return q, nil
+	}
+	return resource.MustParse("20Gi"), nil
 }
 
 // DatabaseResources is spec.database.resources, or the platform default.

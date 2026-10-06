@@ -1,6 +1,6 @@
 {
     'name': 'SaaS Billing',
-    'version': '18.0.2.0.0',
+    'version': '18.0.2.3.0',
     'category': 'SaaS',
     'summary': 'Pricing, wallet, payments and commercial add-ons for the SaaS platform',
     'description': """
@@ -32,7 +32,6 @@ purchases, margin) and of `saas.plan`, added via `_inherit`.
         'views/saas_addon_views.xml',
         'views/saas_instance_views.xml',
         'views/saas_plan_views.xml',
-        'views/saas_compute_tier_views.xml',
         'views/saas_margin_views.xml',
         'views/res_config_settings_views.xml',
         'views/saas_menus.xml',

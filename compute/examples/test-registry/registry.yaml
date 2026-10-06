@@ -1,6 +1,6 @@
 # In-cluster OCI registry for TEST clusters (single-node microk8s-style),
 # used by the control plane's tenant image builds (Region > Tenant Image
-# Builds). Production should use a managed/HA registry instead (Harbor,
+# Builds). Production should use a managed registry instead (Harbor,
 # GHCR, ECR, ...) — any OCI registry works.
 #
 # - Builds push to   registry.container-registry.svc.cluster.local:5000

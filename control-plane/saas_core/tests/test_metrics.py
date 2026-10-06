@@ -19,11 +19,12 @@ class TestInstanceMetrics(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        # Package = Odoo 2 cores / 2 GB + database 2 cores / 2 GB (pinned via
+        # Package = Odoo 2 cores / 2 GB + cron sidecar 0.5 cores / 0.5 GB
+        # (25% of the web limits) + database 1.5 cores / 1.5 GB (pinned via
         # the DB minimums) = 4 cores / 4 GB, so percentages are easy to read.
         icp = self.env['ir.config_parameter'].sudo()
-        icp.set_param('saas_master.db_cpu_min', '2')
-        icp.set_param('saas_master.db_ram_min', '2048')
+        icp.set_param('saas_master.db_cpu_min', '1.5')
+        icp.set_param('saas_master.db_ram_min', '1536')
         self.product = self.env['saas.product'].sudo().search(
             [('is_hosting', '=', True)], limit=1) or self.env['saas.product'].sudo().create(
             {'name': 'Mx Hosting', 'is_hosting': True, 'is_published': True})

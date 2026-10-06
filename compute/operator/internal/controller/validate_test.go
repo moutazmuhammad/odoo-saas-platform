@@ -55,37 +55,33 @@ func TestValidateSpec_AllowsMutableTagWhenOptedIn(t *testing.T) {
 	}
 }
 
-func TestValidateSpec_RejectsMultipleReplicasWithoutRWX(t *testing.T) {
-	r := &OdooInstanceReconciler{}
+func TestValidateSpec_ToleratesLegacyReplicas(t *testing.T) {
 	instance := validSpecInstance()
-	instance.Spec.Replicas = ptr.To(int32(3))
-	instance.Spec.Storage.Filestore.AccessMode = saasv1alpha1.FilestoreAccessModeRWO
-
-	err := r.validateSpec(instance)
-	if err == nil || err.reason != "ReplicasRequireRWXFilestore" {
-		t.Fatalf("validateSpec() = %v, want reason ReplicasRequireRWXFilestore", err)
+	instance.Spec.Replicas = ptr.To(int32(2))
+	// Rejecting would also block suspension and legacy cleanup; the
+	// builders run one pod and the controller only warns.
+	if err := (&OdooInstanceReconciler{}).validateSpec(instance); err != nil {
+		t.Fatalf("legacy replicas blocked reconcile: %v", err)
+	}
+	if legacyReplicasMessage(instance) == "" {
+		t.Fatal("legacy replicas not surfaced")
+	}
+	instance.Spec.Replicas = ptr.To(int32(1))
+	if legacyReplicasMessage(instance) != "" {
+		t.Fatal("warning for a supported replica count")
 	}
 }
 
-func TestValidateSpec_AllowsMultipleReplicasWithRWX(t *testing.T) {
-	r := &OdooInstanceReconciler{}
+func TestValidateSpec_RejectsUnparsableStorageSize(t *testing.T) {
 	instance := validSpecInstance()
-	instance.Spec.Replicas = ptr.To(int32(3))
-	instance.Spec.Storage.Filestore.AccessMode = saasv1alpha1.FilestoreAccessModeRWX
-
-	if err := r.validateSpec(instance); err != nil {
-		t.Fatalf("validateSpec() = %v, want nil for replicas=3 with RWX", err)
+	instance.Spec.Storage.Filestore.Size = "ten gigs"
+	if err := (&OdooInstanceReconciler{}).validateSpec(instance); err == nil || err.reason != "InvalidStorageSize" {
+		t.Fatalf("validateSpec() = %v, want reason InvalidStorageSize", err)
 	}
-}
-
-func TestValidateSpec_RejectsEnabledAutoscaling(t *testing.T) {
-	r := &OdooInstanceReconciler{}
-	instance := validSpecInstance()
-	instance.Spec.Autoscaling.Enabled = true
-
-	err := r.validateSpec(instance)
-	if err == nil || err.reason != "AutoscalingNotImplemented" {
-		t.Fatalf("validateSpec() = %v, want reason AutoscalingNotImplemented", err)
+	instance = validSpecInstance()
+	instance.Spec.Database.Storage = &saasv1alpha1.StorageRequestSpec{Size: "lots"}
+	if err := (&OdooInstanceReconciler{}).validateSpec(instance); err == nil || err.reason != "InvalidStorageSize" {
+		t.Fatalf("validateSpec() = %v, want reason InvalidStorageSize", err)
 	}
 }
 

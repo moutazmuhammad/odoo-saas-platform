@@ -2,15 +2,10 @@
 
 image:
   repository: docker.io/moutazmuhammad/odoo-saas-operator
-  tag: "0.1.25"
+  tag: "0.1.28"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
-replicaCount: 1
-
-# leaderElection should be true whenever replicaCount > 1, so only one
-# replica is ever actively reconciling at a time.
-leaderElection: false
 
 # Use ordinary list/watch by default for compatibility with MicroK8s/dqlite.
 # Clusters with working streaming initial events may enable this explicitly.

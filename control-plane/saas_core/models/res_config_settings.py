@@ -9,12 +9,6 @@ class ResConfigSettings(models.TransientModel):
     # host-port concept in Kubernetes (one shared ingress port serves
     # every tenant on a region), so nothing reads this setting any more.
 
-    # Compute tiers (Standard/HA/Scale/...) are managed as their own
-    # records — SaaS > Configuration > Compute Tiers — not as settings
-    # here, since each tier needs its own name/replicas/price and the set
-    # of tiers is meant to grow without code changes (see
-    # saas.compute.tier).
-
     # ========== Free Trial ==========
     saas_trial_days = fields.Integer(
         string='Free Trial Duration (Days)',

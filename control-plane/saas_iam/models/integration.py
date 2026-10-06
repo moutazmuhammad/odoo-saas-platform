@@ -26,7 +26,7 @@ INSTANCE_METHOD_PERMISSIONS = {
     'action_open_terminal': 'terminal.open', 'action_view_logs': 'logs.view',
     'action_suspend': 'billing.manage', 'action_draft': 'billing.manage',
     'action_client_cancel_invoice': 'billing.manage', 'action_purchase_daily_backup': 'billing.manage',
-    'action_change_compute_tier': 'billing.manage', 'action_purchase_storage_block': 'billing.manage',
+    'action_purchase_storage_block': 'billing.manage',
     'action_release_storage_block': 'billing.manage', 'action_reserve_environment_slots': 'billing.manage',
     'action_release_environment_slots': 'billing.manage', 'action_confirm_and_bill': 'billing.manage',
     'action_subscribe_from_trial': 'billing.manage', 'action_request_plan_change': 'billing.manage',
@@ -104,7 +104,7 @@ class IamInstance(models.Model):
         if not iam._is_owner(self):
             data = {key: value for key, value in data.items() if key in {
                 'id', 'state', 'state_label', 'url', 'backup_running', 'db_ops_running', 'provisioning_log',
-            }}
+            } or key.startswith('runtime_')}
         if not iam._allowed(self, 'logs.view'):
             data['provisioning_log'] = ''
         return data

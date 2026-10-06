@@ -198,28 +198,6 @@
     ]
   },
   {
-    "anchor": "compute-tiers",
-    "article": "compute-tiers",
-    "category": {
-      "en": "Plans and capacity",
-      "ar": "الخطط والسعة"
-    },
-    "title": {
-      "en": "Change compute tiers",
-      "ar": "تغيير فئة موارد التشغيل"
-    },
-    "tip": {
-      "en": "Understand replica-based tiers and their billing behavior.",
-      "ar": "افهم الفئات القائمة على عدد النسخ التشغيلية وطريقة فوترة تغييراتها."
-    },
-    "body": [
-      {
-        "en": "Compute tiers apply to the Kubernetes backend and define application replica counts and their price. The platform publishes the available names, such as Standard, HA, or Scale. A larger replica count is not a guarantee of a specific availability SLA or a replacement for sizing Workers, CPU, RAM, and storage correctly.",
-        "ar": "تنطبق فئات موارد التشغيل على Kubernetes، وتحدد عدد نسخ التطبيق التشغيلية وتكلفتها. تنشر المنصة الفئات المتاحة، مثل Standard أو HA أو Scale. زيادة عدد النسخ لا تضمن اتفاقية توافر محددة، ولا تُغني عن اختيار Workers وCPU وRAM والتخزين بشكل مناسب."
-      }
-    ]
-  },
-  {
     "anchor": "support-plan",
     "article": "support-plans",
     "category": {

@@ -130,26 +130,11 @@ class TestImageBuildPipeline(TransactionCase):
             'base': '18.0.1.0', 'sale': '18.0.2.0', 'stock': '18.0.1.0'})
         self.assertEqual(modules, ['sale'])
 
-    def test_cache_uses_successful_image_via_push_host(self):
+    def test_build_does_not_request_registry_cache(self):
         self._build(state='success', image_digest='localhost:32000/acme/tenant-bldinst@sha256:abc')
         build = self._build()
         self.instance._job_start_build(build.id)
-        self.assertEqual(self.driver.start_image_build.call_args.kwargs['cache_ref'],
-                         'registry.container-registry.svc:5000/acme/tenant-bldinst@sha256:abc')
-
-    def test_new_environment_can_import_parent_cache(self):
-        self._build(state='success', image_digest='localhost:32000/acme/tenant-bldinst@sha256:abc')
-        child = self.instance.copy({'subdomain': 'bldstage', 'environment': 'staging',
-                                    'parent_id': self.instance.id})
-        self.assertEqual(child._build_cache_ref(child._build_registry()),
-                         'registry.container-registry.svc:5000/acme/tenant-bldinst@sha256:abc')
-        child.docker_server_id = self.server.copy({'name': 'Different cluster'})
-        self.assertEqual(child._build_cache_ref(child._build_registry()), '')
-
-    def test_cache_does_not_import_failed_or_foreign_registry_images(self):
-        self._build(state='failed', image_digest='localhost:32000/acme/tenant-bldinst@sha256:abc')
-        self._build(state='success', image_digest='foreign.example/tenant@sha256:def')
-        self.assertEqual(self.instance._build_cache_ref(self.instance._build_registry()), '')
+        self.assertNotIn('cache_ref', self.driver.start_image_build.call_args.kwargs)
 
     def test_modules_to_update_empty_when_unchanged(self):
         """Identical module_versions as the last success → no module
@@ -447,8 +432,7 @@ class TestImageBuildDriver(TransactionCase):
             builder_image='moby/buildkit:rootless', git_image='alpine/git',
             registry_host='reg', registry_push_host='reg.ns.svc:5000',
             registry_username='u', registry_password='p',
-            tenant_key='Acme-Test', registry_insecure=True,
-            cache_ref='reg.ns.svc:5000/tenant-acme@sha256:abc')
+            tenant_key='Acme-Test', registry_insecure=True)
         ns, job = self.batch.create_namespaced_job.call_args.args
         self.assertEqual(ns, 'odoo-builds')
         spec = job['spec']['template']['spec']
@@ -459,14 +443,16 @@ class TestImageBuildDriver(TransactionCase):
         self.assertEqual(spec['securityContext']['fsGroupChangePolicy'], 'OnRootMismatch')
         self.assertEqual(job['spec']['backoffLimit'], 0)
         build_env = {e['name']: e['value'] for e in spec['containers'][0]['env']}
-        self.assertEqual(build_env['CACHE_IMAGE_REF'], 'reg.ns.svc:5000/tenant-acme@sha256:abc')
+        self.assertNotIn('CACHE_IMAGE_REF', build_env)
         config = self.core.create_namespaced_config_map.call_args.args[1].data
         import tomllib
         settings = tomllib.loads(config['buildkitd.toml'])
         self.assertEqual(settings['registry']['reg.ns.svc:5000']['http'], True)
         self.assertEqual(settings['root'], '/home/user/.local/share/buildkit')
         self.assertEqual(settings['worker']['oci']['gckeepstorage'], '8GB')
-        self.assertIn('--export-cache type=inline', config['build.sh'])
+        self.assertNotIn('--export-cache', config['build.sh'])
+        self.assertNotIn('--import-cache', config['build.sh'])
+        self.assertIn('--opt no-cache', config['build.sh'])
         # Init containers run sequentially, but their largest request counts
         # for the pod's entire lifetime. They must not reserve their CPU limits
         # and prevent a build fitting into a node with 500m CPU available.
@@ -484,12 +470,13 @@ class TestImageBuildDriver(TransactionCase):
         # Secret + ConfigMap are owned by the Job (garbage-collected with it).
         owner = self.core.patch_namespaced_secret.call_args.args[2]['metadata']['ownerReferences'][0]
         self.assertEqual(owner['uid'], 'uid-1')
-        # BuildKit cache is persisted so small pushes don't rebuild from zero.
+        # Build scratch is temporary; no cache disk is provisioned.
         buildkit_vol = next(v for v in spec['volumes'] if v['name'] == 'buildkit')
-        self.assertIn('persistentVolumeClaim', buildkit_vol)
-        self.assertEqual(
-            buildkit_vol['persistentVolumeClaim']['claimName'],
-            'buildkit-cache-acme-test-e3eefd35cab0')  # per tenant, not shared across tenants
+        self.assertEqual(buildkit_vol['emptyDir']['sizeLimit'], '20Gi')
+        self.assertFalse(any('persistentVolumeClaim' in v for v in spec['volumes']))
+        self.core.create_namespaced_persistent_volume_claim.assert_not_called()
+        self.assertEqual(spec['containers'][0]['resources']['requests']['ephemeral-storage'], '4Gi')
+        self.assertEqual(spec['containers'][0]['resources']['limits']['ephemeral-storage'], '24Gi')
         # Egress policy allows the in-cluster registry's namespace.
         policy = self.net.replace_namespaced_network_policy.call_args.args[2]
         self.assertIn({'kubernetes.io/metadata.name': 'ns'},
@@ -565,10 +552,3 @@ class TestImageBuildDriver(TransactionCase):
     def test_update_status_applied(self):
         self._cr(5, 'build-2', 'UpdateApplied', 5)
         self.assertEqual(self.driver.update_status(_handle())['state'], 'applied')
-
-    def test_cache_names_keep_long_and_sanitized_tenant_keys_distinct(self):
-        from ..drivers.k8s_builds import _cache_pvc_name
-        for a, b in [('a' * 50 + '-one', 'a' * 50 + '-two'), ('tenant_a', 'tenant-a')]:
-            self.assertNotEqual(_cache_pvc_name(a), _cache_pvc_name(b))
-            self.assertLessEqual(len(_cache_pvc_name(a)), 63)
-            self.assertRegex(_cache_pvc_name(a), r'^[a-z0-9][a-z0-9-]*[a-z0-9]$')

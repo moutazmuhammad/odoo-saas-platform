@@ -4,7 +4,7 @@ criterion — locked in for real over HTTP, not just by code inspection.
 
 The redesign added several new cost/profit/margin fields (cost_price,
 profit, margin_pct, is_profitable, cost_tracked, minimum_profitable_price
-on saas.compute.tier/saas.addon/saas.support.plan/saas.plan; two new
+on saas.addon/saas.support.plan/saas.plan; two new
 worker_cost_floor/storage_cost_floor breakdown keys on the pricing
 engine's compute()). None of them should ever reach a customer-facing
 JSON response — every serializer in api.py already builds an explicit
@@ -67,7 +67,7 @@ class TestPricingQuoteHasNoFinancialLeak(HttpCase):
 
 @tagged('post_install', '-at_install')
 class TestInstanceDetailHasNoFinancialLeak(_PortalTestBase):
-    def test_instance_detail_and_compute_tiers_have_no_financial_leak(self):
+    def test_instance_detail_has_no_financial_leak(self):
         region = self.env['saas.region'].sudo().create(
             {'name': 'NoLeak Region', 'code': 'noleak-region'})
         server = self.env['saas.server'].sudo().create({
@@ -75,10 +75,6 @@ class TestInstanceDetailHasNoFinancialLeak(_PortalTestBase):
             'region_id': region.id, 'cost_per_cpu_month': 5.0,
             'cost_per_gb_ram_month': 2.0, 'cost_per_gb_storage_month': 0.1})
         self.instance.sudo().docker_server_id = server.id
-        self.env['saas.compute.tier'].sudo().create({
-            'name': 'NoLeak HA', 'code': 'noleak-ha', 'replicas': 2,
-            'monthly_price': 15.0, 'cost_price': 6.0,
-        })
         self.authenticate('portalowner@example.com', 'ownerpass123')
         result = self._json_call(
             '/saas/api/v1/instances/%d' % self.instance.id)

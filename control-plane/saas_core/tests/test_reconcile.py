@@ -65,6 +65,22 @@ class TestReconcile(TransactionCase):
         fake.start.assert_called_once_with('H')
         self.assertEqual(action, 'recreated')
 
+    def test_reconcile_leaves_missing_pod_to_operator(self):
+        # The CR exists but its pod is gone (eviction/reschedule): the
+        # operator recreates it; the reconciler must not start/stop anything.
+        for desired in ('running', 'stopped'):
+            inst = self._inst('rmiss%s' % desired, desired)
+            fake, action = self._reconcile_with_health(inst, 'missing')
+            fake.start.assert_not_called()
+            fake.stop.assert_not_called()
+            self.assertEqual(action, 'none')
+
+    def test_reconcile_does_not_restop_terminating_pod(self):
+        inst = self._inst('rterm', 'stopped')
+        fake, action = self._reconcile_with_health(inst, 'terminating')
+        fake.stop.assert_not_called()
+        self.assertEqual(action, 'none')
+
     def test_reconcile_noop_when_already_running(self):
         inst = self._inst('rok', 'running')
         fake, action = self._reconcile_with_health(inst, 'running')
@@ -89,6 +105,12 @@ class TestReconcile(TransactionCase):
         fake.stop.assert_not_called()
         self.assertEqual(action, 'none')
         self.assertEqual(inst.state, 'running')
+
+    def test_unready_pod_with_old_restarts_is_not_auto_stopped(self):
+        inst = self._inst('rstarting')
+        fake, action = self._reconcile_with_health(inst, 'starting', restart_count=20)
+        self.assertEqual(action, 'none')
+        fake.stop.assert_not_called()
 
     def test_reconcile_breaks_crash_loop_backoff(self):
         inst = self._inst('rloop2', 'running')

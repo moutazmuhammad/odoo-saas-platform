@@ -31,7 +31,6 @@ Choose compatible resources, scale safely, and manage capacity add-ons.
 - [Choose a region, Odoo version, and edition](region-version.md)
 - [Change a subscription plan](change-plan.md)
 - [Manage storage capacity and blocks](storage-capacity.md)
-- [Change compute tiers](compute-tiers.md)
 
 ## Staging and Development
 

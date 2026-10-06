@@ -15,61 +15,20 @@ import (
 	saasv1alpha1 "github.com/freightright/odoo-saas-platform/operator/api/v1alpha1"
 )
 
-// OdooRole distinguishes the two Deployments an instance can have. See
-// docs/architecture.md ("Odoo Worker Model") for why cron execution is
-// split into its own Deployment instead of being pinned to a Deployment
-// replica ordinal (which Deployments, unlike StatefulSets, do not
-// guarantee).
-type OdooRole string
+const RoleWeb = "web"
 
-const (
-	// RoleWeb serves HTTP traffic. Always created. Runs cron itself only
-	// when the instance has a single replica (the common case).
-	RoleWeb OdooRole = "web"
-	// RoleCron runs only scheduled jobs, at exactly one replica, and is
-	// only created when spec.Replicas > 1 (multi-replica web tier).
-	RoleCron OdooRole = "cron"
-)
-
-// OdooCronDeploymentName is the name of the dedicated cron Deployment.
+// OdooCronDeploymentName identifies the retired cron deployment for cleanup.
 func OdooCronDeploymentName(instance *saasv1alpha1.OdooInstance) string {
 	return "odoo-cron"
 }
 
-// NeedsCronDeployment reports whether this instance requires a separate
-// cron Deployment (i.e. it runs more than one web replica).
-func NeedsCronDeployment(instance *saasv1alpha1.OdooInstance) bool {
-	return ptr.Deref(instance.Spec.Replicas, 1) > 1
-}
-
-// OdooDeployment builds the Deployment for the given role.
-func OdooDeployment(instance *saasv1alpha1.OdooInstance, role OdooRole) *appsv1.Deployment {
-	var (
-		name         string
-		replicas     int32
-		workers      int32
-		cronThreads  int32
-		exposesHTTP  = true
-		roleLabelVal = string(role)
-	)
-
-	switch role {
-	case RoleWeb:
-		name = OdooDeploymentName(instance)
-		replicas = ptr.Deref(instance.Spec.Replicas, 1)
-		workers = instance.Spec.Workers.Count
-		if NeedsCronDeployment(instance) {
-			cronThreads = 0 // cron runs exclusively in the dedicated cron Deployment
-		} else {
-			cronThreads = instance.Spec.Workers.MaxCronThreads
-		}
-	case RoleCron:
-		name = OdooCronDeploymentName(instance)
-		replicas = 1
-		workers = 0
-		cronThreads = instance.Spec.Workers.MaxCronThreads
-		exposesHTTP = false
-	}
+// OdooDeployment builds one pod with separate web and smaller cron containers.
+func OdooDeployment(instance *saasv1alpha1.OdooInstance) *appsv1.Deployment {
+	name := OdooDeploymentName(instance)
+	workers := instance.Spec.Workers.Count
+	cronThreads := int32(0)
+	exposesHTTP := true
+	roleLabelVal := RoleWeb
 
 	labels := mergeLabels(CommonLabels(instance), map[string]string{"saas.odoo.example.com/role": roleLabelVal})
 	selector := mergeLabels(SelectorLabels(instance), map[string]string{"saas.odoo.example.com/role": roleLabelVal})
@@ -84,7 +43,7 @@ func OdooDeployment(instance *saasv1alpha1.OdooInstance, role OdooRole) *appsv1.
 			Labels:    labels,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: ptr.To(replicas),
+			Replicas: ptr.To(int32(1)),
 			Selector: &metav1.LabelSelector{MatchLabels: selector},
 			Strategy: appsv1.DeploymentStrategy{
 				// RollingUpdate with MaxUnavailable=0 avoids serving traffic
@@ -124,7 +83,7 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 	args = append(args, odooMemoryLimitArgs(instance, workers)...)
 	odooMounts := []corev1.VolumeMount{
 		{Name: "etc-odoo", MountPath: "/etc/odoo", ReadOnly: true},
-		{Name: "filestore", MountPath: "/var/lib/odoo"},
+		odooDataMount(instance, "/var/lib/odoo", false),
 		{Name: "tmp", MountPath: "/tmp"},
 	}
 	var extraVolumes []corev1.Volume
@@ -164,19 +123,7 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 	pullSecrets := make([]corev1.LocalObjectReference, 0, len(instance.Spec.Image.PullSecretRefs))
 	pullSecrets = append(pullSecrets, instance.Spec.Image.PullSecretRefs...)
 
-	var topologySpread []corev1.TopologySpreadConstraint
-	if ptr.Deref(instance.Spec.Replicas, 1) > 1 {
-		topologySpread = []corev1.TopologySpreadConstraint{
-			{
-				MaxSkew:           1,
-				TopologyKey:       "kubernetes.io/hostname",
-				WhenUnsatisfiable: corev1.ScheduleAnyway,
-				LabelSelector:     &metav1.LabelSelector{MatchLabels: selector},
-			},
-		}
-	}
-
-	return corev1.PodSpec{
+	pod := corev1.PodSpec{
 		Affinity:                      filestoreCoLocation(instance, selector, true),
 		ServiceAccountName:            OdooServiceAccountName(instance),
 		AutomountServiceAccountToken:  ptr.To(false),
@@ -187,9 +134,9 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 			SeccompProfile: &corev1.SeccompProfile{
 				Type: corev1.SeccompProfileTypeRuntimeDefault,
 			},
-			FSGroup: ptr.To(int64(odooImageGID)),
+			FSGroup:             ptr.To(int64(odooImageGID)),
+			FSGroupChangePolicy: ptr.To(corev1.FSGroupChangeOnRootMismatch),
 		},
-		TopologySpreadConstraints: topologySpread,
 		InitContainers: []corev1.Container{
 			{
 				Name:            "render-config",
@@ -256,6 +203,29 @@ func odooPodSpec(instance *saasv1alpha1.OdooInstance, selector map[string]string
 			},
 		}, extraVolumes...),
 	}
+	if instance.Spec.Workers.MaxCronThreads > 0 {
+		cron := pod.Containers[0].DeepCopy()
+		cron.Name = "cron"
+		cron.Resources = CronResources(instance)
+		cron.Ports = nil
+		cron.Lifecycle = nil
+		// No readiness probe: the cron container serves no traffic, and a
+		// failing cron must never mark the pod NotReady and drop web requests.
+		cron.ReadinessProbe = nil
+		cron.LivenessProbe = odooLivenessProbe(false)
+		cron.StartupProbe = odooStartupProbe(false)
+		cron.Args = nil
+		for _, arg := range pod.Containers[0].Args {
+			if strings.HasPrefix(arg, "--workers=") || strings.HasPrefix(arg, "--max-cron-threads=") || strings.HasPrefix(arg, "--limit-memory-") {
+				continue
+			}
+			cron.Args = append(cron.Args, arg)
+		}
+		cron.Args = append(cron.Args, "--no-http", "--workers=0", fmt.Sprintf("--max-cron-threads=%d", instance.Spec.Workers.MaxCronThreads))
+		pod.Containers = append(pod.Containers, *cron)
+	}
+	return pod
+
 }
 
 // shellContainer is the customer terminal's container (spec.shell): the
@@ -280,7 +250,7 @@ func shellContainer(instance *saasv1alpha1.OdooInstance) corev1.Container {
 			},
 		},
 		VolumeMounts: []corev1.VolumeMount{
-			{Name: "filestore", MountPath: "/var/lib/odoo"},
+			odooDataMount(instance, "/var/lib/odoo", false),
 			{Name: "shell-tmp", MountPath: "/tmp"},
 		},
 		SecurityContext: containerSecurityContext(),
@@ -313,6 +283,9 @@ func odooMemoryLimitArgs(instance *saasv1alpha1.OdooInstance, workers int32) []s
 // Preferred for one-shot Jobs, which must still run when no web pod exists
 // (e.g. a stopped instance). Nil for ReadWriteMany.
 func filestoreCoLocation(instance *saasv1alpha1.OdooInstance, webSelector map[string]string, required bool) *corev1.Affinity {
+	if instance.Spec.Storage.SharedWithDatabase {
+		return sharedDataCoLocation(instance)
+	}
 	if instance.Spec.Storage.Filestore.AccessMode == saasv1alpha1.FilestoreAccessModeRWX {
 		return nil
 	}
@@ -497,7 +470,7 @@ func odooProbe(exposesHTTP bool) *corev1.Probe {
 	if !exposesHTTP {
 		return &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
-				Exec: &corev1.ExecAction{Command: []string{"pgrep", "-f", "odoo"}},
+				Exec: &corev1.ExecAction{Command: []string{"python3", "-c", "import pathlib,sys; sys.exit(0 if b'odoo' in pathlib.Path('/proc/1/cmdline').read_bytes() else 1)"}},
 			},
 			InitialDelaySeconds: 10,
 			PeriodSeconds:       30,

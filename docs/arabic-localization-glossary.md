@@ -59,7 +59,7 @@ Copy names exactly, including capitalization: VELTNEX, Veltnex, Odoo,
 Kubernetes, GitHub, GitLab, Gitea, Bitbucket, AWS, Google Cloud Storage,
 DigitalOcean, Hetzner, Docker, PostgreSQL, Python, WhatsApp and LinkedIn.
 Do not transliterate these names. Preserve product edition and tier names
-such as Community, Enterprise, Standard, HA and Scale.
+such as Community, Enterprise, Standard.
 
 Keep URLs, email addresses, filenames, paths, command output, code, API names,
 configuration keys, module names, versions, numbers and unit symbols intact.

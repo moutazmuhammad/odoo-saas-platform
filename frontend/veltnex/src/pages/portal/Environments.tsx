@@ -1,3 +1,4 @@
+import { useRuntimeClock } from "@/hooks/useRuntimeClock";
 import { i18nText } from "@/i18n";
 import * as React from "react";
 import { Link } from "react-router-dom";
@@ -44,7 +45,8 @@ import { Input, Label } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { ActionButton } from "@/components/ActionButton";
 import { AlertBanner } from "@/components/AlertBanner";
-import { StatusBadge } from "@/components/StatusBadge";
+import { RuntimeStatusBadge } from "@/components/RuntimeStatusBadge";
+import { displayRuntimeStatus } from "@/lib/runtime-status";
 import { Spinner } from "@/components/Spinner";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
@@ -149,13 +151,14 @@ function SectionTabBar({
 }
 
 function dotClass(state: string) {
-  if (state === "running") return "bg-success";
-  if (state === "failed") return "bg-danger";
+  if (state === "online") return "bg-success";
+  if (state === "failed" || state === "unavailable") return "bg-danger";
   if (TRANSIENT.has(state)) return "bg-info animate-pulse-soft";
   return "bg-muted";
 }
 
 export default function Environments() {
+  useRuntimeClock();
   const { id = "" } = useParams();
   const instanceId = Number(id);
   const navigate = useNavigate();
@@ -771,7 +774,7 @@ function BranchItem({
       </span>
       <span className="flex shrink-0 items-center gap-2">
         {env.version && <span className="text-[11px] text-muted/80">{env.version}</span>}
-        <span className={cn("size-2 rounded-full", dotClass(env.state))} />
+        <span className={cn("size-2 rounded-full", dotClass(displayRuntimeStatus(env)))} />
       </span>
     </button>
   );
@@ -819,8 +822,7 @@ function MainPanel({
   const liveState = status?.state || env.state;
   const transient = TRANSIENT.has(liveState);
   React.useEffect(() => {
-    if (!transient) return;
-    const t = setInterval(refreshStatus, 4000);
+    const t = setInterval(refreshStatus, transient ? 4000 : 12000);
     return () => clearInterval(t);
   }, [transient, refreshStatus]);
 
@@ -866,7 +868,7 @@ function MainPanel({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-xl font-bold tracking-tight">{env.name}</h1>
-            <StatusBadge status={liveState} />
+            <RuntimeStatusBadge instance={{ ...env, ...status }} showDetail />
             <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">
               {i18nText(env.environment_label)}
             </span>

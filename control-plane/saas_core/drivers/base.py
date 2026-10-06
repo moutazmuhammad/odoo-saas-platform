@@ -65,7 +65,7 @@ class ExecResult:
 class HealthStatus:
     running: bool
     detail: str = ""             # raw 'docker inspect'/'stats' summary, for logs/UI
-    status: str = ""             # raw State.Status: running/exited/dead/restarting/not_found
+    status: str = ""             # observed workload: running/starting/terminating/missing/exited/dead/restarting/not_found
     restart_count: int = 0       # State.RestartCount — distinguishes a one-off stop from a crash-loop
 
 

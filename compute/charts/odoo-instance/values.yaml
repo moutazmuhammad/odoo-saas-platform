@@ -34,6 +34,9 @@ database:
   credentialsSecretRef: ""
 
 storage:
+  # One tenant data volume for Managed PostgreSQL + Odoo, set at creation.
+  # Keep false for existing installations; migrate using backup and restore.
+  sharedWithDatabase: false
   filestore:
     size: 50Gi
     storageClassName: ""
@@ -52,11 +55,6 @@ addons: []
 workers:
   count: 2
   maxCronThreads: 1
-
-replicas: 1
-
-autoscaling:
-  enabled: false
 
 backup:
   enabled: false

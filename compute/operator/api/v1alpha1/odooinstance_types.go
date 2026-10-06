@@ -77,6 +77,7 @@ type DatabaseSpec struct {
 type StorageRequestSpec struct {
 	// Size is the requested persistent volume size, e.g. "50Gi".
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
 	Size string `json:"size"`
 
 	// StorageClassName selects a specific StorageClass. Leave empty to use
@@ -97,17 +98,11 @@ const (
 // FilestoreSpec configures Odoo's persistent attachment/document store
 // (Odoo's `filestore` directory, normally under /var/lib/odoo/.local/share/Odoo/filestore).
 //
-// Trade-off (documented per platform requirements): Odoo does not
-// coordinate filestore writes across processes by itself beyond simple
-// file locking, and there is no cache-invalidation protocol between
-// replicas. RWO is the safe default for the common single-writer
-// (single-replica) deployment model. RWX is only safe when the
-// StorageClass provides a genuinely shared, POSIX-consistent filesystem
-// (e.g. NFS, CephFS, EFS) AND spec.replicas is intentionally set above 1.
-// The operator does not silently allow this combination.
+// Instances run one Odoo pod and scale by increasing its resources.
 type FilestoreSpec struct {
 	// Size is the requested persistent volume size, e.g. "100Gi".
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
 	Size string `json:"size"`
 
 	// StorageClassName selects a specific StorageClass. Leave empty to use
@@ -115,19 +110,21 @@ type FilestoreSpec struct {
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 
-	// AccessMode is the PVC access mode. ReadWriteOnce (default) is
-	// required whenever spec.replicas is 1, which is the recommended
-	// topology for Odoo (see architecture docs: cron workers and the
-	// filestore are effectively singletons). ReadWriteMany is only
-	// accepted when the operator can also verify replicas > 1 is
-	// intentional; the controller rejects RWO with replicas > 1 and warns
-	// prominently (Degraded condition) rather than corrupting data.
+	// AccessMode defaults to ReadWriteOnce for the single Odoo pod.
 	// +kubebuilder:default=ReadWriteOnce
 	AccessMode FilestoreAccessMode `json:"accessMode,omitempty"`
 }
 
 // InstanceStorageSpec groups the persistent storage volumes for an instance.
 type InstanceStorageSpec struct {
+	// SharedWithDatabase stores Managed PostgreSQL and Odoo data in isolated
+	// subdirectories of the same filestore PVC. Its size is the entire
+	// tenant storage budget. False preserves legacy separate-volume layouts.
+	// Immutable: switching a live layout requires backup/restore migration.
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="storage.sharedWithDatabase is immutable; migrate using backup and restore"
+	SharedWithDatabase bool `json:"sharedWithDatabase,omitempty"`
+
 	// Filestore is the Odoo attachment/document store volume.
 	Filestore FilestoreSpec `json:"filestore"`
 }
@@ -246,7 +243,7 @@ type DatabaseManagerSpec struct {
 // requests, with one dedicated process for longpolling/gevent (live chat,
 // bus) and a small pool of cron workers. See docs/architecture.md ("Odoo
 // Worker Model") for the full explanation of how this interacts with
-// spec.replicas and spec.autoscaling.
+// the CPU and memory limits of the single pod.
 type WorkersSpec struct {
 	// Count is the number of Odoo HTTP worker processes (`--workers`). Set
 	// to 0 to run Odoo in single-threaded dev mode (not recommended for
@@ -266,11 +263,10 @@ type WorkersSpec struct {
 	Count int32 `json:"count"`
 
 	// MaxCronThreads is the number of Odoo cron worker threads
-	// (`--max-cron-threads`). Cron workers run scheduled jobs (e.g.
-	// invoicing, mail queues) and must not be scaled per pod replica: only
-	// one pod in the deployment should run cron threads > 0 to avoid
-	// duplicate job execution, which the controller enforces by pinning
-	// cron execution to the first replica.
+	// (`--max-cron-threads`). Cron workers run scheduled actions (e.g.
+	// invoicing, mail queues). They run in a separate, smaller
+	// resource-limited "cron" container inside the single Odoo pod; the web
+	// container itself runs no cron threads. Set to 0 to disable cron.
 	//
 	// Deliberately no `omitempty`; see Count's comment above for why an
 	// explicit 0 must survive a Go client round-trip against a non-zero
@@ -279,28 +275,6 @@ type WorkersSpec struct {
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=8
 	MaxCronThreads int32 `json:"maxCronThreads"`
-}
-
-// AutoscalingSpec is reserved for future horizontal scaling of the Odoo
-// workload. It is intentionally inert in this API version: Odoo's
-// singleton cron workers and (by default) RWO filestore make naive HPA
-// unsafe, so the controller validates this field but does not act on it
-// until autoscaling-safe topologies (e.g. a split stateless web tier) are
-// implemented. Enabling it today only reserves the field in status/events;
-// see docs/architecture.md ("Scaling").
-type AutoscalingSpec struct {
-	// Enabled requests Horizontal Pod Autoscaling for the stateless web
-	// tier. Not yet implemented by the controller; validated but rejected
-	// by the webhook in this API version.
-	// +kubebuilder:default=false
-	Enabled bool `json:"enabled,omitempty"`
-
-	// +optional
-	MinReplicas *int32 `json:"minReplicas,omitempty"`
-	// +optional
-	MaxReplicas *int32 `json:"maxReplicas,omitempty"`
-	// +optional
-	TargetCPUUtilizationPercentage *int32 `json:"targetCPUUtilizationPercentage,omitempty"`
 }
 
 // BackupDestinationType selects where backup artifacts are stored.
@@ -454,6 +428,12 @@ type TenancySpec struct {
 // the API only ever creates/updates/deletes this object and reads back
 // OdooInstanceStatus. It never creates Deployments, Services, PVCs,
 // Secrets, or Jobs directly.
+// Replicas above one predate the single-replica rule. A transition rule
+// (oldSelf) keeps such legacy objects editable: replicas may stay at its
+// old value or move to 1, never to any other value. Transition rules do not
+// run on create; the controller treats any replicas as 1 regardless.
+// +kubebuilder:validation:XValidation:rule="!has(self.replicas) || self.replicas == 1 || (has(oldSelf.replicas) && oldSelf.replicas == self.replicas)",message="only one Odoo replica is supported; increase resources instead"
+// +kubebuilder:validation:XValidation:rule="!self.storage.sharedWithDatabase || self.database.mode == 'Managed'",message="shared storage requires a Managed database"
 type OdooInstanceSpec struct {
 	// Version is the Odoo major version for this instance, e.g. "17.0",
 	// "18.0", "19.0". Changing Version triggers a controlled image update;
@@ -537,19 +517,13 @@ type OdooInstanceSpec struct {
 	// +kubebuilder:default={"count":2,"maxCronThreads":1}
 	Workers WorkersSpec `json:"workers,omitempty"`
 
-	// Replicas is the number of Odoo pod replicas. Defaults to 1, which is
-	// the recommended topology (see WorkersSpec and FilestoreSpec docs).
-	// Values greater than 1 require storage.filestore.accessMode set to
-	// ReadWriteMany; the webhook rejects the combination otherwise.
+	// Replicas is fixed at one. Scale through resources requests/limits.
+	// Legacy objects may still hold a larger value; it is treated as 1 (see
+	// the transition rule on OdooInstanceSpec).
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=10
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
-
-	// Autoscaling is reserved for future use; see AutoscalingSpec.
-	// +optional
-	Autoscaling AutoscalingSpec `json:"autoscaling,omitempty"`
 
 	// Backup configures scheduled database/filestore backups.
 	// +optional
@@ -582,8 +556,9 @@ type OdooInstanceSpec struct {
 	Tenancy TenancySpec `json:"tenancy,omitempty"`
 
 	// Suspended pauses the instance without deleting any data: the
-	// controller scales the Odoo workload to zero replicas, keeps the
-	// database/filestore/backups intact, and reports phase "Suspended".
+	// controller stops Odoo and its dedicated database and pauses tenant
+	// jobs/backups. Persistent volumes remain intact for reactivation.
+	// External databases are not stopped because they may be shared.
 	// Intended for billing suspension flows.
 	// +kubebuilder:default=false
 	// +optional

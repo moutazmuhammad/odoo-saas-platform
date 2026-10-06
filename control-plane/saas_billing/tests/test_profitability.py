@@ -73,14 +73,10 @@ class TestProfitabilitySharedAcrossModels(TransactionCase):
     SAME number for the same (price, cost) pair — regression guard against
     the three-different-hand-rolled-formulas problem this redesign fixed."""
 
-    def test_compute_tier_addon_support_plan_agree(self):
+    def test_addon_support_plan_agree(self):
         engine = self.env['saas.pricing.engine']
         expected = engine.profitability(100.0, 40.0)
 
-        tier = self.env['saas.compute.tier'].sudo().create({
-            'name': 'ProfitTestTier', 'code': 'profit-test-tier',
-            'replicas': 2, 'monthly_price': 100.0, 'cost_price': 40.0,
-        })
         addon = self.env['saas.addon'].sudo().create({
             'name': 'ProfitTestAddon', 'code': 'profit-test-addon',
             'monthly_price': 100.0, 'cost_price': 40.0,
@@ -90,7 +86,7 @@ class TestProfitabilitySharedAcrossModels(TransactionCase):
             'monthly_price': 100.0, 'cost_price': 40.0,
         })
 
-        for rec in (tier, addon, support):
+        for rec in (addon, support):
             self.assertAlmostEqual(rec.profit, expected['profit'], places=2)
             self.assertAlmostEqual(rec.margin_pct, expected['margin_pct'], places=2)
             self.assertEqual(rec.is_profitable, expected['is_profitable'])

@@ -5,10 +5,8 @@ Usage: python3 scripts/generate-customer-docs.py [--check]
 The catalog is the only editorial source. Do not edit generated Markdown/help.
 """
 import argparse
-import io
 import json
 import re
-import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,12 +14,12 @@ CATALOG = ROOT / 'frontend/veltnex/src/lib/docs-catalog.json'
 HELP_MAP = {
  'workers':'sizing','storage':'storage-capacity','region':'region-version','odoo-version':'region-version',
  'billing-period':'billing-options','yearly-discount':'billing-options','subdomain':'access-urls','repo':'custom-code',
- 'daily-backup':'daily-backups','compute-tiers':'compute-tiers','support-plan':'support-plans','trial':'free-trial',
+ 'daily-backup':'daily-backups','support-plan':'support-plans','trial':'free-trial',
  'proration':'optional-charges','invoice-status':'invoices','decline-invoice':'optional-charges','change-plan':'change-plan',
  'reactivate':'reactivate','snapshots':'daily-backups','restore':'restore','cpu-usage':'monitoring','ram-usage':'monitoring',
  'storage-usage':'storage-capacity','logs':'application-logs','create-database':'manage-databases',
 }
-BRANDS = re.compile(r'\b(?:VELTNEX|Veltnex|Odoo|Kubernetes|GitHub|GitLab|Gitea|Bitbucket|AWS|Docker|PostgreSQL|Python|WhatsApp|Community|Enterprise|Standard|HA|Scale|CPU|RAM|HTTPS|SQL|API|CORS|ZIP|Production|Staging|Development|Shell|Container|Terminal|Workers|Domain)\b')
+BRANDS = re.compile(r'\b(?:VELTNEX|Veltnex|Odoo|Kubernetes|GitHub|GitLab|Gitea|Bitbucket|AWS|Docker|PostgreSQL|Python|WhatsApp|Community|Enterprise|Standard|CPU|RAM|HTTPS|SQL|API|CORS|ZIP|Production|Staging|Development|Shell|Container|Terminal|Workers|Domain)\b')
 
 def localized_values(value):
  if isinstance(value, dict):
@@ -99,14 +97,6 @@ def outputs(groups, articles):
    sources=', '.join(f'[{source}](../../{source})' for source in article['sources'])
    review.append(f"| {group['title']['en']} | [{article['title']['en']}](en/{article['id']}.md) | {sources} |")
  generated['docs/customer/IMPLEMENTATION-REVIEW.md']=('\n'.join(review)+'\n').encode()
- archive=io.BytesIO()
- with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED) as z:
-  for path,value in sorted(generated.items()):
-   if not path.startswith(('docs/customer/en/','docs/customer/ar/')):continue
-   info=zipfile.ZipInfo(path.removeprefix('docs/customer/'), date_time=(2026,10,5,0,0,0))
-   info.compress_type=zipfile.ZIP_DEFLATED
-   z.writestr(info,value)
- generated['control-plane/saas_website/static/customer-docs/VELTNEX-customer-docs.zip']=archive.getvalue()
  return generated
 
 def main():

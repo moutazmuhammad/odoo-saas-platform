@@ -172,9 +172,9 @@ class SaasPlan(models.Model):
     def _request_of(self, limit, floor):
         return max(floor, int(limit * self._REQUEST_RATIO))
 
-    def _package(self, replicas=1, storage_gb=0.0):
+    def _package(self, storage_gb=0.0):
         """Everything one instance on this plan reserves on the cluster:
-        Odoo pods (web replicas, plus the cron pod when replicas > 1), the
+        One Odoo pod with separate web and smaller cron containers, the
         PostgreSQL pod, the volumes and the namespace quota. The single
         source for deploy, resize, capacity, cost and customer metrics.
 
@@ -184,8 +184,11 @@ class SaasPlan(models.Model):
         odoo_mem = int(self.env['saas.instance']._parse_ram_string(self.ram_limit)
                        // (1024 ** 2)) or self._DEFAULT_ODOO_MEM_MI
         db_cpu, db_mem = self._recommended_db_resources(self.workers)
-        replicas = max(1, int(replicas or 1))
-        odoo_pods = replicas + (1 if replicas > 1 else 0)
+        # Cron has independent limits in a sidecar, not a second pod.
+        cron_cpu = max(1, min(odoo_cpu // 4, 500))
+        cron_mem = max(1, min(odoo_mem // 4, 512))
+        replicas = 1
+        odoo_pods = 1
         storage = max(1, int(round(storage_gb or self.storage_limit or 0)) or 1)
         pkg = {
             'workers': self.workers or 0,
@@ -195,29 +198,30 @@ class SaasPlan(models.Model):
             'odoo_mem_mi': odoo_mem, 'odoo_mem_req_mi': self._request_of(odoo_mem, self._MIN_MEM_REQUEST_MI),
             'db_cpu_m': db_cpu, 'db_cpu_req_m': self._request_of(db_cpu, self._MIN_CPU_REQUEST_M),
             'db_mem_mi': db_mem, 'db_mem_req_mi': self._request_of(db_mem, self._MIN_MEM_REQUEST_MI),
+            'cron_cpu_m': cron_cpu, 'cron_cpu_req_m': min(cron_cpu, self._request_of(cron_cpu, 10)),
+            'cron_mem_mi': cron_mem, 'cron_mem_req_mi': min(cron_mem, self._request_of(cron_mem, 32)),
             'storage_gb': storage,
         }
         # What the customer pays for (and sees as 100%): every Odoo pod
         # plus the database.
-        pkg['total_cpu_m'] = odoo_cpu * odoo_pods + db_cpu
-        pkg['total_mem_mi'] = odoo_mem * odoo_pods + db_mem
-        pkg['total_cpu_req_m'] = pkg['odoo_cpu_req_m'] * odoo_pods + pkg['db_cpu_req_m']
-        pkg['total_mem_req_mi'] = pkg['odoo_mem_req_mi'] * odoo_pods + pkg['db_mem_req_mi']
+        pkg['total_cpu_m'] = odoo_cpu * odoo_pods + cron_cpu + db_cpu
+        pkg['total_mem_mi'] = odoo_mem * odoo_pods + cron_mem + db_mem
+        pkg['total_cpu_req_m'] = pkg['odoo_cpu_req_m'] * odoo_pods + pkg['cron_cpu_req_m'] + pkg['db_cpu_req_m']
+        pkg['total_mem_req_mi'] = pkg['odoo_mem_req_mi'] * odoo_pods + pkg['cron_mem_req_mi'] + pkg['db_mem_req_mi']
         # Namespace ceiling: the package, one surge Odoo pod, the shell
         # sidecars and Job headroom. Nothing in the tenant can exceed it.
         web_pods = replicas + 1
         pkg['quota'] = {
-            'limits.cpu': '%dm' % (pkg['total_cpu_m'] + odoo_cpu
+            'limits.cpu': '%dm' % (pkg['total_cpu_m'] + odoo_cpu + cron_cpu
                                    + self._SHELL_CPU_LIMIT_M * web_pods + self._JOB_HEADROOM_CPU_M),
-            'limits.memory': '%dMi' % (pkg['total_mem_mi'] + odoo_mem
+            'limits.memory': '%dMi' % (pkg['total_mem_mi'] + odoo_mem + cron_mem
                                        + self._SHELL_MEM_LIMIT_MI * web_pods + self._JOB_HEADROOM_MEM_MI),
-            'requests.cpu': '%dm' % (pkg['total_cpu_req_m'] + pkg['odoo_cpu_req_m']
+            'requests.cpu': '%dm' % (pkg['total_cpu_req_m'] + pkg['odoo_cpu_req_m'] + pkg['cron_cpu_req_m']
                                      + 10 * web_pods + 250),
-            'requests.memory': '%dMi' % (pkg['total_mem_req_mi'] + pkg['odoo_mem_req_mi']
+            'requests.memory': '%dMi' % (pkg['total_mem_req_mi'] + pkg['odoo_mem_req_mi'] + pkg['cron_mem_req_mi']
                                          + 32 * web_pods + 512),
-            # Files and database volumes may each grow to the package size;
-            # the measured total is what's enforced.
-            'requests.storage': '%dGi' % (2 * storage + 1),
+            # New Managed tenants share one PVC for the whole allowance.
+            'requests.storage': '%dGi' % (storage + 1),
             'pods': '20',
         }
         return pkg

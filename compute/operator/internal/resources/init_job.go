@@ -74,7 +74,8 @@ func odooOneShotJob(instance *saasv1alpha1.OdooInstance, name, component, contai
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
-						FSGroup: ptr.To(int64(odooImageGID)),
+						FSGroup:             ptr.To(int64(odooImageGID)),
+						FSGroupChangePolicy: ptr.To(corev1.FSGroupChangeOnRootMismatch),
 					},
 					InitContainers: []corev1.Container{
 						{
@@ -99,7 +100,7 @@ func odooOneShotJob(instance *saasv1alpha1.OdooInstance, name, component, contai
 							Args:            args,
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "etc-odoo", MountPath: "/etc/odoo", ReadOnly: true},
-								{Name: "filestore", MountPath: "/var/lib/odoo"},
+								odooDataMount(instance, "/var/lib/odoo", false),
 								{Name: "tmp", MountPath: "/tmp"},
 							},
 							SecurityContext: containerSecurityContext(),

@@ -385,20 +385,20 @@ class SaasServer(models.Model):
         count_map = {srv.id: count for srv, count in count_data}
 
         # Package allocation per server (all Odoo pods + PostgreSQL),
-        # grouped by plan and compute tier so each package is sized once.
+        # grouped by plan so each package is sized once.
         alloc_data = Instance._read_group(
             [
                 ('docker_server_id', 'in', self.ids),
                 ('state', 'in', active_states),
                 ('plan_id', '!=', False),
             ],
-            ['docker_server_id', 'plan_id', 'compute_tier_id'],
+            ['docker_server_id', 'plan_id'],
             ['__count'],
         )
         cpu_map = {sid: 0.0 for sid in self.ids}
         ram_map = {sid: 0.0 for sid in self.ids}
-        for server, plan, tier, count in alloc_data:
-            pkg = plan._package(replicas=tier.replicas or 1)
+        for server, plan, count in alloc_data:
+            pkg = plan._package()
             cpu_map[server.id] += pkg['total_cpu_m'] / 1000.0 * count
             ram_map[server.id] += pkg['total_mem_mi'] / 1024.0 * count
 

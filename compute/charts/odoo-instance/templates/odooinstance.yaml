@@ -47,6 +47,7 @@ spec:
     {{- end }}
 
   storage:
+    sharedWithDatabase: {{ .Values.storage.sharedWithDatabase }}
     filestore:
       size: {{ .Values.storage.filestore.size }}
       accessMode: {{ .Values.storage.filestore.accessMode }}
@@ -68,10 +69,7 @@ spec:
     count: {{ .Values.workers.count }}
     maxCronThreads: {{ .Values.workers.maxCronThreads }}
 
-  replicas: {{ .Values.replicas }}
-
-  autoscaling:
-    enabled: {{ .Values.autoscaling.enabled }}
+  replicas: 1
 
   backup:
     enabled: {{ .Values.backup.enabled }}

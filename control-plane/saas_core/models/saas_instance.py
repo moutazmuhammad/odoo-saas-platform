@@ -374,30 +374,6 @@ class SaasInstance(models.Model):
              'all daily snapshots unrecoverable — back up the saas '
              'master database appropriately.',
     )
-    # ---------- Compute tier (/ROADMAP.md §5 Phase 2) ----------
-    # Selectable Kubernetes pod-replica tier (Standard=1 / HA=2 / Scale=4,
-    # extensible — see saas.compute.tier). Deliberately NOT a boolean HA
-    # flag: replica count and "High Availability" are related but not the
-    # same thing (HA is just the commercial name for the 2-replica tier;
-    # a customer might pick Scale for capacity without caring about the
-    # HA framing). Does NOT change which backend the instance runs on
-    # (that's saas_master.default_compute_driver, an independent,
-    # platform-level choice) — only ever meaningful on an instance already
-    # on the Kubernetes backend, see action_change_compute_tier.
-    compute_tier_id = fields.Many2one(
-        'saas.compute.tier',
-        string='Compute Tier',
-        ondelete='restrict',
-        default=lambda self: self.env['saas.compute.tier'].get_default(),
-        tracking=True,
-        help='Kubernetes pod-replica tier for this instance (Standard/HA/'
-             'Scale — see saas.compute.tier). Meaningless on a Docker-'
-             'Compose-backed instance. Changing it patches the running '
-             'instance in place (KubernetesDriver.scale) — an upgrade '
-             '(more replicas) is billed immediately (prorated); a '
-             'downgrade (fewer replicas) applies immediately with no '
-             'refund for the current period.',
-    )
     # ---------- Cancellation cleanup retry flag ----------
     # Set by ``_do_delete_instance`` when deleting the tenant from its
     # cluster failed (e.g. cluster unreachable). Retried hourly by
@@ -1072,98 +1048,6 @@ class SaasInstance(models.Model):
                 rec.url = 'https://%s.%s' % (rec.subdomain, rec.domain_id.name)
             else:
                 rec.url = ''
-
-    # ========== Compute tier scaling ==========
-    # Sales/invoicing actions (including the paid entry point
-    # action_change_compute_tier) live in saas_billing.
-
-    def _do_scale_compute_tier(self, tier_id):
-        """saas.job entrypoint: patch this instance's Kubernetes CR to
-        ``tier``'s replica count and verify it actually comes back healthy
-        BEFORE committing ``compute_tier_id`` — for a paid upgrade, the
-        customer has already paid by the time this runs (enqueued from the
-        account_move payment hook), but the portal should never claim a
-        tier is active if the scale didn't really work; for a free/
-        downgrade change (enqueued directly from
-        action_change_compute_tier) there's no payment involved at all.
-
-        On failure: patch back to the replica count it had before, leave
-        ``compute_tier_id`` (and billing's ``pending_compute_tier_id``) untouched, and
-        alert ops — a paid invoice is not refunded here; that's a billing
-        decision for a human, not this job.
-        """
-        self.ensure_one()
-        if self.docker_server_id.compute_driver != 'kubernetes':
-            raise UserError(_(
-                "Cannot scale '%s': not running on the Kubernetes backend."
-            ) % self.subdomain)
-        tier = self.env['saas.compute.tier'].sudo().browse(tier_id)
-        previous_tier = self.compute_tier_id
-        previous_replicas = previous_tier.replicas if previous_tier else 1
-        driver = self._compute_driver()
-        handle = self._compute_handle()
-        self._append_log(
-            "Scaling to '%s' tier (%d replica(s))..." % (tier.name, tier.replicas))
-        # Quota first, sized for the larger replica count, so the new pods
-        # (and a rollback) fit; the final package follows once committed.
-        package = self._k8s_plan_resources(replicas=max(previous_replicas, tier.replicas))
-        if package:
-            driver.set_package(handle, package)
-        driver.scale(handle, tier.replicas)
-        # Settle delay before the first health check — live-verified this is
-        # necessary: patching spec.replicas doesn't synchronously update
-        # status.phase, so a health() call in the same instant as scale()
-        # can still read the PRE-patch "Ready" phase (the operator's
-        # reconciler hasn't run yet) and _wait_until_healthy would exit
-        # successfully on that first, stale reading — even when the new
-        # replica count is actually invalid (e.g. RWO storage rejecting
-        # replicas > 1) and the CR is about to go Degraded. Reproduced live
-        # against a real cluster: without this delay, a genuinely broken
-        # scale was reported as healthy.
-        time.sleep(5)
-        try:
-            self._data_service()._wait_until_healthy(driver, handle, timeout=300)
-        except Exception as e:
-            self._append_log(
-                "Scale to '%s' (%d replica(s)) failed its health check (%s) "
-                "— rolling back to %d replica(s)." % (
-                    tier.name, tier.replicas, e, previous_replicas))
-            driver.scale(handle, previous_replicas)
-            self.env['saas.alert']._notify(
-                'compute_tier_scale_failed',
-                'Compute tier scale failed for %s' % self.subdomain,
-                level='error', detail=str(e))
-            raise UserError(_(
-                "Could not switch '%s' to the %s tier: the instance did "
-                "not come back healthy at the new replica count. Rolled "
-                "back to %d replica(s). Support has been notified."
-            ) % (self.subdomain, tier.name, previous_replicas)) from e
-        self.write({'compute_tier_id': tier.id})
-        self._append_log(
-            "Now on the '%s' tier (%d replica(s))." % (tier.name, tier.replicas))
-        try:
-            self._update_container_resources()
-        except Exception as e:
-            _logger.warning("package update after scaling %s failed: %s", self.subdomain, e)
-        self.message_post(body=_(
-            "Compute tier changed to %s — this instance now runs across "
-            "%d replica(s)."
-        ) % (tier.name, tier.replicas))
-
-    def _on_compute_tier_scale_error(self, exception):
-        """on_error handler for the _do_scale_compute_tier job — the
-        method itself already rolls back and alerts on a HEALTH-CHECK
-        failure; this only fires for something it couldn't (an exception
-        raised before/after that try/except, e.g. the initial ``scale()``
-        call itself failing). Mirrors _on_background_error's alerting
-        without touching ``state`` (tier scaling never changes it)."""
-        self.ensure_one()
-        error_msg = str(exception)
-        self._append_log("COMPUTE TIER SCALE FAILED: %s" % error_msg)
-        self.env['saas.alert']._notify(
-            'compute_tier_scale_failed',
-            'Compute tier scale failed for %s' % self.subdomain,
-            level='error', detail=error_msg)
 
     # ==================================================================
     #  Odoo.sh-style environments (hosting) — a Production project plus
@@ -4436,20 +4320,12 @@ finally:
         pkg = self._package_resources()
         if not pkg:
             return {}
-        # Show the customer the flavour, not a replica count.
-        replicas = int(pkg.get('odoo_pods', 1) or 1)
-        if self.compute_tier_id and self.compute_tier_id.name:
-            tier = self.compute_tier_id.name
-        else:
-            tier = {1: 'Standard', 2: 'HA'}.get(replicas, 'Scale')
         return {
             'workers': pkg['workers'],
-            'replicas': pkg['replicas'],
-            'tier': tier,
             'cpu_cores': pkg['total_cpu_m'] / 1000.0,
             'ram_mb': pkg['total_mem_mi'],
-            'odoo_cpu_cores': pkg['odoo_cpu_m'] * pkg['odoo_pods'] / 1000.0,
-            'odoo_ram_mb': pkg['odoo_mem_mi'] * pkg['odoo_pods'],
+            'odoo_cpu_cores': (pkg['odoo_cpu_m'] * pkg['odoo_pods'] + pkg['cron_cpu_m']) / 1000.0,
+            'odoo_ram_mb': pkg['odoo_mem_mi'] * pkg['odoo_pods'] + pkg['cron_mem_mi'],
             'db_cpu_cores': pkg['db_cpu_m'] / 1000.0,
             'db_ram_mb': pkg['db_mem_mi'],
             'storage_gb': self.effective_storage_limit_gb or 0,
@@ -4681,11 +4557,10 @@ finally:
         driver.require_cluster_ready()
         self._append_log("Creating Kubernetes instance...")
         from ..drivers.base import ComputeSpec
-        replicas = self.compute_tier_id.replicas or 1
         env = {
             'domain': self.name,
             'odoo_version': self.odoo_version_id.name,
-            'replicas': replicas,
+            'replicas': 1,
             'tls_enabled': True,
             'tls_issuer_name': server.tls_cluster_issuer,
             'tls_issuer_kind': 'ClusterIssuer',
@@ -5205,11 +5080,6 @@ finally:
         # restores it.
         self.write({
             'daily_backup_enabled': False,
-            # Compute tier is reset to the default (free) tier the same
-            # way — a cancelled instance shouldn't show as being on a
-            # paid tier; the customer re-selects (and pays for) one again
-            # after reactivating.
-            'compute_tier_id': self.env['saas.compute.tier'].get_default().id,
             **self._teardown_billing_vals(),
         })
         if retained_backup:
@@ -5420,7 +5290,7 @@ finally:
                 self.last_error = False   # healthy again → clear stale error
                 action = 'cleared_error'
         elif desired == 'stopped':
-            if status in ('running', 'restarting'):
+            if status in ('running', 'restarting', 'starting'):
                 _logger.warning(
                     "[reconcile] %s should be stopped but is %s — stopping",
                     self.subdomain, status)
@@ -5736,23 +5606,22 @@ finally:
     # Recurring billing, dunning and plan upgrade/downgrade (the commercial
     # side) live in saas_billing/models/saas_instance.py.
 
-    def _package_resources(self, replicas=None):
+    def _package_resources(self):
         """What this instance's package reserves (saas.plan._package):
         Odoo pods, PostgreSQL, volumes and quota. Empty without a plan.
-        ``replicas`` overrides the compute tier's (used while scaling)."""
+        Capacity grows by changing the resource limits of this instance."""
         self.ensure_one()
         if not self.plan_id:
             return {}
         return self.plan_id._package(
-            replicas=replicas or self.compute_tier_id.replicas or 1,
             storage_gb=self.effective_storage_limit_gb)
 
-    def _k8s_plan_resources(self, replicas=None):
+    def _k8s_plan_resources(self):
         """The package as KubernetesDriver keys: Odoo requests/limits and
         workers, PostgreSQL requests/limits, volume sizes and the namespace
         quota. Empty when the instance has no plan."""
         self.ensure_one()
-        pkg = self._package_resources(replicas=replicas)
+        pkg = self._package_resources()
         if not pkg:
             return {}
         return {
@@ -5771,7 +5640,7 @@ finally:
         }
 
     def _update_container_resources(self):
-        """Apply the current package (plan, compute tier, storage blocks) to
+        """Apply the current package (plan and storage blocks) to
         the running tenant: Odoo rolls its pods (zero downtime), PostgreSQL
         is resized in place, volumes grow online. Called after a plan,
         tier or storage change. Raises if the cluster rejects the patch —

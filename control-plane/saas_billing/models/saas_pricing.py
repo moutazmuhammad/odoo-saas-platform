@@ -106,14 +106,14 @@ class SaasPricingEngine(models.AbstractModel):
 
     # ------------------------------------------------------------------
     # THE single profitability calculation. Every cost_price/margin_pct
-    # field anywhere in the platform (saas.plan, saas.compute.tier,
+    # field anywhere in the platform (saas.plan,
     # saas.addon, saas.support.plan, saas.instance) must call this rather
     # than re-deriving profit/margin by hand — three hand-rolled copies of
     # this exact formula existed across the codebase before this method
     # was added (billing/pricing architecture redesign, Part 12).
     #
     # Public cross-addon API: called from saas_core (saas_instance.py,
-    # saas_compute_tier.py) in addition to saas_billing's own models.
+    # saas_plan.py) in addition to saas_billing's own models.
     # ------------------------------------------------------------------
     @api.model
     def profitability(self, price, cost):

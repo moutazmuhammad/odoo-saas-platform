@@ -7,10 +7,12 @@ Step by step: a MicroK8s cluster that runs the tenant Odoo instances, connected 
 - You write your values **once**, in `/root/cluster.env` on each node (step 2). Every block after that reads them, so you paste the blocks as they are.
 - Each block says where it runs: **every node**, **node1**, **your workstation**, or the **SaaS server**. On the nodes, work as `root`.
 - After step 2, `kubectl` and `helm` are aliases for `microk8s kubectl` and `microk8s helm3`.
-- **3 nodes** = production (HA). **2 nodes** = testing only: it works, but if either node goes down, the Kubernetes API stops.
+- Current platform topology: one Odoo pod and one PostgreSQL instance per tenant, scaled through resource limits. The multi-control-plane cluster in this guide is an optional infrastructure deployment, not a customer availability tier. For the lower-cost single-node deployment, use `MICROK8S-CLUSTER-SETUP.md`.
 - Tested on DigitalOcean, Ubuntu 24.04, MicroK8s 1.35, Longhorn 1.12.1.
 
 Other guides: `SAAS-SERVER-SETUP.md` (the control-plane server), `MICROK8S-CLUSTER-SETUP.md` (a single-node test cluster), `RUN-GUIDE.txt` (dev).
+
+Upgrading an existing installation: read [SINGLE-INSTANCE-ARCHITECTURE.md](SINGLE-INSTANCE-ARCHITECTURE.md) (one Odoo pod per tenant, vertical scaling) and [STORAGE-COST-FIX.md](STORAGE-COST-FIX.md) (one shared tenant volume) first.
 
 ---
 
@@ -102,7 +104,7 @@ cat > /root/cluster.env <<'EOF'
 NODES="node1 node2 node3"                  # 2-node test: "node1 node2"
 declare -A PRIV=([node1]=10.0.0.11      [node2]=10.0.0.12      [node3]=10.0.0.13)
 declare -A PUB=( [node1]=198.51.100.11  [node2]=198.51.100.12  [node3]=198.51.100.13)
-REPLICAS=3                    # Longhorn copies: 3 with 3 nodes, 2 with 2
+REPLICAS=1                    # One storage copy: current low-cost, non-HA policy
 LB_IP=203.0.113.50            # load balancer IP; no LB: node1's public IP
 API_HOST=k8s-api.example.com  # API address for the SaaS server; test: node1's public IP
 ACME_EMAIL=                   # optional: Let's Encrypt expiry emails
@@ -279,7 +281,7 @@ kubectl -n longhorn-system rollout status ds/longhorn-csi-plugin --timeout=10m
 
 - `kubeletRootDir`: MicroK8s's kubelet path. Without it, volumes never mount.
 - `nodeDownPodDeletionPolicy`: when a node dies, the tenant restarts elsewhere without manual help.
-- `storageOverProvisioningPercentage=200`: each tenant's files volume and database volume are both sized to its whole storage package (either may hold most of the data; the measured total is what's enforced), and Longhorn only writes what's used. 200% lets those thin volumes be scheduled on that basis. Watch real disk use (act at 70%).
+- `storageOverProvisioningPercentage=200`: new Managed tenants use one PVC for PostgreSQL and Odoo, sized to the whole package. Legacy tenants retain separate volumes until migrated (see `STORAGE-COST-FIX.md`). The 200% setting is retained for existing thin-provisioned volumes; it is not a second customer storage allowance. Watch real disk use (act at 70%).
 
 **Check:** a test volume is written, with one copy per node, then deleted:
 
@@ -369,8 +371,6 @@ The operator isolates each tenant: its own namespace, the `restricted` Pod Secur
 ```bash
 . /root/cluster.env; cd $REPO
 cat > $REPO/operator-values-prod.yaml <<'EOF'
-replicaCount: 2
-leaderElection: true
 networking:
   provider: ingress
   ingressClassName: traefik

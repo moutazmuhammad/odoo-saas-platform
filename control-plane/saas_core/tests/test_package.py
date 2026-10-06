@@ -22,19 +22,22 @@ class TestManagedPackage(TransactionCase):
         self.assertEqual((pkg['db_cpu_m'], pkg['db_mem_mi']), (250, 512))    # floors
 
     def test_package_totals_count_every_pod(self):
-        pkg = self.plan._package(replicas=1)
-        self.assertEqual((pkg['total_cpu_m'], pkg['total_mem_mi']), (3000, 3072))
-        # Two replicas add a web pod and the cron pod.
-        pkg = self.plan._package(replicas=2)
-        self.assertEqual(pkg['odoo_pods'], 3)
-        self.assertEqual(pkg['total_cpu_m'], 2000 * 3 + 1000)
+        pkg = self.plan._package()
+        self.assertEqual((pkg['total_cpu_m'], pkg['total_mem_mi']), (3500, 3584))
+        self.assertEqual(pkg['odoo_pods'], 1)
+        self.assertEqual(pkg['replicas'], 1)
+        self.plan.cpu_limit = 4.0
+        self.plan.ram_limit = '4g'
+        larger = self.plan._package()
+        self.assertEqual(larger['odoo_pods'], 1)
+        self.assertEqual((larger['total_cpu_m'], larger['total_mem_mi']), (5500, 5632))
 
     def test_quota_leaves_room_for_rollout_surge_and_jobs(self):
-        pkg = self.plan._package(replicas=1, storage_gb=20)
+        pkg = self.plan._package(storage_gb=20)
         quota_cpu = int(pkg['quota']['limits.cpu'].rstrip('m'))
         # package + one surge Odoo pod + shells + one Job's headroom
-        self.assertEqual(quota_cpu, 3000 + 2000 + 500 * 2 + 2000)
-        self.assertEqual(pkg['quota']['requests.storage'], '41Gi')
+        self.assertEqual(quota_cpu, 3500 + 2500 + 500 * 2 + 2000)
+        self.assertEqual(pkg['quota']['requests.storage'], '21Gi')
 
     def test_settings_change_database_share(self):
         icp = self.env['ir.config_parameter'].sudo()
@@ -55,7 +58,16 @@ class TestManagedPackage(TransactionCase):
             'docker_server_id': server.id, 'billing_period': 'monthly',
             'environment': 'production', 'region_id': False, 'state': 'running'})
         server.invalidate_recordset()
-        self.assertEqual(server.allocated_cpu, 3.0)       # Odoo 2 + database 1
-        self.assertEqual(server.allocated_ram_gb, 3.0)
-        # A second 3-core package would exceed the 5-core cluster.
+        self.assertEqual(server.allocated_cpu, 3.5)       # Odoo 2 + cron 0.5 + database 1
+        self.assertEqual(server.allocated_ram_gb, 3.5)
+        # A second 3.5-core package would exceed the 5-core cluster.
         self.assertFalse(server._has_capacity_for(self.plan))
+
+    def test_cron_limits_are_smaller_and_capped(self):
+        pkg = self.plan._package()
+        self.assertEqual((pkg['cron_cpu_m'], pkg['cron_mem_mi']), (500, 512))
+        self.plan.cpu_limit = 8.0
+        self.plan.ram_limit = '16g'
+        larger = self.plan._package()
+        self.assertEqual((larger['cron_cpu_m'], larger['cron_mem_mi']), (500, 512))
+        self.assertEqual(larger['odoo_pods'], 1)

@@ -276,7 +276,10 @@ func (r *OdooInstanceReconciler) growDatabaseVolume(ctx context.Context, instanc
 	if err := r.Get(ctx, key, &pvc); err != nil {
 		return client.IgnoreNotFound(err)
 	}
-	want := resources.DatabaseStorageSize(instance)
+	want, err := resources.DatabaseStorageSize(instance)
+	if err != nil {
+		return err
+	}
 	have := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
 	if want.Cmp(have) <= 0 {
 		return nil

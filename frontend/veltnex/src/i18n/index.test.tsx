@@ -82,7 +82,7 @@ describe("English and Arabic", () => {
   });
 
   it("preserves product names, technical values, numbers, units and native markup", () => {
-    const names = /\b(?:VELTNEX|Veltnex|Odoo|Kubernetes|GitHub|GitLab|Gitea|Bitbucket|AWS|Google Cloud(?: Storage)?|DigitalOcean|Hetzner|Docker|PostgreSQL|Python|WhatsApp|LinkedIn|Twitter|Community|Enterprise(?!-grade)|Standard|HA|CPU|RAM|NVMe|SSL|API|CORS|HTTPS|SSH|SCP|SMS|GB|MB)\b/g;
+    const names = /\b(?:VELTNEX|Veltnex|Odoo|Kubernetes|GitHub|GitLab|Gitea|Bitbucket|AWS|Google Cloud(?: Storage)?|DigitalOcean|Hetzner|Docker|PostgreSQL|Python|WhatsApp|LinkedIn|Twitter|Community|Enterprise(?!-grade)|Standard|CPU|RAM|NVMe|SSL|API|CORS|HTTPS|SSH|SCP|SMS|GB|MB)\b/g;
     const identifiers = /(?:https?:\/\/[^\s<"')]+|[\w.+-]+@[\w.-]+\.[a-z]+|\b[\w-]+\.(?:txt|sql|log|conf|zip)\b|\b(?:web\.base\.url|SAAS_SECRET_KEY|saas_secret_key|s3:PutBucketCORS|PutBucketCors|PutBucketCORS|NotImplemented)\b)/g;
     for (const [source, target] of Object.entries(arabic)) {
       for (const token of source.match(names) || []) expect(target, `${source}: ${token}`).toContain(token);
@@ -90,8 +90,6 @@ describe("English and Arabic", () => {
       const visible = source.replace(/<[^>]+>|\{\d+\}/g, "");
       for (const number of visible.match(/\b\d+(?:\.\d+)?\b/g) || []) expect(target, source).toContain(number);
       expect(target.match(/<[^>]+>/g) || [], source).toEqual(source.match(/<[^>]+>/g) || []);
-      // Scale is a tier name in these messages, and an ordinary verb elsewhere.
-      if (source.includes("HA") && source.includes("Scale")) expect(target, source).toContain("Scale");
     }
     for (const sample of [" /web/login 200", "[INFO]", "heartbeat ok", "✓ deployed in 12s", "✓ installed · pip 24.0"]) {
       expect(arabic[sample as keyof typeof arabic]).toBe(sample);

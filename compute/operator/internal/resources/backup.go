@@ -72,7 +72,7 @@ func BackupCronJob(instance *saasv1alpha1.OdooInstance, backupToolImage string) 
 		{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 	}
 	mounts := []corev1.VolumeMount{
-		{Name: "filestore", MountPath: "/filestore", ReadOnly: true},
+		odooDataMount(instance, "/filestore", true),
 		{Name: "tmp", MountPath: "/tmp"},
 	}
 
@@ -115,7 +115,9 @@ func BackupCronJob(instance *saasv1alpha1.OdooInstance, backupToolImage string) 
 				AutomountServiceAccountToken: ptr.To(false),
 				Affinity:                     podAffinity,
 				SecurityContext: &corev1.PodSecurityContext{
-					RunAsNonRoot: ptr.To(true),
+					RunAsNonRoot:        ptr.To(true),
+					FSGroup:             ptr.To(int64(odooImageGID)),
+					FSGroupChangePolicy: ptr.To(corev1.FSGroupChangeOnRootMismatch),
 					SeccompProfile: &corev1.SeccompProfile{
 						Type: corev1.SeccompProfileTypeRuntimeDefault,
 					},
@@ -154,12 +156,14 @@ func BackupCronJob(instance *saasv1alpha1.OdooInstance, backupToolImage string) 
 			Labels:    labels,
 		},
 		Spec: batchv1.CronJobSpec{
+			Suspend:                    ptr.To(instance.Spec.Suspended),
 			Schedule:                   instance.Spec.Backup.Schedule,
 			ConcurrencyPolicy:          batchv1.ForbidConcurrent,
 			SuccessfulJobsHistoryLimit: ptr.To(int32(3)),
 			FailedJobsHistoryLimit:     ptr.To(int32(3)),
 			JobTemplate: batchv1.JobTemplateSpec{
-				Spec: jobSpec,
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec:       jobSpec,
 			},
 		},
 	}

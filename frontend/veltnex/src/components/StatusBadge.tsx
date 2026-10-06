@@ -5,6 +5,13 @@ const STATUS_STYLES: Record<
   string,
   { label: string; dot: string; text: string; bg: string; pulse?: boolean }
 > = {
+  // Observed tenant availability.
+  online: { label: i18nText("Online"), dot: "bg-success", text: "text-success", bg: "bg-success/10 border-success/30" },
+  starting: { label: i18nText("Starting"), dot: "bg-info", text: "text-info", bg: "bg-info/10 border-info/30", pulse: true },
+  stopping: { label: i18nText("Stopping"), dot: "bg-warning", text: "text-warning", bg: "bg-warning/10 border-warning/30", pulse: true },
+  unavailable: { label: i18nText("Unavailable"), dot: "bg-danger", text: "text-danger", bg: "bg-danger/10 border-danger/30" },
+  unreachable: { label: i18nText("Unreachable"), dot: "bg-warning", text: "text-warning", bg: "bg-warning/10 border-warning/30" },
+  unknown: { label: i18nText("Unknown"), dot: "bg-muted", text: "text-muted", bg: "bg-muted/10 border-border" },
   // instance
   pending_payment: { label: i18nText("Awaiting payment"), dot: "bg-warning", text: "text-warning", bg: "bg-warning/10 border-warning/30", pulse: true },
   pending_provision: { label: i18nText("Queued"), dot: "bg-info", text: "text-info", bg: "bg-info/10 border-info/30", pulse: true },

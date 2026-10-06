@@ -13,6 +13,20 @@ const TRANSITIONAL = new Set([
   "pending_payment",
 ]);
 
+const ACTIVE_POLL_MS = 12_000;
+const IDLE_POLL_MS = 60_000;
+const IDLE = new Set(["stopped", "suspended", "failed"]);
+
+/** Status-poll cadence for an instance in ms, or null when it isn't polled. */
+export function pollIntervalFor(i: Pick<ApiInstance, "state" | "runtime_state">): number | null {
+  if (TRANSITIONAL.has(i.state)) return 0; // every tick (4s)
+  if (i.state === "running") return ACTIVE_POLL_MS;
+  if (IDLE.has(i.state)) {
+    return i.runtime_state === "starting" || i.runtime_state === "stopping" ? ACTIVE_POLL_MS : IDLE_POLL_MS;
+  }
+  return null;
+}
+
 interface InstancesContextValue {
   instances: ApiInstance[];
   loading: boolean;
@@ -66,24 +80,28 @@ export function InstancesProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // Poll status for any transitional/running instances so usage + state
-  // stay live. Running instances refresh more slowly than provisioning.
+  // Poll status so usage + state stay live: running instances every 12s
+  // (4s while something provisions); idle (stopped/suspended/failed) ones only
+  // about once a minute unless they're mid start/stop.
+  const lastPolled = React.useRef(new Map<number, number>());
   const _hasTransitional = instances.some((i) => TRANSITIONAL.has(i.state));
-  const _shouldPoll =
-    workspaceReady &&
-    (_hasTransitional || instances.some((i) => i.state === "running"));
+  const _shouldPoll = workspaceReady && instances.some((i) => pollIntervalFor(i) !== null);
   usePolling(
     async () => {
-      const targets = instances.filter(
-        (i) => TRANSITIONAL.has(i.state) || i.state === "running"
-      );
+      const now = Date.now();
+      const targets = instances.filter((i) => {
+        const every = pollIntervalFor(i);
+        // Slack so a target isn't skipped by a tick landing just short of it.
+        return every !== null && now - (lastPolled.current.get(i.id) ?? 0) >= every - 1000;
+      });
       await Promise.all(
         targets.map(async (inst) => {
+          lastPolled.current.set(inst.id, now);
           const s = await api.instanceStatus(inst.id);
           setInstances((prev) =>
             prev.map((i) =>
               i.id === inst.id
-                ? { ...i, state: s.state, state_label: s.state_label, url: s.url || i.url, usage: s.usage || i.usage }
+                ? { ...i, ...s, url: s.url || i.url, usage: s.usage || i.usage }
                 : i
             )
           );
@@ -91,7 +109,7 @@ export function InstancesProvider({ children }: { children: React.ReactNode }) {
       );
     },
     // Faster cadence while something is provisioning.
-    { interval: _hasTransitional ? 4000 : 12000, enabled: _shouldPoll }
+    { interval: _hasTransitional ? 4000 : ACTIVE_POLL_MS, enabled: _shouldPoll }
   );
 
   const getInstance = React.useCallback(
@@ -104,7 +122,7 @@ export function InstancesProvider({ children }: { children: React.ReactNode }) {
       const status = await api.instanceAction(id, action);
       setInstances((prev) =>
         prev.map((i) =>
-          i.id === id ? { ...i, state: status.state, state_label: status.state_label } : i
+          i.id === id ? { ...i, ...status } : i
         )
       );
     },

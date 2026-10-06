@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	saasv1alpha1 "github.com/freightright/odoo-saas-platform/operator/api/v1alpha1"
@@ -34,6 +35,11 @@ func setCondition(instance *saasv1alpha1.OdooInstance, conditionType string, sta
 		LastTransitionTime: now,
 		ObservedGeneration: instance.Generation,
 	})
+}
+
+// removeCondition drops a condition that no longer applies.
+func removeCondition(instance *saasv1alpha1.OdooInstance, conditionType string) {
+	meta.RemoveStatusCondition(&instance.Status.Conditions, conditionType)
 }
 
 func conditionStatus(instance *saasv1alpha1.OdooInstance, conditionType string) metav1.ConditionStatus {
@@ -85,4 +91,9 @@ const (
 	ReasonWorkloadReady      = "WorkloadReady"
 	ReasonSuspended          = "Suspended"
 	ReasonDeleting           = "Deleting"
+	ReasonReplicasIgnored    = "LegacyReplicasIgnored"
+
+	// ConditionReplicasIgnored is True while a legacy spec.replicas above
+	// one is being treated as one. Absent otherwise.
+	ConditionReplicasIgnored = "ReplicasIgnored"
 )

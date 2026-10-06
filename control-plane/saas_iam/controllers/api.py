@@ -114,7 +114,7 @@ class IamApi(SaasApi):
             for key in ('wallet', 'invoices', 'payment_method', 'capacity', 'checkout_url',
                         'cancellable_invoice_id', 'has_unpaid_invoice', 'pending_plan', 'scheduled_plan',
                         'next_invoice_date', 'daily_backup_price', 'daily_backup_next_invoice_date',
-                        'compute_tier_pending', 'env_server_price', 'auto_renew_subscription', 'auto_renew_daily_backup',
+                        'env_server_price', 'auto_renew_subscription', 'auto_renew_daily_backup',
                         'reactivation_price', 'reactivation_checkout_url', 'restore_snapshot', 'restoration_fee', 'reactivate_url'):
                 data.pop(key, None)
             data['invoices'] = []
@@ -123,10 +123,9 @@ class IamApi(SaasApi):
             if not iam._allowed(instance, 'logs.view'):
                 data['last_error'] = ''
             if not iam._allowed(instance, 'project.view'):
-                for key in ('repo', 'compute_tier'):
+                for key in ('repo',):
                     data.pop(key, None)
                 data['usage'] = {'cpu': 0, 'ram': 0, 'storage': 0}
-                data['compute_tiers'] = []
                 data.update(url='', domain='', branch='', state='restricted', state_label=_('Restricted'))
         return data
 

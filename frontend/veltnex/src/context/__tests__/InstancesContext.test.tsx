@@ -28,3 +28,15 @@ describe("Workspace cache during first login", () => {
     expect(api.instances).not.toHaveBeenCalled();
   });
 });
+describe("Status poll cadence", () => {
+  it("polls running and transitional instances quickly but idle ones about once a minute", async () => {
+    const { pollIntervalFor } = await import("../InstancesContext");
+    expect(pollIntervalFor({ state: "provisioning" })).toBe(0);
+    expect(pollIntervalFor({ state: "running" })).toBe(12_000);
+    expect(pollIntervalFor({ state: "stopped" })).toBe(60_000);
+    expect(pollIntervalFor({ state: "suspended" })).toBe(60_000);
+    expect(pollIntervalFor({ state: "failed" })).toBe(60_000);
+    expect(pollIntervalFor({ state: "stopped", runtime_state: "stopping" })).toBe(12_000);
+    expect(pollIntervalFor({ state: "draft" })).toBeNull();
+  });
+});

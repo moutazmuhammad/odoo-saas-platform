@@ -23,7 +23,6 @@ a module-update request go onto the OdooInstance CR, and the operator runs
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import os
 import re
@@ -85,15 +84,6 @@ def parse_build_log(log):
     return digest, result
 
 
-def _cache_pvc_name(tenant_key: str) -> str:
-    """One persistent BuildKit cache volume per tenant, only ever mounted
-    into that tenant's build Job — a cheap way to keep every non-tenant
-    layer (apt, pip, ...) warm across its own frequent builds."""
-    slug = re.sub(r'[^a-z0-9-]', '-', (tenant_key or '').lower()).strip('-')[:34].rstrip('-')
-    digest = hashlib.sha256((tenant_key or '').encode()).hexdigest()[:12]
-    return 'buildkit-cache-%s-%s' % (slug or 'default', digest)
-
-
 class ImageBuildMixin:
     """Mixed into KubernetesDriver (needs its _client/_core_api/_batch_api/
     _custom_api/_cr_name/_namespace_for helpers)."""
@@ -104,29 +94,6 @@ class ImageBuildMixin:
     # ------------------------------------------------------------------
     # build namespace
     # ------------------------------------------------------------------
-    def _ensure_buildkit_pvc(self, name: str) -> str:
-        core = self._core_api()
-        try:
-            core.read_namespaced_persistent_volume_claim(name, BUILD_NAMESPACE)
-            return name
-        except ApiException as e:
-            if e.status != 404:
-                raise RuntimeError('reading cache PVC %s failed: %s' % (name, e)) from e
-        pvc = k8s_client.V1PersistentVolumeClaim(
-            metadata=k8s_client.V1ObjectMeta(
-                name=name, namespace=BUILD_NAMESPACE,
-                labels={'app.kubernetes.io/managed-by': 'saas-control-plane'}),
-            spec={
-                'accessModes': ['ReadWriteOnce'],
-                'resources': {'requests': {'storage': '20Gi'}},
-            })
-        try:
-            core.create_namespaced_persistent_volume_claim(BUILD_NAMESPACE, pvc)
-        except ApiException as e:
-            if e.status != 409:
-                raise RuntimeError('creating cache PVC %s failed: %s' % (name, e)) from e
-        return name
-
     def _ensure_build_namespace(self, registry_push_host=None):
         core = self._core_api()
         try:
@@ -178,19 +145,16 @@ class ImageBuildMixin:
                           registry_insecure: bool = False,
                           registry_push_host: Optional[str] = None,
                           deadline_seconds: int = 1800,
-                          tenant_key: str = '', cache_ref: str = '') -> str:
+                          tenant_key: str = '') -> str:
         """Create the build Job ``name`` and return it. ``repos`` is a list
         of ``{'url', 'ref', 'branch', 'dir'}`` (url may embed a token).
         ``image_ref`` is the full push reference (push host).
-        ``tenant_key`` scopes the persistent rootless-BuildKit cache PVC
-        (one per tenant): unchanged layers (apt, pip, Odoo base) survive
-        rebuilds without ever being shared across customers."""
+        ``tenant_key`` is retained for caller compatibility. BuildKit uses
+        job-local scratch space only. No persistent or registry build cache
+        is created or imported."""
         self._ensure_build_namespace(registry_push_host)
         core = self._core_api()
         labels = {_BUILD_LABEL: name, 'app.kubernetes.io/managed-by': 'saas-control-plane'}
-
-        cache_pvc = _cache_pvc_name(tenant_key)
-        self._ensure_buildkit_pvc(cache_pvc)
 
         secret_data = {'REPO_URL_%d' % i: r['url'] for i, r in enumerate(repos)}
         if registry_username:
@@ -216,8 +180,7 @@ class ImageBuildMixin:
                     'module_fingerprint.py': _template('module_fingerprint.py'),
                     'build.sh': _template('build.sh'),
                     'buildkitd.toml': (
-                        # Odoo's extracted layers exceed BuildKit's small
-                        # default GC budget. Keep them on the 20Gi cache PVC.
+                        # Extracted layers live only for this build pod's lifetime.
                         'root = "/home/user/.local/share/buildkit"\n'
                         '[worker.oci]\n  gckeepstorage = "8GB"\n' + (
                         '[registry.%s]\n  http = true\n'
@@ -239,12 +202,11 @@ class ImageBuildMixin:
         volumes = [
             {'name': 'workspace', 'emptyDir': {}},
             {'name': 'files', 'configMap': {'name': name}},
-            {'name': 'buildkit', 'persistentVolumeClaim': {'claimName': cache_pvc}},
+            {'name': 'buildkit', 'emptyDir': {'sizeLimit': '20Gi'}},
         ]
         build_env = [
             {'name': 'IMAGE_REF', 'value': image_ref},
             {'name': 'REGISTRY_INSECURE', 'value': '1' if registry_insecure else ''},
-            {'name': 'CACHE_IMAGE_REF', 'value': cache_ref},
             {'name': 'BUILDKITD_FLAGS', 'value': '--oci-worker-no-process-sandbox --config /files/buildkitd.toml'},
         ]
         if registry_username:
@@ -265,8 +227,7 @@ class ImageBuildMixin:
                         'restartPolicy': 'Never',
                         'automountServiceAccountToken': False,
                         'enableServiceLinks': False,
-                        # Avoid recursively chowning gigabytes of cached Odoo
-                        # layers every time the build PVC is mounted.
+                        # Scratch space is writable by the rootless user.
                         'securityContext': {'fsGroup': 1000,
                                             'fsGroupChangePolicy': 'OnRootMismatch'},
                         'initContainers': [
@@ -295,8 +256,8 @@ class ImageBuildMixin:
                                 'appArmorProfile': {'type': 'Unconfined'},
                             },
                             'resources': {
-                                'requests': {'cpu': '500m', 'memory': '1Gi'},
-                                'limits': {'cpu': '2', 'memory': '4Gi'},
+                                'requests': {'cpu': '500m', 'memory': '1Gi', 'ephemeral-storage': '4Gi'},
+                                'limits': {'cpu': '2', 'memory': '4Gi', 'ephemeral-storage': '24Gi'},
                             },
                         }],
                         'volumes': volumes,

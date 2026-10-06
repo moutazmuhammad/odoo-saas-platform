@@ -745,6 +745,7 @@ class SaasApi(http.Controller):
             'stats': {
                 'instances': len(instances),
                 'running': len(instances.filtered(lambda i: i.state == 'running')),
+                'online': sum(i._runtime_status_dict()['runtime_state'] == 'online' for i in instances),
                 'open_invoices': len(open_invoices),
                 'outstanding': round(sum(i.amount_residual for i in open_invoices), 2),
                 'wallet_balance': wallet_inline['total'],
@@ -1287,36 +1288,6 @@ class SaasApi(http.Controller):
             'checkout_url': '/my/instances/%s/daily-backup/checkout' % instance.id,
         })
 
-    @http.route('/saas/api/v1/instances/<int:instance_id>/compute-tier/change',
-                type='json', auth='public')
-    def compute_tier_change(self, instance_id, tier_id, access_token=None, **kw):
-        """Change this instance's compute tier (Standard/HA/Scale/...).
-
-        A tier with more replicas than the current one costs more, so it's
-        gated behind a checkout (like daily-backup/enable above); a
-        cheaper-or-free tier applies immediately — see
-        action_change_compute_tier's own docstring for the full rule.
-        Only offered on an instance already running on the Kubernetes
-        backend — the model method itself enforces this.
-        """
-        try:
-            instance = self._instance(instance_id, access_token, write=True, permission='billing.manage')
-        except (AccessError, MissingError):
-            return err(_("Instance not found."), 'not_found')
-        try:
-            self._require_running(instance)
-            result = instance.action_change_compute_tier(int(tier_id))
-        except UserError as e:
-            return err(str(e), 'change_failed')
-        except Exception:
-            _logger.exception("Compute tier change failed for %s", instance_id)
-            return err(_("We couldn't change your compute tier. "
-                         "Please try again."), 'change_failed')
-        if result is True:
-            return ok({'applied': True})
-        return ok({
-            'checkout_url': '/my/instances/%s/compute-tier/checkout' % instance.id,
-        })
 
     @http.route('/saas/api/v1/instances/<int:instance_id>/invoice/cancel',
                 type='json', auth='public')
@@ -1944,9 +1915,12 @@ class SaasApi(http.Controller):
             'is_production': inst.environment == 'production',
             'pending_payment': inst.state == 'pending_payment',
             'pending_invoice_id': inst.env_pending_invoice_id.id or False,
+            **inst._runtime_status_dict(),
         }
 
     def _serialize_instance(self, instance, detail=False):
+        if detail:
+            instance._refresh_runtime_health()
         plan = instance.plan_id
         data = {
             'id': instance.id,
@@ -1980,6 +1954,7 @@ class SaasApi(http.Controller):
             ).get(instance.environment, instance.environment),
             'branch': instance._env_branch(),
             'parent_id': instance.parent_id.id or False,
+            **instance._runtime_status_dict(),
         }
         if self._is_staff():
             data['customer'] = {
@@ -2004,27 +1979,7 @@ class SaasApi(http.Controller):
                 'daily_backup_next_invoice_date': fields.Date.to_string(
                     instance.daily_backup_next_invoice_date
                 ) if instance.daily_backup_next_invoice_date else '',
-                # Compute tiers (Standard/HA/Scale/...) — only ever
-                # meaningful/offered on a Kubernetes-backed instance; the SPA
-                # uses compute_driver to decide whether to show the picker
-                # at all. compute_tiers lists every ACTIVE tier so the
-                # portal can render the full picker, not just the current
-                # one.
                 'compute_driver': instance.docker_server_id.compute_driver or 'kubernetes',
-                'compute_tier': (
-                    self._serialize_compute_tier(instance.compute_tier_id)
-                    if instance.compute_tier_id else None
-                ),
-                'compute_tiers': [
-                    self._serialize_compute_tier(t)
-                    for t in instance.env['saas.compute.tier'].sudo().search(
-                        [('active', '=', True)])
-                ],
-                'compute_tier_pending': (
-                    self._serialize_compute_tier(instance.pending_compute_tier_id)
-                    if instance.compute_tier_pending_invoice_id
-                    and instance.pending_compute_tier_id else None
-                ),
                 # Post-purchase custom code (hosting only).
                 'last_error': instance.last_error or '',
                 'repo': ({
@@ -2114,15 +2069,6 @@ class SaasApi(http.Controller):
             'format': b.format or '',
         }
 
-    def _serialize_compute_tier(self, tier):
-        return {
-            'id': tier.id,
-            'name': tier.name,
-            'code': tier.code,
-            'replicas': tier.replicas,
-            'price': tier.monthly_price,
-            'description': tier.description or '',
-        }
 
     def _serialize_invoice(self, inv, detail=False):
         if inv.payment_state in ('paid', 'in_payment'):

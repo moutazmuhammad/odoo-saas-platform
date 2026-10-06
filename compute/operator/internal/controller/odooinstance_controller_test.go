@@ -183,6 +183,49 @@ func TestReconcile_InvalidSpecIsDegradedNotRetried(t *testing.T) {
 	}
 }
 
+// TestReconcile_LegacyReplicasStillReconcilesAndSuspends covers objects
+// created before the single-replica rule: the API server must still accept
+// unrelated edits (the CRD's transition rule), and the controller must keep
+// reconciling (one pod, a warning condition) and honour suspension.
+func TestReconcile_LegacyReplicasStillReconcilesAndSuspends(t *testing.T) {
+	r := testReconciler()
+	instance := newTestInstance("legacy-replicas")
+	instance.Spec.Replicas = ptr.To(int32(3))
+	// Transition rules do not run on create, which is how such an object
+	// is reproduced here.
+	if err := k8sClient.Create(testCtx, instance); err != nil {
+		t.Fatalf("creating instance: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(testCtx, instance) })
+
+	ns := saasv1alpha1.NamespacePrefix + "legacy-replicas"
+	final := reconcileUntil(t, r, "legacy-replicas", func(i *saasv1alpha1.OdooInstance) bool {
+		var namespace corev1.Namespace
+		return k8sClient.Get(testCtx, client.ObjectKey{Name: ns}, &namespace) == nil
+	})
+	if c := findCondition(final, ConditionReplicasIgnored); c == nil || c.Status != metav1.ConditionTrue {
+		t.Fatalf("expected ReplicasIgnored=True, got %+v", c)
+	}
+
+	var live saasv1alpha1.OdooInstance
+	if err := k8sClient.Get(testCtx, client.ObjectKey{Name: "legacy-replicas"}, &live); err != nil {
+		t.Fatal(err)
+	}
+	grow := live.DeepCopy()
+	grow.Spec.Replicas = ptr.To(int32(4))
+	if err := k8sClient.Patch(testCtx, grow, client.MergeFrom(&live)); err == nil {
+		t.Fatal("replicas grew beyond its legacy value")
+	}
+	suspend := live.DeepCopy()
+	suspend.Spec.Suspended = true
+	if err := k8sClient.Patch(testCtx, suspend, client.MergeFrom(&live)); err != nil {
+		t.Fatalf("legacy replicas blocked an unrelated edit: %v", err)
+	}
+	reconcileUntil(t, r, "legacy-replicas", func(i *saasv1alpha1.OdooInstance) bool {
+		return i.Status.Phase == saasv1alpha1.PhaseSuspended
+	})
+}
+
 // TestReconcile_ExternalDatabaseWaitsForCredentialsSecret verifies External
 // mode never creates database child resources and correctly blocks on a
 // missing/incomplete credentials Secret rather than erroring.
@@ -463,13 +506,27 @@ func patchJobFailed(t *testing.T, namespace, name string) {
 	if err := k8sClient.Get(testCtx, types.NamespacedName{Namespace: namespace, Name: name}, &job); err != nil {
 		t.Fatalf("getting job %s/%s: %v", namespace, name, err)
 	}
+	// Mirror the Job controller: newer API servers (1.31+) reject a
+	// Failed=True condition without a preceding FailureTarget=True and a
+	// startTime.
+	if job.Status.StartTime == nil {
+		job.Status.StartTime = ptr.To(metav1.Now())
+	}
 	job.Status.Failed = 1
-	job.Status.Conditions = append(job.Status.Conditions, batchv1.JobCondition{
-		Type:    batchv1.JobFailed,
-		Status:  corev1.ConditionTrue,
-		Reason:  "BackoffLimitExceeded",
-		Message: "simulated failure for test",
-	})
+	job.Status.Conditions = append(job.Status.Conditions,
+		batchv1.JobCondition{
+			Type:    batchv1.JobFailureTarget,
+			Status:  corev1.ConditionTrue,
+			Reason:  "BackoffLimitExceeded",
+			Message: "simulated failure for test",
+		},
+		batchv1.JobCondition{
+			Type:    batchv1.JobFailed,
+			Status:  corev1.ConditionTrue,
+			Reason:  "BackoffLimitExceeded",
+			Message: "simulated failure for test",
+		},
+	)
 	if err := k8sClient.Status().Update(testCtx, &job); err != nil {
 		t.Fatalf("patching job status: %v", err)
 	}

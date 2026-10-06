@@ -45,16 +45,6 @@ msgstr ""
 "ما دامت الميزة مفعّلة."
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-msgid ""
-".\n"
-"                                    You can pay any time from"
-msgstr ""
-".\n"
-"                                    يمكنك الدفع في أي وقت من"
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
@@ -102,24 +92,6 @@ msgid "14 days free, no credit card required"
 msgstr "14 يومًا مجانًا، دون الحاجة إلى بطاقة ائتمان"
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-msgid ""
-":\n"
-"                                    more replicas means resilience (if one fails or is\n"
-"                                    being updated, the others keep serving your users\n"
-"                                    with no downtime) and extra capacity under higher\n"
-"                                    traffic. Billed as a <strong>flat monthly fee</strong>\n"
-"                                    with no proration — the same amount is charged\n"
-"                                    whether you upgrade on the 1st or the 28th. Charged\n"
-"                                    again on every renewal while you stay on this tier."
-msgstr ""
-": زيادة عدد النسخ تعزز استمرارية الخدمة؛ فإذا تعطلت إحدى النسخ أو كانت قيد "
-"التحديث، تواصل النسخ الأخرى خدمة المستخدمين دون توقف. وتتيح أيضًا سعة إضافية"
-" عند ارتفاع عدد الزيارات. تُحتسب <strong>رسوم شهرية ثابتة</strong> دون "
-"احتساب نسبي؛ تدفع المبلغ نفسه سواء أجريت الترقية في اليوم 1 أو 28 من الشهر. "
-"تُجدّد الرسوم مع كل تجديد للاشتراك ما دمت على هذا المستوى."
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "<i class=\"fas fa-arrow-left me-2\"/>Back to Hosting"
 msgstr "<i class=\"fas fa-arrow-left me-2\"/>العودة إلى الاستضافة"
@@ -130,12 +102,6 @@ msgstr "<i class=\"fas fa-arrow-left me-2\"/>العودة إلى الاستضا�
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
 msgid "<i class=\"fas fa-arrow-left me-2\"/>Back to Instance"
 msgstr "<i class=\"fas fa-arrow-left me-2\"/>العودة إلى Instance"
-
-#. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-msgid "<i class=\"fas fa-arrow-left me-2\"/>Cancel and go back"
-msgstr "<i class=\"fas fa-arrow-left me-2\"/>إلغاء والعودة"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
@@ -606,11 +572,6 @@ msgstr "<span class=\"vx-config-label\">الفوترة</span>"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
-msgid "<span class=\"vx-config-label\">Compute Tier</span>"
-msgstr "<span class=\"vx-config-label\">مستوى الحوسبة</span>"
-
-#. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "<span class=\"vx-config-label\">Daily Backup</span>"
 msgstr "<span class=\"vx-config-label\">النسخ الاحتياطي اليومي</span>"
 
@@ -891,11 +852,6 @@ msgid "Complete Your Order"
 msgstr "أكمل طلبك"
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-msgid "Compute Tier:"
-msgstr "مستوى الحوسبة:"
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "Configuration"
 msgstr "إعدادات"
@@ -1073,15 +1029,6 @@ msgid "Faster response times for mission-critical workloads. Billed monthly."
 msgstr "استجابة أسرع للتطبيقات التي يعتمد عليها عملك، بفوترة شهرية."
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-msgid ""
-"Flat monthly fee — no proration. Once applied, the next charge is one full "
-"month after today's payment."
-msgstr ""
-"رسوم شهرية ثابتة دون احتساب نسبي. بعد تطبيق التغيير، تستحق الدفعة التالية "
-"بعد شهر كامل من دفعة اليوم."
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
 msgid ""
 "Flat monthly fee — no proration. Once enabled, the next charge is one full "
@@ -1201,21 +1148,9 @@ msgid "Invoice"
 msgstr "الفاتورة"
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-msgid "Invoice:"
-msgstr "فاتورة:"
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
 msgid "Invoices"
 msgstr "الفواتير"
-
-#. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-msgid "Item"
-msgstr "البند"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
@@ -1277,16 +1212,6 @@ msgid "Monthly Total"
 msgstr "المجموع الشهري"
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
-msgid "My Instances"
-msgstr "Instances الخاصة بي"
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
 msgid "New Plan Configuration"
 msgstr "إعداد الخطة الجديدة"
@@ -1316,13 +1241,6 @@ msgstr "إصدار Odoo"
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 msgid "Odoo version"
 msgstr "إصدار Odoo"
-
-#. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-msgid "Order Summary"
-msgstr "ملخص الطلب"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
@@ -1355,13 +1273,6 @@ msgid "Payment"
 msgstr "الدفع"
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-msgid "Payment Method"
-msgstr "طريقة الدفع"
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.registration_form
 msgid "Phone Number"
 msgstr "رقم الهاتف"
@@ -1375,12 +1286,6 @@ msgstr "الخطة"
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 msgid "Plan Configuration"
 msgstr "إعداد الخطة"
-
-#. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-msgid "Price"
-msgstr "سعر"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
@@ -1455,11 +1360,6 @@ msgstr "المراجعة والدفع"
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
 msgid "Review your order"
 msgstr "قم بمراجعة طلبك"
-
-#. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-msgid "Runs"
-msgstr "مرات التشغيل"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
@@ -1632,13 +1532,6 @@ msgid "Total"
 msgstr "الإجمالي"
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-msgid "Total Due Today"
-msgstr "إجمالي المستحق اليوم"
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
@@ -1667,19 +1560,9 @@ msgid "Upgrade"
 msgstr "ترقية"
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-msgid "Upgrade Compute Tier"
-msgstr "ترقية مستوى الحوسبة"
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
 msgid "Upgrade Your Plan"
 msgstr "قم بترقية خطتك"
-
-#. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-msgid "Upgrade to the"
-msgstr "الترقية إلى"
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.cloudodoo_login_layout
@@ -1793,24 +1676,6 @@ msgid "Your trial instance"
 msgstr "Instance التجريبية"
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-msgid "across"
-msgstr "على"
-
-#. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
-#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
-#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
-#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
-msgid "breadcrumb"
-msgstr "مسار التنقل"
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
 msgid "days"
 msgstr "أيام"
@@ -1876,43 +1741,14 @@ msgstr ""
 "Instance."
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-msgid "pod replicas"
-msgstr "نسخ Pod"
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "replica"
 msgstr "نسخة"
 
 #. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-msgid ""
-"replicas)\n"
-"                                                <span class=\"badge ms-2 bg-info\">Monthly</span>"
-msgstr "نسخ) <span class=\"badge ms-2 bg-info\">شهريًا</span>"
-
-#. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
 msgid "s"
 msgstr "ث"
-
-#. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-msgid "the invoice page"
-msgstr "صفحة الفاتورة"
-
-#. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-msgid "tier"
-msgstr "المستوى"
-
-#. module: saas_website
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_compute_tier_checkout
-#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
-msgid "too."
-msgstr "أيضًا."
 
 #. module: saas_website
 #: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
@@ -2449,15 +2285,6 @@ msgstr ""
 #. module: saas_website
 #. odoo-python
 #: code:addons/saas_website/controllers/portal.py:0
-msgid ""
-"No pending payment. If you just paid, your compute tier should now be "
-"changing."
-msgstr ""
-"لا توجد دفعة معلّقة. إذا دفعت للتو، يفترض أن تغيير مستوى الحوسبة بدأ الآن."
-
-#. module: saas_website
-#. odoo-python
-#: code:addons/saas_website/controllers/portal.py:0
 msgid "On-demand backups are available for hosting instances only."
 msgstr "تتوفر النسخ الاحتياطية عند الطلب لـ Instances الاستضافة فقط."
 
@@ -2894,12 +2721,6 @@ msgstr ""
 #: code:addons/saas_website/controllers/api.py:0
 msgid "We couldn't cancel that invoice. Please try again."
 msgstr "تعذر إلغاء هذه الفاتورة. يرجى المحاولة مجدداً."
-
-#. module: saas_website
-#. odoo-python
-#: code:addons/saas_website/controllers/api.py:0
-msgid "We couldn't change your compute tier. Please try again."
-msgstr "تعذر تغيير مستوى الحوسبة. يرجى المحاولة مجدداً."
 
 #. module: saas_website
 #. odoo-python

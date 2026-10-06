@@ -20,8 +20,6 @@ Mapping (ComputeDriver -> Kubernetes):
   logs             -> Kubernetes pods/log subresource
   health           -> OdooInstance.status.phase + the web pod's own
                        container restart count (for crash-loop detection)
-  scale            -> patch spec.replicas (Kubernetes-only, not part of
-                       the shared ComputeDriver interface — see scale())
 
 The naming below (group/version/plural, the "odoo-tenant-" namespace
 prefix, the Deployment always being literally named "odoo") mirrors the
@@ -267,24 +265,6 @@ _BACKUP_CRONJOB_NAME = 'odoo-backup'
 # into the CR itself.
 _BACKUP_SECRET_NAME = 'odoo-backup-object-storage'
 
-# OdooInstance.status.phase (OdooInstancePhase enum) -> the driver-agnostic
-# status vocabulary saas_instance.py's crash-loop/reconcile logic already
-# depends on ('running'/'restarting'/'exited'/'dead'/'not_found' — see
-# _cron_reconcile's use of HealthStatus.status). Approximate by design: a
-# CR-level phase is a coarser signal than a container's own runtime state,
-# refined below by also checking the pod's own CrashLoopBackOff reason.
-_PHASE_TO_STATUS = {
-    'Ready': 'running',
-    'Updating': 'running',
-    'Provisioning': 'restarting',
-    'Pending': 'restarting',
-    'Degraded': 'restarting',
-    'Suspended': 'exited',
-    'Deleting': 'exited',
-    'Failed': 'dead',
-}
-
-
 class ToolboxNotSetUp(RuntimeError):
     """The cluster's saas-toolbox ServiceAccount hasn't been created yet."""
 
@@ -403,6 +383,17 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             raise RuntimeError(
                 'Kubernetes API error reading OdooInstance %s: %s' % (name, e)) from e
 
+    @staticmethod
+    def _pod_ready(pod):
+        if pod is None or pod.metadata.deletion_timestamp or pod.status.phase != 'Running':
+            return False
+        conditions = pod.status.conditions or []
+        pod_ready = any(c.type == 'Ready' and c.status == 'True' for c in conditions)
+        # Serving readiness is the web container's alone: the cron sidecar
+        # has no readiness probe and must not take web traffic down with it.
+        web = next((c for c in (pod.status.container_statuses or []) if c.name == _CONTAINER_NAME), None)
+        return pod_ready and web is not None and web.ready is True
+
     def _first_pod(self, namespace, cr_name):
         """The tenant's own web pod, or None if the namespace/pod doesn't
         exist yet (e.g. the CR was just created and the operator hasn't
@@ -416,8 +407,10 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 return None
             raise RuntimeError(
                 'listing pods in %s failed: %s' % (namespace, e)) from e
-        running = [p for p in pods.items if p.status.phase == 'Running']
-        candidates = running or list(pods.items)
+        active = [p for p in pods.items if not p.metadata.deletion_timestamp]
+        ready = [p for p in active if self._pod_ready(p)]
+        running = [p for p in active if p.status.phase == 'Running']
+        candidates = ready or running or active or list(pods.items)
         return candidates[0] if candidates else None
 
     # -- lifecycle ------------------------------------------------------------
@@ -487,9 +480,7 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         hand-duplicated here — see OdooInstanceSpec's own
         +kubebuilder:default markers in
         compute/operator/api/v1alpha1/odooinstance_types.go. ``replicas``
-        IS set explicitly (default 1) because a value > 1 has a required
-        companion (the filestore's accessMode, below) this driver must set
-        consistently, not something safe to leave to the CRD's own default.
+        is fixed at 1; capacity changes only through resource requests/limits.
         """
         domain = (spec.env.get('domain') or '').strip()
         if not domain:
@@ -502,6 +493,8 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         if not sep:
             repository, tag = spec.image, odoo_version
         replicas = int(spec.env.get('replicas') or 1)
+        if replicas != 1:
+            raise ValueError('Only one Odoo replica is supported; increase resource limits instead.')
 
         tls_enabled = bool(spec.env.get('tls_enabled', False))
         tls = {'enabled': tls_enabled}
@@ -512,17 +505,6 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             }
 
         filestore = {'size': spec.env.get('filestore_size') or '5Gi'}
-        if replicas > 1:
-            # Required companion of replicas > 1 — see FilestoreSpec's own
-            # comment (odoo_types.go): RWO is the safe default and the
-            # controller rejects RWO with replicas > 1 (Degraded condition)
-            # rather than corrupting data. Requesting RWX here only ever
-            # succeeds if the region's cluster actually has an RWX-capable
-            # StorageClass (e.g. NFS/CephFS/EFS) — this driver cannot verify
-            # that in advance; a cluster without one will surface as a real,
-            # visible Degraded condition on the CR, which health() picks up.
-            filestore['accessMode'] = 'ReadWriteMany'
-
         body = {
             'apiVersion': '%s/%s' % (_GROUP, _VERSION),
             'kind': 'OdooInstance',
@@ -534,7 +516,7 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                     'hostname': domain,
                     'tls': tls,
                 },
-                'storage': {'filestore': filestore},
+                'storage': {'filestore': filestore, 'sharedWithDatabase': True},
                 'replicas': replicas,
                 'resources': {
                     'requests': {
@@ -773,6 +755,8 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                         'No scheduled backup is configured for this instance '
                         'yet — enable it first.') from e
                 time.sleep(2)
+        if cron.spec.suspend is True:
+            raise RuntimeError('Backups are paused for this instance; resume it before creating a backup.')
         job_name = '%s-manual-%d' % (_BACKUP_CRONJOB_NAME, int(time.time()))
         job = k8s_client.V1Job(
             metadata=k8s_client.V1ObjectMeta(
@@ -789,31 +773,6 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 'creating manual backup Job failed: %s' % e) from e
         return job_name
 
-    def scale(self, handle: ComputeHandle, replicas: int) -> None:
-        """Patch this instance's pod replica count in place — the
-        underlying primitive behind the compute-tier feature
-        (saas.instance.compute_tier_id / saas.compute.tier, e.g.
-        Standard=1 / HA=2 / Scale=4 replicas). Kubernetes-only; there is
-        no equivalent concept for SshDockerDriver, so this is NOT part of
-        the shared ComputeDriver interface — callers must check
-        ``compute_driver == 'kubernetes'`` first.
-
-        Going from 1 to 2+ only actually works if the instance's filestore
-        was already provisioned with an RWX-capable StorageClass (see
-        _build_odoo_instance) — this call cannot verify or change that
-        after the fact (a PVC's access mode is not something the API lets
-        you patch in place). A cluster without one will make the CR go
-        Degraded, which the caller's post-scale health() poll surfaces as
-        a real, visible failure rather than a silent no-op.
-        """
-        name = self._cr_name(handle)
-        try:
-            self._custom_api().patch_cluster_custom_object(
-                _GROUP, _VERSION, _PLURAL, name, {'spec': {'replicas': int(replicas)}})
-        except ApiException as e:
-            raise RuntimeError(
-                'patching OdooInstance %s replicas=%s failed: %s'
-                % (name, replicas, e)) from e
 
     @staticmethod
     def _database_spec(env: dict) -> dict:
@@ -969,9 +928,9 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
     @staticmethod
     def _odoo_container_selector(namespace_regex: str) -> str:
         # cAdvisor series of the tenant's Odoo containers: web and cron
-        # pods — not the one-off init/update/restore Job pods, which share
+        # containers — not the one-off init/update/restore Job pods, which share
         # the container name, nor the shell sidecar.
-        return ('namespace=~"%s",container="%s",pod=~"odoo-.+",'
+        return ('namespace=~"%s",container=~"%s|cron",pod=~"odoo-.+",'
                 'pod!~"odoo-(init|update|restore)-.+"'
                 % (namespace_regex, _CONTAINER_NAME))
 
@@ -1304,22 +1263,34 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
             return HealthStatus(running=False, status='not_found', restart_count=0,
                                 detail='OdooInstance not found')
         phase = ((cr.get('status') or {}).get('phase')) or 'Pending'
-        status = _PHASE_TO_STATUS.get(phase, 'not_found')
-
         namespace = handle.instance_path or self._namespace_for(handle)
         pod = self._first_pod(namespace, name)
+        suspended = bool((cr.get('spec') or {}).get('suspended')) or phase == 'Suspended'
+        if pod is None:
+            # The CR exists, so the operator owns recreating the pod (e.g.
+            # after an eviction). 'missing' is not 'not_found': reconcile must
+            # not call start() for a pod that is merely being rescheduled.
+            return HealthStatus(running=False, status='exited' if suspended else 'missing',
+                                detail='Suspended' if suspended else 'Tenant web pod is missing')
+        if pod.metadata.deletion_timestamp:
+            # Only a terminating pod is left: it is shutting down, not starting,
+            # so a pending stop is not re-issued while it drains.
+            return HealthStatus(running=False, status='terminating', detail='Terminating')
+        status = 'running' if self._pod_ready(pod) else 'starting'
+        if pod.status.phase == 'Failed':
+            status = 'dead'
+        elif pod.status.phase == 'Succeeded':
+            status = 'exited'
         restart_count = 0
-        if pod is not None:
-            for cs in (pod.status.container_statuses or []):
-                if cs.name != _CONTAINER_NAME:
-                    continue
-                restart_count = cs.restart_count or 0
-                waiting = cs.state.waiting if cs.state else None
-                if waiting and waiting.reason == 'CrashLoopBackOff':
-                    # A real, more precise crash-loop signal than the CR's
-                    # own coarser phase — a pod can be CrashLoopBackOff
-                    # while the CR still reports "Provisioning".
+        detail = phase
+        for cs in (pod.status.container_statuses or []):
+            if cs.name not in (_CONTAINER_NAME, 'cron'):
+                continue
+            restart_count += cs.restart_count or 0
+            waiting = cs.state.waiting if cs.state else None
+            if waiting and waiting.reason:
+                detail = waiting.reason
+                if waiting.reason == 'CrashLoopBackOff':
                     status = 'restarting'
-                break
         return HealthStatus(running=(status == 'running'), status=status,
-                            restart_count=restart_count, detail=phase)
+                            restart_count=restart_count, detail=detail)

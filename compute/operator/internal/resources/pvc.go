@@ -10,12 +10,7 @@ import (
 
 // FilestorePVC builds the Odoo filestore/data PersistentVolumeClaim.
 //
-// Access mode trade-off (see FilestoreSpec docs for the full rationale):
-// ReadWriteOnce is the default and is required for replicas == 1.
-// ReadWriteMany is only used when the caller has already validated
-// replicas > 1 is intentional and the StorageClass genuinely supports RWX
-// (e.g. NFS/CephFS/EFS-backed); the controller performs that validation
-// before ever calling this builder with FilestoreAccessModeRWX.
+// ReadWriteOnce is the default for the single Odoo pod.
 func FilestorePVC(instance *saasv1alpha1.OdooInstance) (*corev1.PersistentVolumeClaim, error) {
 	size, err := resource.ParseQuantity(instance.Spec.Storage.Filestore.Size)
 	if err != nil {
@@ -44,4 +39,28 @@ func FilestorePVC(instance *saasv1alpha1.OdooInstance) (*corev1.PersistentVolume
 			StorageClassName: instance.Spec.Storage.Filestore.StorageClassName,
 		},
 	}, nil
+}
+
+// Only expose the Odoo subdirectory to web, shell, and backup/restore pods.
+// PostgreSQL's private directory is never mounted into customer containers.
+func odooDataMount(instance *saasv1alpha1.OdooInstance, path string, readOnly bool) corev1.VolumeMount {
+	mount := corev1.VolumeMount{Name: "filestore", MountPath: path, ReadOnly: readOnly}
+	if instance.Spec.Storage.SharedWithDatabase {
+		mount.SubPath = "odoo"
+	}
+	return mount
+}
+
+// The first pod may schedule anywhere; later RWO consumers stay on that
+// node, including initialization and restore Jobs before web pods exist.
+func sharedDataCoLocation(instance *saasv1alpha1.OdooInstance) *corev1.Affinity {
+	if instance.Spec.Storage.Filestore.AccessMode == saasv1alpha1.FilestoreAccessModeRWX {
+		return nil
+	}
+	return &corev1.Affinity{PodAffinity: &corev1.PodAffinity{
+		RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+			LabelSelector: &metav1.LabelSelector{MatchLabels: SelectorLabels(instance)},
+			TopologyKey:   "kubernetes.io/hostname",
+		}},
+	}}
 }

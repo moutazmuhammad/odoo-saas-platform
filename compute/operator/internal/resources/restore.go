@@ -99,7 +99,7 @@ func OdooRestoreJob(instance *saasv1alpha1.OdooInstance, restoreToolImage string
 		// content, and it must be the only writer active before the web
 		// Deployment (and therefore Odoo itself) ever starts — see
 		// internal/controller/restore.go's gating.
-		{Name: "filestore", MountPath: "/var/lib/odoo"},
+		odooDataMount(instance, "/var/lib/odoo", false),
 		{Name: "tmp", MountPath: "/tmp"},
 	}
 
@@ -150,7 +150,8 @@ func OdooRestoreJob(instance *saasv1alpha1.OdooInstance, restoreToolImage string
 						// so the filestore this Job writes is group-writable/
 						// readable by the Odoo container that mounts the same
 						// PVC afterwards.
-						FSGroup: ptr.To(int64(odooImageGID)),
+						FSGroup:             ptr.To(int64(odooImageGID)),
+						FSGroupChangePolicy: ptr.To(corev1.FSGroupChangeOnRootMismatch),
 					},
 					Containers: []corev1.Container{
 						{

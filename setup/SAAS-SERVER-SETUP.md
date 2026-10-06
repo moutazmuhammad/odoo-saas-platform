@@ -230,7 +230,7 @@ sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
    - *Odoo versions*: e.g. `18.0`, image `odoo`, tag `18.0`, hosting version on.
    - *Products*: e.g. "Odoo Hosting" with *Is hosting* on.
    - *Plans*: CPU/RAM/workers/storage limits and prices, linked to products.
-   - *Compute tiers*: seeded with Standard/HA/Scale; check the prices.
+   - *Scaling*: adjust the plan CPU/RAM limits; each tenant runs one Odoo pod and one PostgreSQL instance.
 7. **Register each cluster** (from `PRODUCTION-CLUSTER-SETUP.md`, step 13). That step has a copy-paste script. To do it by hand in the backend instead (*SaaS Manager → Configuration*):
    1. *Regions*: the location customers pick (name, code).
    2. *Kubernetes Clusters*: the region, upload the kubeconfig, the TLS ClusterIssuer, the node IP. Fill the *Image Builds* tab if Git repos are used. A region can have several clusters.

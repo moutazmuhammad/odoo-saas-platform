@@ -20,7 +20,7 @@ const (
 // CloudNativePGCluster builds a CloudNativePG `Cluster` resource as the
 // managed database for DatabaseModeCloudNativePG. This is the production
 // upgrade path from DatabaseModeManaged: same OdooInstance API field
-// (spec.database.mode), a real HA/PITR-capable operator underneath.
+// (spec.database.mode), a single-instance PostgreSQL operator underneath.
 //
 // The Cluster's connection Secret is created by CloudNativePG itself
 // (named "<cluster-name>-app"); the controller reads it back to populate
@@ -42,6 +42,7 @@ func CloudNativePGCluster(instance *saasv1alpha1.OdooInstance) *unstructured.Uns
 	u.SetName(DatabaseStatefulSetName(instance))
 	u.SetNamespace(TenantNamespace(instance))
 	u.SetLabels(WithComponent(instance, "database"))
+	u.SetAnnotations(map[string]string{"cnpg.io/hibernation": "off"})
 
 	storage := map[string]interface{}{"size": sizeStr}
 	if storageClass != "" {

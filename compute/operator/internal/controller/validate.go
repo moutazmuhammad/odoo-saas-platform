@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 
 	saasv1alpha1 "github.com/freightright/odoo-saas-platform/operator/api/v1alpha1"
@@ -19,6 +20,18 @@ type validationError struct {
 }
 
 func (e *validationError) Error() string { return e.message }
+
+// legacyReplicasMessage explains why a spec.replicas above one (only
+// possible on objects created before the single-replica rule, which the
+// CRD's transition rule keeps editable) is ignored. Empty when replicas is
+// one. Deliberately not a validationError: blocking reconcile would also
+// block suspension and the cleanup of retired multi-pod resources.
+func legacyReplicasMessage(instance *saasv1alpha1.OdooInstance) string {
+	if replicas := ptr.Deref(instance.Spec.Replicas, 1); replicas != 1 {
+		return fmt.Sprintf("spec.replicas=%d is no longer supported and is treated as 1; set it to 1 and scale by increasing CPU and memory resources", replicas)
+	}
+	return ""
+}
 
 // validateSpec performs the checks that are impractical to express as pure
 // CRD/CEL validation (they need operator-level configuration such as the
@@ -40,18 +53,16 @@ func (r *OdooInstanceReconciler) validateSpec(instance *saasv1alpha1.OdooInstanc
 		}
 	}
 
-	replicas := ptr.Deref(instance.Spec.Replicas, 1)
-	if replicas > 1 && instance.Spec.Storage.Filestore.AccessMode != saasv1alpha1.FilestoreAccessModeRWX {
-		return &validationError{
-			reason:  "ReplicasRequireRWXFilestore",
-			message: fmt.Sprintf("spec.replicas=%d requires spec.storage.filestore.accessMode=ReadWriteMany; ReadWriteOnce (the default) only safely supports a single replica", replicas),
-		}
+	if instance.Spec.Storage.SharedWithDatabase && instance.Spec.Database.Mode != "" && instance.Spec.Database.Mode != saasv1alpha1.DatabaseModeManaged {
+		return &validationError{reason: "SharedStorageRequiresManagedDatabase", message: "storage.sharedWithDatabase requires database.mode=Managed"}
 	}
 
-	if instance.Spec.Autoscaling.Enabled {
-		return &validationError{
-			reason:  "AutoscalingNotImplemented",
-			message: "spec.autoscaling.enabled is reserved for a future API version and is not yet acted on by the controller; disable it",
+	if _, err := resource.ParseQuantity(instance.Spec.Storage.Filestore.Size); err != nil {
+		return &validationError{reason: "InvalidStorageSize", message: fmt.Sprintf("spec.storage.filestore.size %q is not a valid quantity (e.g. 10Gi)", instance.Spec.Storage.Filestore.Size)}
+	}
+	if instance.Spec.Database.Storage != nil {
+		if _, err := resource.ParseQuantity(instance.Spec.Database.Storage.Size); err != nil {
+			return &validationError{reason: "InvalidStorageSize", message: fmt.Sprintf("spec.database.storage.size %q is not a valid quantity (e.g. 20Gi)", instance.Spec.Database.Storage.Size)}
 		}
 	}
 

@@ -16,9 +16,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -143,6 +141,16 @@ func (r *OdooInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.updateStatusAndReturn(ctx, &instance, ctrl.Result{}, nil)
 	}
 
+	// Legacy objects may still carry replicas > 1: the builders always run
+	// one pod, so surface a warning and keep reconciling (suspension and
+	// the removal of the retired cron Deployment and PDB included).
+	if msg := legacyReplicasMessage(&instance); msg != "" {
+		setCondition(&instance, ConditionReplicasIgnored, metav1.ConditionTrue, ReasonReplicasIgnored, msg)
+		r.Recorder.Event(&instance, corev1.EventTypeWarning, ReasonReplicasIgnored, msg)
+	} else {
+		removeCondition(&instance, ConditionReplicasIgnored)
+	}
+
 	if instance.Spec.Suspended {
 		return r.reconcileSuspended(ctx, &instance)
 	}
@@ -165,6 +173,9 @@ func (r *OdooInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.handleReconcileError(ctx, &instance, "DatabaseReconcileFailed", err)
 	}
 	if dbResult.ready {
+		if err := r.resumeTenantJobs(ctx, &instance); err != nil {
+			return r.handleReconcileError(ctx, &instance, "JobResumeFailed", err)
+		}
 		setCondition(&instance, saasv1alpha1.ConditionDatabaseReady, metav1.ConditionTrue, dbResult.reason, dbResult.message)
 	} else {
 		setCondition(&instance, saasv1alpha1.ConditionDatabaseReady, metav1.ConditionFalse, dbResult.reason, dbResult.message)
@@ -347,27 +358,21 @@ func (r *OdooInstanceReconciler) reconcileDelete(ctx context.Context, instance *
 }
 
 func (r *OdooInstanceReconciler) reconcileSuspended(ctx context.Context, instance *saasv1alpha1.OdooInstance) (ctrl.Result, error) {
-	ns := resources.TenantNamespace(instance)
-	for _, name := range []string{resources.OdooDeploymentName(instance), resources.OdooCronDeploymentName(instance)} {
-		var dep appsv1.Deployment
-		err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &dep)
-		if apierrors.IsNotFound(err) {
-			continue
-		}
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if ptr.Deref(dep.Spec.Replicas, 0) != 0 {
-			dep.Spec.Replicas = ptr.To(int32(0))
-			if err := r.Update(ctx, &dep); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
+	waiting, err := r.suspendTenantWorkloads(ctx, instance)
+	if err != nil {
+		return r.handleReconcileError(ctx, instance, "SuspensionFailed", err)
+	}
+	if err := r.reconcilePDB(ctx, instance); err != nil {
+		return r.handleReconcileError(ctx, instance, "SuspensionFailed", err)
 	}
 	setCondition(instance, saasv1alpha1.ConditionReady, metav1.ConditionFalse, ReasonSuspended, "instance is suspended")
-	setCondition(instance, saasv1alpha1.ConditionProgressing, metav1.ConditionFalse, ReasonSuspended, "")
+	if waiting {
+		setCondition(instance, saasv1alpha1.ConditionProgressing, metav1.ConditionTrue, ReasonSuspended, "waiting for running database Jobs to finish before stopping the database")
+	} else {
+		setCondition(instance, saasv1alpha1.ConditionProgressing, metav1.ConditionFalse, ReasonSuspended, "")
+	}
 	instance.Status.URL = ""
-	return r.updateStatusAndReturn(ctx, instance, ctrl.Result{}, nil)
+	return r.updateStatusAndReturn(ctx, instance, ctrl.Result{RequeueAfter: 30 * time.Second}, nil)
 }
 
 func (r *OdooInstanceReconciler) handleReconcileError(ctx context.Context, instance *saasv1alpha1.OdooInstance, reason string, err error) (ctrl.Result, error) {
@@ -416,5 +421,6 @@ func (r *OdooInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&batchv1.Job{}).
+		Owns(&batchv1.CronJob{}).
 		Complete(r)
 }

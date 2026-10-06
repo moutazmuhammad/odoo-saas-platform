@@ -12,8 +12,6 @@
         "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
       }
     },
-    "replicaCount": { "type": "integer", "minimum": 1, "maximum": 5 },
-    "leaderElection": { "type": "boolean" },
     "serviceAccount": {
       "type": "object",
       "properties": {

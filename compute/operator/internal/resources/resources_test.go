@@ -133,22 +133,19 @@ func TestTenantNetworkPolicy_TLSEnabled_StillAllowsOdooPorts(t *testing.T) {
 	}
 }
 
-func TestOdooDeployment_WebRole_RunsCronWhenSingleReplica(t *testing.T) {
+func TestOdooDeployment_WebRole_DisablesCronInWebContainer(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Replicas = ptr.To(int32(1))
-	dep := OdooDeployment(instance, RoleWeb)
+	dep := OdooDeployment(instance)
 
 	container := dep.Spec.Template.Spec.Containers[0]
-	if !containsArg(container.Args, "--max-cron-threads=1") {
-		t.Errorf("expected single-replica web Deployment to run cron itself, args = %v", container.Args)
-	}
-	if NeedsCronDeployment(instance) {
-		t.Error("NeedsCronDeployment() = true for replicas=1, want false")
+	if !containsArg(container.Args, "--max-cron-threads=0") {
+		t.Errorf("expected web container to leave cron to its sidecar, args = %v", container.Args)
 	}
 }
 
 func TestOdooDeployment_ZeroDowntimeRollout(t *testing.T) {
-	dep := OdooDeployment(testInstance(), RoleWeb)
+	dep := OdooDeployment(testInstance())
 
 	ru := dep.Spec.Strategy.RollingUpdate
 	if ru == nil || ru.MaxUnavailable.IntValue() != 0 || ru.MaxSurge.IntValue() != 1 {
@@ -164,33 +161,38 @@ func TestOdooDeployment_ZeroDowntimeRollout(t *testing.T) {
 	}
 }
 
-func TestOdooDeployment_WebRole_DisablesCronWhenMultiReplica(t *testing.T) {
+func TestOdooDeployment_AlwaysUsesOnePodAndRunsCron(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Replicas = ptr.To(int32(3))
-	instance.Spec.Storage.Filestore.AccessMode = saasv1alpha1.FilestoreAccessModeRWX
-	dep := OdooDeployment(instance, RoleWeb)
+	dep := OdooDeployment(instance)
+	if *dep.Spec.Replicas != 1 {
+		t.Fatal("builder created horizontal replicas")
+	}
+	if !containsArg(dep.Spec.Template.Spec.Containers[1].Args, "--max-cron-threads=1") {
+		t.Fatal("cron must run inside the only Odoo pod")
+	}
+}
 
-	container := dep.Spec.Template.Spec.Containers[0]
-	if !containsArg(container.Args, "--max-cron-threads=0") {
-		t.Errorf("expected multi-replica web Deployment to disable its own cron threads, args = %v", container.Args)
+func TestOdooDeployment_CronHasNoReadinessProbe(t *testing.T) {
+	dep := OdooDeployment(testInstance())
+	for _, c := range dep.Spec.Template.Spec.Containers {
+		if c.Name != "cron" {
+			continue
+		}
+		if c.ReadinessProbe != nil {
+			t.Error("cron readiness probe would drop web traffic when cron fails")
+		}
+		if c.LivenessProbe == nil || c.StartupProbe == nil {
+			t.Error("cron must keep its liveness and startup probes")
+		}
+		return
 	}
-	if !NeedsCronDeployment(instance) {
-		t.Error("NeedsCronDeployment() = false for replicas=3, want true")
-	}
-
-	cron := OdooDeployment(instance, RoleCron)
-	cronContainer := cron.Spec.Template.Spec.Containers[0]
-	if !containsArg(cronContainer.Args, "--workers=0") {
-		t.Errorf("expected dedicated cron Deployment to run zero HTTP workers, args = %v", cronContainer.Args)
-	}
-	if !containsArg(cronContainer.Args, "--max-cron-threads=1") {
-		t.Errorf("expected dedicated cron Deployment to run the configured cron threads, args = %v", cronContainer.Args)
-	}
+	t.Fatal("no cron container")
 }
 
 func TestOdooDeployment_PinsVerifiedNonRootUser(t *testing.T) {
 	instance := testInstance()
-	dep := OdooDeployment(instance, RoleWeb)
+	dep := OdooDeployment(instance)
 	for _, c := range append(dep.Spec.Template.Spec.InitContainers, dep.Spec.Template.Spec.Containers...) {
 		if c.SecurityContext == nil || c.SecurityContext.RunAsUser == nil {
 			t.Errorf("container %q has no explicit RunAsUser; the official Odoo image declares a non-numeric USER and will fail runAsNonRoot verification without one", c.Name)
@@ -372,11 +374,11 @@ func TestOdooConf_DatabaseFilterOverride(t *testing.T) {
 
 func TestOdooDeployment_DatabaseFilterChangeRollsPods(t *testing.T) {
 	instance := testInstance()
-	if ann := OdooDeployment(instance, RoleWeb).Spec.Template.Annotations; len(ann) != 1 || ann[AnnotationPlatformAddons] == "" {
+	if ann := OdooDeployment(instance).Spec.Template.Annotations; len(ann) != 1 || ann[AnnotationPlatformAddons] == "" {
 		t.Errorf("no filter: pod template annotations = %v, want only the platform-addons hash", ann)
 	}
 	instance.Spec.DatabaseFilter = "^acme_.+$"
-	ann := OdooDeployment(instance, RoleWeb).Spec.Template.Annotations
+	ann := OdooDeployment(instance).Spec.Template.Annotations
 	if ann[AnnotationDatabaseFilter] != "^acme_.+$" {
 		t.Errorf("pod template annotations = %v, want the database filter", ann)
 	}
@@ -444,7 +446,7 @@ func TestOdooConf_DatabaseManagerOn(t *testing.T) {
 func TestOdooDeployment_DatabaseManager_LoadsPlatformAddon(t *testing.T) {
 	instance := dbmInstance()
 	instance.Spec.AddonsPaths = []string{"/opt/tenant-addons/repo"}
-	dep := OdooDeployment(instance, RoleWeb)
+	dep := OdooDeployment(instance)
 	odoo := dep.Spec.Template.Spec.Containers[0]
 	args := strings.Join(odoo.Args, " ")
 	if !strings.Contains(args, "--load=base,web,saas_tenant_dbm") ||
@@ -465,11 +467,11 @@ func TestOdooDeployment_DatabaseManager_LoadsPlatformAddon(t *testing.T) {
 	// gates the raw /web/database/* endpoints, so even instances
 	// without spec.databaseManager must load it (there it hard-locks
 	// every endpoint because no DBM key is configured).
-	defaultArgs := strings.Join(OdooDeployment(testInstance(), RoleWeb).Spec.Template.Spec.Containers[0].Args, " ")
+	defaultArgs := strings.Join(OdooDeployment(testInstance()).Spec.Template.Spec.Containers[0].Args, " ")
 	if !strings.Contains(defaultArgs, "--load=base,web,saas_tenant_dbm") {
 		t.Errorf("default instance args = %v, want saas_tenant_dbm loaded", defaultArgs)
 	}
-	if OdooDeployment(testInstance(), RoleWeb).Spec.Template.Annotations[AnnotationPlatformAddons] == "" {
+	if OdooDeployment(testInstance()).Spec.Template.Annotations[AnnotationPlatformAddons] == "" {
 		t.Error("platform-addons hash annotation must be set on every instance")
 	}
 }
@@ -494,9 +496,9 @@ func TestPlatformAddonsConfigMap_ShipsTheAddonFiles(t *testing.T) {
 func TestOdooDeployment_Shell_SidecarWithoutSecrets(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Shell = true
-	pod := OdooDeployment(instance, RoleWeb).Spec.Template.Spec
-	if len(pod.Containers) != 2 || pod.Containers[1].Name != ShellContainerName {
-		t.Fatalf("containers = %v, want odoo + shell", pod.Containers)
+	pod := OdooDeployment(instance).Spec.Template.Spec
+	if len(pod.Containers) != 3 || pod.Containers[1].Name != ShellContainerName {
+		t.Fatalf("containers = %v, want odoo + shell + cron", pod.Containers)
 	}
 	shell := pod.Containers[1]
 	for _, m := range shell.VolumeMounts {
@@ -509,17 +511,13 @@ func TestOdooDeployment_Shell_SidecarWithoutSecrets(t *testing.T) {
 			t.Errorf("the shell must not get secret env: %v", e)
 		}
 	}
-	if len(OdooDeployment(testInstance(), RoleWeb).Spec.Template.Spec.Containers) != 1 {
+	if len(OdooDeployment(testInstance()).Spec.Template.Spec.Containers) != 2 {
 		t.Error("no shell sidecar unless spec.shell is set")
-	}
-	instance.Spec.Replicas = ptr.To(int32(2))
-	if len(OdooDeployment(instance, RoleCron).Spec.Template.Spec.Containers) != 1 {
-		t.Error("the cron Deployment never gets the shell")
 	}
 }
 
 func TestOdooDeployment_LivenessOutlastsOdooRequestLimit(t *testing.T) {
-	odoo := OdooDeployment(testInstance(), RoleWeb).Spec.Template.Spec.Containers[0]
+	odoo := OdooDeployment(testInstance()).Spec.Template.Spec.Containers[0]
 	live := odoo.LivenessProbe
 	if window := live.PeriodSeconds * live.FailureThreshold; window <= 1800 {
 		t.Errorf("liveness gives up after %ds, must exceed Odoo's 1800s limit_time_real", window)
@@ -573,7 +571,7 @@ func TestDatabaseStatefulSet_DefaultsWithoutSpec(t *testing.T) {
 func TestOdooDeployment_PerProcessMemoryLimits(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Resources.Limits = corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1000Mi")}
-	args := strings.Join(OdooDeployment(instance, RoleWeb).Spec.Template.Spec.Containers[0].Args, " ")
+	args := strings.Join(OdooDeployment(instance).Spec.Template.Spec.Containers[0].Args, " ")
 	limit := int64(1000 * 1024 * 1024)
 	for _, want := range []string{
 		"--limit-memory-soft=" + strconvI(limit*60/100),
@@ -587,11 +585,6 @@ func TestOdooDeployment_PerProcessMemoryLimits(t *testing.T) {
 		if !strings.Contains(args, want) {
 			t.Errorf("args %q missing %s", args, want)
 		}
-	}
-	instance.Spec.Replicas = ptr.To(int32(2))
-	cron := strings.Join(OdooDeployment(instance, RoleCron).Spec.Template.Spec.Containers[0].Args, " ")
-	if strings.Contains(cron, "--limit-memory") {
-		t.Error("threaded (0-worker) cron pods must not get prefork memory limits")
 	}
 }
 
@@ -634,7 +627,7 @@ func unstructuredNestedString(obj map[string]interface{}, fields ...string) (str
 
 func TestOdooDeployment_RWOFilestoreKeepsPodsOnOneNode(t *testing.T) {
 	instance := testInstance()
-	aff := OdooDeployment(instance, RoleWeb).Spec.Template.Spec.Affinity
+	aff := OdooDeployment(instance).Spec.Template.Spec.Affinity
 	if aff == nil || aff.PodAffinity == nil || len(aff.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution) != 1 {
 		t.Fatalf("web pods with an RWO filestore need required same-node affinity, got %+v", aff)
 	}
@@ -643,7 +636,7 @@ func TestOdooDeployment_RWOFilestoreKeepsPodsOnOneNode(t *testing.T) {
 		t.Errorf("affinity term = %+v", term)
 	}
 	instance.Spec.Storage.Filestore.AccessMode = saasv1alpha1.FilestoreAccessModeRWX
-	if OdooDeployment(instance, RoleWeb).Spec.Template.Spec.Affinity != nil {
+	if OdooDeployment(instance).Spec.Template.Spec.Affinity != nil {
 		t.Error("RWX filestore: pods may spread across nodes")
 	}
 }

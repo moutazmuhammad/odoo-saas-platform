@@ -104,6 +104,13 @@ class WhatsAppRegistrationOtp(models.Model):
         # endpoint uses exactly the challenge that was sent over WhatsApp.
         self.search([('identifier', '=', phone), ('channel', '=', 'phone')]).unlink()
         code = '%06d' % secrets.randbelow(1000000)
-        self.env['saas.iam.whatsapp']._send_code(phone, code)
+        sender = self.env['saas.iam.whatsapp']
+        if sender._is_configured() or not self.env['ir.config_parameter'].sudo().get_param(
+                'saas_website.otp_test_mode'):
+            sender._send_code(phone, code)
+        else:
+            # "Show Sign-up Code On Screen" without WhatsApp: the sign-up API
+            # returns this code to the page instead of delivering it.
+            sender._recipient(phone)
         return self.create({'identifier': phone, 'channel': 'phone', 'code': code,
                             'expires_at': fields.Datetime.now() + timedelta(minutes=10)})

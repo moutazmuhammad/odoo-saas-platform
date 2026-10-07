@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 from unittest import TestCase
 from odoo.tests.common import TransactionCase, HttpCase, tagged
-from odoo.exceptions import AccessError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from .test_iam import IamFixture
 
 
@@ -194,6 +194,21 @@ class TestIamMembers(IamFixture, TransactionCase):
             otp = self.env['saas.registration.otp'].sudo()._generate_and_send_phone('+201012345678')
         send.assert_called_once_with('+201012345678', otp.code)
         self.assertFalse(otp.verified)
+
+    def test_registration_test_mode_shows_code_without_whatsapp(self):
+        Otp = self.env['saas.registration.otp'].sudo()
+        ICP = self.env['ir.config_parameter'].sudo()
+        self.env.company.sudo().write({'saas_whatsapp_phone_id': False})
+        ICP.set_param('saas_website.otp_test_mode', True)
+        with patch.object(type(self.env['saas.iam.whatsapp']), '_send_code') as send:
+            otp = Otp._generate_and_send_phone('+201012345678')
+        send.assert_not_called()
+        self.assertEqual(len(otp.code), 6)
+        with self.assertRaises(ValidationError):
+            Otp._generate_and_send_phone('12')
+        ICP.set_param('saas_website.otp_test_mode', False)
+        with self.assertRaises(UserError):
+            Otp._generate_and_send_phone('+201012345678')
 
     def test_whatsapp_settings_secrets_are_not_readable_by_teammates(self):
         self._configure_whatsapp()

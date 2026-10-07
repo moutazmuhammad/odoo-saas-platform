@@ -246,11 +246,23 @@ class SaasApi(http.Controller):
             return _("Password must be at least 8 characters.")
         return _registration_identity_error(request.env, email, phone, p.get('country_id'))
 
+    @staticmethod
+    def _registration_phone(phone, country_id):
+        """The sign-up phone in international form, read with the selected
+        country (``010…`` + Egypt → ``+2010…``). The same value is the OTP
+        identifier for start, resend and verify. Raises ValidationError."""
+        if 'saas.iam.member' not in request.env:
+            return phone
+        country = request.env['res.country']
+        if country_id and str(country_id).isdigit():
+            country = country.sudo().browse(int(country_id)).exists()
+        return request.env['saas.iam.member'].sudo()._phone(phone, country or None)
+
     def _otp_sent_payload(self, otp):
         """Sign-up OTP response. With Settings > SaaS Manager > "Show
         Sign-up Code On Screen" on (testing without an SMS provider), the
         code is included so the SPA can display it."""
-        payload = {'otp_sent': True}
+        payload = {'otp_sent': True, 'phone': otp.identifier}
         if request.env['ir.config_parameter'].sudo().get_param(OTP_TEST_MODE_PARAM):
             payload['test_otp'] = otp.code
         return payload
@@ -259,18 +271,24 @@ class SaasApi(http.Controller):
     def register_start(self, **p):
         if not request.env.user._is_public():
             return err(_("You're already signed in."), 'already_authenticated')
-        # Throttle OTP sending: by IP and by target phone (SMS-bomb / probing).
-        phone = (p.get('phone') or '').strip()
-        limited = (self._rate_limit('register_start', 10, 600)
-                   or self._rate_limit('otp_send', 4, 600, key=phone))
-        if limited:
-            return limited
         error = self._validate_registration(p)
         if error:
             return err(error, 'invalid')
         try:
+            phone = self._registration_phone((p.get('phone') or '').strip(), p.get('country_id'))
+        except ValidationError as e:
+            return err(e.args[0], 'invalid')
+        # Throttle OTP sending: by IP and by target phone (SMS-bomb / probing).
+        limited = (self._rate_limit('register_start', 10, 600)
+                   or self._rate_limit('otp_send', 4, 600, key=phone))
+        if limited:
+            return limited
+        try:
             otp = request.env['saas.registration.otp'].sudo(
             )._generate_and_send_phone(phone)
+        except (UserError, ValidationError) as e:
+            _logger.warning("Registration OTP not sent: %s", e.args[0])
+            return err(e.args[0], 'otp_send_failed')
         except Exception:
             _logger.exception("Failed to send registration OTP")
             return err(
@@ -282,10 +300,14 @@ class SaasApi(http.Controller):
         return ok(self._otp_sent_payload(otp))
 
     @http.route('/saas/api/v1/auth/register/resend', type='json', auth='public')
-    def register_resend(self, phone=None, **kw):
+    def register_resend(self, phone=None, country_id=None, **kw):
         phone = (phone or '').strip()
         if not phone:
             return err(_("Phone number is required."), 'invalid')
+        try:
+            phone = self._registration_phone(phone, country_id)
+        except ValidationError as e:
+            return err(e.args[0], 'invalid')
         limited = (self._rate_limit('register_resend', 10, 600)
                    or self._rate_limit('otp_send', 4, 600, key=phone))
         if limited:
@@ -293,16 +315,21 @@ class SaasApi(http.Controller):
         try:
             otp = request.env['saas.registration.otp'].sudo(
             )._generate_and_send_phone(phone)
+        except (UserError, ValidationError) as e:
+            return err(e.args[0], 'otp_send_failed')
         except Exception:
             return err(_("Couldn't resend the code. Please try again."), 'otp_send_failed')
         return ok(self._otp_sent_payload(otp))
 
     @http.route('/saas/api/v1/auth/register/verify', type='json', auth='public')
     def register_verify(self, **p):
-        phone = (p.get('phone') or '').strip()
         code = (p.get('otp') or '').strip()
         if not code:
             return err(_("Please enter the verification code."), 'invalid')
+        try:
+            phone = self._registration_phone((p.get('phone') or '').strip(), p.get('country_id'))
+        except ValidationError as e:
+            return err(e.args[0], 'invalid')
         # A 6-digit code is 1M combinations — without this an attacker could
         # walk the whole space inside the 10-minute validity window.
         limited = self._rate_limit('otp_verify', 6, 600, key=phone)

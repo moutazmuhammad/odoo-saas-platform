@@ -636,7 +636,8 @@ class TestRegistrationAccountIdentity(IamFixture, HttpCase):
         with patch('odoo.addons.saas_website.controllers.registration.request', request):
             self.assertFalse(SaasRegistration()._validate_registration_fields(details))
         OTP = type(self.env['saas.registration.otp'])
-        with patch.object(OTP, '_generate_and_send_phone', return_value=SimpleNamespace(code='123456')):
+        with patch.object(OTP, '_generate_and_send_phone',
+                          return_value=SimpleNamespace(code='123456', identifier=details['phone'])):
             started = self._rpc('/saas/api/v1/auth/register/start', **details)
         self.assertTrue(started['ok'], started)
         # No account is created before a verified phone code.
@@ -667,3 +668,37 @@ class TestRegistrationAccountIdentity(IamFixture, HttpCase):
         from odoo.addons.saas_website.controllers.registration import _registration_identity_error
         self.other.partner_id.email = 'account-contact@example.com'
         self.assertTrue(_registration_identity_error(self.env, 'ACCOUNT-CONTACT@example.com', '+201099988877', self.env.ref('base.eg').id))
+
+    def test_signup_reads_local_phone_with_selected_country(self):
+        self.env['ir.config_parameter'].sudo().set_param('saas_website.otp_test_mode', True)
+        self.env.company.sudo().write({'saas_whatsapp_phone_id': False})
+        form = {'name': 'Local Phone', 'email': 'localphone@example.com', 'phone': '01055566677',
+                'country_id': self.env.ref('base.eg').id, 'city': 'Cairo', 'password': 'long-enough-pass'}
+        started = self._rpc('/saas/api/v1/auth/register/start', **form)
+        self.assertTrue(started['ok'], started)
+        sent = started['data']
+        self.assertEqual(sent['phone'], '+201055566677')
+        # Verify accepts the same local number: it is read the same way.
+        me = self._rpc('/saas/api/v1/auth/register/verify', otp=sent['test_otp'], **form)
+        self.assertTrue(me['ok'], me)
+        user = self.env['res.users'].sudo().search([('login', '=', 'localphone@example.com')])
+        self.assertEqual(user.partner_id.phone, '+201055566677')
+
+    def test_signup_shows_the_real_phone_error(self):
+        form = {'name': 'Bad Phone', 'email': 'badphone@example.com', 'phone': '1234567',
+                'country_id': self.env.ref('base.eg').id, 'city': 'Cairo', 'password': 'long-enough-pass'}
+        result = self._rpc('/saas/api/v1/auth/register/start', **form)
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['error'], 'Enter a valid phone number for the selected country.')
+
+    def test_signup_never_shows_code_once_whatsapp_is_configured(self):
+        self.env['ir.config_parameter'].sudo().set_param('saas_website.otp_test_mode', True)
+        form = {'name': 'Real Phone', 'email': 'realphone@example.com', 'phone': '+201055566688',
+                'country_id': self.env.ref('base.eg').id, 'city': 'Cairo', 'password': 'long-enough-pass'}
+        Sender = type(self.env['saas.iam.whatsapp'])
+        with patch.object(Sender, '_is_configured', return_value=True), \
+                patch.object(Sender, '_send_code') as send:
+            result = self._rpc('/saas/api/v1/auth/register/start', **form)
+        self.assertTrue(result['ok'], result)
+        send.assert_called_once()
+        self.assertNotIn('test_otp', result['data'])

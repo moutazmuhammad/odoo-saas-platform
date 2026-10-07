@@ -26,8 +26,12 @@ class IamApi(SaasApi):
         return data
 
     def _otp_sent_payload(self, otp):
-        # WhatsApp verification must prove possession, including on test sites.
-        return {'otp_sent': True}
+        # WhatsApp verification must prove possession. Only a site without
+        # WhatsApp, with "Show Sign-up Code On Screen" on, shows the code.
+        payload = super()._otp_sent_payload(otp)
+        if request.env['saas.iam.whatsapp'].sudo()._is_configured():
+            payload.pop('test_otp', None)
+        return payload
 
     def _phone_options(self):
         user = request.env.user.sudo()

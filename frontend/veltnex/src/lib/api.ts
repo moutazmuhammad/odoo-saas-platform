@@ -580,6 +580,8 @@ export interface SqlResult {
 export interface OtpSent {
   otp_sent: boolean;
   test_otp?: string;
+  /** The phone in international form, as the code was sent to it. */
+  phone?: string;
 }
 
 export interface IamData {
@@ -616,8 +618,8 @@ export const api = {
   logout: () => rpc("/saas/api/v1/auth/logout"),
   registerStart: (form: Record<string, unknown>) =>
     rpc<OtpSent>("/saas/api/v1/auth/register/start", form),
-  registerResend: (phone: string) =>
-    rpc<OtpSent>("/saas/api/v1/auth/register/resend", { phone }),
+  registerResend: (phone: string, country_id?: string) =>
+    rpc<OtpSent>("/saas/api/v1/auth/register/resend", { phone, country_id }),
   registerVerify: (form: Record<string, unknown>) =>
     rpc<ApiUser>("/saas/api/v1/auth/register/verify", form),
   // Password reset (in-SPA, email OTP). `start` is account-enumeration safe.

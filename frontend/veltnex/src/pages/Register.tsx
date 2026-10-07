@@ -129,6 +129,7 @@ export default function Register() {
     setSubmitting(true);
     try {
       const res = await registerStart(form);
+      if (res.phone) setForm((f) => ({ ...f, phone: res.phone! }));
       setTestOtp(res.test_otp);
       toast.info(i18nText("Verification sent"), i18nText("We texted a 6-digit code to your phone."));
       setStep(2);
@@ -217,7 +218,7 @@ export default function Register() {
                 goAfterRegister();
               }}
               onResend={async () => {
-                const res = await registerResend(form.phone);
+                const res = await registerResend(form.phone, form.country_id);
                 setTestOtp(res.test_otp);
                 toast.info(i18nText("Code resent"), i18nText("A new code is on its way."));
               }}

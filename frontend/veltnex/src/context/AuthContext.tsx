@@ -25,7 +25,7 @@ interface AuthContextValue {
   // phone-OTP registration (mirrors the Odoo saas.registration.otp flow).
   // The code is delivered out-of-band (SMS) and never returned to the client.
   registerStart: (form: RegisterForm) => Promise<OtpSent>;
-  registerResend: (phone: string) => Promise<OtpSent>;
+  registerResend: (phone: string, countryId?: string) => Promise<OtpSent>;
   registerVerify: (form: RegisterForm & { otp: string }) => Promise<ApiUser>;
   // Password reset (in-SPA, email OTP). resetVerify signs the user in.
   resetStart: (email: string) => Promise<{ sent: boolean }>;
@@ -96,8 +96,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return api.registerStart(form as unknown as Record<string, unknown>);
   }, []);
 
-  const registerResend = React.useCallback((phone: string) => {
-    return api.registerResend(phone);
+  const registerResend = React.useCallback((phone: string, countryId?: string) => {
+    return api.registerResend(phone, countryId);
   }, []);
 
   const registerVerify = React.useCallback(

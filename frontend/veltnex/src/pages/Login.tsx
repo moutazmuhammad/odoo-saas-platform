@@ -95,7 +95,7 @@ export default function Login() {
                 <Input
                   id="email"
                   type="text"
-                  dir="ltr"
+                  data-technical
                   className="ps-9"
                   placeholder={i18nText("you@company.com")}
                   value={email}

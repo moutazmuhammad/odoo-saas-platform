@@ -252,6 +252,7 @@ function RestoreSnapshotDialog({
         <Label htmlFor="restore-confirm">{i18nText("Type ")}<code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{instanceName}</code>{i18nText(" to confirm")}</Label>
         <Input
           id="restore-confirm"
+          data-technical
           autoFocus
           autoComplete="off"
           placeholder={instanceName}

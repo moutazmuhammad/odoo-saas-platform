@@ -51,6 +51,20 @@ describe("English and Arabic", () => {
       .toContain("<script>alert(1)</script>");
   });
 
+  it("translates Python-formatted API errors with precision and literal percent signs", () => {
+    language("ar");
+    const message = "Your current storage usage is too high for the selected plan.\n\nCurrent usage: 8.40 GB\n"
+      + "Target plan limit: 10.00 GB\nMinimum required headroom: 25% free (threshold: 7.50 GB)\n\n"
+      + "Please reduce your data before downgrading, or choose a plan with a higher limit.";
+    const translated = translateMessage(message);
+    expect(translated).toContain("الاستخدام الحالي: 8.40 GB");
+    expect(translated).toContain("25% ");
+    expect(translated).toContain("7.50 GB");
+    expect(translated).not.toContain("%%");
+    expect(translateMessage("Only 2 free Staging slot(s) can be released (the rest are in use). Delete a server first to free its slot."))
+      .toBe("يمكن تحرير 2 من أماكن Staging غير المستخدمة فقط (الباقي قيد الاستخدام). احذف خادمًا أولًا لتحرير مكانه.");
+  });
+
   it("offers the other language and preserves the page, query and fragment", () => {
     language("ar");
     render(<BrowserRouter><LanguageToggle /></BrowserRouter>);
@@ -74,7 +88,7 @@ describe("English and Arabic", () => {
   });
 
   it("retains every interpolation placeholder in the Arabic catalog", () => {
-    const pattern = /\{\d+\}|%\([^)]+\)[sdf]|%[sdfdr]/g;
+    const pattern = /%%|\{\d+\}|%\([^)]+\)[sdfr]|%[-+0#]*\d*(?:\.\d+)?[sdfr]/g;
     for (const [source, target] of Object.entries(arabic)) {
       expect([...(target.match(pattern) || [])].sort(), source)
         .toEqual([...(source.match(pattern) || [])].sort());
@@ -101,7 +115,8 @@ describe("English and Arabic", () => {
   it("leaves only intentional technical examples and brand text outside localization in JSX", () => {
     const allowed = new Set(["ESC", "VELT", "NEX", "⌘K", "my-company.veltnex.com", "v18.0",
       "deploy.log", "github.com/your-org/odoo-addons", "a1b2c3d", "done", "GET", "my-company",
-      "✓ 12s", "requirements.txt", "sale", "all", "null"]);
+      "✓ 12s", "requirements.txt", "sale", "all", "null", "CPU", "SELECT …",
+      "https://github.com/you/your-odoo-modules.git", "https://github.com/you/your-addons.git"]);
     const files = import.meta.glob("../**/*.tsx", { query: "?raw", import: "default", eager: true });
     const untranslated: string[] = [];
     for (const [file, content] of Object.entries(files)) {
@@ -115,6 +130,9 @@ describe("English and Arabic", () => {
         if (ast.type === "JSXText") value = (ast.value || "").replace(/\s+/g, " ").trim();
         if (ast.type === "JSXExpressionContainer" && ast.expression?.type === "StringLiteral"
           && parent?.type !== "JSXAttribute") value = ast.expression.value || "";
+        if (ast.type === "JSXAttribute" && ast.value?.type === "StringLiteral"
+          && /^(?:placeholder|title|aria-label|alt|label|description)$/.test(String((ast.name as AstNode)?.name)))
+          value = (ast.value as AstNode).value || "";
         if (/[a-zA-Z]/.test(value) && !allowed.has(value)) untranslated.push(`${file}: ${value}`);
         for (const [key, child] of Object.entries(ast)) {
           if (key === "loc") continue;

@@ -92,9 +92,9 @@ const INCLUDED = [
   i18nText("Daily automated backups"),
   i18nText("Zero-downtime upgrades"),
   i18nText("Free SSL & custom domains"),
-  "99.99% uptime SLA",
+  i18nText("99.99% uptime SLA"),
   i18nText("Streaming logs & metrics"),
-  "24/7 expert support",
+  i18nText("24/7 expert support"),
 ];
 
 const SPECS = [
@@ -667,6 +667,7 @@ export default function Hosting() {
                     </label>
                     <input
                       id="subdomain"
+                      data-technical
                       value={subdomain}
                       onChange={(e) => setSubdomain(toSubdomain(e.target.value))}
                       placeholder={"my-company-erp"}
@@ -713,6 +714,7 @@ export default function Hosting() {
                     <div className="mt-3 space-y-3 rounded-lg border border-border p-3">
                       <input
                         value={repoUrl}
+                        data-technical
                         onChange={(e) => setRepoUrl(e.target.value)}
                         placeholder="https://github.com/you/your-addons.git"
                         className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
@@ -720,12 +722,14 @@ export default function Hosting() {
                       <div className="grid gap-3 sm:grid-cols-2">
                         <input
                           value={repoBranch}
+                          data-technical
                           onChange={(e) => setRepoBranch(e.target.value)}
                           placeholder={"main"}
                           className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
                         />
                         <input
                           value={gitToken}
+                          data-technical
                           onChange={(e) => setGitToken(e.target.value)}
                           placeholder={i18nText("Access token (private repos)")}
                           className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"

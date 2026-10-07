@@ -197,13 +197,13 @@ function RepoSection({
       <div className="mt-5 space-y-4">
         <div>
           <Label htmlFor="repo-url">{i18nText("Repository URL")}</Label>
-          <Input id="repo-url" value={url} onChange={(e) => setUrl(e.target.value)}
+          <Input id="repo-url" data-technical value={url} onChange={(e) => setUrl(e.target.value)}
                  placeholder="https://github.com/you/your-odoo-modules.git" />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="repo-branch">{i18nText("Branch")}</Label>
-            <Input id="repo-branch" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder={"main"} />
+            <Input id="repo-branch" data-technical value={branch} onChange={(e) => setBranch(e.target.value)} placeholder={"main"} />
           </div>
           <div>
             <Label htmlFor="repo-token">{i18nText("Access token ")}{repo.has_token && <span className="text-muted">{i18nText("(set — blank keeps it)")}</span>}

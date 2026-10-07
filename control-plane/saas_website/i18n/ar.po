@@ -2865,3 +2865,81 @@ msgstr "أُرسل طلبك إلى الدعم."
 #: code:addons/saas_website/models/saas_instance_folder.py:0
 msgid "A folder cannot be its own parent."
 msgstr "لا يمكن أن يكون المجلد مجلداً رئيسياً لنفسه."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_review_form
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.service_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.service_custom_configure_form
+msgid "breadcrumb"
+msgstr "مسار التنقل"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.hosting_configure_form
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Order Summary"
+msgstr "ملخص الطلب"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_my_home_saas
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_upgrade
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_change_plan
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_instance_reactivate
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "My Instances"
+msgstr "Instances الخاصة بي"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Total Due Today"
+msgstr "إجمالي المستحق اليوم"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_checkout
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Payment Method"
+msgstr "طريقة الدفع"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Item"
+msgstr "البند"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Price"
+msgstr "سعر"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "Invoice:"
+msgstr "فاتورة:"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid ""
+".\n"
+"                                    You can pay any time from"
+msgstr ""
+".\n"
+"                                    يمكنك الدفع في أي وقت من"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "the invoice page"
+msgstr "صفحة الفاتورة"
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "too."
+msgstr "أيضًا."
+
+#. module: saas_website
+#: model_terms:ir.ui.view,arch_db:saas_website.portal_daily_backup_checkout
+msgid "<i class=\"fas fa-arrow-left me-2\"/>Cancel and go back"
+msgstr "<i class=\"fas fa-arrow-left me-2\"/>إلغاء والعودة"

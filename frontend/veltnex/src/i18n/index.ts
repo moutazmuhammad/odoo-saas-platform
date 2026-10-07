@@ -50,21 +50,27 @@ export function languageUrl(language: Language, destination = location.pathname 
   return `/saas/language?${new URLSearchParams({ lang: language, redirect: destination })}`;
 }
 
-const placeholderPattern = /\{\d+\}|%\([^)]+\)[sdf]|%[sdfdr]/g;
+// Python %-format placeholders ("%s", "%d", "%.2f", "%(name)s") and {0} tokens;
+// "%%" is a literal percent sign in both the source and the formatted message.
+const placeholderPattern = /%%|\{\d+\}|%\([^)]+\)[sdfr]|%[-+0#]*\d*(?:\.\d+)?[sdfr]/g;
 let messagePatterns: { regex: RegExp; tokens: string[]; target: string }[] = [];
 function compileMessagePatterns() {
-return Object.entries(translations).filter(([source]) => /\{\d+\}|%\([^)]+\)[sdf]|%[sdfdr]/.test(source)).map(([source, target]) => {
-  const tokens = [...source.matchAll(placeholderPattern)].map(match => match[0]);
   const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  let cursor = 0;
-  const parts: string[] = [];
-  for (const match of source.matchAll(placeholderPattern)) {
-    parts.push(escape(source.slice(cursor, match.index)), "([\\s\\S]+?)");
-    cursor = match.index! + match[0].length;
-  }
-  parts.push(escape(source.slice(cursor)));
-  return { regex: new RegExp(`^${parts.join("")}$`), tokens, target };
-});
+  return Object.entries(translations).flatMap(([source, target]) => {
+    const tokens: string[] = [];
+    const parts: string[] = [];
+    let cursor = 0;
+    for (const match of source.matchAll(placeholderPattern)) {
+      parts.push(escape(source.slice(cursor, match.index)));
+      cursor = match.index! + match[0].length;
+      if (match[0] === "%%") { parts.push("%"); continue; }
+      tokens.push(match[0]);
+      parts.push("([\\s\\S]+?)");
+    }
+    if (!tokens.length) return [];
+    parts.push(escape(source.slice(cursor)));
+    return [{ regex: new RegExp(`^${parts.join("")}$`), tokens, target }];
+  });
 }
 
 /** Translate formatted API errors without changing interpolated names or details. */
@@ -76,6 +82,7 @@ export function translateMessage(message: string): string {
     if (!match) continue;
     const used = new Set<number>();
     return target.replace(placeholderPattern, token => {
+      if (token === "%%") return "%";
       const index = tokens.findIndex((candidate, i) => candidate === token && !used.has(i));
       if (index === -1) return token;
       used.add(index);

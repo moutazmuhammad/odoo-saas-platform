@@ -248,11 +248,38 @@ input[type="range"].veltnex-range::-moz-range-thumb {
 /* Arabic uses logical spacing throughout the app; technical values keep LTR. */
 html[lang="ar"] { --font-sans: "Noto Sans Arabic", "Roboto", sans-serif; font-family: "Noto Sans Arabic", "Roboto", sans-serif; }
 html[dir="rtl"] body { text-align: start; }
-input:is([type="email"], [type="url"], [type="tel"], [type="password"]),
-pre, code, .xterm, [data-technical], textarea[spellcheck="false"] {
+/* Code, logs, terminals and SQL read left to right in both languages. */
+pre, code, .xterm, :not(input)[data-technical], textarea[spellcheck="false"] {
   direction: ltr;
   text-align: left;
   unicode-bidi: isolate;
+}
+
+@layer base {
+  /* Base layer, so utilities such as text-center still win. Arabic form
+     fields keep the page's RTL box (start/end icons and padding line up) and
+     take each line's direction from what is typed: Arabic runs right to left
+     and aligns right, English names or descriptions run left to right — the
+     dir="auto" behaviour, applied to every field at once. */
+  html[dir="rtl"] :is(input, select, textarea:not([spellcheck="false"])) {
+    unicode-bidi: plaintext;
+    text-align: start;
+  }
+  /* Technical values (email, URL, phone, password, codes, subdomains, branches,
+     identifiers) are never reordered: Latin text and digits stay LTR, while the
+     field stays aligned to the right edge of the Arabic form. */
+  html[dir="rtl"] input:is([type="email"], [type="url"], [type="tel"], [type="password"], [type="number"],
+    [inputmode="numeric"], [inputmode="decimal"], [inputmode="email"], [inputmode="url"], [inputmode="tel"],
+    [data-technical]):not([dir="ltr"] input) {
+    text-align: right;
+  }
+  /* Arabic placeholders read right to left, even in technical fields. */
+  html[dir="rtl"] :is(input, textarea:not([spellcheck="false"]))::placeholder {
+    direction: rtl;
+    unicode-bidi: plaintext;
+    text-align: right;
+  }
+  html[dir="rtl"] [dir="ltr"] input::placeholder { direction: ltr; text-align: left; }
 }
 html[dir="rtl"] svg.lucide-arrow-left,
 html[dir="rtl"] svg.lucide-arrow-right,

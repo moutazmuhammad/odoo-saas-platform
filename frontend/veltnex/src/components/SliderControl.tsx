@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { getLanguage } from "@/i18n";
 
 interface SliderControlProps {
   label: string;
@@ -44,7 +45,8 @@ export function SliderControl({
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         style={{
-          background: `linear-gradient(to right, #203c86 0%, #3656b8 ${pct}%, #27272a ${pct}%, #27272a 100%)`,
+          // Range inputs fill from the inline start, which is the right edge in Arabic.
+          background: `linear-gradient(to ${getLanguage() === "ar" ? "left" : "right"}, #203c86 0%, #3656b8 ${pct}%, #27272a ${pct}%, #27272a 100%)`,
         }}
         aria-label={label}
       />

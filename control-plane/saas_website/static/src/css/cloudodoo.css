@@ -4136,8 +4136,23 @@ footer.bg-light.o_footer a:hover {
 /* Match the portal's Arabic typography while keeping technical inputs readable. */
 html[lang^="ar"] body { font-family: 'Noto Sans Arabic', 'Inter', sans-serif; }
 html[dir="rtl"] body { text-align: start; }
-input:is([type="email"], [type="url"], [type="tel"], [type="password"]),
-pre, code, .co-logo-word { direction: ltr; unicode-bidi: isolate; }
+pre, code, .co-logo-word { /*rtl:ignore*/ direction: ltr; unicode-bidi: isolate; }
+
+/* Arabic fields take each line's direction from what is typed (the
+   dir="auto" behaviour): Arabic aligns right, English names align left.
+   Technical values (email, phone, password, codes, subdomains, repositories)
+   keep LTR character order but align to the right edge of the Arabic form;
+   Arabic placeholders read right to left. rtl:ignore keeps Odoo's RTL bundle
+   from flipping these already-directional rules. */
+html[dir="rtl"] :is(input, select, textarea) { unicode-bidi: plaintext; text-align: start; }
+html[dir="rtl"] input:is([type="email"], [type="url"], [type="tel"], [type="password"], [type="number"],
+    [inputmode="numeric"], [name="subdomain"], [name="repo_url"], [name="repo_branch"], [name="git_token"],
+    [name="phone"], [name="phone_otp"], [name="login"]) { /*rtl:ignore*/ text-align: right; }
+html[dir="rtl"] :is(input, textarea)::placeholder {
+    /*rtl:ignore*/ direction: rtl;
+    unicode-bidi: plaintext;
+    /*rtl:ignore*/ text-align: right;
+}
 
 /* Header/footer positions stay fixed even when Bootstrap loads RTL utilities. */
 #top[dir="ltr"] .navbar-brand { margin-left: 0; }

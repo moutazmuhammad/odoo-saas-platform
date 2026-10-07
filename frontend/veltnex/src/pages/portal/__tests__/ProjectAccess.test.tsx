@@ -118,8 +118,8 @@ describe("Project Access", () => {
     const user = userEvent.setup();
     renderWithProviders(<ProjectAccess />);
     await user.click(await screen.findByRole("button", { name: "Add teammate" }));
-    await user.type(screen.getByLabelText("name"), "New Teammate");
-    await user.type(screen.getByLabelText("email"), "new@example.com");
+    await user.type(screen.getByLabelText("Name"), "New Teammate");
+    await user.type(screen.getByLabelText("Email"), "new@example.com");
     expect(screen.getByLabelText("Phone country")).toHaveValue("65");
     await user.type(screen.getByLabelText("Phone (optional)"), "01012345678");
     expect(mocked.iamMember).not.toHaveBeenCalled();
@@ -138,8 +138,8 @@ describe("Project Access", () => {
     const user = userEvent.setup();
     renderWithProviders(<ProjectAccess />);
     await user.click(await screen.findByRole("button", { name: "Add teammate" }));
-    await user.type(screen.getByLabelText("name"), "New Teammate");
-    await user.type(screen.getByLabelText("email"), "new@example.com");
+    await user.type(screen.getByLabelText("Name"), "New Teammate");
+    await user.type(screen.getByLabelText("Email"), "new@example.com");
     await user.click(screen.getByRole("button", { name: "Create profile" }));
     await screen.findByRole("dialog", { name: "Teammate sign-in details" });
     expect(mocked.iamEmailCredentials).not.toHaveBeenCalled();

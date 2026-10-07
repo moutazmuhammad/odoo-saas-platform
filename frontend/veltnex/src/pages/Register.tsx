@@ -213,7 +213,7 @@ export default function Register() {
               onBack={() => setStep(1)}
               onVerify={async (otp) => {
                 const me = await registerVerify({ ...form, otp });
-                toast.success(i18nText("Account created"), `Welcome to VELTNEX, ${me.name.split(" ")[0]}.`);
+                toast.success(i18nText("Account created"), i18nText("Welcome to VELTNEX, {0}.", [me.name.split(" ")[0]]));
                 goAfterRegister();
               }}
               onResend={async () => {
@@ -356,7 +356,7 @@ function OtpStep({
         <AlertBanner className="mt-4" variant="danger" title={i18nText("Verification failed")} description={error} />
       )}
 
-      <div className="mt-5 flex justify-between gap-2">
+      <div dir="ltr" className="mt-5 flex justify-between gap-2">
         {digits.map((d, i) => (
           <input
             key={i}

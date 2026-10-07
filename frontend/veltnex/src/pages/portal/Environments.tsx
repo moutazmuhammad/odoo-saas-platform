@@ -1,5 +1,5 @@
 import { useRuntimeClock } from "@/hooks/useRuntimeClock";
-import { i18nText } from "@/i18n";
+import { getLanguage, i18nText } from "@/i18n";
 import * as React from "react";
 import { Link } from "react-router-dom";
 import { PermissionContext, hasPermission } from "@/lib/permissions";
@@ -998,7 +998,7 @@ function MainPanel({
         target={env}
         allEnvs={[project.production, ...(project.environments || [])].filter(e => hasPermission(e.permissions, "backup.download"))}
         onClose={() => setCopyOpen(false)}
-        onCopied={() => toast.success(i18nText("Database copy started"), `Databases will be copied to ${env.name} shortly. Check its logs for progress.`)}
+        onCopied={() => toast.success(i18nText("Database copy started"), i18nText("Databases will be copied to {0} shortly. Check its logs for progress.", [env.name]))}
       />
     </Card></PermissionContext.Provider>
   );
@@ -1313,7 +1313,7 @@ function CopyDbsDialog({
                     onChange={(e) => toggle(m.src, e.target.checked)}
                   />
                   <span className="font-mono">{m.src}</span>
-                  <span className="text-muted">→</span>
+                  <span className="text-muted">{getLanguage() === "ar" ? "←" : "→"}</span>
                   <span className="font-mono">{m.dst}</span>
                   {m.collision && (
                     <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[10px] font-medium text-danger">{i18nText("exists")}</span>
@@ -1456,6 +1456,7 @@ function CreateEnvDialog({
           <Label htmlFor="env-name">{i18nText("Server name")}</Label>
           <Input
             id="env-name"
+            data-technical
             autoFocus
             autoComplete="off"
             placeholder={isStaging ? "staging" : "feature-x"}
@@ -1562,6 +1563,7 @@ function DeleteEnvDialog({
           <code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{env?.name}</code>{" "}{i18nText("to confirm")}</Label>
         <Input
           id="confirm-env"
+          data-technical
           autoFocus
           autoComplete="off"
           placeholder={env?.name ?? ""}

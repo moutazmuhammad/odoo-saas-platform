@@ -36,8 +36,8 @@ const GlobeViz = React.lazy(() =>
 
 const STATS = [
   { value: "99.99%", label: i18nText("Uptime SLA") },
-  { value: "Daily", label: i18nText("Automatic Backups") },
-  { value: "Free", label: i18nText("SSL Certificates") },
+  { value: i18nText("Daily"), label: i18nText("Automatic Backups") },
+  { value: i18nText("Free"), label: i18nText("SSL Certificates") },
   { value: "24/7", label: i18nText("Expert support") },
 ];
 
@@ -338,8 +338,8 @@ export default function Home() {
                 </div>
                 <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
                   {[
-                    { icon: ShieldCheck, label: "SSL", value: "Valid · 89d" },
-                    { icon: RefreshCw, label: i18nText("Last backup"), value: "2h ago" },
+                    { icon: ShieldCheck, label: "SSL", value: i18nText("Valid · {0}", ["89d"]) },
+                    { icon: RefreshCw, label: i18nText("Last backup"), value: i18nText("2h ago") },
                     { icon: GitBranch, label: i18nText("Branch"), value: "main · a1b2c3d" },
                   ].map((r) => (
                     <div

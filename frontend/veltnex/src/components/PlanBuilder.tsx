@@ -86,7 +86,7 @@ export function PlanBuilder({
                   config.cycle === c ? "text-foreground" : "text-muted hover:text-foreground"
                 )}
               >
-                {c}
+                {i18nText(c === "yearly" ? "Yearly" : "Monthly")}
                 {c === "yearly" && (
                   <span className="ms-1.5 rounded-sm bg-success/20 px-1.5 py-0.5 text-[10px] font-semibold text-success">
                     -{savingsPercent}%
@@ -131,7 +131,7 @@ export function PlanBuilder({
           <BreakdownRow label={i18nText("Storage")} value={formatBytes(config.storageGb)} />
           <BreakdownRow
             label={i18nText("Billing")}
-            value={<span className="capitalize">{config.cycle}</span>}
+            value={i18nText(config.cycle === "yearly" ? "Yearly" : "Monthly")}
           />
         </div>
 

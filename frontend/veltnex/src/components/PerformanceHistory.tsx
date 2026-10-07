@@ -159,7 +159,7 @@ export function PerformanceHistory({
         <LiveStat
           label={i18nText("Disk")}
           pct={pkg ? pkg.storage_pct : storagePct}
-          sub={pkg ? `${formatMb(pkg.used_mb)} of ${pkg.storage_gb} GB` : `${storageMb.toFixed(0)} MB`}
+          sub={pkg ? i18nText("{0} of {1} GB", [formatMb(pkg.used_mb), pkg.storage_gb]) : `${storageMb.toFixed(0)} MB`}
           color="#12b886"
         />
       </div>
@@ -444,7 +444,7 @@ function nicePctCeil(v: number): number {
 function formatAxis(ms: number, span: number): string {
   const d = new Date(ms);
   if (span <= 24 * 3600 * 1000) {
-    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString(getLocale(), { hour: "2-digit", minute: "2-digit" });
   }
   return d.toLocaleDateString(getLocale(), { month: "short", day: "numeric" });
 }

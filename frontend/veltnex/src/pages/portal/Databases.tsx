@@ -438,7 +438,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
         onClose={() => setResetTarget(null)}
         onReset={async (name, password, targetLogin) => {
           const { login } = await api.dbResetPassword(instanceId, name, password, targetLogin);
-          toast.success(i18nText("Password reset"), `New admin password set for ${name}.`);
+          toast.success(i18nText("Password reset"), i18nText("New admin password set for {0}.", [name]));
           return login;
         }}
       />
@@ -652,6 +652,7 @@ function DuplicateDatabaseDialog({
         <Label htmlFor="dup-name">{i18nText("New database name")}</Label>
         <Input
           id="dup-name"
+          data-technical
           placeholder={"staging"}
           value={name}
           autoFocus
@@ -786,6 +787,7 @@ function UpgradeModulesDialog({
         <Label htmlFor="upg-mods">{i18nText("Modules to upgrade")}</Label>
         <Input
           id="upg-mods"
+          data-technical
           placeholder={i18nText("e.g. sale, stock, account")}
           value={modules}
           autoFocus
@@ -937,6 +939,7 @@ function RestoreDatabaseDialog({
         <Label htmlFor="restore-target">{overwrite ? i18nText("Database to replace") : i18nText("New database name")}</Label>
         <Input
           id="restore-target"
+          data-technical
           placeholder={i18nText("e.g. production")}
           value={target}
           disabled={busy}
@@ -946,7 +949,7 @@ function RestoreDatabaseDialog({
         {!overwrite && atLimit && <p className="text-xs text-danger">{i18nText("Production allows one database. Select replacement to restore into your existing database.")}</p>}
         {overwrite && <p className="text-xs text-danger">{i18nText("This permanently replaces the selected database and all its data. Download a backup before continuing.")}</p>}
         {overwrite && <><Label htmlFor="restore-confirm">{i18nText("Type ")}{fullTarget || i18nText("the database name")}{i18nText(" to confirm replacement")}</Label>
-          <Input id="restore-confirm" value={confirmation} disabled={busy} onChange={(e) => setConfirmation(e.target.value)} autoComplete="off" /></>}
+          <Input id="restore-confirm" data-technical value={confirmation} disabled={busy} onChange={(e) => setConfirmation(e.target.value)} autoComplete="off" /></>}
         {!overwrite && !atLimit && !nameTaken && <p className="text-xs text-muted">{i18nText("Your backup is restored into a new database with this name.")}</p>}
       </div>
 
@@ -1033,6 +1036,7 @@ function DeleteDatabaseDialog({
         <Label htmlFor="confirm-name">{i18nText("Type ")}<code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{dbName}</code>{i18nText(" to confirm")}</Label>
         <Input
           id="confirm-name"
+          data-technical
           autoFocus
           autoComplete="off"
           placeholder={dbName ?? ""}
@@ -1116,11 +1120,11 @@ function CreateDatabaseDialog({
       <div className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="db-name">{i18nText("Database name")}</Label>
-          <Input id="db-name" placeholder={"production"} value={name} autoFocus onChange={(e) => { setName(e.target.value.toLowerCase()); setError(null); }} />
+          <Input id="db-name" data-technical placeholder={"production"} value={name} autoFocus onChange={(e) => { setName(e.target.value.toLowerCase()); setError(null); }} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="db-login">{i18nText("Admin login")}</Label>
-          <Input id="db-login" placeholder={"admin"} value={login} onChange={(e) => setLogin(e.target.value)} />
+          <Input id="db-login" data-technical placeholder={"admin"} value={login} onChange={(e) => setLogin(e.target.value)} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="db-pass">{i18nText("Admin password")}</Label>
@@ -1194,7 +1198,7 @@ function ResetPasswordDialog({
           <AlertBanner variant="warning" title={i18nText("This rotates the admin password")} description={i18nText("The admin user will need the new password to sign in.")} />
           <div className="mt-4 space-y-2">
             <Label htmlFor="reset-login">{i18nText("Administrator login ")}<span className="font-normal text-muted">{i18nText("(optional)")}</span></Label>
-            <Input id="reset-login" placeholder={i18nText("Leave blank to reset the main administrator")} value={targetLogin} onChange={(e) => setTargetLogin(e.target.value)} />
+            <Input id="reset-login" data-technical placeholder={i18nText("Leave blank to reset the main administrator")} value={targetLogin} onChange={(e) => setTargetLogin(e.target.value)} />
             <p className="text-xs text-muted">{i18nText("If you replaced the default admin with your own user, enter that login. Otherwise leave this blank.")}</p>
           </div>
           <div className="mt-4 space-y-2">

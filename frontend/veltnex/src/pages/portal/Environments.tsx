@@ -961,7 +961,7 @@ function MainPanel({
           nothing is clipped under the tabs. */}
       <div className={cn("flex min-h-0 flex-1 flex-col", bounded && "overflow-hidden")}>
       <div className={cn("min-h-0 flex-1 p-5", bounded && "overflow-y-auto")}>
-        {!can(({ overview: "project.view", metrics: "project.view", databases: "db.view", code: 'project.configure', shell: "terminal.open", sql: "sql.execute", logs: "logs.view", snapshots: "backup.view" } as Record<string, string>)[tab]) ? <AlertBanner variant="info" title={i18nText("Access restricted")} description={i18nText("Ask your project owner for the role needed to use this tool.")} /> : pendingPay ? (
+        {!can(({ overview: "project.view", metrics: "project.view", databases: "db.view", code: 'project.configure', shell: "terminal.open", sql: "sql.execute", logs: "logs.view", backups: "backup.view", snapshots: "backup.view" } as Record<string, string>)[tab]) ? <AlertBanner variant="info" title={i18nText("Access restricted")} description={i18nText("Ask your project owner for the role needed to use this tool.")} /> : pendingPay ? (
           <AlertBanner
             variant="warning"
             title={i18nText("Payment pending")}

@@ -78,14 +78,28 @@ class TestDeployOnKubernetes(TransactionCase):
         driver.create.return_value = MagicMock()
         self.partner.email = 'owner@example.com'
         self.instance.admin_password = 'Secret123!'
+        state_at_create = []
+
+        def fake_create(inst, name, **kw):
+            state_at_create.append(inst.state)
+            fake_create.calls.append((name, kw))
+        fake_create.calls = []
         with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
                 patch.object(type(self.instance), '_data_service') as mock_ds, \
                 patch.object(type(self.instance), 'hosting_db_list', return_value=[]), \
-                patch.object(type(self.instance), 'hosting_db_create') as create:
+                patch.object(type(self.instance), 'hosting_db_create', autospec=True, side_effect=fake_create):
             mock_ds.return_value._wait_until_healthy.return_value = None
             self.instance._do_deploy_locked_kubernetes()
-        create.assert_called_once()
-        self.assertEqual(create.call_args.args[0], 'freshk8s_main')
+        self.assertEqual(len(fake_create.calls), 1)
+        # The database exists BEFORE the server is declared Active, so a
+        # customer never opens an empty database selector.
+        self.assertEqual(state_at_create, ['provisioning'])
+        name, kw = fake_create.calls[0]
+        self.assertEqual(name, 'freshk8s_main')
+        self.assertEqual(kw['login'], 'owner@example.com')
+        self.assertEqual(kw['password'], 'Secret123!')
+        self.assertEqual(self.instance.state, 'running')
+        return
         self.assertEqual(create.call_args.kwargs['login'], 'owner@example.com')
         self.assertEqual(create.call_args.kwargs['password'], 'Secret123!')
         self.assertEqual(self.instance.state, 'running')

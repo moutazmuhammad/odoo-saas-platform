@@ -1790,9 +1790,11 @@ class SaasInstance(models.Model):
             raise UserError(_(
                 "Database management is only available for hosting instances."
             ))
+        # Also allowed while the first deploy prepares the production
+        # database (pods are healthy, the server just isn't "Active" yet).
         allowed = self.state == 'running' or (
             self.state == 'provisioning'
-            and self.pending_operation == 'restore'
+            and self.pending_operation in ('restore', 'deploy')
         )
         if not allowed:
             raise UserError(_(
@@ -4779,6 +4781,11 @@ END $$;
             "Kubernetes-native Ingress + cert-manager handle TLS "
             "directly for this region — no external Nginx step needed."
         )
+        # The production database is prepared BEFORE the server is declared
+        # Active: a customer who opens it must never land on an empty
+        # database selector while the database is still being created.
+        if not self.seed_backup_id:
+            self._hosting_prepare_production_database()
 
         self.state = 'running'
         self.deploy_retry_count = 0
@@ -4793,8 +4800,6 @@ END $$;
         # can replace it or restore their own backup from Databases.
         if self.seed_backup_id:
             self._hosting_seed_from_snapshot()
-        else:
-            self._hosting_prepare_production_database()
         # A new Staging/Development server starts as a copy of Production.
         self._hosting_seed_environment_database()
         self._safe_refresh_usage()

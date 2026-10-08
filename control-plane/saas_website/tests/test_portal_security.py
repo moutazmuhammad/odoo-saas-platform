@@ -1161,3 +1161,24 @@ class TestAdminApiManagement(_PortalTestBase):
                                      % (self.instance.id, self.child.id))
         self.assertTrue(result['ok'])
         remove.assert_called_once_with(delete_branch=False)
+
+
+@tagged('post_install', '-at_install')
+class TestDeletedUserSession(HttpCase):
+    """A session whose user no longer exists must behave like a logged-out
+    visitor, never a 500 on every page."""
+
+    def test_deleted_user_session_is_logged_out(self):
+        partner = self.env['res.partner'].sudo().create({'name': 'Gone', 'email': 'gone@example.com'})
+        user = self.env['res.users'].sudo().create({
+            'name': 'Gone', 'login': 'gone@example.com', 'password': 'gonepass123',
+            'partner_id': partner.id,
+            'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])]})
+        self.authenticate('gone@example.com', 'gonepass123')
+        self.assertEqual(self.url_open('/').status_code, 200)
+        user.unlink()
+        self.env.cr.flush()
+        self.assertEqual(self.url_open('/').status_code, 200)
+        # The portal now asks the visitor to sign in instead of crashing.
+        self.assertIn(self.url_open('/my/instances', allow_redirects=False).status_code, (200, 302, 303))
+

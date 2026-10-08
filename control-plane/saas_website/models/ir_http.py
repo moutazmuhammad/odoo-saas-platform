@@ -4,12 +4,24 @@ from functools import lru_cache
 from urllib.parse import quote
 
 from markupsafe import Markup
-from odoo import models, tools
+from odoo import api, models, tools
 from odoo.http import request
 
 
 class IrHttp(models.AbstractModel):
     _inherit = 'ir.http'
+
+    @classmethod
+    def _authenticate_explicit(cls, auth):
+        # A browser may still carry the session of a user that was deleted
+        # (e.g. a removed test account). Odoo's own session check lets it
+        # through and the page then crashes on ``env.user``; treat it as a
+        # logged-out visitor instead.
+        uid = request.session.uid
+        if uid is not None and not request.env['res.users'].sudo().browse(uid).exists():
+            request.session.logout(keep_db=True)
+            request.env = api.Environment(request.env.cr, None, request.session.context)
+        return super()._authenticate_explicit(auth)
 
     @classmethod
     def _pre_dispatch(cls, rule, arguments):

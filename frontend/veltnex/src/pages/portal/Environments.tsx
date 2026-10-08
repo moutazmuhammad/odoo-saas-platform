@@ -54,6 +54,7 @@ import {
   api,
   ApiError,
   type EnvChild,
+  type EnvPlanPreview,
   type ProjectEnvironments,
   type StatusData,
 } from "@/lib/api";
@@ -805,6 +806,7 @@ function MainPanel({
   const [status, setStatus] = React.useState<StatusData | null>(null);
   const [pending, setPending] = React.useState<string | null>(null);
   const [copyOpen, setCopyOpen] = React.useState(false);
+  const [planOpen, setPlanOpen] = React.useState(false);
 
   const refreshStatus = React.useCallback(async () => {
     try {
@@ -933,6 +935,10 @@ function MainPanel({
               onClick={() => run("stop", i18nText("Stopping"))}
             >{i18nText("Stop")}</ActionButton>
           )}
+          {(isRunning || isStopped) && env.environment !== "production" && can("billing.manage") && (
+            <Button size="sm" variant="secondary" onClick={() => setPlanOpen(true)}>
+              <Server className="size-4" />{i18nText("Change plan")}</Button>
+          )}
           {onDelete && can("environment.delete") && (
             <Button size="sm" variant="danger" onClick={onDelete}>
               <Trash2 className="size-4" />{i18nText("Delete")}</Button>
@@ -993,6 +999,15 @@ function MainPanel({
         ) : null}
       </div>
       </div>
+      {env.environment !== "production" && (
+        <EnvPlanDialog
+          open={planOpen}
+          projectId={project.project_id}
+          env={env}
+          onClose={() => setPlanOpen(false)}
+          onApplied={() => { setPlanOpen(false); toast.success(i18nText("Plan changed"), i18nText("The server is being resized.")); onChanged(); }}
+        />
+      )}
       <CopyDbsDialog
         open={copyOpen}
         target={env}
@@ -1132,6 +1147,158 @@ function MergeEnvDialog({
           <GitMerge className="size-4" />
           {toProd ? i18nText("Deploy to live Production") : i18nText("Merge & redeploy")}
         </ActionButton>
+      </div>
+    </Dialog>
+  );
+}
+
+function envMoney(amount: number, currency: string) {
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+}
+
+/** Odoo.sh-plus: a Staging/Development server can be resized like
+ *  Production. Bigger: the prorated difference for the rest of the
+ *  project's billing cycle is paid now; smaller: applied immediately. */
+function EnvPlanDialog({
+  open,
+  projectId,
+  env,
+  onClose,
+  onApplied,
+}: {
+  open: boolean;
+  projectId: number;
+  env: EnvChild;
+  onClose: () => void;
+  onApplied: () => void;
+}) {
+  const [preview, setPreview] = React.useState<EnvPlanPreview | null>(null);
+  const [workers, setWorkers] = React.useState(env.workers || 0);
+  const [storage, setStorage] = React.useState(env.storage_gb || 0);
+  const [error, setError] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
+
+  // Initial sizes + limits, then a live quote for every change.
+  React.useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setLoading(true);
+    api.environmentPlanPreview(projectId, env.id)
+      .then((p) => { setPreview(p); setWorkers(p.current.workers); setStorage(p.current.storage_gb); })
+      .catch((e) => setError(e instanceof ApiError ? e.message : i18nText("Couldn't load the plan.")))
+      .finally(() => setLoading(false));
+  }, [open, projectId, env.id]);
+
+  React.useEffect(() => {
+    if (!open || !preview) return;
+    if (workers === preview.new.workers && storage === preview.new.storage_gb) return;
+    const l = preview.limits;
+    if (workers < l.workers.min || workers > l.workers.max || storage < l.storage.min || storage > l.storage.max) return;
+    const t = setTimeout(() => {
+      api.environmentPlanPreview(projectId, env.id, workers, storage)
+        .then(setPreview)
+        .catch(() => { /* keep the last quote */ });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [open, preview, workers, storage, projectId, env.id]);
+
+  const limits = preview?.limits;
+  const currency = preview?.currency || "USD";
+  const unchanged = !!preview && workers === preview.current.workers && storage === preview.current.storage_gb;
+  const storageTooSmall = !!preview && storage < preview.current.storage_gb;
+  const perLabel = preview?.period === "yearly" ? i18nText("/year") : i18nText("/month");
+  const inLimits = !!limits
+    && workers >= limits.workers.min && workers <= limits.workers.max
+    && storage >= limits.storage.min && storage <= limits.storage.max;
+  const canSubmit = !!preview && !busy && !loading && !unchanged && !storageTooSmall && inLimits && !preview.pending_plan;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.environmentChangePlan(projectId, env.id, workers, storage);
+      if (r.checkout_url) {
+        window.location.href = r.checkout_url;
+        return;
+      }
+      onApplied();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't change the server's plan."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={i18nText("Change plan")}
+      description={i18nText("Give {0} more workers or storage. You pay the difference for the rest of the current billing cycle; the new price applies from the next renewal.", [env.name])}
+    >
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Change plan")} description={error} />}
+      {preview?.pending_plan && (
+        <AlertBanner className="mb-4" variant="warning" title={i18nText("Awaiting payment")} description={i18nText("A resize to {0} is waiting for payment. Pay its invoice or wait for it to be applied.", [preview.pending_plan])} />
+      )}
+      {loading && !preview ? (
+        <div className="py-6"><Spinner label={i18nText("Loading…")} /></div>
+      ) : preview && (
+        <div className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="env-workers">{i18nText("Workers")}</Label>
+              <Input
+                id="env-workers"
+                type="number"
+                min={limits?.workers.min}
+                max={limits?.workers.max}
+                value={workers}
+                disabled={busy}
+                onChange={(e) => setWorkers(Number(e.target.value) || 0)}
+              />
+              <p className="text-xs text-muted">{i18nText("Now: {0}", [String(preview.current.workers)])}</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="env-storage">{i18nText("Storage (GB)")}</Label>
+              <Input
+                id="env-storage"
+                type="number"
+                min={preview.current.storage_gb}
+                max={limits?.storage.max}
+                value={storage}
+                disabled={busy}
+                onChange={(e) => setStorage(Number(e.target.value) || 0)}
+              />
+              <p className="text-xs text-muted">{i18nText("Now: {0} GB. Storage can't be reduced.", [String(preview.current.storage_gb)])}</p>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border bg-card/60 p-4 text-sm">
+            <div className="flex justify-between"><span className="text-muted">{i18nText("Current price")}</span><span>{envMoney(preview.current.price, currency)}{perLabel}</span></div>
+            <div className="mt-1 flex justify-between"><span className="text-muted">{i18nText("New price")}</span><span className="font-medium">{envMoney(preview.new.price, currency)}{perLabel}</span></div>
+            <div className="mt-3 flex justify-between border-t border-border pt-3">
+              <span className="font-medium">{i18nText("Due now")}</span>
+              <span className="font-semibold">{envMoney(preview.charge_now, currency)}</span>
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              {preview.charge_now > 0
+                ? i18nText("Prorated for the {0} day(s) left in this billing cycle.", [String(preview.remaining_days || preview.total_days)])
+                : i18nText("Nothing to pay now. A smaller plan applies immediately; the new price starts at the next renewal.")}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose} disabled={busy}>{i18nText("Cancel")}</Button>
+        <ActionButton loading={busy} loadingText={i18nText("Applying…")} disabled={!canSubmit} onClick={submit}>
+          <Server className="size-4" />{preview && preview.charge_now > 0 ? i18nText("Pay & resize") : i18nText("Apply")}</ActionButton>
       </div>
     </Dialog>
   );

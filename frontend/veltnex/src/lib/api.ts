@@ -344,6 +344,23 @@ export interface EnvChild extends RuntimeHealth {
   is_production: boolean;
   pending_payment: boolean;
   pending_invoice_id: number | false;
+  /** The server's own size (Staging/Dev can be resized and billed accordingly). */
+  workers?: number;
+  storage_gb?: number;
+  /** Name of a resize awaiting payment, or "". */
+  pending_plan?: string;
+}
+
+export interface EnvPlanPreview {
+  current: { workers: number; storage_gb: number; price: number };
+  new: { workers: number; storage_gb: number; price: number };
+  period: "monthly" | "yearly";
+  charge_now: number;
+  remaining_days: number;
+  total_days: number;
+  currency: string;
+  limits: { workers: { min: number; max: number }; storage: { min: number; max: number } };
+  pending_plan: string;
 }
 
 export interface ProjectEnvironments {
@@ -854,6 +871,16 @@ export const api = {
     rpc<{ deleted: boolean }>(
       `/saas/api/v1/instances/${id}/environments/${childId}/delete`,
       { delete_branch: deleteBranch },
+    ),
+  environmentPlanPreview: (id: number, childId: number, workers?: number, storage?: number) =>
+    rpc<EnvPlanPreview>(
+      `/saas/api/v1/instances/${id}/environments/${childId}/plan-preview`,
+      { workers, storage },
+    ),
+  environmentChangePlan: (id: number, childId: number, workers: number, storage: number) =>
+    rpc<{ applied: boolean; charge: number; invoice_id?: number; checkout_url?: string }>(
+      `/saas/api/v1/instances/${id}/environments/${childId}/change-plan`,
+      { workers, storage },
     ),
   environmentMerge: (id: number, sourceId: number, targetId: number) =>
     rpc<{

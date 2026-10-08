@@ -14,6 +14,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
       environments: vi.fn(),
       instanceBranches: vi.fn(),
       environmentCreate: vi.fn(),
+      environmentPlanPreview: vi.fn(),
+      environmentChangePlan: vi.fn(),
       // Rendered unconditionally by <DeploymentHistory> on the (default)
       // Overview tab.
       instanceBuilds: vi.fn().mockResolvedValue([]),
@@ -94,6 +96,34 @@ describe("Environments", () => {
     expect(screen.queryByRole("button", { name: "Create development environment" })).not.toBeInTheDocument();
     expect(screen.queryByText("acme-prod")).not.toBeInTheDocument();
     expect(screen.queryByText(/loading project/i)).not.toBeInTheDocument();
+  });
+
+  it("resizes a staging server and sends the customer to pay the prorated difference", async () => {
+    const staging = makeEnv({ id: 2, name: "acme-stg", environment: "staging", environment_label: "Staging", is_production: false, branch: "staging", workers: 2, storage_gb: 5 });
+    mockProject({ environments: [staging] });
+    const preview = {
+      current: { workers: 2, storage_gb: 5, price: 10 },
+      new: { workers: 2, storage_gb: 5, price: 10 },
+      period: "monthly", charge_now: 0, remaining_days: 0, total_days: 30, currency: "USD",
+      limits: { workers: { min: 1, max: 16 }, storage: { min: 5, max: 500 } }, pending_plan: "",
+    };
+    mockedApi.environmentPlanPreview.mockImplementation(async (_id, _child, workers, storage) =>
+      workers == null ? preview : { ...preview, new: { workers, storage_gb: storage, price: 25 }, charge_now: 7.5, remaining_days: 15 });
+    mockedApi.environmentChangePlan.mockResolvedValue({ applied: false, charge: 7.5, invoice_id: 9, checkout_url: "/my/instances/2/checkout" });
+    const user = userEvent.setup();
+
+    renderWithProviders(<Environments />, { route: "/i/1?env=2", path: "/i/:id" });
+    await user.click(await screen.findByRole("button", { name: /change plan/i }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: /apply/i })).toBeDisabled();
+
+    const workersInput = within(dialog).getByLabelText(/workers/i);
+    await user.clear(workersInput);
+    await user.type(workersInput, "4");
+    expect(await within(dialog).findByText("$7.50")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: /pay & resize/i }));
+    await waitFor(() => expect(mockedApi.environmentChangePlan).toHaveBeenCalledWith(1, 2, 4, 5));
   });
 
   it("shows a loading state, then the project once it loads", async () => {

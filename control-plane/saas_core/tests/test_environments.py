@@ -219,7 +219,8 @@ class TestEnvironments(TransactionCase):
             self.assertEqual(child.plan_id, prod._get_env_plan(), "not applied before payment")
             invoice = child.pending_change_invoice_id
             self.assertAlmostEqual(invoice.amount_total, result['charge'], 2)
-            self.assertTrue(invoice.invoice_origin.startswith('SAAS:UPGRADE:'))
+            # Optional origin: leaving it unpaid never suspends the server.
+            self.assertTrue(child._is_optional_invoice(invoice))
             # Payment: the account.move hook calls _apply_pending_plan_change.
             child._apply_pending_plan_change()
         self.assertEqual(child.plan_id, big)

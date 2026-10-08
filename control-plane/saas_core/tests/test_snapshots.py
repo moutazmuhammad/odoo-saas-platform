@@ -22,8 +22,12 @@ class TestSnapshots(TransactionCase):
             'cpu_limit': 1.0, 'ram_limit': '1g', 'price': 10.0, 'yearly_price': 96.0,
             'currency_id': env.company.currency_id.id, 'saas_product_ids': [(6, 0, [product.id])]})
         self.server = env['saas.server'].sudo().create({'name': 'sn-srv', 'compute_driver': 'kubernetes'})
+        version = env['saas.odoo.version'].sudo().search([('is_hosting_version', '=', True)], limit=1) \
+            or env['saas.odoo.version'].sudo().create({
+                'name': '18.0', 'docker_image': 'odoo', 'docker_image_tag': '18.0',
+                'nginx_template': 'new', 'is_hosting_version': True})
         self.inst = env['saas.instance'].sudo().create({
-            'subdomain': 'sntest',
+            'subdomain': 'sntest', 'odoo_version_id': version.id,
             'domain_id': (env['saas.based.domain'].sudo().search([], limit=1)
                           or env['saas.based.domain'].sudo().create({'name': 'sn.example.com'})).id,
             'partner_id': env['res.partner'].sudo().create({'name': 'SN Cust'}).id,
@@ -32,10 +36,9 @@ class TestSnapshots(TransactionCase):
             'environment': 'production', 'region_id': False, 'state': 'running'})
         self.Backup = env['saas.instance.backup'].sudo()
         self.driver = MagicMock()
-        for target, value in (
-                (type(self.Backup), '_get_backup_config'),
-                (type(self.inst), '_compute_driver')):
-            pass
+        # Queue jobs stay rows in tests: no worker thread, no commit.
+        p = patch.object(type(env['saas.job']), '_spawn_worker', lambda rec: None)
+        p.start(); self.addCleanup(p.stop)
         p = patch.object(type(self.Backup), '_get_backup_config', lambda rec: dict(CFG))
         p.start(); self.addCleanup(p.stop)
         p = patch.object(type(self.Backup), '_storage_endpoint_url', lambda rec, cfg: 'https://s3')

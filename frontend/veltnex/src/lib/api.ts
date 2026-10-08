@@ -892,17 +892,13 @@ export const api = {
       `/saas/api/v1/instances/${targetId}/environments/copy-dbs`,
       { source_id: sourceId, db_names: dbNames, overwrite_names: overwriteNames },
     ),
-  environmentReserve: (
-    id: number,
-    type: "staging" | "development",
-    qty = 1,
-  ) =>
+  environmentReserve: (id: number, counts: { staging: number; development: number }) =>
     rpc<{
       auto_provisioned: boolean;
       reserved?: number;
       invoice_id?: number;
       checkout_url?: string;
-    }>(`/saas/api/v1/instances/${id}/environments/reserve`, { type, qty }),
+    }>(`/saas/api/v1/instances/${id}/environments/reserve`, counts),
   environmentRelease: (
     id: number,
     type: "staging" | "development",

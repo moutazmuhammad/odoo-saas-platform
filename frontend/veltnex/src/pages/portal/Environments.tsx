@@ -482,15 +482,20 @@ function ScaleCard({
     }`;
   };
 
-  const reserve = async (type: "staging" | "development") => {
-    setBusy(`reserve-${type}`);
+  const [reserveOpen, setReserveOpen] = React.useState(false);
+  const [reserveCounts, setReserveCounts] = React.useState({ staging: 0, development: 0 });
+  const reserveTotal = (reserveCounts.staging + reserveCounts.development) * (project.env_server_price || 0);
+  const reserve = async () => {
+    if (!reserveCounts.staging && !reserveCounts.development) return;
+    setBusy("reserve");
     try {
-      const res = await api.environmentReserve(project.production.id, type);
+      const res = await api.environmentReserve(project.production.id, reserveCounts);
       if (!res.auto_provisioned && res.checkout_url) {
         window.location.href = res.checkout_url;
         return;
       }
-      toast.success(i18nText("Slot reserved"), i18nText("You can now create a server in it."));
+      setReserveOpen(false);
+      toast.success(i18nText("Servers reserved"), i18nText("You can now create them from the sidebar."));
       onChanged();
     } catch (e) {
       toast.error(i18nText("Couldn't reserve"), e instanceof ApiError ? e.message : i18nText("Please try again."));
@@ -550,14 +555,6 @@ function ScaleCard({
             >
               <Minus className="size-4" />{i18nText("Release")}</Button>
           )}
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={busy !== null}
-            onClick={() => reserve(type)}
-            title={i18nText("Reserve one more server — a paid slot you can create into")}
-          >
-            <Plus className="size-4" />{i18nText("Reserve")}</Button>
         </div>
       </div>
     );
@@ -590,6 +587,32 @@ function ScaleCard({
           <SlotRow type="staging" label={i18nText("Staging")} icon={FlaskConical} />
           <SlotRow type="development" label={i18nText("Development")} icon={Rocket} />
         </div>
+        <div className="mt-3">
+          <Button variant="secondary" size="sm" disabled={busy !== null} onClick={() => { setReserveCounts({ staging: 0, development: 0 }); setReserveOpen(true); }}>
+            <Plus className="size-4" />{i18nText("Reserve servers")}</Button>
+        </div>
+        <Dialog open={reserveOpen} onClose={() => setReserveOpen(false)} title={i18nText("Reserve servers")} description={i18nText("Pick how many Staging and Development servers you want. Everything goes on one invoice; adding more later simply updates it.")}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {([["staging", i18nText("Staging")], ["development", i18nText("Development")]] as const).map(([key, label]) => (
+              <div key={key} className="space-y-1">
+                <Label htmlFor={`reserve-${key}`}>{label}</Label>
+                <Input id={`reserve-${key}`} type="number" min={0} max={20} value={reserveCounts[key]}
+                  onChange={(e) => setReserveCounts((c) => ({ ...c, [key]: Math.max(0, Math.min(20, Number(e.target.value) || 0)) }))} />
+                <p className="text-xs text-muted">{i18nText("{0} reserved today", [String(project.slots[key].total)])}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 rounded-lg border border-border bg-card/60 p-3 text-sm">
+            <div className="flex justify-between"><span className="text-muted">{i18nText("Servers to add")}</span><span>{reserveCounts.staging + reserveCounts.development}</span></div>
+            <div className="mt-1 flex justify-between"><span className="font-medium">{i18nText("Price per cycle")}</span><span className="font-semibold">{reserveTotal.toFixed(2)}</span></div>
+            <p className="mt-1 text-xs text-muted">{i18nText("Charged now for the rest of the current cycle, then included in every renewal.")}</p>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setReserveOpen(false)} disabled={busy !== null}>{i18nText("Cancel")}</Button>
+            <ActionButton loading={busy === "reserve"} loadingText={i18nText("Reserving…")} disabled={!reserveCounts.staging && !reserveCounts.development} onClick={reserve}>
+              <Plus className="size-4" />{i18nText("Reserve & pay")}</ActionButton>
+          </div>
+        </Dialog>
         {!hasRepo && (
           <p className="mt-2 text-xs text-muted">{i18nText("Reserving needs no repository; creating a server does — connect one below first.")}</p>
         )}

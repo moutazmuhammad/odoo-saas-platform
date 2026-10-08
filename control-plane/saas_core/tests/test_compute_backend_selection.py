@@ -105,6 +105,31 @@ class TestDeployOnKubernetes(TransactionCase):
         create.assert_not_called()
         self.assertEqual(self.instance.state, 'running')
 
+    def test_staging_deploy_copies_the_production_database(self):
+        """A new Staging/Development server starts as a copy of Production:
+        the deploy queues the copy of Production's (single) database."""
+        self.instance.state = 'running'
+        child = self.instance.copy({'subdomain': 'freshk8s-stg', 'environment': 'staging',
+                                    'parent_id': self.instance.id, 'state': 'draft'})
+        driver = MagicMock()
+        driver.create.return_value = MagicMock()
+
+        def dbs(inst):
+            return [{'name': 'freshk8s_main', 'admin_login': 'a'}] if inst.environment == 'production' else []
+
+        with patch.object(type(child), '_compute_driver', return_value=driver), \
+                patch.object(type(child), '_data_service') as mock_ds, \
+                patch.object(type(child), 'hosting_db_list', autospec=True, side_effect=dbs), \
+                patch.object(type(child), 'hosting_db_create') as create, \
+                patch.object(type(child), 'hosting_db_copy_from', autospec=True) as copy:
+            mock_ds.return_value._wait_until_healthy.return_value = None
+            child._do_deploy_locked_kubernetes()
+        create.assert_not_called()
+        copy.assert_called_once()
+        self.assertEqual(copy.call_args.args[1], self.instance)
+        self.assertEqual(copy.call_args.args[2], ['freshk8s_main'])
+        self.assertEqual(child.state, 'running')
+
     def test_database_failure_does_not_fail_the_deploy(self):
         driver = MagicMock()
         driver.create.return_value = MagicMock()

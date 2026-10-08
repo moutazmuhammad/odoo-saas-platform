@@ -239,7 +239,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
           <Button
             onClick={() => setCreateOpen(true)}
             disabled={!can("db.create") || !data?.ready || isCreating || capacityReached}
-            title={capacityReached ? i18nText("Production allows one database. Restore or manage the existing database.") : isCreating ? i18nText("A database is already being created on this instance.") : undefined}
+            title={capacityReached ? i18nText("This server allows one database. Restore or manage the existing database.") : isCreating ? i18nText("A database is already being created on this instance.") : undefined}
           >
             {isCreating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
             {isCreating ? i18nText("Creating…") : i18nText("Create database")}
@@ -247,7 +247,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
         </div>
       </div>
 
-      {databaseLimit === 1 && <p className="mt-4 text-sm text-muted">{i18nText("Production includes one database. You can restore a backup into it or delete it and create a replacement.")}</p>}
+      {databaseLimit === 1 && <p className="mt-4 text-sm text-muted">{i18nText("Each server includes one database. You can restore a backup into it or delete it and create a replacement.")}</p>}
 
       {error && <AlertBanner className="mt-6" variant="danger" title={i18nText("Database management")} description={error} />}
 
@@ -946,7 +946,7 @@ function RestoreDatabaseDialog({
           onChange={(e) => setTarget(e.target.value.toLowerCase())}
         />
         {!overwrite && nameTaken && <p className="text-xs text-danger">{i18nText("That name is already in use. Select replacement to restore into it.")}</p>}
-        {!overwrite && atLimit && <p className="text-xs text-danger">{i18nText("Production allows one database. Select replacement to restore into your existing database.")}</p>}
+        {!overwrite && atLimit && <p className="text-xs text-danger">{i18nText("This server allows one database. Select replacement to restore into your existing database.")}</p>}
         {overwrite && <p className="text-xs text-danger">{i18nText("This permanently replaces the selected database and all its data. Download a backup before continuing.")}</p>}
         {overwrite && <><Label htmlFor="restore-confirm">{i18nText("Type ")}{fullTarget || i18nText("the database name")}{i18nText(" to confirm replacement")}</Label>
           <Input id="restore-confirm" data-technical value={confirmation} disabled={busy} onChange={(e) => setConfirmation(e.target.value)} autoComplete="off" /></>}

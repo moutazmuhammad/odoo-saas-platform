@@ -424,11 +424,15 @@ class TestHostingDbOps(TransactionCase):
             self.assertTrue(backup.restore_overwrite)
             self.assertEqual(backup.db_name, 'dbopsinst_prod')
 
-    def test_stage_and_development_limits_are_unrestricted(self):
+    def test_stage_and_development_allow_one_database_too(self):
+        """Odoo.sh model: every server serves exactly one database."""
         for kind in ('staging', 'development'):
             child = self.instance.copy({'subdomain': 'dbops-' + kind, 'environment': kind, 'parent_id': self.instance.id})
-            self.assertEqual(child._hosting_database_limit(), 0)
-            child._check_hosting_database_capacity('another', existing={'one', 'two'})
+            self.assertEqual(child._hosting_database_limit(), 1)
+            child._check_hosting_database_capacity('dbops-%s_main' % kind, existing=set())
+            child._check_hosting_database_capacity('dbops-%s_main' % kind, existing={'dbops-%s_main' % kind}, replacing=True)
+            with self.assertRaisesRegex(UserError, 'one customer database'):
+                child._check_hosting_database_capacity('another', existing={'one'})
 
     def test_production_atomic_capacity_guard_and_replacement(self):
         driver = self._driver()

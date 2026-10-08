@@ -2330,5 +2330,9 @@
   "Setting up your project": "جارٍ تجهيز مشروعك",
   "Down": "متوقف",
   "Offline": "غير متصل",
-  "Preparing": "جارٍ التجهيز"
+  "Preparing": "جارٍ التجهيز",
+  "This server allows one database. Restore or manage the existing database.": "يسمح هذا الخادم بقاعدة بيانات واحدة. استعد نسخة احتياطية إليها أو أدرها.",
+  "Each server includes one database. You can restore a backup into it or delete it and create a replacement.": "يتضمن كل خادم قاعدة بيانات واحدة. يمكنك استعادة نسخة احتياطية إليها أو حذفها وإنشاء بديل.",
+  "This server allows one database. Select replacement to restore into your existing database.": "يسمح هذا الخادم بقاعدة بيانات واحدة. اختر الاستبدال للاستعادة إلى قاعدة بياناتك الحالية.",
+  "This server allows one customer database. Restore into the existing database, or delete it before creating another.": "يسمح هذا الخادم بقاعدة بيانات واحدة. استعد إلى قاعدة البيانات الحالية أو احذفها قبل إنشاء أخرى."
 }

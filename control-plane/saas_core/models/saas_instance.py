@@ -1705,7 +1705,9 @@ class SaasInstance(models.Model):
 
     def _hosting_database_limit(self):
         self.ensure_one()
-        return 1 if self.is_hosting and self.environment == 'production' else 0
+        # Odoo.sh model: every server (Production, Staging, Development)
+        # serves exactly one database.
+        return 1 if self.is_hosting else 0
 
     def _check_hosting_database_capacity(self, name, existing=None, replacing=False):
         limit = self._hosting_database_limit()
@@ -1716,9 +1718,8 @@ class SaasInstance(models.Model):
             return
         if len(existing) >= limit:
             raise UserError(_(
-                "Production allows one customer database. Restore into the existing "
-                "database, or delete it before creating another. Staging and "
-                "Development databases are managed separately."))
+                "This server allows one customer database. Restore into the "
+                "existing database, or delete it before creating another."))
 
     def _validate_db_name(self, name):
         """Validate a raw customer-typed DB name (without the instance
@@ -1946,7 +1947,7 @@ try:
         cursor.execute('SELECT datname FROM pg_database WHERE starts_with(datname, %s)', (%r,))
         names = [row[0] for row in cursor.fetchall()]
         if len(names) >= 1 and not (%r and %r in names):
-            raise SystemExit('Production allows one customer database.')
+            raise SystemExit('This server allows one customer database.')
         if %r:
             cursor.execute(%r)
         cursor.execute(%r)
@@ -4570,6 +4571,8 @@ finally:
         # customer lands in Odoo, not on an empty database selector. They
         # can replace it or restore their own backup from Databases.
         self._hosting_prepare_production_database()
+        # A new Staging/Development server starts as a copy of Production.
+        self._hosting_seed_environment_database()
         self._safe_refresh_usage()
         self._record_build('initial', 'success', commit_message='Deployment')
         self._send_notification('saas_core.mail_template_saas_deployed')
@@ -4629,6 +4632,41 @@ finally:
             self._append_log(
                 "WARNING: the production database could not be prepared (%s). "
                 "Create or restore one from Databases." % e)
+            return False
+
+    def _hosting_seed_environment_database(self):
+        """Odoo.sh-style: a freshly deployed Staging/Development server gets
+        a copy of the project's Production database (dump + filestore),
+        queued as the usual copy job. Skipped when this server already
+        has a database (redeploy) or Production has none yet. Never fails
+        the deploy."""
+        self.ensure_one()
+        if not self.is_hosting or self.environment not in ('staging', 'development'):
+            return False
+        prod = self.parent_id
+        try:
+            if not prod or prod.state != 'running':
+                self._append_log(
+                    "Production is not running — its database was not copied. "
+                    "Use 'Copy databases' once it is.")
+                return False
+            if self.hosting_db_list():
+                return False
+            sources = [r['name'] for r in prod.hosting_db_list()]
+            if not sources:
+                self._append_log(
+                    "Production has no database yet — nothing to copy.")
+                return False
+            self._append_log(
+                "Copying the Production database '%s' onto this server..."
+                % sources[0])
+            self.hosting_db_copy_from(prod, sources[:1])
+            return True
+        except Exception as e:
+            _logger.exception("Could not seed %s from Production", self.subdomain)
+            self._append_log(
+                "WARNING: the Production database could not be copied (%s). "
+                "Use 'Copy databases' from the Environments page." % e)
             return False
 
     # ========== Lifecycle Actions ==========

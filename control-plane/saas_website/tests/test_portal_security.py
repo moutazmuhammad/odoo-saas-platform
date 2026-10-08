@@ -1214,9 +1214,9 @@ class TestOnePageCheckout(HttpCase):
             'billing_period': 'monthly', 'environment': 'production', 'region_id': False,
             'state': 'running'})
 
-    def _invoice(self, origin, amount=7.0):
+    def _invoice(self, origin, amount=7.0, partner=None):
         order = self.env['sale.order'].sudo().create({
-            'partner_id': self.partner.id, 'origin': origin,
+            'partner_id': (partner or self.partner).id, 'origin': origin,
             'order_line': [(0, 0, {'product_id': self.inst._get_billing_product().id,
                                    'name': 'line', 'product_uom_qty': 1, 'price_unit': amount})]})
         order.action_confirm()
@@ -1241,8 +1241,7 @@ class TestOnePageCheckout(HttpCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn('Your invoice', res.text)
         other = self.env['res.partner'].sudo().create({'name': 'Other'})
-        inv2 = self._invoice('SAAS:SNAPSHOT:%s' % other.id)
-        inv2.partner_id = other
+        inv2 = self._invoice('SAAS:SNAPSHOT:%s' % other.id, partner=other)
         res = self.url_open('/my/pay/%s' % inv2.id, allow_redirects=False)
         self.assertIn(res.status_code, (302, 303), "someone else's invoice is never shown")
 

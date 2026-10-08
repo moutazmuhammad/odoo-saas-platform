@@ -147,8 +147,11 @@ export default function ShellConsole({ instanceId }: { instanceId: number }) {
         <span className="text-muted/60">{i18nText("· shell")}</span>
       </div>
       {error ? (
-        <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {error}
+        <div className="flex flex-1 items-center justify-center rounded-md border border-border bg-card p-8">
+          <div className="max-w-md text-center">
+            <p className="font-medium text-foreground">{i18nText("The shell isn't available right now")}</p>
+            <p className="mt-1.5 text-sm text-muted">{error}</p>
+          </div>
         </div>
       ) : (
         <div

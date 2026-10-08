@@ -45,7 +45,7 @@ class IamTerminal(SshTerminalController):
         except AccessError as exc:
             raise Forbidden(str(exc)) from exc
         if not instance.is_hosting or instance.state != 'running' or not instance.docker_server_id:
-            raise Forbidden('The hosting instance must be running to open a terminal.')
+            raise Forbidden('The shell is available while the server is running. Start the server and try again.')
         return instance
 
     def _get_owned_session(self, session_id):

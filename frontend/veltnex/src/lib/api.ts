@@ -66,10 +66,11 @@ async function rpc<T = unknown>(
       onUnauthorized?.();
       throw new ApiError(i18nText("Your session has expired. Please sign in again."), "auth_required");
     }
-    throw new ApiError(
-      data.message || payload.error.message || i18nText("Server error."),
-      "server"
-    );
+    // werkzeug formats HTTP exceptions as "403 Forbidden: <reason>"; the
+    // reason is written for the customer, the status prefix is not.
+    const raw: string = data.message || payload.error.message || "";
+    const clean = raw.replace(/^\d{3} [A-Za-z ]+: /, "");
+    throw new ApiError(clean || i18nText("Server error."), "server");
   }
 
   const result = payload.result;

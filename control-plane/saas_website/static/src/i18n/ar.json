@@ -2603,5 +2603,11 @@
   "Automatic daily backups of your whole server, billed monthly by used storage": "نسخ احتياطية يومية تلقائية لخادمك بالكامل، تُحتسب شهريًا حسب المساحة المستخدمة",
   "Enable daily backups": "تفعيل النسخ الاحتياطي اليومي",
   "Starting from a snapshot": "البدء من لقطة",
-  "This project will be created from snapshot {0}: its database and files are restored as soon as the server is up. Choose the same Odoo version the snapshot was taken with.": "سيُنشأ هذا المشروع من اللقطة {0}: تُستعاد قاعدة بياناتها وملفاتها فور تشغيل الخادم. اختر إصدار Odoo نفسه الذي التُقطت به اللقطة."
+  "This project will be created from snapshot {0}: its database and files are restored as soon as the server is up. Choose the same Odoo version the snapshot was taken with.": "سيُنشأ هذا المشروع من اللقطة {0}: تُستعاد قاعدة بياناتها وملفاتها فور تشغيل الخادم. اختر إصدار Odoo نفسه الذي التُقطت به اللقطة.",
+  "The shell isn't available right now": "الطرفية غير متاحة حاليًا",
+  "The shell is available while the server is running. Start the server and try again.": "الطرفية متاحة أثناء تشغيل الخادم. شغّل الخادم وحاول مرة أخرى.",
+  "Your server is still being set up. The shell opens as soon as it is ready.": "ما زال خادمك قيد الإعداد. تُفتح الطرفية بمجرد جاهزيته.",
+  "Too many shells are open right now. Close one and try again.": "هناك عدد كبير من الطرفيات المفتوحة حاليًا. أغلق إحداها وحاول مرة أخرى.",
+  "Shell is only available for hosting instances.": "الطرفية متاحة لخوادم الاستضافة فقط.",
+  "Terminal access was revoked.": "تم إلغاء صلاحية الوصول إلى الطرفية."
 }

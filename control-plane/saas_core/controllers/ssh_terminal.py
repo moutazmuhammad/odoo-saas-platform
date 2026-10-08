@@ -353,7 +353,7 @@ class SshTerminalController(http.Controller):
             target_name = target.name
         else:
             if not target.docker_server_id:
-                raise Forbidden("This instance isn't fully set up yet.")
+                raise Forbidden("Your server is still being set up. The shell opens as soon as it is ready.")
             target_name = target.subdomain
 
         _cleanup_stale_sessions(request.env)
@@ -365,7 +365,7 @@ class SshTerminalController(http.Controller):
                     MAX_CONCURRENT_SESSIONS, os.getpid(),
                 )
                 raise Forbidden(
-                    "Maximum concurrent terminal sessions reached."
+                    "Too many shells are open right now. Close one and try again."
                 )
 
         try:
@@ -702,7 +702,7 @@ class SshTerminalController(http.Controller):
         if not inst.is_hosting:
             raise Forbidden("Shell is only available for hosting instances.")
         if inst.state != 'running':
-            raise Forbidden("The instance must be running to open a shell.")
+            raise Forbidden("The shell is available while the server is running. Start the server and try again.")
         if not inst.docker_server_id:
             raise Forbidden("This instance isn't fully set up yet.")
         return inst

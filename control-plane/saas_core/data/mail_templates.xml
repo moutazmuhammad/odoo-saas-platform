@@ -21,11 +21,11 @@
 
     <t t-if="object.is_hosting">
         <hr style="margin:16px 0;border:0;border-top:1px solid #ddd;"/>
-        <p><strong>Your instance starts empty.</strong> Create as many
-           Odoo databases as you need from your control panel: open the
-           instance, then <em>Databases</em>. The <em>Database manager</em>
-           button there opens Odoo's own database manager; no master
-           password is needed.</p>
+        <p><strong>Your production database is ready.</strong> Sign in
+           with <strong><t t-out="object.partner_id.email"/></strong> after
+           setting its admin password from your control panel: open the
+           instance, then <em>Databases</em>. From there you can also
+           restore your own backup or replace the database.</p>
     </t>
 
     <p>You can manage your instance from the

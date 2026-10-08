@@ -4566,6 +4566,10 @@ finally:
         self.pending_provision_since = False
         self.pending_provision_attempts = 0
         self._append_log("Deployment completed successfully. State: running.")
+        # A hosting Production server comes with a ready database so the
+        # customer lands in Odoo, not on an empty database selector. They
+        # can replace it or restore their own backup from Databases.
+        self._hosting_prepare_production_database()
         self._safe_refresh_usage()
         self._record_build('initial', 'success', commit_message='Deployment')
         self._send_notification('saas_core.mail_template_saas_deployed')
@@ -4588,6 +4592,44 @@ finally:
             except Exception as e:
                 _logger.exception("Could not queue the first build for %s", self.subdomain)
                 self._append_log("WARNING: could not start the code build: %s" % e)
+
+    # The suffix of the database every hosting Production server starts
+    # with (``<subdomain>_main``).
+    _HOSTING_INITIAL_DB_SUFFIX = 'main'
+
+    def _hosting_prepare_production_database(self):
+        """Create the ready-to-use Production database on first deploy.
+
+        Admin login is the customer's email; the password is the instance
+        admin password (they can reset it from Databases). Idempotent: a
+        redeploy/retry that already finds a customer database does
+        nothing. Never fails the deploy — the tenant is running; a
+        failure is logged and the customer can create/restore from
+        Databases."""
+        self.ensure_one()
+        if not (self.is_hosting and self.environment == 'production'):
+            return False
+        try:
+            if self.hosting_db_list():
+                return False
+            name = self._hosting_db_full_name(self._HOSTING_INITIAL_DB_SUFFIX)
+            self._append_log("Preparing the production database '%s'..." % name)
+            partner = self.partner_id
+            self.hosting_db_create(
+                name,
+                login=(partner.email or 'admin').strip(),
+                password=self.admin_password or self._generate_random_password(),
+                lang=partner.lang or 'en_US',
+                country_code=partner.country_id.code or None,
+            )
+            return True
+        except Exception as e:
+            _logger.exception("Could not prepare the production database for %s",
+                              self.subdomain)
+            self._append_log(
+                "WARNING: the production database could not be prepared (%s). "
+                "Create or restore one from Databases." % e)
+            return False
 
     # ========== Lifecycle Actions ==========
 

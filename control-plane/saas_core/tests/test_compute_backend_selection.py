@@ -70,6 +70,52 @@ class TestDeployOnKubernetes(TransactionCase):
         self.assertFalse(self.instance.xmlrpc_port)
 
 
+    def test_production_deploy_prepares_a_ready_database(self):
+        """A hosting Production deploy ends with ``<sub>_main`` created for
+        the customer (admin = their email), so they never land on an empty
+        database selector."""
+        driver = MagicMock()
+        driver.create.return_value = MagicMock()
+        self.partner.email = 'owner@example.com'
+        self.instance.admin_password = 'Secret123!'
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
+                patch.object(type(self.instance), '_data_service') as mock_ds, \
+                patch.object(type(self.instance), 'hosting_db_list', return_value=[]), \
+                patch.object(type(self.instance), 'hosting_db_create') as create:
+            mock_ds.return_value._wait_until_healthy.return_value = None
+            self.instance._do_deploy_locked_kubernetes()
+        create.assert_called_once()
+        self.assertEqual(create.call_args.args[0], 'freshk8s_main')
+        self.assertEqual(create.call_args.kwargs['login'], 'owner@example.com')
+        self.assertEqual(create.call_args.kwargs['password'], 'Secret123!')
+        self.assertEqual(self.instance.state, 'running')
+
+    def test_redeploy_keeps_the_customer_database(self):
+        """A retry/redeploy that already finds a customer database must not
+        create a second one (Production allows one)."""
+        driver = MagicMock()
+        driver.create.return_value = MagicMock()
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
+                patch.object(type(self.instance), '_data_service') as mock_ds, \
+                patch.object(type(self.instance), 'hosting_db_list',
+                             return_value=[{'name': 'freshk8s_erp', 'admin_login': 'a'}]), \
+                patch.object(type(self.instance), 'hosting_db_create') as create:
+            mock_ds.return_value._wait_until_healthy.return_value = None
+            self.instance._do_deploy_locked_kubernetes()
+        create.assert_not_called()
+        self.assertEqual(self.instance.state, 'running')
+
+    def test_database_failure_does_not_fail_the_deploy(self):
+        driver = MagicMock()
+        driver.create.return_value = MagicMock()
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
+                patch.object(type(self.instance), '_data_service') as mock_ds, \
+                patch.object(type(self.instance), 'hosting_db_list', side_effect=RuntimeError('pod exec failed')):
+            mock_ds.return_value._wait_until_healthy.return_value = None
+            self.instance._do_deploy_locked_kubernetes()
+        self.assertEqual(self.instance.state, 'running')
+        self.assertIn('could not be prepared', self.instance.provisioning_log)
+
     def test_deploy_rejects_stalled_cluster_before_creating_resources(self):
         driver = MagicMock()
         driver.require_cluster_ready.side_effect = RuntimeError('controllers are stalled')

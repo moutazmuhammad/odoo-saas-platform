@@ -116,7 +116,8 @@ describe("English and Arabic", () => {
     const allowed = new Set(["ESC", "VELT", "NEX", "⌘K", "my-company.veltnex.com", "v18.0",
       "deploy.log", "github.com/your-org/odoo-addons", "a1b2c3d", "done", "GET", "my-company",
       "✓ 12s", "requirements.txt", "sale", "all", "null", "CPU", "SELECT …",
-      "https://github.com/you/your-odoo-modules.git", "https://github.com/you/your-addons.git"]);
+      "https://github.com/you/your-odoo-modules.git", "https://github.com/you/your-addons.git",
+      "acme.veltnex.app/my/instances/12/environments", "acme.veltnex.app", "Odoo 18.0 · fra1 ·", "Odoo"]);
     const files = import.meta.glob("../**/*.tsx", { query: "?raw", import: "default", eager: true });
     const untranslated: string[] = [];
     for (const [file, content] of Object.entries(files)) {

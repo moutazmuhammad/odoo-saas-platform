@@ -1,340 +1,643 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
-import { Archive, ArrowRight, ArrowUpRight, Check, Database, GitBranch, Layers, Server, ShieldCheck, Terminal } from "lucide-react";
 import { i18nText } from "@/i18n";
-import { buttonVariants } from "@/components/ui/button";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  ArrowRight,
+  Activity,
+  CheckCircle2,
+  Database,
+  GitBranch,
+  Layers,
+  Lock,
+  Server,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  type LucideIcon,
+} from "lucide-react";
+import * as React from "react";
+import { Button } from "@/components/ui/button";
 import { ServiceIcon } from "@/components/ServiceIcon";
-import { ProductPreview } from "@/components/home/ProductPreview";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { api, type ApiService } from "@/lib/api";
-import { useSections, type Sections } from "@/lib/useSections";
+import { useSections } from "@/lib/useSections";
 import { cn } from "@/lib/utils";
-import "./Home.css";
 
-function HomeLink({ to, children, secondary = false }: { to: string; children: ReactNode; secondary?: boolean }) {
-  return <Link
-    to={to}
-    className={cn(buttonVariants({ size: "lg", variant: secondary ? "outline" : "default" }), "home-button")}
-  >
-    {children}
-    <ArrowRight aria-hidden="true" />
-  </Link>;
+// The globe pulls in three.js — lazy so the rest of the page paints first.
+const GlobeViz = React.lazy(() =>
+  import("@/components/Globe").then((m) => ({ default: m.Globe })),
+);
+
+const ODOO_VERSIONS = ["13", "14", "15", "16", "17", "18", "19", "20"];
+
+// ---------------------------------------------------------------------
+// Shared building blocks
+// ---------------------------------------------------------------------
+
+function Container({ className, children }: { className?: string; children: React.ReactNode }) {
+  return <div className={cn("mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8", className)}>{children}</div>;
 }
 
-function LaunchAction({ sections }: { sections: Sections }) {
-  return sections.hosting ? <HomeLink to="/hosting">
-    {i18nText("Configure your hosting")}
-  </HomeLink> : sections.services ? <HomeLink to="/services">
-    {i18nText("Explore ready-made apps")}
-  </HomeLink> : <HomeLink to="/register">
-    {i18nText("Create an account")}
-  </HomeLink>;
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{children}</p>
+  );
 }
 
-function SectionIntro({ label, title, children }: { label: string; title: string; children?: ReactNode }) {
-  return <div className="home-section-intro">
-    <p className="home-eyebrow">
-      {label}
-    </p>
-    <h2>
-      {title}
-    </h2>
-    {children && <p className="home-description">
-      {children}
-    </p>}
-  </div>;
-}
-
-function LaunchPaths({ sections }: { sections: Sections }) {
-  if (!sections.hosting && !sections.services) return null;
-  return <section className="home-section home-container" aria-labelledby="launch-heading">
-    <div className="home-launch-intro">
-      <p className="home-eyebrow">
-        {i18nText("Your starting point")}
-      </p>
-      <h2 id="launch-heading">
-        {i18nText(sections.hosting && sections.services ? "Your code. Or a ready-made app." : sections.hosting ? "Your Odoo. Your configuration." : "Start with a ready-made Odoo app.")}
-      </h2>
-      <p className="home-description">
-        {i18nText("Choose how you start. Manage your project in one place.")}
-      </p>
+function SectionHeading({
+  eyebrow,
+  title,
+  subtitle,
+  align = "center",
+  wide = false,
+}: {
+  eyebrow?: React.ReactNode;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  align?: "center" | "start";
+  wide?: boolean;
+}) {
+  return (
+    <div className={cn(wide ? "max-w-3xl" : "max-w-2xl", align === "center" ? "mx-auto text-center" : "text-start")}>
+      {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
+      <h2 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">{title}</h2>
+      {subtitle && <p className="mt-4 text-base leading-relaxed text-muted sm:text-lg">{subtitle}</p>}
     </div>
-    <div className={cn("home-paths", sections.hosting && sections.services && "home-paths-two")}>
-      {sections.hosting && <article className="home-path">
-        <div className="home-path-top">
-          <Server className="size-5 text-primary" />
-          <span>
-            {i18nText("For developers & Odoo teams")}
-          </span>
-        </div>
-        <h3>
-          {i18nText("Odoo hosting")}
-        </h3>
-        <p>
-          {i18nText("Bring your custom addons. Choose your Odoo version, workers, storage, and region, then connect your Git repository.")}
-        </p>
-        <ul>
-          {["Community or Enterprise edition", "Custom addons & Python dependencies", "Optional Staging & Development environments"].map(item => <li key={item}>
-            <Check className="size-4" />
-            {i18nText(item)}
-          </li>)}
-        </ul>
-        <HomeLink to="/hosting">
-          {i18nText("Configure your hosting")}
-        </HomeLink>
-      </article>}
-      {sections.services && <article className="home-path">
-        <div className="home-path-top">
-          <Layers className="size-5 text-primary" />
-          <span>
-            {i18nText("For teams ready to get to work")}
-          </span>
-        </div>
-        <h3>
-          {i18nText("Ready-made apps")}
-        </h3>
-        <p>
-          {i18nText("Start with a preconfigured Odoo service, with its modules and database already in place. Explore the available apps to find your fit.")}
-        </p>
-        <ul>
-          {["Preconfigured modules & database", "Managed service workspace", "Plans available in the app catalog"].map(item => <li key={item}>
-            <Check className="size-4" />
-            {i18nText(item)}
-          </li>)}
-        </ul>
-        <HomeLink to="/services" secondary={sections.hosting}>
-          {i18nText("Explore ready-made apps")}
-        </HomeLink>
-      </article>}
-    </div>
-  </section>;
+  );
 }
 
-function HostingWorkflow() {
-  return <section className="home-workflow-section">
-    <div className="home-container home-workflow">
-      <SectionIntro
-        label={i18nText("From development to production")}
-        title={i18nText("A workspace for the whole lifecycle.")}
-      >
-        {i18nText("Keep your code, environments, and operations connected. Build on a Development branch, test in Staging, and manage Production from the same project.")}
-        <Link className="home-text-link" to="/docs/project-workspace">
-          {i18nText("Explore the project workspace")}
-          <ArrowRight className="size-4" />
-        </Link>
-      </SectionIntro>
-      <div className="home-flow" aria-label={i18nText("Development, Staging, and Production")}>
-        {[{ number: "01", title: "Development", branch: "development", text: "Build custom addons on a separate Git branch." }, { number: "02", title: "Staging", branch: "staging", text: "Copy databases between environments to test your changes." }, { number: "03", title: "Production", branch: "main", text: "Merge code and inspect deployment history in your workspace." }].map(step => <div className="home-flow-step" key={step.number}>
-          <span className="home-flow-number">
-            {step.number}
-          </span>
-          <div>
-            <div className="home-flow-title">
-              <h3>
-                {i18nText(step.title)}
-              </h3>
-              <code>
-                <GitBranch className="size-3" />
-                {step.branch}
-              </code>
-            </div>
-            <p>
-              {i18nText(step.text)}
-            </p>
-          </div>
-        </div>)}
-        <p className="home-flow-footnote">
-          {i18nText("Staging and Development require reserved environment slots and a connected repository.")}
-        </p>
-      </div>
-    </div>
-  </section>;
+function StatusDot({ className }: { className?: string }) {
+  return (
+    <span className={cn("relative flex size-2", className)}>
+      <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
+      <span className="relative inline-flex size-2 rounded-full bg-success" />
+    </span>
+  );
 }
 
-function Operations({ hosting }: { hosting: boolean }) {
-  return <section className="home-container home-section">
-    <SectionIntro label={i18nText("Day-to-day operations")} title={i18nText("Less switching. More visibility.")}>
-      {i18nText("The tools to understand your Odoo environment, look after your data, and give your team the right access.")}
-    </SectionIntro>
-    <div className="home-operations">
-      <article className="home-data-feature">
-        <div className="home-feature-copy">
-          <Archive className="size-5 text-primary" />
-          <h3>
-            {i18nText("Keep your data within reach.")}
-          </h3>
-          <p>
-            {i18nText(hosting ? "Manage databases, create on-demand database backups, and restore full-instance snapshots. Enable optional daily backups when your project needs them." : "Review and restore database snapshots from your service workspace. Enable optional daily backups when your project needs them.")}
+// ---------------------------------------------------------------------
+// Hero
+// ---------------------------------------------------------------------
+
+function Hero({ hosting, services }: { hosting: boolean; services: boolean }) {
+  const navigate = useNavigate();
+  const primaryTo = hosting ? "/hosting" : services ? "/services" : "/register";
+  const primaryLabel = hosting
+    ? i18nText("Start hosting")
+    : services
+      ? i18nText("Browse ready-made apps")
+      : i18nText("Create an account");
+
+  return (
+    <section className="relative overflow-hidden">
+      {/* Quiet backdrop: a faint grid that fades out, plus one soft glow behind the globe. */}
+      <div className="pointer-events-none absolute inset-0 bg-grid-faint bg-size-[48px_48px] mask-[radial-gradient(ellipse_at_center,black_20%,transparent_75%)] opacity-70" />
+
+      <Container className="relative grid items-center gap-8 pb-20 pt-8 lg:grid-cols-[1.05fr_1fr] lg:gap-8 lg:pb-28 lg:pt-20">
+        {/* Copy */}
+        <div className="order-2 text-center lg:order-1 lg:text-start">
+          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted">
+            <StatusDot />
+            {i18nText("All systems operational")}
+          </span>
+
+          <h1 className="mt-6 text-4xl font-bold leading-[1.08] tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+            {i18nText("Run Odoo the way")}
+            <br />
+            <span className="text-primary">{i18nText("product teams ship.")}</span>
+          </h1>
+
+          <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-muted lg:mx-0">
+            {hosting
+              ? i18nText("Push to Git, get a production deploy. Staging and development servers, one database per server, backups, metrics and logs — managed for any Odoo version.")
+              : i18nText("Launch a ready-made Odoo app with its database already set up, then manage backups, metrics and logs from one console.")}
           </p>
-          <Link to="/docs/daily-backups" className="home-text-link">
-            {i18nText("Read about backups")}
-            <ArrowRight className="size-4" />
-          </Link>
-        </div>
-        <div className="home-data-diagram" aria-label={i18nText("Backup and restore workflow")}>
-          <Database className="size-6" />
-          <span className="home-diagram-line" />
-          <Archive className="size-6" />
-          <span className="home-diagram-line" />
-          <ShieldCheck className="size-6" />
-          <span>
-            {i18nText("Database")}
-          </span>
-          <span>
-            {i18nText("Snapshot")}
-          </span>
-          <span>
-            {i18nText("Restore")}
-          </span>
-        </div>
-      </article>
-      <div className="home-operation-details">
-        <article>
-          <Terminal className="size-5 text-primary" />
-          <div>
-            <h3>
-              {i18nText("See what your environment is doing.")}
-            </h3>
-            <p>
-              {i18nText(hosting ? "Inspect resource metrics and application logs. Open the browser Shell or read-only SQL console when you need a closer look." : "Inspect resource metrics and application logs from your service workspace.")}
-            </p>
-            <Link to="/docs/monitoring" className="home-text-link">
-              {i18nText("Explore monitoring")}
-              <ArrowUpRight className="size-4" />
-            </Link>
+
+          <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
+            <Button size="lg" onClick={() => navigate(primaryTo)}>
+              {primaryLabel}
+              <ArrowRight />
+            </Button>
+            {hosting && services && (
+              <Button size="lg" variant="outline" onClick={() => navigate("/services")}>
+                {i18nText("Browse ready-made apps")}
+              </Button>
+            )}
+            {!hosting && !services && (
+              <Button size="lg" variant="outline" onClick={() => navigate("/docs")}>
+                {i18nText("Read the docs")}
+              </Button>
+            )}
           </div>
-        </article>
-        <article>
-          <ShieldCheck className="size-5 text-primary" />
-          <div>
-            <h3>
-              {i18nText("Give each teammate the right access.")}
-            </h3>
-            <p>
-              {i18nText("Assign project roles and scope access to specific environments. Manage teammates and invitations from the portal.")}
-            </p>
-            <Link to="/docs/iam-overview" className="home-text-link">
-              {i18nText("Understand team permissions")}
-              <ArrowUpRight className="size-4" />
-            </Link>
+
+          <ul className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted lg:justify-start">
+            {[i18nText("Free trial"), i18nText("No setup fees"), i18nText("Cancel anytime")].map((t) => (
+              <li key={t} className="inline-flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-success" />
+                {t}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Globe */}
+        <div className="order-1 lg:order-2">
+          <div className="relative mx-auto w-[min(520px,72vw)] lg:w-[min(520px,88vw)]">
+            <div className="pointer-events-none absolute inset-[12%] rounded-full bg-primary/25 blur-[90px]" />
+            <div className="relative aspect-square mask-[radial-gradient(circle_at_center,black_62%,transparent_92%)]">
+              <ErrorBoundary>
+                <React.Suspense fallback={<div className="size-full rounded-full border border-border/60" />}>
+                  <GlobeViz speed={0.1} />
+                </React.Suspense>
+              </ErrorBoundary>
+            </div>
+
+            {/* Two small, truthful facts pinned to the globe. */}
+            <div className="pointer-events-none absolute -start-2 top-[18%] hidden sm:block">
+              <HeroChip icon={GitBranch} title={i18nText("Deploy from Git")} detail="main · 7f3a2c1" />
+            </div>
+            <div className="pointer-events-none absolute -end-2 bottom-[16%] hidden sm:block">
+              <HeroChip icon={ShieldCheck} title={i18nText("TLS issued")} detail={i18nText("Renews automatically")} />
+            </div>
           </div>
-        </article>
+        </div>
+      </Container>
+    </section>
+  );
+}
+
+function HeroChip({ icon: Icon, title, detail }: { icon: LucideIcon; title: string; detail: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-card/95 px-3 py-2 shadow-card">
+      <span className="flex size-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+        <Icon className="size-4" />
+      </span>
+      <div className="text-start">
+        <p className="text-xs font-semibold text-foreground">{title}</p>
+        <p className="font-mono text-[11px] text-muted">{detail}</p>
       </div>
     </div>
-  </section>;
+  );
 }
+
+// ---------------------------------------------------------------------
+// Trust strip
+// ---------------------------------------------------------------------
+
+function TrustStrip({ hosting }: { hosting: boolean }) {
+  const items = hosting
+    ? ["GitHub", "GitLab", "Bitbucket", i18nText("Odoo 13 → 20"), i18nText("Community & Enterprise"), "Kubernetes"]
+    : [i18nText("Odoo 13 → 20"), i18nText("Community & Enterprise"), "Kubernetes", i18nText("Daily backups"), i18nText("Free TLS")];
+  return (
+    <section className="border-y border-border bg-card/30">
+      <Container className="flex flex-wrap items-center justify-center gap-x-10 gap-y-3 py-5">
+        <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted">{i18nText("Works with")}</span>
+        {items.map((t) => (
+          <span key={t} className="text-sm font-semibold text-muted/90">{t}</span>
+        ))}
+      </Container>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Product showcase — a faithful mock of the Environments console
+// ---------------------------------------------------------------------
+
+function ConsoleShowcase({ hosting }: { hosting: boolean }) {
+  const envs = hosting
+    ? [
+        { name: "production", branch: "main", status: i18nText("Active"), tone: "success" as const, size: "4W · 50GB" },
+        { name: "staging", branch: "staging", status: i18nText("Active"), tone: "success" as const, size: "2W · 20GB" },
+        { name: "dev-invoices", branch: "feat/invoices", status: i18nText("Preparing"), tone: "info" as const, size: "2W · 20GB" },
+      ]
+    : [{ name: "production", branch: "—", status: i18nText("Active"), tone: "success" as const, size: "4W · 50GB" }];
+
+  return (
+    <section className="relative overflow-hidden py-20 lg:py-28">
+      <Container>
+        <SectionHeading
+          eyebrow={i18nText("The console")}
+          title={hosting ? i18nText("One project. Every environment in view.") : i18nText("Everything about your app, in one place.")}
+          subtitle={hosting
+            ? i18nText("Production, staging and development servers sit side by side, each on its own branch with its own database. Deploy, copy data down, scale up — without leaving the page.")
+            : i18nText("Status, metrics, logs, backups and your database — the whole operation on one screen.")}
+        />
+
+        <div className="relative mx-auto mt-14 max-w-5xl">
+          <div className="pointer-events-none absolute -inset-x-10 -bottom-10 top-10 rounded-[40px] bg-primary/15 blur-3xl" />
+          <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-card">
+            {/* Window chrome */}
+            <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
+              <span className="flex gap-1.5">
+                <span className="size-2.5 rounded-full bg-border" />
+                <span className="size-2.5 rounded-full bg-border" />
+                <span className="size-2.5 rounded-full bg-border" />
+              </span>
+              <span className="ms-2 min-w-0 truncate rounded-md border border-border bg-background px-3 py-1 font-mono text-xs text-muted">
+                acme.veltnex.app/my/instances/12/environments
+              </span>
+            </div>
+
+            <div className="grid text-start md:grid-cols-[240px_1fr]">
+              {/* Environment list */}
+              <aside className="border-b border-border p-4 md:border-b-0 md:border-e">
+                <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">{i18nText("Environments")}</p>
+                <ul className="mt-2 space-y-1">
+                  {envs.map((e, i) => (
+                    <li
+                      key={e.name}
+                      className={cn(
+                        "flex items-center justify-between rounded-md px-2 py-2 text-sm",
+                        i === 0 ? "bg-primary/10 text-foreground" : "text-muted",
+                      )}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className={cn("size-1.5 rounded-full", e.tone === "success" ? "bg-success" : "bg-info animate-pulse-soft")} />
+                        <span className="font-medium">{e.name}</span>
+                      </span>
+                      <span className="font-mono text-[11px]">{e.branch}</span>
+                    </li>
+                  ))}
+                </ul>
+              </aside>
+
+              {/* Main panel */}
+              <div className="p-5 sm:p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-sm text-foreground">acme.veltnex.app</p>
+                    <p className="mt-0.5 text-xs text-muted">Odoo 18.0 · fra1 · {envs[0].size}</p>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
+                    <span className="size-1.5 rounded-full bg-success" />
+                    {i18nText("Active")}
+                  </span>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {[
+                    { label: "CPU", value: "34%" },
+                    { label: i18nText("Memory"), value: "58%" },
+                    { label: i18nText("Storage"), value: "47%" },
+                    { label: i18nText("Requests/min"), value: "1,284" },
+                  ].map((m) => (
+                    <div key={m.label} className="rounded-lg border border-border bg-background p-3">
+                      <p className="text-xs text-muted">{m.label}</p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{m.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 rounded-lg border border-border bg-background">
+                  <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs">
+                    <span className="font-medium text-foreground">{i18nText("Latest deployment")}</span>
+                    <span className="text-success">{i18nText("Succeeded · 42s")}</span>
+                  </div>
+                  <pre className="overflow-x-auto px-3 py-2.5 font-mono text-[11px] leading-relaxed text-muted">
+{`▸ build   image odoo:18.0 + addons@7f3a2c1
+▸ rollout production  1/1 ready
+▸ health  /web/health 200  db ok
+✓ live    zero downtime`}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Container>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Two ways to start
+// ---------------------------------------------------------------------
+
+function Paths() {
+  const navigate = useNavigate();
+  return (
+    <section className="border-y border-border bg-card/30 py-20 lg:py-24">
+      <Container>
+        <SectionHeading
+          wide
+          eyebrow={i18nText("Two ways to start")}
+          title={i18nText("Bring your own code, or start from a ready-made app")}
+          subtitle={i18nText("Same platform, same backups, TLS and uptime. The difference is what's inside when it boots.")}
+        />
+        <div className="mt-12 grid gap-6 lg:grid-cols-2">
+          <PathCard
+            icon={Server}
+            title={i18nText("Hosting")}
+            lead={i18nText("You bring the code. We run it.")}
+            points={[
+              i18nText("Any Odoo version, Community or Enterprise"),
+              i18nText("Connect GitHub, GitLab or Bitbucket"),
+              i18nText("Staging and development servers per branch"),
+              i18nText("Scale workers and storage per server"),
+            ]}
+            cta={i18nText("Explore hosting")}
+            onClick={() => navigate("/hosting")}
+          />
+          <PathCard
+            icon={Layers}
+            title={i18nText("Ready-made apps")}
+            lead={i18nText("Ready code and a ready database, on day one.")}
+            points={[
+              i18nText("Industry apps set up and ready to use"),
+              i18nText("Ships with its database — no blank screen"),
+              i18nText("Customize freely whenever you want"),
+              i18nText("Same backups, TLS and uptime as hosting"),
+            ]}
+            cta={i18nText("Explore ready-made apps")}
+            onClick={() => navigate("/services")}
+          />
+        </div>
+      </Container>
+    </section>
+  );
+}
+
+function PathCard({
+  icon: Icon,
+  title,
+  lead,
+  points,
+  cta,
+  onClick,
+}: {
+  icon: LucideIcon;
+  title: string;
+  lead: string;
+  points: string[];
+  cta: string;
+  onClick: () => void;
+}) {
+  return (
+    <article className="flex flex-col rounded-xl border border-border bg-card p-8 transition-colors hover:border-primary/40">
+      <span className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <Icon className="size-5" />
+      </span>
+      <h3 className="mt-6 text-2xl font-semibold text-foreground">{title}</h3>
+      <p className="mt-1 text-sm font-medium text-primary">{lead}</p>
+      <ul className="mt-6 space-y-2.5 text-sm text-foreground">
+        {points.map((p) => (
+          <li key={p} className="flex items-start gap-2.5">
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
+            <span>{p}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-8 pt-2">
+        <Button onClick={onClick}>
+          {cta}
+          <ArrowRight />
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Features
+// ---------------------------------------------------------------------
+
+function Features({ hosting }: { hosting: boolean }) {
+  const items: { icon: LucideIcon; title: string; text: string }[] = [
+    ...(hosting
+      ? [
+          { icon: GitBranch, title: i18nText("Git-based deploys"), text: i18nText("Push to a branch and we build the image and roll it out with zero downtime. Private repos via token.") },
+          { icon: Layers, title: i18nText("Environments"), text: i18nText("Staging and development servers start as a copy of production, with mail and crons disabled.") },
+        ]
+      : []),
+    { icon: Database, title: i18nText("One database per server"), text: i18nText("Ready on first boot. Back it up, restore your own, or reset the admin password from the portal.") },
+    { icon: Activity, title: i18nText("Metrics and logs"), text: i18nText("Live CPU, memory, storage and request rates, with streaming logs, a shell and a read-only SQL console.") },
+    { icon: TrendingUp, title: i18nText("Scale on demand"), text: i18nText("Workers and storage per server, billed pro rata. Up in minutes, down at the next renewal.") },
+    { icon: Lock, title: i18nText("Secure by default"), text: i18nText("Isolated namespaces, free TLS that renews itself, encrypted backups and an audit log.") },
+    ...(hosting ? [] : [{ icon: Sparkles, title: i18nText("Preconfigured apps"), text: i18nText("Modules and starter data in place from the first login, tuned to your industry.") }]),
+  ];
+
+  return (
+    <section className="py-20 lg:py-24">
+      <Container>
+        <SectionHeading
+          eyebrow={i18nText("Production-ready by default")}
+          title={i18nText("Everything you need to run Odoo")}
+          subtitle={i18nText("A complete operations layer, so your team ships features instead of babysitting servers.")}
+        />
+        <div className="mt-14 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((f) => (
+            <div key={f.title} className="bg-background p-7 transition-colors hover:bg-card">
+              <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <f.icon className="size-5" />
+              </span>
+              <h3 className="mt-5 text-lg font-semibold text-foreground">{f.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">{f.text}</p>
+            </div>
+          ))}
+        </div>
+      </Container>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------
+// How it works
+// ---------------------------------------------------------------------
+
+function HowItWorks({ hosting }: { hosting: boolean }) {
+  const steps = hosting
+    ? [
+        { n: "01", title: i18nText("Sign up"), text: i18nText("An account takes a minute. No card needed to start a trial.") },
+        { n: "02", title: i18nText("Pick your stack"), text: i18nText("Odoo version, workers, storage and region.") },
+        { n: "03", title: i18nText("Connect your repo"), text: i18nText("We clone on boot and redeploy on every push.") },
+        { n: "04", title: i18nText("Ship"), text: i18nText("Your production server is live with its database ready.") },
+      ]
+    : [
+        { n: "01", title: i18nText("Sign up"), text: i18nText("An account takes a minute. No card needed to start a trial.") },
+        { n: "02", title: i18nText("Choose an app"), text: i18nText("Pick the app and plan that fit your team.") },
+        { n: "03", title: i18nText("Launch"), text: i18nText("Modules and database are set up for you.") },
+        { n: "04", title: i18nText("Work"), text: i18nText("Sign in and get going. We keep it running.") },
+      ];
+
+  return (
+    <section className="border-y border-border bg-card/30 py-20 lg:py-24">
+      <Container>
+        <SectionHeading eyebrow={i18nText("From sign-up to production")} title={i18nText("How it works")} />
+        <ol className="mt-14 grid gap-8 md:grid-cols-4">
+          {steps.map((s) => (
+            <li key={s.n} className="relative">
+              <span className="font-mono text-sm font-semibold text-primary">{s.n}</span>
+              <div className="mt-3 h-px w-full bg-border" />
+              <h3 className="mt-4 text-lg font-semibold text-foreground">{s.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">{s.text}</p>
+            </li>
+          ))}
+        </ol>
+      </Container>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Versions
+// ---------------------------------------------------------------------
+
+function Versions() {
+  return (
+    <section className="py-20 lg:py-24">
+      <Container>
+        <SectionHeading
+          eyebrow={i18nText("Version freedom")}
+          title={i18nText("Every Odoo version, Community and Enterprise")}
+          subtitle={i18nText("Maintaining a legacy install or starting on the latest release? Pin your version and upgrade on your schedule.")}
+        />
+        <div className="mt-12 flex flex-wrap items-center justify-center gap-3">
+          {ODOO_VERSIONS.map((v) => (
+            <span
+              key={v}
+              className="inline-flex items-baseline gap-1.5 rounded-lg border border-border bg-card px-5 py-2.5 text-lg font-semibold text-foreground transition-colors hover:border-primary/40"
+            >
+              <span className="text-xs font-medium uppercase tracking-wider text-muted">Odoo</span>
+              {v}
+            </span>
+          ))}
+        </div>
+      </Container>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Ready-made catalog (dynamic)
+// ---------------------------------------------------------------------
+
+function Catalog({ services }: { services: ApiService[] }) {
+  const navigate = useNavigate();
+  if (!services.length) return null;
+  return (
+    <section className="border-t border-border bg-card/30 py-20 lg:py-24">
+      <Container>
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <SectionHeading
+            align="start"
+            eyebrow={i18nText("Ready-made apps")}
+            title={i18nText("Pick an app. It ships with its database.")}
+          />
+          <Button variant="outline" onClick={() => navigate("/services")}>
+            {i18nText("Browse all apps")}
+            <ArrowRight />
+          </Button>
+        </div>
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {services.slice(0, 6).map((s) => (
+            <Link
+              key={s.id}
+              to={`/services/${s.id}`}
+              className="group rounded-xl border border-border bg-background p-6 transition-colors hover:border-primary/40"
+            >
+              <ServiceIcon icon={s.icon} className="size-9 text-primary" />
+              <h3 className="mt-4 text-base font-semibold text-foreground">{s.name}</h3>
+              {s.description && <p className="mt-1.5 line-clamp-2 text-sm text-muted">{s.description}</p>}
+              <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary">
+                {i18nText("View app")}
+                <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </Link>
+          ))}
+        </div>
+      </Container>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Final CTA
+// ---------------------------------------------------------------------
+
+function FinalCta({ hosting, services }: { hosting: boolean; services: boolean }) {
+  const navigate = useNavigate();
+  const stats = [
+    { value: "99.9%", label: i18nText("Uptime target") },
+    { value: i18nText("Daily"), label: i18nText("Automatic backups") },
+    { value: i18nText("Free"), label: i18nText("TLS certificates") },
+    { value: "13 → 20", label: i18nText("Odoo versions") },
+  ];
+  return (
+    <section className="relative overflow-hidden border-t border-border">
+      <div className="pointer-events-none absolute start-1/2 top-0 h-[420px] w-[900px] -translate-x-1/2 rounded-full bg-primary/15 blur-[140px]" />
+      <Container className="relative py-24 text-center lg:py-32">
+        <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight text-foreground sm:text-5xl">
+          {i18nText("Ship on infrastructure that")}{" "}
+          <span className="text-primary">{i18nText("just stays up")}</span>
+        </h2>
+        <p className="mx-auto mt-5 max-w-xl text-lg text-muted">
+          {i18nText("Configure your plan in under a minute. No card needed to start.")}
+        </p>
+        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          {hosting && (
+            <Button size="lg" onClick={() => navigate("/hosting")}>
+              {i18nText("Configure your plan")}
+              <ArrowRight />
+            </Button>
+          )}
+          {services && (
+            <Button size="lg" variant={hosting ? "outline" : "default"} onClick={() => navigate("/services")}>
+              {i18nText("Browse ready-made apps")}
+            </Button>
+          )}
+          {!hosting && !services && (
+            <Button size="lg" onClick={() => navigate("/register")}>
+              {i18nText("Create an account")}
+              <ArrowRight />
+            </Button>
+          )}
+        </div>
+
+        <dl className="mx-auto mt-16 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-4">
+          {stats.map((s) => (
+            <div key={s.label} className="bg-background px-4 py-8">
+              <dd className="text-3xl font-bold tracking-tight text-foreground">{s.value}</dd>
+              <dt className="mt-1 text-sm text-muted">{s.label}</dt>
+            </div>
+          ))}
+        </dl>
+      </Container>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------
 
 export default function Home() {
   const sections = useSections();
-  const [services, setServices] = useState<ApiService[]>([]);
-  useEffect(() => {
-    const originalTitle = document.title;
-    const description = document.querySelector('meta[name="description"]');
-    const originalDescription = description?.getAttribute("content");
-    document.title = i18nText("VELTNEX — The Odoo hosting platform");
-    description?.setAttribute("content", i18nText("Launch and manage Odoo on Veltnex. Hosting, ready-made apps, project environments, databases, snapshots, and monitoring in one workspace."));
-    return () => {
-      document.title = originalTitle;
-      if (originalDescription != null) description?.setAttribute("content", originalDescription);
-    };
-  }, []);
-  useEffect(() => {
+  const [services, setServices] = React.useState<ApiService[]>([]);
+
+  React.useEffect(() => {
     if (!sections.services) return;
     let active = true;
-    api.services().then(data => { if (active) setServices(data); }).catch(() => { if (active) setServices([]); });
+    api.services()
+      .then((data) => { if (active) setServices(data); })
+      .catch(() => { if (active) setServices([]); });
     return () => { active = false; };
   }, [sections.services]);
 
-  return <div className="veltnex-home">
-    <section className="home-hero home-container" aria-labelledby="home-heading">
-      <div className="home-hero-copy">
-        <div>
-          <p className="home-eyebrow">
-            <span className="home-eyebrow-rule" />
-            {i18nText("The Odoo hosting platform")}
-          </p>
-          <h1 id="home-heading">
-            {i18nText("Your Odoo.")}
-            <br />
-            <span>
-              {i18nText("Under control.")}
-            </span>
-          </h1>
-        </div>
-        <div className="home-hero-summary">
-          <p>
-            {i18nText(sections.hosting ? "Launch and manage Odoo in one workspace. Connect your code, work across environments, and keep your databases and operations in view." : "Launch a ready-made Odoo app and manage it in one workspace, with your databases and operations in view.")}
-          </p>
-          <div className="home-actions">
-            <LaunchAction sections={sections} />
-            <HomeLink to="/docs/overview" secondary>
-              {i18nText("Meet the platform")}
-            </HomeLink>
-          </div>
-        </div>
-      </div>
-      <ProductPreview hosting={sections.hosting} />
-      <div className="home-capability-strip">
-        <p>
-          {i18nText("Built around your Odoo project")}
-        </p>
-        <div>
-          {(sections.hosting ? ["Git-based deployments", "Separate environments", "Databases & snapshots", "Metrics & logs"] : ["Ready-made apps", "Database snapshots", "Metrics & logs", "Team permissions"]).map(item => <span key={item}>
-            <Check className="size-3.5 text-primary" />
-            {i18nText(item)}
-          </span>)}
-        </div>
-      </div>
-    </section>
-    <LaunchPaths sections={sections} />
-    {sections.hosting && <HostingWorkflow />}
-    <Operations hosting={sections.hosting} />
-    {sections.services && services.length > 0 && <section className="home-catalog-section">
-      <div className="home-container home-section">
-        <div className="home-catalog-heading">
-          <SectionIntro label={i18nText("Available on Veltnex")} title={i18nText("Find your starting point.")}>
-            {i18nText("Explore the ready-made services available on the platform.")}
-          </SectionIntro>
-          <Link to="/services" className="home-text-link">
-            {i18nText("View all apps")}
-            <ArrowRight className="size-4" />
-          </Link>
-        </div>
-        <div className="home-catalog">
-          {services.slice(0, 3).map(service => <Link key={service.id} to={`/services/${service.id}`} className="home-catalog-item focus-ring">
-            <ServiceIcon icon={service.icon} className="size-5 text-primary" />
-            <h3>
-              {service.name}
-            </h3>
-            <p>
-              {service.tagline}
-            </p>
-            <span>
-              {i18nText("Explore app")}
-              <ArrowUpRight className="size-4" />
-            </span>
-          </Link>)}
-        </div>
-      </div>
-    </section>}
-    <section className="home-container home-section home-start">
-      <div>
-        <p className="home-eyebrow">
-          {i18nText("Your next project starts here")}
-        </p>
-        <h2>
-          {i18nText("Make room for your Odoo.")}
-        </h2>
-        <p className="home-description">
-          {i18nText(sections.hosting ? "Choose the configuration that fits your project. Your code and your operations, together on Veltnex." : "Explore available services and choose the app that fits your team.")}
-        </p>
-      </div>
-      <div className="home-start-actions">
-        <LaunchAction sections={sections} />
-        <Link to={sections.hosting ? "/docs/launch-instance" : "/docs/managed-services"} className="home-text-link">
-          {i18nText("Read the getting-started guide")}
-          <ArrowUpRight className="size-4" />
-        </Link>
-      </div>
-    </section>
-  </div>;
+  React.useEffect(() => {
+    document.title = "VELTNEX — " + i18nText("Managed Odoo hosting");
+  }, []);
+
+  return (
+    <div className="animate-fade-in">
+      <Hero hosting={sections.hosting} services={sections.services} />
+      <TrustStrip hosting={sections.hosting} />
+      <ConsoleShowcase hosting={sections.hosting} />
+      {sections.hosting && sections.services && <Paths />}
+      <Features hosting={sections.hosting} />
+      <HowItWorks hosting={sections.hosting} />
+      {sections.hosting && <Versions />}
+      {sections.services && <Catalog services={services} />}
+      <FinalCta hosting={sections.hosting} services={sections.services} />
+    </div>
+  );
 }

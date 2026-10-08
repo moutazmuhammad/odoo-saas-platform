@@ -85,7 +85,7 @@ export function PublicNav() {
   };
 
   return (
-    <header dir="ltr" className={cn("sticky top-0 z-40 w-full border-b border-border bg-card", location.pathname === "/" && "public-home-header")}>
+    <header dir="ltr" className="sticky top-0 z-40 w-full border-b border-border bg-card">
 
       <div className="mx-auto flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-8">

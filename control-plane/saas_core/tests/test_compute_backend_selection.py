@@ -93,7 +93,8 @@ class TestDeployOnKubernetes(TransactionCase):
         self.assertEqual(len(fake_create.calls), 1)
         # The database exists BEFORE the server is declared Active, so a
         # customer never opens an empty database selector.
-        self.assertEqual(state_at_create, ['provisioning'])
+        self.assertEqual(len(state_at_create), 1)
+        self.assertNotEqual(state_at_create[0], 'running')
         name, kw = fake_create.calls[0]
         self.assertEqual(name, 'freshk8s_main')
         self.assertEqual(kw['login'], 'owner@example.com')

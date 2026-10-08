@@ -3336,6 +3336,7 @@ finally:
         # scheduled actions, no payments.
         if self.environment in ('staging', 'development'):
             self._hosting_neutralize_database(db_name)
+            self._hosting_mask_pii(db_name)
 
         self.state = 'running'
         self.pending_operation = False
@@ -3381,6 +3382,79 @@ BEGIN
   ON CONFLICT (key) DO UPDATE SET value = 'true', write_date = now();
 END $$;
 """
+
+    # PII masking for Staging/Development copies (Odoo.sh "sanitize"): every
+    # customer contact is anonymized, but the company itself and INTERNAL
+    # users' partners are kept so the team still recognises its own accounts
+    # and can log in. Portal (customer) logins are anonymized too.
+    _PII_MASK_SQL = """
+DO $$
+BEGIN
+  CREATE TEMP TABLE _keep_partner AS
+    SELECT partner_id AS id FROM res_company
+    UNION SELECT partner_id FROM res_users WHERE share IS NOT TRUE;
+
+  UPDATE res_partner p SET
+    name = 'Contact ' || p.id,
+    email = 'contact' || p.id || '@example.invalid',
+    phone = NULL,
+    mobile = NULL,
+    street = NULL,
+    street2 = NULL,
+    city = NULL,
+    zip = NULL,
+    vat = NULL,
+    website = NULL,
+    comment = NULL,
+    ref = NULL
+  WHERE p.id NOT IN (SELECT id FROM _keep_partner);
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'res_partner' AND column_name = 'complete_name') THEN
+    UPDATE res_partner SET complete_name = name WHERE id NOT IN (SELECT id FROM _keep_partner);
+  END IF;
+
+  UPDATE res_users SET login = 'user' || id || '@example.invalid' WHERE share IS TRUE;
+
+  IF to_regclass('res_partner_bank') IS NOT NULL THEN
+    UPDATE res_partner_bank SET acc_number = 'XXXX' || id;
+  END IF;
+  IF to_regclass('crm_lead') IS NOT NULL THEN
+    UPDATE crm_lead SET contact_name = NULL, email_from = NULL, phone = NULL, mobile = NULL,
+                        partner_name = NULL, street = NULL, street2 = NULL, city = NULL, zip = NULL;
+  END IF;
+  IF to_regclass('hr_employee') IS NOT NULL THEN
+    UPDATE hr_employee SET private_email = NULL, private_phone = NULL, private_street = NULL,
+                           private_street2 = NULL, private_city = NULL, private_zip = NULL,
+                           emergency_contact = NULL, emergency_phone = NULL,
+                           identification_id = NULL, passport_id = NULL, ssnid = NULL;
+  END IF;
+  IF to_regclass('mail_tracking_value') IS NOT NULL THEN
+    DELETE FROM mail_tracking_value v USING ir_model_fields f
+     WHERE v.field_id = f.id AND f.model = 'res.partner'
+       AND f.name IN ('name', 'email', 'phone', 'mobile', 'street', 'street2', 'city', 'zip', 'vat');
+  END IF;
+  IF to_regclass('mail_followers') IS NOT NULL THEN
+    DELETE FROM mail_followers WHERE partner_id NOT IN (SELECT id FROM _keep_partner);
+  END IF;
+  DROP TABLE _keep_partner;
+END $$;
+"""
+
+    def _hosting_mask_pii(self, db_name):
+        """Anonymize customer PII in ``db_name`` (names, emails, phones,
+        addresses, tax ids, bank accounts, lead/employee private data).
+        Keeps the company record and internal users intact. Raises on
+        failure so a Staging/Development copy is never left with real
+        customer data."""
+        self.ensure_one()
+        self._append_log("Masking customer data in '%s'..." % db_name)
+        rc, out, err = self._docker_exec_sql(self._PII_MASK_SQL, db=db_name, timeout=300)
+        if rc != 0:
+            raise UserError(_(
+                "Could not mask customer data in database '%s':\n%s")
+                % (db_name, (err or out or '')[-500:]))
+        self._append_log("Customer data masked in '%s'." % db_name)
+        return True
 
     def _hosting_neutralize_database(self, db_name):
         """Disable everything in ``db_name`` that would touch the customer's

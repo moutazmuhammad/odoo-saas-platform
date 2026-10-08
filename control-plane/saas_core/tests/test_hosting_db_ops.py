@@ -314,9 +314,31 @@ class TestHostingDbOps(TransactionCase):
                 self.assertIn(table, sql)
             self.assertEqual(child.state, 'running')
 
+    def test_restore_on_staging_masks_customer_pii(self):
+        """After neutralizing, a Staging/Development copy anonymizes contacts
+        (names, emails, phones, addresses, bank accounts, leads, employees)
+        but keeps the company and internal users."""
+        child = self.instance.copy({'subdomain': 'dbops-pii', 'environment': 'staging',
+                                    'parent_id': self.instance.id, 'state': 'running'})
+        m_sql = self._restore_with_mock(child)
+        masks = [c for c in m_sql.call_args_list if '@example.invalid' in c.args[0]]
+        self.assertEqual(len(masks), 1)
+        sql = masks[0].args[0]
+        self.assertEqual(masks[0].kwargs.get('db'), 'dbops-pii_main')
+        for token in ('res_partner', 'email', 'phone', 'mobile', 'street', 'vat',
+                      'res_partner_bank', 'crm_lead', 'hr_employee',
+                      'share IS NOT TRUE', 'FROM res_company'):
+            self.assertIn(token, sql)
+        # Neutralization runs first, masking second.
+        order = [i for i, c in enumerate(m_sql.call_args_list)
+                 if 'ir_mail_server' in c.args[0] or '@example.invalid' in c.args[0]]
+        self.assertEqual(len(order), 2)
+        self.assertIn('ir_mail_server', m_sql.call_args_list[order[0]].args[0])
+
     def test_restore_on_production_is_not_neutralized(self):
         m_sql = self._restore_with_mock(self.instance)
         self.assertFalse([c for c in m_sql.call_args_list if 'ir_mail_server' in c.args[0]])
+        self.assertFalse([c for c in m_sql.call_args_list if '@example.invalid' in c.args[0]])
 
     def test_neutralize_failure_aborts_the_copy(self):
         child = self.instance.copy({'subdomain': 'dbops-nfail', 'environment': 'staging',

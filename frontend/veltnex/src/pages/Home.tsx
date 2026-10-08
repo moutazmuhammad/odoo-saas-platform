@@ -428,7 +428,7 @@ function Features({ hosting }: { hosting: boolean }) {
     ...(hosting
       ? [
           { icon: GitBranch, title: i18nText("Git-based deploys"), text: i18nText("Push your code and it goes live automatically, with no downtime for your users.") },
-          { icon: Layers, title: i18nText("Environments"), text: i18nText("Test changes on a safe copy of production before your customers ever see them.") },
+          { icon: Layers, title: i18nText("Environments"), text: i18nText("Test changes on a safe copy of production, with customer data anonymized, before your customers ever see them.") },
         ]
       : []),
     { icon: Database, title: i18nText("Your database, ready"), text: i18nText("Set up from the first minute. Back it up, restore it or bring your own in a click.") },

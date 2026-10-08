@@ -2559,5 +2559,6 @@
   "Any Odoo version. Your choice.": "أي إصدار من Odoo. الخيار لك.",
   "Odoo 14 → 20": "Odoo من 14 إلى 20",
   "Odoo 14 to 20. Your choice.": "Odoo من 14 إلى 20. الخيار لك.",
-  "Odoo 14 to 20": "Odoo من 14 إلى 20"
+  "Odoo 14 to 20": "Odoo من 14 إلى 20",
+  "Test changes on a safe copy of production, with customer data anonymized, before your customers ever see them.": "اختبر تغييراتك على نسخة آمنة من الإنتاج، مع إخفاء بيانات العملاء، قبل أن يراها عملاؤك."
 }

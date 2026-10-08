@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import * as React from "react";
+import { Globe } from "@/components/Globe";
 import { Button } from "@/components/ui/button";
 import { ServiceIcon } from "@/components/ServiceIcon";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -26,10 +27,6 @@ import { api, type ApiService } from "@/lib/api";
 import { useSections } from "@/lib/useSections";
 import { cn } from "@/lib/utils";
 
-// The globe pulls in three.js — lazy so the rest of the page paints first.
-const GlobeViz = React.lazy(() =>
-  import("@/components/Globe").then((m) => ({ default: m.Globe })),
-);
 
 // ---------------------------------------------------------------------
 // Shared building blocks
@@ -147,9 +144,7 @@ function Hero({ hosting, services }: { hosting: boolean; services: boolean }) {
             <div className="pointer-events-none absolute inset-[12%] rounded-full bg-primary/25 blur-[90px]" />
             <div className="relative aspect-square mask-[radial-gradient(circle_at_center,black_62%,transparent_92%)]">
               <ErrorBoundary>
-                <React.Suspense fallback={<div className="size-full rounded-full border border-border/60" />}>
-                  <GlobeViz speed={0.1} />
-                </React.Suspense>
+                <Globe speed={0.1} />
               </ErrorBoundary>
             </div>
 

@@ -122,8 +122,8 @@ export default function Snapshots({ embedId }: { embedId?: number } = {}) {
           title={openInvoice.overdue ? i18nText("Your snapshot invoice is overdue") : i18nText("Your snapshot invoice is ready")}
           description={openInvoice.overdue
             ? i18nText("Pay it now to keep your snapshots; unpaid snapshots are deleted after the grace period.")
-            : i18nText("One invoice covers all your snapshots for the coming month. Add a payment method in Billing to pay it automatically.")}
-          action={<Button size="sm" onClick={() => navigate(`/my/billing/${openInvoice.id}`)}><Receipt className="size-4" />{i18nText("Pay invoice")}</Button>}
+            : i18nText("One invoice covers all your snapshots for the coming month. Once you have paid with a card, it is charged automatically.")}
+          action={<Button size="sm" onClick={() => window.location.assign(`/my/pay/${openInvoice.id}`)}><Receipt className="size-4" />{i18nText("Pay invoice")}</Button>}
         />
       )}
 

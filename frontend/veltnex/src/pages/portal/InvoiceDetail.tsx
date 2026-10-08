@@ -52,7 +52,7 @@ export default function InvoiceDetail() {
   }
 
   // Payment + official PDF live on Odoo's portal invoice page.
-  const goPay = () => (window.location.href = inv.portal_url);
+  const goPay = () => (window.location.href = `/my/pay/${inv.id}`);
 
   return (
     <div className="animate-fade-in">

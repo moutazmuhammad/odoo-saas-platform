@@ -164,6 +164,14 @@ function dotClass(state: string) {
 }
 
 export default function Environments() {
+  const [searchParamsForToast] = useSearchParams();
+  const toastForPayment = useToast();
+  React.useEffect(() => {
+    if (searchParamsForToast.get("payment") === "success") {
+      toastForPayment.success(i18nText("Payment received"), i18nText("Thank you! Your server is being set up and will be live in a few minutes."));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useRuntimeClock();
   const { id = "" } = useParams();
   const instanceId = Number(id);
@@ -850,7 +858,8 @@ function MainPanel({
   const url = status?.url || env.url;
   const isRunning = liveState === "running";
   const isStopped = liveState === "stopped";
-  const pendingPay = env.pending_payment && env.pending_invoice_id;
+  const pendingPay = (env.pending_payment && env.pending_invoice_id) || (env.needs_payment && liveState === "pending_payment");
+  const openInvoice = env.needs_payment && liveState !== "pending_payment";
   const cloneCmd = project.repo_url
     ? `git clone --branch ${env.branch} ${project.repo_url}`
     : "";
@@ -964,14 +973,23 @@ function MainPanel({
         {!can(({ overview: "project.view", metrics: "project.view", databases: "db.view", code: 'project.configure', shell: "terminal.open", sql: "sql.execute", logs: "logs.view", backups: "backup.view", snapshots: "backup.view" } as Record<string, string>)[tab]) ? <AlertBanner variant="info" title={i18nText("Access restricted")} description={i18nText("Ask your project owner for the role needed to use this tool.")} /> : pendingPay ? (
           <AlertBanner
             variant="warning"
-            title={i18nText("Payment pending")}
-            description={i18nText("Finish checkout to provision this server.")}
+            title={i18nText("One step left: payment")}
+            description={i18nText("Your server is set up and waiting. Pay once and it goes live; your card is kept so renewals are automatic.")}
             action={
-              <Button size="sm" onClick={() => (window.location.href = `/my/instances/${env.id}/checkout`)}>{i18nText("Complete checkout")}</Button>
+              <Button size="sm" onClick={() => (window.location.href = env.checkout_url || `/my/instances/${env.id}/checkout`)}>{i18nText("Pay and launch")}</Button>
             }
           />
         ) : tab === "overview" ? (
           <>
+            {openInvoice && (
+              <AlertBanner
+                className="mb-4"
+                variant="warning"
+                title={i18nText("An invoice is waiting for payment")}
+                description={i18nText("Pay it in one step to keep everything running. Add a card once and future invoices are paid automatically.")}
+                action={<Button size="sm" onClick={() => (window.location.href = env.checkout_url || `/my/instances/${env.id}/checkout`)}>{i18nText("Pay now")}</Button>}
+              />
+            )}
             {project.repo_url && (
               <RepoCard repoUrl={project.repo_url} branch={env.branch} cloneCmd={cloneCmd} />
             )}

@@ -1321,8 +1321,13 @@ class SaasApi(http.Controller):
             _logger.exception("Daily-backup enable failed for %s", instance_id)
             return err(_("We couldn't start the daily-backup checkout. "
                          "Please try again."), 'enable_failed')
+        inv = instance.daily_backup_pending_invoice_id
+        if instance.daily_backup_enabled or (inv and inv.payment_state in ('paid', 'in_payment')):
+            # The saved card paid it on the spot — nothing more to do.
+            return ok({'paid': True})
         return ok({
-            'checkout_url': '/my/instances/%s/daily-backup/checkout' % instance.id,
+            'checkout_url': '/my/instances/%s/checkout%s' % (
+                instance.id, ('?invoice=%s' % inv.id) if inv else ''),
         })
 
 
@@ -2088,6 +2093,11 @@ class SaasApi(http.Controller):
             'workers': inst.plan_id.workers if inst.plan_id else 0,
             'storage_gb': int(inst.plan_id.storage_limit) if inst.plan_id else 0,
             'pending_plan': inst.pending_plan_id.name if inst.pending_plan_id else '',
+            # Anything open to pay on this server (initial order, renewal,
+            # add-on...): one link, one page.
+            'needs_payment': bool(inst.state == 'pending_payment' or inst.env_pending_invoice_id
+                                  or getattr(inst, 'has_unpaid_invoice', False)),
+            'checkout_url': '/my/instances/%s/checkout' % inst.id,
             **inst._runtime_status_dict(),
         }
 

@@ -63,7 +63,7 @@ export function BillingPanel({
   }
 
   const upgrade = () =>
-    navigate(`/my/instances/${instance.id}/${instance.is_trial ? "upgrade" : "change-plan"}`);
+    window.location.assign(`/my/instances/${instance.id}/${instance.is_trial ? "upgrade" : "change-plan"}`);
 
   async function addStorage() {
     const blockGb = cap?.block_gb || 0;

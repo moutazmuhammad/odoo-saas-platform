@@ -780,6 +780,9 @@ class SaasInstance(models.Model):
             "prorated catch-up %.2f (full %.2f)." % (
                 invoice.name, period_label, charge, full)
         )
+        # One click: the saved card pays it and the payment hook enables
+        # backups immediately — no checkout page.
+        self._try_pay_with_saved_method(invoice)
         return invoice
 
 
@@ -866,6 +869,21 @@ class SaasInstance(models.Model):
             'daily_backup_disable', model='saas.instance', res_id=self.id,
             res_name=self.subdomain, detail='Daily backups disabled from the portal')
         return True
+
+    def _try_pay_with_saved_method(self, invoice):
+        """Charge ``invoice`` with the customer's saved card right away so a
+        purchase never needs a checkout page. True when paid (or pending
+        capture); False when there is no saved card or the charge failed."""
+        self.ensure_one()
+        if not invoice or invoice.amount_total <= 0:
+            return False
+        if not self._auto_renew_method():
+            return False
+        try:
+            return bool(self._try_auto_charge_invoice(invoice, kind='subscription'))
+        except Exception:
+            _logger.exception("Saved-card charge failed for invoice %s", invoice.id)
+            return False
 
     def _snapshot_order_line(self, period=None):
         """Sale-order line tuple for the daily-backup add-on over ONE billing
@@ -995,6 +1013,8 @@ class SaasInstance(models.Model):
             % (qty, block_gb, invoice.name, charge))
         if invoice.amount_total <= 0:
             self._activate_pending_storage_blocks()
+        else:
+            self._try_pay_with_saved_method(invoice)
         return invoice
 
     def _apply_package_best_effort(self):
@@ -2974,6 +2994,9 @@ class SaasInstance(models.Model):
         # Zero charge: apply immediately
         if invoice.amount_total <= 0:
             self._apply_pending_plan_change()
+            return True
+        if self._try_pay_with_saved_method(invoice):
+            # Paid on the spot: the account.move hook applies the change.
             return True
 
         return invoice

@@ -210,7 +210,7 @@ export default function Register() {
               </form>
 
               <p className="mt-6 text-center text-sm text-muted">{i18nText("Already have an account?")}{" "}
-                <Link to="/login" className="font-medium text-primary hover:underline">{i18nText("Sign in")}</Link>
+                <Link to="/login" state={{ from: searchParams.get("hosting") === "1" ? "/hosting?resume=1" : undefined }} className="font-medium text-primary hover:underline">{i18nText("Sign in")}</Link>
               </p>
             </>
           ) : (

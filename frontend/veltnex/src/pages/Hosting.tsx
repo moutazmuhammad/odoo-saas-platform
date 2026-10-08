@@ -104,6 +104,8 @@ const SPECS = [
   { icon: ShieldCheck, title: i18nText("Hardened by default"), desc: i18nText("Encrypted backups, audit logs, and IP allow-lists.") },
 ];
 
+export const PENDING_ORDER_KEY = "veltnex-pending-order";
+
 export default function Hosting() {
   const { isAuthenticated } = useAuth();
   const [searchParams] = useSearchParams();
@@ -115,6 +117,20 @@ export default function Hosting() {
   // DigitalOcean-style: the new project starts from one of the customer's
   // snapshots (/hosting?from_snapshot=<id>&snapshot_name=…).
   const fromSnapshotId = Number(searchParams.get("from_snapshot") || 0) || 0;
+  const resumeOrder = searchParams.get("resume") === "1";
+  const [resuming, setResuming] = React.useState(false);
+  const [resumeError, setResumeError] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!resumeOrder || !isAuthenticated || resuming) return;
+    let stored: Record<string, string> | null = null;
+    try { stored = JSON.parse(sessionStorage.getItem(PENDING_ORDER_KEY) || "null"); } catch { stored = null; }
+    if (!stored) return;
+    setResuming(true);
+    api.hostingOrder(stored)
+      .then(({ redirect_url }) => { try { sessionStorage.removeItem(PENDING_ORDER_KEY); } catch { /* ignore */ } window.location.href = redirect_url; })
+      .catch((e) => { setResumeError(e instanceof ApiError ? e.message : i18nText("Couldn't place your order.")); setResuming(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeOrder, isAuthenticated]);
   const fromSnapshotName = searchParams.get("snapshot_name") || "";
   const [meta, setMeta] = React.useState<Meta | null>(null);
   const [tiers, setTiers] = React.useState<ApiTier[] | null>(null);
@@ -318,6 +334,7 @@ export default function Hosting() {
     if (!config || !subdomain || ordering) return;
     const fields = orderFields();
     if (!isAuthenticated) {
+      try { sessionStorage.setItem(PENDING_ORDER_KEY, JSON.stringify(fields)); } catch { /* ignore */ }
       const qs = new URLSearchParams({ hosting: "1", ...fields });
       window.location.href = `/register?${qs.toString()}`;
       return;
@@ -425,6 +442,12 @@ export default function Hosting() {
         {error && (
           <AlertBanner className="mb-6" variant="danger" title={i18nText("Couldn't load hosting plans")} description={error} />
         )}
+        {resuming && (
+          <AlertBanner className="mb-6" variant="info" title={i18nText("Placing your order…")} description={i18nText("Welcome back. We're placing the order you configured and taking you to payment.")} />
+        )}
+        {resumeError && (
+          <AlertBanner className="mb-6" variant="danger" title={i18nText("Couldn't place your order")} description={resumeError} />
+        )}
         {fromSnapshotId > 0 && (
           <AlertBanner
             className="mb-6"
@@ -452,9 +475,9 @@ export default function Hosting() {
             {!isTrial && (
             <ol className="mb-10 flex items-center justify-center gap-1 sm:gap-3">
               {[
-                { n: 1, label: i18nText("Production specs") },
-                { n: 2, label: i18nText("Project & code") },
-                { n: 3, label: i18nText("Region & environments") },
+                { n: 1, label: i18nText("Plan") },
+                { n: 2, label: i18nText("Project") },
+                { n: 3, label: i18nText("Review & pay") },
               ].map((s, i, arr) => (
                 <li key={s.n} className="flex items-center gap-2">
                   <button
@@ -816,31 +839,10 @@ export default function Hosting() {
               <div className="grid items-start gap-6 lg:grid-cols-[1fr_20rem]">
                 {/* Left: region, support, backup & environments */}
                 <Card className="p-5">
-                  <h2 className="text-lg font-semibold">{i18nText("Region, support & environments")}</h2>
-                  <p className="mt-1 text-xs text-muted">{i18nText("Choose where it runs, your support level, and how many extra environments to buy.")}</p>
+                  <h2 className="text-lg font-semibold">{i18nText("Review & pay")}</h2>
+                  <p className="mt-1 text-xs text-muted">{i18nText("Pick your support level and extras, check the total, then pay once. Your card is kept so renewals are automatic.")}</p>
 
                   <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                    {showRegionPicker && (
-                      <div className="space-y-1">
-                        <label className="flex items-center gap-1.5 text-sm font-medium">
-                          <Globe className="size-3.5 text-primary" />{i18nText(" Region")}<FieldHint text={i18nText("The data-center location your server runs in. Pick the one closest to your users; price can vary by region.")} />
-                        </label>
-                        <select
-                          value={regionId ?? ""}
-                          onChange={(e) => setRegionId(Number(e.target.value))}
-                          className="h-10 w-full cursor-pointer rounded-lg border border-border bg-card px-3 text-sm outline-hidden ring-primary/40 focus:ring-1"
-                        >
-                          {sortedRegions.map((r) => {
-                            const tag = (r.default || r.recommended)
-                              ? i18nText(" — Recommended")
-                              : (r.budget || (cheapestRegion && r.id === cheapestRegion.id))
-                                ? i18nText(" — Budget")
-                                : r.multiplier !== 1 ? ` (×${r.multiplier.toFixed(2)})` : "";
-                            return <option key={r.id} value={r.id}>{r.name}{tag}</option>;
-                          })}
-                        </select>
-                      </div>
-                    )}
                     {!isTrial && (meta?.support_plans?.length ?? 0) > 1 && (
                       <div className="space-y-1">
                         <label className="flex items-center gap-1.5 text-sm font-medium">{i18nText("Support plan")}<FieldHint text={i18nText("Your level of help: Free is best-effort; paid tiers add priority response and channels. Billed as a flat monthly fee.")} />

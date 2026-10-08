@@ -80,8 +80,14 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
   const enableDailyBackup = async () => {
     setEnabling(true);
     try {
-      const { checkout_url } = await api.dailyBackupEnable(instanceId);
-      window.location.href = checkout_url;
+      const r = await api.dailyBackupEnable(instanceId);
+      if (r.paid || !r.checkout_url) {
+        toast.success(i18nText("Daily backups are on"), i18nText("Paid with your saved card."));
+        setEnabling(false);
+        await load();
+        return;
+      }
+      window.location.href = r.checkout_url;
     } catch (e) {
       toast.error(i18nText("Couldn't start checkout"), e instanceof ApiError ? e.message : i18nText("Please try again."));
       setEnabling(false);

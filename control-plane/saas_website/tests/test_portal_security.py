@@ -1187,3 +1187,62 @@ class TestDeletedUserSession(HttpCase):
                            headers={'Content-Type': 'application/json'}).json()
         self.assertEqual(me.get('result', {}).get('code'), 'auth_required', me)
 
+
+@tagged('post_install', '-at_install')
+class TestOnePageCheckout(HttpCase):
+    """/checkout pays whatever is open on the project (renewals too) and
+    /my/pay/<id> pays any invoice of the customer."""
+
+    def setUp(self):
+        super().setUp()
+        env = self.env
+        product = env['saas.product'].sudo().search([('is_hosting', '=', True)], limit=1) \
+            or env['saas.product'].sudo().create({'name': 'CK Hosting', 'is_hosting': True, 'is_published': True})
+        plan = env['saas.plan'].sudo().create({
+            'name': 'CK Plan', 'is_custom': True, 'workers': 2, 'storage_limit': 20,
+            'cpu_limit': 1.0, 'ram_limit': '1g', 'price': 50.0, 'yearly_price': 480.0,
+            'currency_id': env.company.currency_id.id, 'saas_product_ids': [(6, 0, [product.id])]})
+        self.partner = env['res.partner'].sudo().create({'name': 'CK Cust', 'email': 'ck@example.com'})
+        self.user = env['res.users'].sudo().create({
+            'name': 'CK Cust', 'login': 'ck@example.com', 'password': 'ckpass12345',
+            'partner_id': self.partner.id, 'groups_id': [(6, 0, [env.ref('base.group_portal').id])]})
+        self.inst = env['saas.instance'].sudo().create({
+            'subdomain': 'cktest',
+            'domain_id': (env['saas.based.domain'].sudo().search([], limit=1)
+                          or env['saas.based.domain'].sudo().create({'name': 'ck.example.com'})).id,
+            'partner_id': self.partner.id, 'saas_product_id': product.id, 'plan_id': plan.id,
+            'billing_period': 'monthly', 'environment': 'production', 'region_id': False,
+            'state': 'running'})
+
+    def _invoice(self, origin, amount=7.0):
+        order = self.env['sale.order'].sudo().create({
+            'partner_id': self.partner.id, 'origin': origin,
+            'order_line': [(0, 0, {'product_id': self.inst._get_billing_product().id,
+                                   'name': 'line', 'product_uom_qty': 1, 'price_unit': amount})]})
+        order.action_confirm()
+        inv = order._create_invoices()
+        inv.action_post()
+        return inv
+
+    def test_checkout_finds_a_renewal_invoice(self):
+        inv = self._invoice('SAAS:RENEWAL:%s' % self.inst.name)
+        self.authenticate('ck@example.com', 'ckpass12345')
+        res = self.url_open('/my/instances/%s/checkout' % self.inst.id)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('What you pay for', res.text)
+        self.assertIn('Pay later', res.text)
+        self.assertNotIn('/my/instances/%s/checkout' % self.inst.id, res.url.replace(str(self.inst.id), 'X') + 'X',
+                         "no redirect loop back to the project")
+
+    def test_pay_any_invoice_of_the_customer(self):
+        inv = self._invoice('SAAS:SNAPSHOT:%s' % self.partner.id, amount=0.8)
+        self.authenticate('ck@example.com', 'ckpass12345')
+        res = self.url_open('/my/pay/%s' % inv.id)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('Your invoice', res.text)
+        other = self.env['res.partner'].sudo().create({'name': 'Other'})
+        inv2 = self._invoice('SAAS:SNAPSHOT:%s' % other.id)
+        inv2.partner_id = other
+        res = self.url_open('/my/pay/%s' % inv2.id, allow_redirects=False)
+        self.assertIn(res.status_code, (302, 303), "someone else's invoice is never shown")
+

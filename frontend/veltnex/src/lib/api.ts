@@ -374,6 +374,9 @@ export interface EnvChild extends RuntimeHealth {
   is_production: boolean;
   pending_payment: boolean;
   pending_invoice_id: number | false;
+  /** Something is open to pay on this server; `checkout_url` pays it on one page. */
+  needs_payment?: boolean;
+  checkout_url?: string;
   /** The server's own size (Staging/Dev can be resized and billed accordingly). */
   workers?: number;
   storage_gb?: number;
@@ -822,8 +825,9 @@ export const api = {
     rpc<{ backup_id: number }>(`/saas/api/v1/instances/${id}/databases/backup`, { name, format }),
   dailyBackupDisable: (id: number) =>
     rpc<{ daily_backup_enabled: boolean }>(`/saas/api/v1/instances/${id}/daily-backup/disable`),
+  /** `paid` when the saved card settled it on the spot; otherwise a checkout URL. */
   dailyBackupEnable: (id: number) =>
-    rpc<{ checkout_url: string }>(`/saas/api/v1/instances/${id}/daily-backup/enable`),
+    rpc<{ checkout_url?: string; paid?: boolean }>(`/saas/api/v1/instances/${id}/daily-backup/enable`),
   setRepo: (
     id: number,
     p: { repo_url: string; repo_branch: string; git_token?: string }

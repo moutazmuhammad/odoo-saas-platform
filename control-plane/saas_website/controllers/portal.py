@@ -473,108 +473,82 @@ class SaasPortal(CustomerPortal):
 
     # ==================== Checkout Page ====================
 
-    @http.route(
-        '/my/instances/<int:instance_id>/checkout',
-        type='http', auth='user', website=True,
-    )
-    def portal_checkout(self, instance_id, access_token=None, **kw):
-        """Show a checkout page with order summary and embedded payment form."""
+    @staticmethod
+    def _invoice_is_open(inv):
+        return bool(inv) and inv.state == 'posted' \
+            and inv.payment_state not in ('paid', 'in_payment') and inv.amount_residual > 0
+
+    def _checkout_invoice_for(self, instance_sudo, invoice_id=None):
+        """The invoice to pay for an instance: an explicit one (``?invoice=``)
+        when it belongs to the customer, else the newest open invoice of
+        the instance — initial order, renewal, upgrade, add-on, env, storage
+        or restoration — so "Pay now" always lands on something to pay."""
+        partner = request.env.user.partner_id.commercial_partner_id
+        if invoice_id:
+            inv = request.env['account.move'].sudo().browse(int(invoice_id)).exists()
+            if inv and inv.partner_id.commercial_partner_id == partner and self._invoice_is_open(inv):
+                return inv
+        candidates = request.env['account.move'].sudo()
+        for inv in (instance_sudo.restoration_invoice_id,
+                    instance_sudo.pending_change_invoice_id,
+                    instance_sudo.daily_backup_pending_invoice_id,
+                    instance_sudo.slot_reservation_pending_invoice_id,
+                    instance_sudo.storage_block_pending_invoice_id,
+                    instance_sudo.env_pending_invoice_id):
+            if self._invoice_is_open(inv):
+                candidates |= inv
         try:
-            instance_sudo = self._document_check_access(
-                'saas.instance', instance_id, access_token=access_token,
-            )
-        except (AccessError, MissingError):
-            return request.redirect('/my/instances')
+            for inv in instance_sudo._get_all_invoices():
+                if self._invoice_is_open(inv):
+                    candidates |= inv
+        except Exception:
+            _logger.exception("Could not list invoices for %s", instance_sudo.id)
+        if instance_sudo.sale_order_id:
+            for inv in instance_sudo.sale_order_id.invoice_ids:
+                if self._invoice_is_open(inv):
+                    candidates |= inv
+        return candidates.sorted('create_date', reverse=True)[:1]
 
-        # Find the unpaid invoice — check restoration invoice first,
-        # then the regular sale order invoices.
-        invoice = None
-
-        # Restoration invoice takes priority
-        if (instance_sudo.restoration_invoice_id
-                and instance_sudo.restoration_invoice_id.state == 'posted'
-                and instance_sudo.restoration_invoice_id.payment_state not in ('paid', 'in_payment')
-                and instance_sudo.restoration_invoice_id.amount_residual > 0):
-            invoice = instance_sudo.restoration_invoice_id
-
-        # Regular sale order invoices
-        if not invoice and instance_sudo.sale_order_id and instance_sudo.sale_order_id.invoice_ids:
-            for inv in instance_sudo.sale_order_id.invoice_ids.sorted('create_date', reverse=True):
-                if (inv.state == 'posted'
-                        and inv.payment_state not in ('paid', 'in_payment')
-                        and inv.amount_residual > 0):
-                    invoice = inv
-                    break
-
-        # Mid-cycle add-on purchases (env slot reservation, storage block) hang
-        # their prorated invoice on a dedicated field, NOT the main sale order —
-        # so the generic checkout must look there too, otherwise the page finds
-        # nothing and bounces back (the "Reserve doesn't work" symptom).
-        if not invoice:
-            for pend in (
-                instance_sudo.slot_reservation_pending_invoice_id,
-                instance_sudo.storage_block_pending_invoice_id,
-            ):
-                if (pend and pend.state == 'posted'
-                        and pend.payment_state not in ('paid', 'in_payment')
-                        and pend.amount_residual > 0):
-                    invoice = pend
-                    break
-
-        if not invoice:
-            # No unpaid invoice — nothing to pay, go to instance page
-            return request.redirect('/my/instances/%s' % instance_id)
-
-        # Get the plan being purchased (pending or current)
-        target_plan = instance_sudo.pending_plan_id or instance_sudo.plan_id
-
-        # Prepare payment form values (same approach as account_payment)
+    def _render_checkout(self, invoice, instance_sudo=None, landing_route=None, back_url=None):
+        """One payment page for everything: the customer sees exactly what
+        they pay for, can reuse a saved card, and the card used is kept for
+        automatic payments from then on (tokenize on by default)."""
         partner_sudo = request.env.user.partner_id
         invoice_company = invoice.company_id or request.env.company
-        landing_route = '/my/instances/%s?payment=success' % instance_id
-
         availability_report = {}
         providers_sudo = request.env['payment.provider'].sudo()._get_compatible_providers(
-            invoice_company.id,
-            partner_sudo.id,
-            invoice.amount_residual,
-            currency_id=invoice.currency_id.id,
-            report=availability_report,
-        )
+            invoice_company.id, partner_sudo.id, invoice.amount_residual,
+            currency_id=invoice.currency_id.id, report=availability_report)
         payment_methods_sudo = request.env['payment.method'].sudo()._get_compatible_payment_methods(
-            providers_sudo.ids,
-            partner_sudo.id,
-            currency_id=invoice.currency_id.id,
-            report=availability_report,
-        )
-        # We do NOT retain customer card data: never offer saved cards to
-        # reuse, and (below) never show the "Save my card" checkbox.
-        tokens_sudo = request.env['payment.token'].sudo().browse()
-
-        # Get the invoice's portal access token
-        invoice_access_token = invoice._portal_ensure_token()
-
-        # Compute proration details for display
+            providers_sudo.ids, partner_sudo.id, currency_id=invoice.currency_id.id,
+            report=availability_report)
+        tokens_sudo = request.env['payment.token'].sudo().search([
+            ('partner_id', 'child_of', partner_sudo.commercial_partner_id.id),
+            ('provider_id', 'in', providers_sudo.ids), ('active', '=', True)])
+        instance_sudo = instance_sudo or request.env['saas.instance'].sudo()
+        target_plan = (instance_sudo.pending_plan_id or instance_sudo.plan_id) if instance_sudo else None
         proration_credit = 0.0
         proration_remaining_days = 0
         original_plan_name = ''
-        target_full_price = target_plan.get_price_for_period(
-            instance_sudo.pending_billing_period or instance_sudo.billing_period or 'monthly'
-        ) if target_plan else 0
-        if instance_sudo.plan_id and instance_sudo.pending_plan_id:
-            # This is an upgrade — calculate what was credited
-            old_period = instance_sudo.billing_period or 'monthly'
-            old_price = instance_sudo.plan_id.get_price_for_period(old_period)
-            original_plan_name = instance_sudo.plan_id.name
-            # Use the authoritative backend proration so the displayed quote
-            # matches the invoice the customer is actually charged
-            # (BILL-V2-001 — no undocumented "-2").
-            proration_credit, proration_remaining_days, _td = \
-                instance_sudo._proration_credit(old_price)
-
+        target_full_price = 0
+        if instance_sudo and target_plan:
+            target_full_price = target_plan.get_price_for_period(
+                instance_sudo.pending_billing_period or instance_sudo.billing_period or 'monthly')
+            if instance_sudo.plan_id and instance_sudo.pending_plan_id:
+                old_period = instance_sudo.billing_period or 'monthly'
+                old_price = instance_sudo.plan_id.get_price_for_period(old_period)
+                original_plan_name = instance_sudo.plan_id.name
+                proration_credit, proration_remaining_days, _td = \
+                    instance_sudo._proration_credit(old_price)
+        if not landing_route:
+            if instance_sudo:
+                landing_route = '/my/instances/%s/%s?payment=success' % (
+                    instance_sudo.id, 'environments' if instance_sudo.is_hosting else '')
+            else:
+                landing_route = '/my/billing?payment=success'
         values = self._prepare_portal_layout_values()
         values.update({
-            'instance': instance_sudo,
+            'instance': instance_sudo or False,
             'invoice': invoice,
             'target_plan': target_plan,
             'page_name': 'saas_checkout',
@@ -582,7 +556,6 @@ class SaasPortal(CustomerPortal):
             'proration_remaining_days': proration_remaining_days,
             'original_plan_name': original_plan_name,
             'target_full_price': target_full_price,
-            # Payment form context (required by payment.form template)
             'amount': invoice.amount_residual,
             'currency': invoice.currency_id,
             'partner_id': partner_sudo.id,
@@ -592,22 +565,58 @@ class SaasPortal(CustomerPortal):
             'availability_report': availability_report,
             'transaction_route': '/invoice/transaction/%d' % invoice.id,
             'landing_route': landing_route,
-            'access_token': invoice_access_token,
-            # False for EVERY provider -> no "Save my card" checkbox.
-            # payment.method_form indexes this dict for any tokenization-
-            # capable provider, so an empty mapping KeyErrors as soon as
-            # one is enabled — each compatible provider needs an entry.
-            'show_tokenize_input_mapping': {p.id: False for p in providers_sudo},
+            'access_token': invoice._portal_ensure_token(),
+            # Keep the card for renewals, snapshots and add-ons: the customer
+            # pays once and never re-enters it (they can remove it in Settings).
+            'show_tokenize_input_mapping': {p.id: p.allow_tokenization for p in providers_sudo},
             'company_mismatch': not PaymentPortal._can_partner_pay_in_company(
-                partner_sudo, invoice_company
-            ),
+                partner_sudo, invoice_company),
             'expected_company': invoice_company,
             'invoice_id': invoice.id,
+            'back_url': back_url or ('/my/instances/%s' % instance_sudo.id if instance_sudo else '/my/billing'),
             'support_email': request.env['ir.config_parameter'].sudo().get_param(
-                'saas_master.support_email', ''
-            ),
+                'saas_master.support_email', ''),
         })
         return request.render('saas_website.portal_checkout', values)
+
+    @http.route(
+        '/my/instances/<int:instance_id>/checkout',
+        type='http', auth='user', website=True,
+    )
+    def portal_checkout(self, instance_id, access_token=None, invoice=None, **kw):
+        """Pay whatever is open on this project — one page, saved card offered."""
+        try:
+            instance_sudo = self._document_check_access(
+                'saas.instance', instance_id, access_token=access_token,
+            )
+        except (AccessError, MissingError):
+            return request.redirect('/my/instances')
+        inv = self._checkout_invoice_for(instance_sudo, invoice)
+        if not inv:
+            return request.redirect('/my/instances/%s' % instance_id)
+        return self._render_checkout(inv, instance_sudo)
+
+    @http.route('/my/pay/<int:invoice_id>', type='http', auth='user', website=True)
+    def portal_pay_invoice(self, invoice_id, **kw):
+        """Pay any of the customer's open invoices (snapshots, renewals of a
+        project that is gone, ...) on the same page."""
+        inv = request.env['account.move'].sudo().browse(invoice_id).exists()
+        partner = request.env.user.partner_id.commercial_partner_id
+        if not inv or inv.partner_id.commercial_partner_id != partner:
+            return request.redirect('/my/billing')
+        if not self._invoice_is_open(inv):
+            return request.redirect('/my/billing/%s' % inv.id)
+        instance = request.env['saas.instance'].sudo()
+        origin = inv.invoice_line_ids.sale_line_ids.order_id[:1].origin or ''
+        for candidate in request.env['saas.instance'].sudo().search(
+                [('partner_id', 'child_of', partner.id)]):
+            try:
+                if inv in candidate._get_all_invoices():
+                    instance = candidate
+                    break
+            except Exception:
+                continue
+        return self._render_checkout(inv, instance or None, back_url='/my/billing/%s' % inv.id)
 
     # ==================== Change Plan (Paid → Paid) ====================
 

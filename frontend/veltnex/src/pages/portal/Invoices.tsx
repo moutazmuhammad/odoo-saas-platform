@@ -112,7 +112,7 @@ export default function Invoices() {
                 render: (i) => (
                   <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                     {i.payable && i.portal_url && (
-                      <Button size="sm" onClick={() => (window.location.href = i.portal_url)}>{i18nText("Pay")}</Button>
+                      <Button size="sm" onClick={() => (window.location.href = `/my/pay/${i.id}`)}>{i18nText("Pay")}</Button>
                     )}
                     <ChevronRight className="size-4 text-muted" />
                   </div>

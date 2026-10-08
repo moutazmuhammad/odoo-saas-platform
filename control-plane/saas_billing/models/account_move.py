@@ -69,6 +69,19 @@ class AccountMove(models.Model):
         if not paid_invoices:
             return
 
+        # Keep the card the customer just paid with (any SaaS invoice:
+        # order, renewal, add-on, snapshot) so everything after is one-click.
+        gateway = self.env['saas.payment.gateway']
+        for inv in paid_invoices:
+            tx = inv.transaction_ids.filtered(
+                lambda t: t.state in ('done', 'pending') and t.token_id and t.token_id.active)[:1]
+            if not tx:
+                continue
+            try:
+                gateway.save_method_from_transaction(inv.partner_id, tx)
+            except Exception:
+                _logger.exception("Could not keep the payment method from invoice %s", inv.id)
+
         # --- Handle daily-backup add-on payments ---
         # The customer clicked Enable Daily Backups, we created an
         # unpaid invoice and stored it on the instance. Now that the

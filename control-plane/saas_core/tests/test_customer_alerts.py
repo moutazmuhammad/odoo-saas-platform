@@ -43,10 +43,8 @@ class TestCustomerAlerts(TransactionCase):
         Instance = type(self.inst)
         self.driver = MagicMock()
         self.driver._cr_name = KubernetesDriver._cr_name
-        for name in ('_compute_driver', '_compute_handle'):
-            p = patch.object(Instance, name, lambda rec, connection=None, _n=name: (
-                self.driver if _n == '_compute_driver' else MagicMock()))
-            p.start(); self.addCleanup(p.stop)
+        p = patch.object(Instance, '_compute_driver', lambda rec, connection=None: self.driver)
+        p.start(); self.addCleanup(p.stop)
 
     # -- helpers ------------------------------------------------------------
     def _observe(self, state, reachable=None):

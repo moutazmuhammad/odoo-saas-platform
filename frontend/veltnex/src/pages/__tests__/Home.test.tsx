@@ -35,6 +35,7 @@ describe("Home", () => {
     renderHome();
     expect(screen.queryByRole("button", { name: /start hosting/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/git-based deploys/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/alerts before your customers notice/i)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /browse ready-made apps/i }).length).toBeGreaterThan(0);
   });
 

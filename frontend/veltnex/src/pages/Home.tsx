@@ -3,12 +3,14 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   Activity,
+  BellRing,
   CheckCircle2,
   Database,
   GitBranch,
   Github,
   Gitlab,
   Layers,
+  LifeBuoy,
   Lock,
   Server,
   ShieldCheck,
@@ -354,7 +356,7 @@ function Paths() {
             points={[
               i18nText("Any Odoo version, Community or Enterprise"),
               i18nText("Connect GitHub, GitLab or Bitbucket"),
-              i18nText("Staging and development servers per branch"),
+              i18nText("Test environments with customer data anonymized"),
               i18nText("Scale up whenever you need"),
             ]}
             cta={i18nText("Explore hosting")}
@@ -428,14 +430,18 @@ function Features({ hosting }: { hosting: boolean }) {
     ...(hosting
       ? [
           { icon: GitBranch, title: i18nText("Git-based deploys"), text: i18nText("Push your code and it goes live automatically, with no downtime for your users.") },
-          { icon: Layers, title: i18nText("Environments"), text: i18nText("Test changes on a safe copy of production, with customer data anonymized, before your customers ever see them.") },
+          { icon: Layers, title: i18nText("Safe test environments"), text: i18nText("Staging and development servers start as a copy of production with customer data anonymized, mail and scheduled jobs switched off.") },
         ]
-      : []),
+      : [
+          { icon: Sparkles, title: i18nText("Preconfigured apps"), text: i18nText("Everything in place from the first login, tuned to how your industry works.") },
+          { icon: LifeBuoy, title: i18nText("Experts on call"), text: i18nText("Our Odoo specialists are a message away whenever you need a hand.") },
+        ]),
     { icon: Database, title: i18nText("Your database, ready"), text: i18nText("Set up from the first minute. Back it up, restore it or bring your own in a click.") },
+    { icon: BellRing, title: i18nText("Alerts before your customers notice"), text: i18nText("We email you the moment your Odoo stops responding, runs hot, or is about to run out of space — and again when it's back.") },
     { icon: Activity, title: i18nText("Always in the picture"), text: i18nText("See how your Odoo is doing at a glance, and dig into the details whenever you need to.") },
+    { icon: ShieldCheck, title: i18nText("Automatic backups"), text: i18nText("Daily backups plus on-demand snapshots, restored in a click when you need them.") },
     { icon: TrendingUp, title: i18nText("Scale on demand"), text: i18nText("Grow as your business grows. More power in minutes, and you only pay for what you use.") },
     { icon: Lock, title: i18nText("Secure by default"), text: i18nText("Free SSL, encrypted backups and isolated servers, so your data stays yours.") },
-    ...(hosting ? [] : [{ icon: Sparkles, title: i18nText("Preconfigured apps"), text: i18nText("Everything in place from the first login, tuned to how your industry works.") }]),
   ];
 
   return (
@@ -446,9 +452,9 @@ function Features({ hosting }: { hosting: boolean }) {
           title={i18nText("Everything you need to run Odoo")}
           subtitle={i18nText("We take care of the servers, so your team can focus on the business.")}
         />
-        <div className="mt-14 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-14 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
           {items.map((f) => (
-            <div key={f.title} className="bg-background p-7 transition-colors hover:bg-card">
+            <div key={f.title} className="bg-background p-6 transition-colors hover:bg-card">
               <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <f.icon className="size-5" />
               </span>

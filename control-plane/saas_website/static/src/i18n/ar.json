@@ -2560,5 +2560,13 @@
   "Odoo 14 → 20": "Odoo من 14 إلى 20",
   "Odoo 14 to 20. Your choice.": "Odoo من 14 إلى 20. الخيار لك.",
   "Odoo 14 to 20": "Odoo من 14 إلى 20",
-  "Test changes on a safe copy of production, with customer data anonymized, before your customers ever see them.": "اختبر تغييراتك على نسخة آمنة من الإنتاج، مع إخفاء بيانات العملاء، قبل أن يراها عملاؤك."
+  "Test changes on a safe copy of production, with customer data anonymized, before your customers ever see them.": "اختبر تغييراتك على نسخة آمنة من الإنتاج، مع إخفاء بيانات العملاء، قبل أن يراها عملاؤك.",
+  "Safe test environments": "بيئات اختبار آمنة",
+  "Staging and development servers start as a copy of production with customer data anonymized, mail and scheduled jobs switched off.": "تبدأ خوادم الاختبار والتطوير كنسخة من الإنتاج مع إخفاء بيانات العملاء وإيقاف البريد والمهام المجدولة.",
+  "Experts on call": "خبراء تحت الطلب",
+  "Our Odoo specialists are a message away whenever you need a hand.": "متخصصو Odoo لدينا على بُعد رسالة متى احتجت إلى مساعدة.",
+  "Alerts before your customers notice": "تنبيهات قبل أن يلاحظ عملاؤك",
+  "We email you the moment your Odoo stops responding, runs hot, or is about to run out of space — and again when it's back.": "نراسلك فور توقف Odoo عن الاستجابة، أو ارتفاع الضغط عليه، أو قرب نفاد المساحة — ونراسلك مجددًا عند عودته.",
+  "Daily backups plus on-demand snapshots, restored in a click when you need them.": "نسخ احتياطية يومية ولقطات عند الطلب، تُستعاد بنقرة واحدة عند الحاجة.",
+  "Test environments with customer data anonymized": "بيئات اختبار مع إخفاء بيانات العملاء"
 }

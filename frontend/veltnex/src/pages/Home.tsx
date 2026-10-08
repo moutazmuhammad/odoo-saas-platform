@@ -106,10 +106,10 @@ function Hero({ hosting, services }: { hosting: boolean; services: boolean }) {
             <span className="text-primary">{i18nText("product teams ship.")}</span>
           </h1>
 
-          <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-muted lg:mx-0">
+          <p className="mx-auto mt-6 max-w-lg text-lg leading-relaxed text-muted lg:mx-0">
             {hosting
-              ? i18nText("Push to Git, get a production deploy. Staging and development servers, one database per server, backups, metrics and logs — managed for any Odoo version.")
-              : i18nText("Launch a ready-made Odoo app with its database already set up, then manage backups, metrics and logs from one console.")}
+              ? i18nText("Managed Odoo hosting for any version. Connect your code, go live in minutes, and leave the servers, backups and security to us.")
+              : i18nText("Launch a ready-made Odoo app in minutes and leave the servers, backups and security to us.")}
           </p>
 
           <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
@@ -153,10 +153,10 @@ function Hero({ hosting, services }: { hosting: boolean; services: boolean }) {
 
             {/* Two small, truthful facts pinned to the globe. */}
             <div className="pointer-events-none absolute -start-2 top-[18%] hidden sm:block">
-              <HeroChip icon={GitBranch} title={i18nText("Deploy from Git")} detail="main · 7f3a2c1" />
+              <HeroChip icon={GitBranch} title={i18nText("Deploys on every push")} detail={i18nText("Zero downtime")} />
             </div>
             <div className="pointer-events-none absolute -end-2 bottom-[16%] hidden sm:block">
-              <HeroChip icon={ShieldCheck} title={i18nText("TLS issued")} detail={i18nText("Renews automatically")} />
+              <HeroChip icon={ShieldCheck} title={i18nText("Secured with SSL")} detail={i18nText("Renews itself")} />
             </div>
           </div>
         </div>
@@ -219,8 +219,8 @@ function ConsoleShowcase({ hosting }: { hosting: boolean }) {
           eyebrow={i18nText("The console")}
           title={hosting ? i18nText("One project. Every environment in view.") : i18nText("Everything about your app, in one place.")}
           subtitle={hosting
-            ? i18nText("Production, staging and development servers sit side by side, each on its own branch with its own database. Deploy, copy data down, scale up — without leaving the page.")
-            : i18nText("Status, metrics, logs, backups and your database — the whole operation on one screen.")}
+            ? i18nText("Launch, test and ship from one dashboard. Your production, staging and development servers live side by side, so every change goes out with confidence.")
+            : i18nText("Status, performance, backups and your database — all on one screen, no technical setup.")}
         />
 
         <div className="relative mx-auto mt-14 max-w-5xl">
@@ -266,7 +266,7 @@ function ConsoleShowcase({ hosting }: { hosting: boolean }) {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="font-mono text-sm text-foreground">acme.veltnex.app</p>
-                    <p className="mt-0.5 text-xs text-muted">Odoo 18.0 · fra1 · {envs[0].size}</p>
+                    <p className="mt-0.5 text-xs text-muted">{"Odoo 18.0 · Frankfurt · "}{envs[0].size}</p>
                   </div>
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
                     <span className="size-1.5 rounded-full bg-success" />
@@ -288,17 +288,20 @@ function ConsoleShowcase({ hosting }: { hosting: boolean }) {
                   ))}
                 </div>
 
-                <div className="mt-4 rounded-lg border border-border bg-background">
-                  <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs">
-                    <span className="font-medium text-foreground">{i18nText("Latest deployment")}</span>
-                    <span className="text-success">{i18nText("Succeeded · 42s")}</span>
-                  </div>
-                  <pre className="overflow-x-auto px-3 py-2.5 font-mono text-[11px] leading-relaxed text-muted">
-{`▸ build   image odoo:18.0 + addons@7f3a2c1
-▸ rollout production  1/1 ready
-▸ health  /web/health 200  db ok
-✓ live    zero downtime`}
-                  </pre>
+                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  {[
+                    { icon: GitBranch, label: i18nText("Last deployment"), value: i18nText("Succeeded · 2 min ago") },
+                    { icon: Database, label: i18nText("Last backup"), value: i18nText("Today, 03:00") },
+                    { icon: ShieldCheck, label: "SSL", value: i18nText("Valid · renews itself") },
+                  ].map((r) => (
+                    <div key={r.label} className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5">
+                      <r.icon className="size-4 shrink-0 text-primary" />
+                      <div className="min-w-0">
+                        <p className="text-[11px] text-muted">{r.label}</p>
+                        <p className="truncate text-xs font-medium text-foreground">{r.value}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -321,8 +324,8 @@ function Paths() {
         <SectionHeading
           wide
           eyebrow={i18nText("Two ways to start")}
-          title={i18nText("Bring your own code, or start from a ready-made app")}
-          subtitle={i18nText("Same platform, same backups, TLS and uptime. The difference is what's inside when it boots.")}
+          title={i18nText("Your code, or a ready-made app")}
+          subtitle={i18nText("Same platform, same reliability. The difference is what's ready on day one.")}
         />
         <div className="mt-12 grid gap-6 lg:grid-cols-2">
           <PathCard
@@ -333,7 +336,7 @@ function Paths() {
               i18nText("Any Odoo version, Community or Enterprise"),
               i18nText("Connect GitHub, GitLab or Bitbucket"),
               i18nText("Staging and development servers per branch"),
-              i18nText("Scale workers and storage per server"),
+              i18nText("Scale up whenever you need"),
             ]}
             cta={i18nText("Explore hosting")}
             onClick={() => navigate("/hosting")}
@@ -346,7 +349,7 @@ function Paths() {
               i18nText("Industry apps set up and ready to use"),
               i18nText("Ships with its database — no blank screen"),
               i18nText("Customize freely whenever you want"),
-              i18nText("Same backups, TLS and uptime as hosting"),
+              i18nText("Same reliability and support as hosting"),
             ]}
             cta={i18nText("Explore ready-made apps")}
             onClick={() => navigate("/services")}
@@ -405,15 +408,15 @@ function Features({ hosting }: { hosting: boolean }) {
   const items: { icon: LucideIcon; title: string; text: string }[] = [
     ...(hosting
       ? [
-          { icon: GitBranch, title: i18nText("Git-based deploys"), text: i18nText("Push to a branch and we build the image and roll it out with zero downtime. Private repos via token.") },
-          { icon: Layers, title: i18nText("Environments"), text: i18nText("Staging and development servers start as a copy of production, with mail and crons disabled.") },
+          { icon: GitBranch, title: i18nText("Git-based deploys"), text: i18nText("Push your code and it goes live automatically, with no downtime for your users.") },
+          { icon: Layers, title: i18nText("Environments"), text: i18nText("Test changes on a safe copy of production before your customers ever see them.") },
         ]
       : []),
-    { icon: Database, title: i18nText("One database per server"), text: i18nText("Ready on first boot. Back it up, restore your own, or reset the admin password from the portal.") },
-    { icon: Activity, title: i18nText("Metrics and logs"), text: i18nText("Live CPU, memory, storage and request rates, with streaming logs, a shell and a read-only SQL console.") },
-    { icon: TrendingUp, title: i18nText("Scale on demand"), text: i18nText("Workers and storage per server, billed pro rata. Up in minutes, down at the next renewal.") },
-    { icon: Lock, title: i18nText("Secure by default"), text: i18nText("Isolated namespaces, free TLS that renews itself, encrypted backups and an audit log.") },
-    ...(hosting ? [] : [{ icon: Sparkles, title: i18nText("Preconfigured apps"), text: i18nText("Modules and starter data in place from the first login, tuned to your industry.") }]),
+    { icon: Database, title: i18nText("Your database, ready"), text: i18nText("Set up from the first minute. Back it up, restore it or bring your own in a click.") },
+    { icon: Activity, title: i18nText("Always in the picture"), text: i18nText("See how your Odoo is doing at a glance, and dig into the details whenever you need to.") },
+    { icon: TrendingUp, title: i18nText("Scale on demand"), text: i18nText("Grow as your business grows. More power in minutes, and you only pay for what you use.") },
+    { icon: Lock, title: i18nText("Secure by default"), text: i18nText("Free SSL, encrypted backups and isolated servers, so your data stays yours.") },
+    ...(hosting ? [] : [{ icon: Sparkles, title: i18nText("Preconfigured apps"), text: i18nText("Everything in place from the first login, tuned to how your industry works.") }]),
   ];
 
   return (
@@ -422,7 +425,7 @@ function Features({ hosting }: { hosting: boolean }) {
         <SectionHeading
           eyebrow={i18nText("Production-ready by default")}
           title={i18nText("Everything you need to run Odoo")}
-          subtitle={i18nText("A complete operations layer, so your team ships features instead of babysitting servers.")}
+          subtitle={i18nText("We take care of the servers, so your team can focus on the business.")}
         />
         <div className="mt-14 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
           {items.map((f) => (
@@ -447,16 +450,16 @@ function Features({ hosting }: { hosting: boolean }) {
 function HowItWorks({ hosting }: { hosting: boolean }) {
   const steps = hosting
     ? [
-        { n: "01", title: i18nText("Sign up"), text: i18nText("An account takes a minute. No card needed to start a trial.") },
-        { n: "02", title: i18nText("Pick your stack"), text: i18nText("Odoo version, workers, storage and region.") },
-        { n: "03", title: i18nText("Connect your repo"), text: i18nText("We clone on boot and redeploy on every push.") },
-        { n: "04", title: i18nText("Ship"), text: i18nText("Your production server is live with its database ready.") },
+        { n: "01", title: i18nText("Sign up"), text: i18nText("Takes a minute. No credit card to start.") },
+        { n: "02", title: i18nText("Choose your setup"), text: i18nText("Odoo version, size and region.") },
+        { n: "03", title: i18nText("Connect your code"), text: i18nText("It deploys automatically on every push.") },
+        { n: "04", title: i18nText("Go live"), text: i18nText("Your Odoo is online, with its database ready.") },
       ]
     : [
-        { n: "01", title: i18nText("Sign up"), text: i18nText("An account takes a minute. No card needed to start a trial.") },
+        { n: "01", title: i18nText("Sign up"), text: i18nText("Takes a minute. No credit card to start.") },
         { n: "02", title: i18nText("Choose an app"), text: i18nText("Pick the app and plan that fit your team.") },
-        { n: "03", title: i18nText("Launch"), text: i18nText("Modules and database are set up for you.") },
-        { n: "04", title: i18nText("Work"), text: i18nText("Sign in and get going. We keep it running.") },
+        { n: "03", title: i18nText("Launch"), text: i18nText("Everything is set up for you.") },
+        { n: "04", title: i18nText("Work"), text: i18nText("Sign in and get going. We keep it running smoothly.") },
       ];
 
   return (
@@ -489,7 +492,7 @@ function Versions() {
         <SectionHeading
           eyebrow={i18nText("Version freedom")}
           title={i18nText("Every Odoo version, Community and Enterprise")}
-          subtitle={i18nText("Maintaining a legacy install or starting on the latest release? Pin your version and upgrade on your schedule.")}
+          subtitle={i18nText("Keep the version you rely on, or start on the latest. Upgrade when it suits you, not when it suits us.")}
         />
         <div className="mt-12 flex flex-wrap items-center justify-center gap-3">
           {ODOO_VERSIONS.map((v) => (
@@ -571,7 +574,7 @@ function FinalCta({ hosting, services }: { hosting: boolean; services: boolean }
           <span className="text-primary">{i18nText("just stays up")}</span>
         </h2>
         <p className="mx-auto mt-5 max-w-xl text-lg text-muted">
-          {i18nText("Configure your plan in under a minute. No card needed to start.")}
+          {i18nText("Set up your plan in under a minute. No credit card to start.")}
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           {hosting && (

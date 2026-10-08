@@ -1175,10 +1175,15 @@ class TestDeletedUserSession(HttpCase):
             'partner_id': partner.id,
             'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])]})
         self.authenticate('gone@example.com', 'gonepass123')
-        self.assertEqual(self.url_open('/').status_code, 200)
+        me = self.url_open('/saas/api/v1/me', data=json.dumps({'jsonrpc': '2.0', 'method': 'call', 'params': {}}),
+                           headers={'Content-Type': 'application/json'}).json()
+        self.assertTrue(me.get('result', {}).get('ok'), me)
         user.unlink()
         self.env.cr.flush()
-        self.assertEqual(self.url_open('/').status_code, 200)
-        # The portal now asks the visitor to sign in instead of crashing.
-        self.assertIn(self.url_open('/my/instances', allow_redirects=False).status_code, (200, 302, 303))
+        # Every page still renders (no 500) and the API treats the visitor as signed out.
+        for path in ('/web/login', '/my/instances', '/register'):
+            self.assertLess(self.url_open(path).status_code, 500, path)
+        me = self.url_open('/saas/api/v1/me', data=json.dumps({'jsonrpc': '2.0', 'method': 'call', 'params': {}}),
+                           headers={'Content-Type': 'application/json'}).json()
+        self.assertEqual(me.get('result', {}).get('code'), 'auth_required', me)
 

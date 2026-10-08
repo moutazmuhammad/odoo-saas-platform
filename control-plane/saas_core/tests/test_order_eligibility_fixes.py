@@ -254,8 +254,12 @@ class TestOrderControllerFixes(HttpCase):
         places the order. Before the fix the SPA silently dumped the buyer
         on /my/instances with no project."""
         from unittest.mock import patch
-        from psycopg2 import errors
+        from psycopg2 import errorcodes, errors
         from odoo.addons.saas_website.controllers.main import SaasWebsite
+
+        class _SerializationFailure(errors.SerializationFailure):
+            # A real driver error carries its pgcode; Odoo's retry logs it.
+            pgcode = errorcodes.SERIALIZATION_FAILURE
 
         real = SaasWebsite.hosting_order
         calls = []
@@ -263,7 +267,7 @@ class TestOrderControllerFixes(HttpCase):
         def flaky(ctrl, **post):
             calls.append(1)
             if len(calls) == 1:
-                raise errors.SerializationFailure(
+                raise _SerializationFailure(
                     'could not serialize access due to concurrent update')
             return real(ctrl, **post)
 

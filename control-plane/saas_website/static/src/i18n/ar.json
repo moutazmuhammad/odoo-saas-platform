@@ -2659,5 +2659,7 @@
   "Paid with your saved card.": "تم الدفع ببطاقتك المحفوظة.",
   "The card you pay with is kept here and used for renewals, snapshots and add-ons, so you never re-enter it.": "تُحفظ البطاقة التي تدفع بها هنا وتُستخدم للتجديدات واللقطات والإضافات، فلا تعيد إدخالها أبدًا.",
   "Your card is kept automatically the first time you pay. Until then, each invoice is paid from Billing.": "تُحفظ بطاقتك تلقائيًا عند أول دفعة. وحتى ذلك الحين تُدفع كل فاتورة من صفحة الفوترة.",
-  "One invoice covers all your snapshots for the coming month. Once you have paid with a card, it is charged automatically.": "فاتورة واحدة تغطي كل لقطاتك للشهر القادم. وبعد أول دفعة ببطاقة، تُدفع تلقائيًا."
+  "One invoice covers all your snapshots for the coming month. Once you have paid with a card, it is charged automatically.": "فاتورة واحدة تغطي كل لقطاتك للشهر القادم. وبعد أول دفعة ببطاقة، تُدفع تلقائيًا.",
+  "Your card is stored only by the payment provider, never by Veltnex. It is used for renewals, snapshots and add-ons; remove it here at any time.": "تُحفظ بطاقتك لدى مزوّد الدفع فقط، ولا تحتفظ Veltnex بها أبدًا. تُستخدم للتجديدات واللقطات والإضافات، ويمكنك إزالتها من هنا في أي وقت.",
+  "The first time you pay, the payment provider keeps your card securely for future invoices. Until then, each invoice is paid from Billing.": "عند أول دفعة، يحتفظ مزوّد الدفع ببطاقتك بشكل آمن للفواتير القادمة. وحتى ذلك الحين تُدفع كل فاتورة من صفحة الفوترة."
 }

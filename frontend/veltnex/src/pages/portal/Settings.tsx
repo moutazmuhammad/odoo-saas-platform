@@ -88,7 +88,7 @@ export default function Settings() {
           </div>
         </Section>
 
-        <Section icon={CreditCard} title={i18nText("Payment methods")} description={i18nText("The card you pay with is kept here and used for renewals, snapshots and add-ons, so you never re-enter it.")}>
+        <Section icon={CreditCard} title={i18nText("Payment methods")} description={i18nText("Your card is stored only by the payment provider, never by Veltnex. It is used for renewals, snapshots and add-ons; remove it here at any time.")}>
           {methods === null ? (
             <div className="space-y-2">
               <Skeleton className="h-12 w-full" />
@@ -98,7 +98,7 @@ export default function Settings() {
             <EmptyState
               icon={CreditCard}
               title={i18nText("No saved payment methods")}
-              description={i18nText("Your card is kept automatically the first time you pay. Until then, each invoice is paid from Billing.")}
+              description={i18nText("The first time you pay, the payment provider keeps your card securely for future invoices. Until then, each invoice is paid from Billing.")}
             />
           ) : (
             <ul className="divide-y divide-border rounded-lg border border-border">

@@ -601,7 +601,11 @@
                             <div class="info-card">
                                 <h5>Payment Method</h5>
                                 <t t-call="payment.form"/>
-                                <p class="text-center mt-3 small">
+                                <p class="text-center mt-3 small text-muted">
+                                    Your card details are stored only by the payment provider, never by Veltnex.
+                                    Keeping it lets renewals and add-ons be paid automatically; you can remove it any time from Settings.
+                                </p>
+                                <p class="text-center mt-1 small">
                                     <a t-att-href="back_url or '/my/billing'" class="text-muted">Pay later — go back to your portal</a>
                                 </p>
                             </div>

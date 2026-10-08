@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { to: "/my/instances", label: i18nText("Projects"), icon: LayoutGrid },
   { to: "/my/access", label: i18nText("Team & permissions"), icon: ShieldCheck },
+  { to: "/my/snapshots", label: i18nText("Snapshots"), icon: Camera },
   { to: "/my/billing", label: i18nText("Billing"), icon: Receipt },
   // Account "Settings" lives in the avatar dropdown — no duplicate in the rail.
 ];

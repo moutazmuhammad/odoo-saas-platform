@@ -102,4 +102,14 @@
         <field name="active">True</field>
     </record>
 
+    <record id="ir_cron_saas_snapshot_billing" model="ir.cron">
+        <field name="name">SaaS: Bill On-Demand Snapshots</field>
+        <field name="model_id" ref="saas_core.model_saas_instance_backup"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_bill_snapshots()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+    </record>
+
 </odoo>

@@ -482,7 +482,9 @@ class SaasApi(http.Controller):
             [('active', '=', True)], order='sequence, monthly_price, id')
         backup_unit_price = request.env[
             'saas.pricing.engine'].daily_backup_price()
+        backup_pct = request.env['saas.pricing.engine'].daily_backup_pct()
         return ok({
+            'daily_backup_pct': backup_pct,
             'hosting_config': self._public_plan_config(site._get_hosting_plan_config()),
             'custom_config': self._public_plan_config(site._get_custom_plan_config()),
             'trial': {
@@ -1440,6 +1442,21 @@ class SaasApi(http.Controller):
             return err(_("Couldn't start the snapshot. Please try again."), 'snapshot_failed')
         return ok({'snapshot_id': snapshot.id, 'limit': instance._snapshot_limit()})
 
+    @http.route('/saas/api/v1/instances/<int:instance_id>/snapshots/estimate',
+                type='json', auth='public')
+    def snapshot_estimate(self, instance_id, access_token=None, **kw):
+        """What a snapshot taken now would cost per month (size rounded up)."""
+        try:
+            instance = self._instance(instance_id, access_token, permission='backup.view')
+        except (AccessError, MissingError):
+            return err(_("Instance not found."), 'not_found')
+        size = instance.total_storage_bytes or 0
+        data = {'size_gb': round(size / (1024 ** 3), 2), 'limit': instance._snapshot_limit(),
+                'count': len(instance.snapshot_ids_live())}
+        if hasattr(instance, '_snapshot_quote'):
+            data.update(instance._snapshot_quote(size))
+        return ok(data)
+
     @http.route('/saas/api/v1/instances/<int:instance_id>/snapshots/<int:backup_id>/delete',
                 type='json', auth='public')
     def snapshot_delete(self, instance_id, backup_id, access_token=None, **kw):
@@ -2207,7 +2224,79 @@ class SaasApi(http.Controller):
             'format': b.format or '',
             'source': b.source or 'scheduled',
             'error': (b.error_message or '')[:300] if b.state == 'failed' else '',
+            **self._serialize_snapshot_extra(b),
         }
+
+    def _serialize_snapshot_extra(self, b):
+        """Customer-level facts for a snapshot: where it came from and
+        (when saas_billing is installed) what it costs."""
+        if b.source != 'snapshot':
+            return {}
+        inst = b.instance_id
+        data = {
+            'instance_id': inst.id or False,
+            'instance_state': inst.state if inst else 'deleted',
+            'project_name': (inst.project_name or inst.subdomain) if inst else (b.origin_name or b.origin_subdomain or ''),
+            'origin_subdomain': b.origin_subdomain or (inst.subdomain if inst else ''),
+            'odoo_version': b.odoo_version_id.name if b.odoo_version_id else (inst.odoo_version_id.name if inst else ''),
+        }
+        if hasattr(b, 'monthly_price'):
+            data.update({
+                'billable_gb': b.billable_gb,
+                'monthly_price': b.monthly_price,
+                'paid_until': fields.Date.to_string(b.paid_until) if b.paid_until else '',
+                'billing_state': b.billing_state,
+                'pending_invoice_id': b.pending_invoice_id.id or False,
+                'currency': request.env.company.currency_id.name,
+            })
+        return data
+
+    def _snapshot_permissions(self, b, partner):
+        inst = b.instance_id
+        owner = b.partner_id == partner
+        can_instance = lambda perm: bool(inst) and self._can_manage_instance(inst, perm)
+        return {
+            'can_restore': bool(inst) and inst.state == 'running' and can_instance('db.restore'),
+            'can_delete': owner or can_instance('backup.create'),
+            'can_new_project': owner,
+        }
+
+    def _visible_snapshots(self, partner):
+        Backup = request.env['saas.instance.backup'].sudo()
+        domain = [('source', '=', 'snapshot'), ('state', 'in', ('done', 'running', 'failed'))]
+        visible = []
+        if 'saas.iam' in request.env:
+            visible = request.env['saas.iam']._visible_instance_ids()
+        domain = domain + ['|', ('partner_id', '=', partner.id), ('instance_id', 'in', visible)]
+        return Backup.search(domain, order='create_date desc')
+
+    @http.route('/saas/api/v1/snapshots', type='json', auth='public')
+    def snapshots_all(self):
+        """Every snapshot the signed-in customer owns or may see through
+        IAM, across all projects — including projects that are gone."""
+        partner = self._partner()
+        if not partner:
+            return err(_("Please sign in."), 'auth_required')
+        rows = []
+        for b in self._visible_snapshots(partner):
+            d = self._serialize_backup(b)
+            d['permissions'] = self._snapshot_permissions(b, partner)
+            rows.append(d)
+        return ok({'snapshots': rows})
+
+    @http.route('/saas/api/v1/snapshots/<int:backup_id>/delete', type='json', auth='public')
+    def snapshot_delete_any(self, backup_id):
+        partner = self._partner()
+        if not partner:
+            return err(_("Please sign in."), 'auth_required')
+        b = request.env['saas.instance.backup'].sudo().browse(backup_id)
+        if not b.exists() or b.source != 'snapshot' or not self._snapshot_permissions(b, partner)['can_delete']:
+            return err(_("Snapshot not found."), 'not_found')
+        try:
+            b.action_delete_snapshot()
+        except UserError as e:
+            return err(str(e), 'delete_failed')
+        return ok({'deleted': True})
 
 
     def _serialize_invoice(self, inv, detail=False):

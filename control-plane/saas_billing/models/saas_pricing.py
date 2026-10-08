@@ -438,6 +438,16 @@ class SaasPricingEngine(models.AbstractModel):
     # machine (``_evaluate_capacity``).
 
     @api.model
+    def daily_backup_pct(self):
+        """Daily backups as a percentage of the plan price per month
+        (``saas_master.daily_backup_pct``, default 20). 0 = price per GB."""
+        icp = self.env['ir.config_parameter'].sudo()
+        try:
+            return max(0.0, float(icp.get_param('saas_master.daily_backup_pct', '20') or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    @api.model
     def snapshot_price_per_gb(self):
         """Per-GB monthly rate for the usage-based snapshot add-on
         (``saas_master.snapshot_price_per_gb``, default $0.40/GB).
@@ -451,7 +461,17 @@ class SaasPricingEngine(models.AbstractModel):
 
 
     @api.model
-    def daily_backup_price(self, used_bytes=None):
+    def daily_backup_price(self, used_bytes=None, plan_monthly=None):
+        """Monthly daily-backup price. Percentage of the plan when
+        ``saas_master.daily_backup_pct`` is set and ``plan_monthly`` is
+        known; otherwise per GB of ``used_bytes`` (1 GB minimum)."""
+        pct = self.daily_backup_pct()
+        if pct > 0 and plan_monthly:
+            return round(float(plan_monthly) * pct / 100.0, 2)
+        return self._daily_backup_price_per_gb(used_bytes)
+
+    @api.model
+    def _daily_backup_price_per_gb(self, used_bytes=None):
         """Monthly price of the daily-backup add-on.
 
         SINGLE source of truth for the snapshot add-on price so the checkout

@@ -831,7 +831,8 @@ class SaasWebsite(http.Controller):
         # used for the toggle; ``backup_cost`` is what's added to the total
         # only when the box is ticked. It is a MONTHLY fee — billed x12
         # on yearly with NO discount.
-        backup_unit_price = request.env['saas.pricing.engine'].daily_backup_price()
+        backup_unit_price = request.env['saas.pricing.engine'].daily_backup_price(
+            plan_monthly=plan_cost)
         backup_cost = backup_unit_price if daily_backup else 0.0
         # Odoo.sh-style environments: per-server price for Staging/Development
         # (lowest spec, region-scaled), billed on the same period as the plan.
@@ -951,7 +952,7 @@ class SaasWebsite(http.Controller):
         )
         support_cost = _q['breakdown']['support_monthly']
         plan_cost = _q['breakdown']['resource_monthly']
-        backup_unit_price = engine.daily_backup_price()
+        backup_unit_price = engine.daily_backup_price(plan_monthly=plan_cost)
         backup_cost = backup_unit_price if daily else 0.0
         monthly_total = _q['monthly'] + backup_cost
         yearly_total = _q['yearly'] + backup_cost * 12
@@ -1160,12 +1161,12 @@ class SaasWebsite(http.Controller):
         if seed_id:
             seed = request.env['saas.instance.backup'].sudo().browse(seed_id)
             if (not seed.exists() or seed.source != 'snapshot' or seed.state != 'done'
-                    or seed.instance_id.partner_id != partner):
+                    or seed.partner_id != partner):
                 return request.redirect(err_redirect % 'Snapshot+not+found')
-            if seed.instance_id.odoo_version_id and seed.instance_id.odoo_version_id != version:
+            if seed.odoo_version_id and seed.odoo_version_id != version:
                 return request.redirect(err_redirect % (
                     'Choose+the+same+Odoo+version+as+the+snapshot+(%s)'
-                    % seed.instance_id.odoo_version_id.name.replace(' ', '+')))
+                    % seed.odoo_version_id.name.replace(' ', '+')))
             vals['seed_backup_id'] = seed.id
 
         try:

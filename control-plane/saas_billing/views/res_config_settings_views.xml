@@ -259,9 +259,19 @@
                              help="Optional add-on at hosting checkout. Backs up every database on the instance daily and keeps the last 7 days. Billed monthly: the storage the snapshots actually consume, rounded up to the next whole GB, at the per-GB rate (1 GB minimum, re-evaluated monthly).">
                         <div class="content-group">
                             <div class="mt8">
-                                <label for="saas_snapshot_price_per_gb" string="Price per GB / month" class="o_light_label" style="display:inline-block;min-width:160px;"/>
+                                <label for="saas_daily_backup_pct" string="Daily backups: % of plan / month" class="o_light_label" style="display:inline-block;min-width:160px;"/>
+                                <field name="saas_daily_backup_pct" class="oe_inline" style="max-width:6rem;"/>
+                                <span class="text-muted ms-2">billed with every renewal · 0 = per GB</span>
+                            </div>
+                            <div class="mt8">
+                                <label for="saas_snapshot_price_per_gb" string="Snapshots: price per GB / month" class="o_light_label" style="display:inline-block;min-width:160px;"/>
                                 <field name="saas_snapshot_price_per_gb" class="oe_inline" style="max-width:6rem;"/>
-                                <span class="text-muted ms-2">used space rounded up to whole GB · 1 GB minimum</span>
+                                <span class="text-muted ms-2">size rounded up to whole GB · 1 GB minimum · prepaid monthly</span>
+                            </div>
+                            <div class="mt8">
+                                <label for="saas_snapshot_grace_days" string="Snapshot grace (days)" class="o_light_label" style="display:inline-block;min-width:160px;"/>
+                                <field name="saas_snapshot_grace_days" class="oe_inline" style="max-width:6rem;"/>
+                                <span class="text-muted ms-2">unpaid snapshots are deleted after this</span>
                             </div>
                         </div>
                     </setting>

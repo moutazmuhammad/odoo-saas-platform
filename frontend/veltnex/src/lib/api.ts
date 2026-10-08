@@ -183,6 +183,8 @@ export interface Meta {
   hosting_versions: { id: number; name: string }[];
   support_plans: { code: string; name: string; monthly_price: number; is_default: boolean }[];
   daily_backup_price: number;
+  /** Daily backups as % of the plan price per month (0 = per GB). */
+  daily_backup_pct?: number;
 }
 
 export interface ApiService {
@@ -238,6 +240,30 @@ export interface ApiBackup {
   /** "scheduled" = automatic daily backup, "snapshot" = on-demand, kept until deleted. */
   source?: "scheduled" | "snapshot" | "final";
   error?: string;
+  // Snapshot-only facts (customer-wide list).
+  instance_id?: number | false;
+  instance_state?: string;
+  project_name?: string;
+  origin_subdomain?: string;
+  odoo_version?: string;
+  billable_gb?: number;
+  monthly_price?: number;
+  paid_until?: string;
+  billing_state?: "free" | "paid" | "pending" | "overdue";
+  pending_invoice_id?: number | false;
+  currency?: string;
+  permissions?: { can_restore?: boolean; can_delete?: boolean; can_new_project?: boolean };
+}
+
+export interface SnapshotEstimate {
+  size_gb: number;
+  limit: number;
+  count: number;
+  billable_gb?: number;
+  monthly_price?: number;
+  due_now?: number;
+  period_end?: string;
+  currency?: string;
 }
 
 export interface ApiInvoice {
@@ -822,6 +848,11 @@ export const api = {
     rpc<{ snapshot_id: number; limit: number }>(`/saas/api/v1/instances/${id}/snapshots/create`, { name }),
   snapshotDelete: (id: number, backupId: number) =>
     rpc<{ deleted: boolean }>(`/saas/api/v1/instances/${id}/snapshots/${backupId}/delete`),
+  snapshotEstimate: (id: number) =>
+    rpc<SnapshotEstimate>(`/saas/api/v1/instances/${id}/snapshots/estimate`),
+  snapshotsAll: () => rpc<{ snapshots: ApiBackup[] }>("/saas/api/v1/snapshots"),
+  snapshotDeleteAny: (backupId: number) =>
+    rpc<{ deleted: boolean }>(`/saas/api/v1/snapshots/${backupId}/delete`),
 
   invoices: () => rpc<ApiInvoice[]>("/saas/api/v1/invoices"),
   invoice: (id: number) => rpc<ApiInvoice>(`/saas/api/v1/invoices/${id}`),

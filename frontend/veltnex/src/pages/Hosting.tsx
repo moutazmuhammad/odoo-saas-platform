@@ -383,7 +383,12 @@ export default function Hosting() {
   const cycleMult = config?.cycle === "yearly" ? 12 : 1;
   const selSupport = meta?.support_plans?.find((s) => s.code === supportCode);
   const supportLine = (selSupport?.monthly_price ?? 0) * cycleMult;
-  const backupLine = (dailyBackup ? meta?.daily_backup_price ?? 0 : 0) * cycleMult;
+  // Daily backups: a percentage of the plan (predictable) or the per-GB floor.
+  const backupPct = meta?.daily_backup_pct ?? 0;
+  const backupUnit = backupPct > 0
+    ? Math.round((price?.monthly_equivalent ?? price?.total ?? 0) * backupPct) / 100
+    : meta?.daily_backup_price ?? 0;
+  const backupLine = (dailyBackup ? backupUnit : 0) * cycleMult;
   const baseTotal = projectQuote?.project_total ?? price?.total ?? 0;
   const grandTotal = baseTotal + supportLine + backupLine;
 
@@ -869,7 +874,7 @@ export default function Hosting() {
                   )}
 
                   {/* Daily backup */}
-                  {!isTrial && (meta?.daily_backup_price ?? 0) > 0 && (
+                  {!isTrial && ((meta?.daily_backup_price ?? 0) > 0 || (meta?.daily_backup_pct ?? 0) > 0) && (
                     <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-lg border border-border p-2.5">
                       <input
                         type="checkbox"
@@ -879,8 +884,8 @@ export default function Hosting() {
                       />
                       <span className="text-sm">
                         <span className="font-medium">{i18nText("Daily off-site backups")}</span>
-                        <FieldHint className="ms-1" text={i18nText("Automatic daily backups of your databases, stored off-site. Priced by the amount of storage actually used.")} />
-                        <span className="ms-1 text-muted">{i18nText("— from ")}{money(meta?.daily_backup_price ?? 0, currency)}{i18nText("/mo")}</span>
+                        <FieldHint className="ms-1" text={backupPct > 0 ? i18nText("Automatic daily backups of your whole server, kept for 7 days. {0}% of your plan price, billed with every renewal.", [String(backupPct)]) : i18nText("Automatic daily backups of your databases, stored off-site. Priced by the amount of storage actually used.")} />
+                        <span className="ms-1 text-muted">{backupPct > 0 ? i18nText("— {0}% of plan: ", [String(backupPct)]) : i18nText("— from ")}{money(backupUnit, currency)}{i18nText("/mo")}</span>
                       </span>
                     </label>
                   )}

@@ -719,6 +719,7 @@ class SaasInstance(models.Model):
         return self.env['saas.instance.backup'].sudo().search([
             ('instance_id', '=', self.id),
             ('is_full_instance', '=', True),
+            ('source', '!=', 'snapshot'),
             ('state', '=', 'done'),
         ], order='create_date desc', limit=1)
     company_id = fields.Many2one(
@@ -1008,6 +1009,10 @@ class SaasInstance(models.Model):
                   "Affected: %s")
                 % ', '.join(unsafe.mapped('subdomain'))
             )
+        Backup = self.env['saas.instance.backup'].sudo()
+        Backup.search([('instance_id', 'in', self.ids), ('source', '=', 'snapshot')]).write(
+            {'instance_id': False})
+        Backup.search([('instance_id', 'in', self.ids)]).with_context(skip_bucket_delete=True).unlink()
         return super().unlink()
 
     def _sync_partner_trial(self):
@@ -3635,7 +3640,9 @@ END $$;
         snapshot = Backup.create({
             'instance_id': self.id, 'name': name, 'state': 'running',
             'is_full_instance': True, 'ephemeral': False, 'format': 'operator',
-            'source': 'snapshot',
+            'source': 'snapshot', 'partner_id': self.partner_id.id,
+            'origin_subdomain': self.subdomain, 'origin_name': self.project_name or self.subdomain,
+            'odoo_version_id': self.odoo_version_id.id,
         })
         self._append_log("Snapshot '%s' queued..." % name)
         self.env['saas.audit.log'].saas_audit(
@@ -3651,23 +3658,7 @@ END $$;
         snapshot = self.env['saas.instance.backup'].sudo().browse(int(backup_id))
         if not snapshot.exists() or snapshot.instance_id != self or snapshot.source != 'snapshot':
             raise UserError(_("Snapshot not found."))
-        if snapshot.state == 'running':
-            raise UserError(_("That snapshot is still being taken."))
-        if self.env['saas.instance'].sudo().search_count(
-                [('seed_backup_id', '=', snapshot.id), ('state', 'in', ('draft', 'paid', 'provisioning', 'pending_provision'))]):
-            raise UserError(_("A new project is being created from this snapshot. Try again later."))
-        name = snapshot.name
-        if snapshot.bucket_path:
-            try:
-                snapshot._delete_bucket_prefix(snapshot.bucket_path)
-            except Exception:
-                _logger.exception("Could not delete snapshot data %s", snapshot.bucket_path)
-        snapshot.with_context(skip_bucket_delete=True).unlink()
-        self._append_log("Snapshot '%s' deleted." % name)
-        self.env['saas.audit.log'].saas_audit(
-            'snapshot_delete', model='saas.instance', res_id=self.id,
-            res_name=self.subdomain, detail='Snapshot %r deleted' % name)
-        return True
+        return snapshot.action_delete_snapshot()
 
     def _backup_bucket_prefix(self):
         """Stable per-instance object-storage prefix the operator's own
@@ -5196,6 +5187,7 @@ END $$;
         pre_existing_ids = set(Backup.search([
             ('instance_id', '=', self.id),
             ('is_full_instance', '=', True),
+            ('source', '!=', 'snapshot'),
         ]).ids)
 
         # 2. Take a fresh snapshot if the instance was actually
@@ -5307,6 +5299,7 @@ END $$;
                 others = Backup.search([
                     ('instance_id', '=', self.id),
                     ('is_full_instance', '=', True),
+                    ('source', '!=', 'snapshot'),
                     ('id', '!=', retained_backup.id),
                 ])
                 for b in others:
@@ -5332,6 +5325,7 @@ END $$;
                 all_full = Backup.search([
                     ('instance_id', '=', self.id),
                     ('is_full_instance', '=', True),
+                    ('source', '!=', 'snapshot'),
                 ])
                 for b in all_full:
                     if b.bucket_path:
@@ -5358,7 +5352,9 @@ END $$;
         # object — plain ``_delete_from_bucket`` on its ``bucket_path``
         # is enough. The retained row stays so it shows up on /backups
         # after reactivation and the customer can hit Restore.
-        all_backups = Backup.search([('instance_id', '=', self.id)])
+        # Customer snapshots are an independent service: they stay (and
+        # keep billing) after the project is gone.
+        all_backups = Backup.search([('instance_id', '=', self.id), ('source', '!=', 'snapshot')])
         rows_to_drop = (
             all_backups - retained_backup if retained_backup else all_backups
         )

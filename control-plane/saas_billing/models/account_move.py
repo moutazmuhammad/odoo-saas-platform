@@ -181,6 +181,13 @@ class AccountMove(models.Model):
         for instance in paused:
             instance._sync_daily_backup_suspension()
 
+        # --- On-demand snapshots: a paid invoice extends paid_until ---
+        snapshots = self.env['saas.instance.backup'].sudo().search([
+            ('pending_invoice_id', 'in', paid_invoices.ids)])
+        if snapshots:
+            snapshots._apply_snapshot_payment()
+            _logger.info("Snapshot invoices paid: %s", snapshots.mapped('name'))
+
         # --- Handle restoration fee payments ---
         _logger.info(
             "Checking restoration invoices among paid: %s",

@@ -120,8 +120,16 @@ class SaasInstanceBackup(models.Model):
 
     instance_id = fields.Many2one(
         'saas.instance', string='Instance',
-        required=True, ondelete='cascade', index=True,
+        required=False, ondelete='set null', index=True,
     )
+    # Snapshots are a customer-level service: they outlive their project.
+    partner_id = fields.Many2one(
+        'res.partner', string='Owner', index=True, ondelete='restrict',
+        compute='_compute_partner_id', store=True, readonly=False)
+    origin_subdomain = fields.Char(help="Subdomain of the project the snapshot was taken from.")
+    origin_name = fields.Char(help="Name of the project the snapshot was taken from.")
+    odoo_version_id = fields.Many2one('saas.odoo.version', ondelete='set null',
+                                      help="Odoo version the snapshot was taken with.")
     name = fields.Char(string='Backup Name', required=True)
     db_name = fields.Char(
         string='Database', index=True,
@@ -274,6 +282,50 @@ class SaasInstanceBackup(models.Model):
         self.unlink()
         return True
 
+    @api.depends('instance_id', 'instance_id.partner_id')
+    def _compute_partner_id(self):
+        for rec in self:
+            if rec.instance_id:
+                rec.partner_id = rec.instance_id.partner_id
+            elif not rec.partner_id:
+                rec.partner_id = False
+
+    def _on_snapshot_ready(self):
+        """Hook: a snapshot finished (size known). saas_billing charges it."""
+        return True
+
+    def action_delete_snapshot(self):
+        """Delete an on-demand snapshot (its data and the record). Callers
+        check ownership; works whether or not the project still exists."""
+        for snapshot in self:
+            if snapshot.source != 'snapshot':
+                raise UserError(_("Only snapshots can be deleted here."))
+            if snapshot.state == 'running':
+                raise UserError(_("That snapshot is still being taken."))
+            if self.env['saas.instance'].sudo().search_count([
+                    ('seed_backup_id', '=', snapshot.id),
+                    ('state', 'in', ('draft', 'paid', 'provisioning', 'pending_provision'))]):
+                raise UserError(_("A new project is being created from this snapshot. Try again later."))
+            name = snapshot.name
+            if snapshot.bucket_path:
+                try:
+                    snapshot._delete_bucket_prefix(snapshot.bucket_path)
+                except Exception:
+                    _logger.exception("Could not delete snapshot data %s", snapshot.bucket_path)
+            snapshot._on_snapshot_deleted()
+            instance = snapshot.instance_id
+            snapshot.with_context(skip_bucket_delete=True).unlink()
+            if instance:
+                instance._append_log("Snapshot '%s' deleted." % name)
+                self.env['saas.audit.log'].saas_audit(
+                    'snapshot_delete', model='saas.instance', res_id=instance.id,
+                    res_name=instance.subdomain, detail='Snapshot %r deleted' % name)
+        return True
+
+    def _on_snapshot_deleted(self):
+        """Hook: saas_billing cancels the snapshot's pending invoice."""
+        return True
+
     def unlink(self):
         """Delete cloud objects when the backup record is removed.
 
@@ -283,7 +335,9 @@ class SaasInstanceBackup(models.Model):
         are logged but do not block the unlink.
         """
         for rec in self:
-            if rec.bucket_path and rec.state == 'done' and not self.env.context.get('skip_bucket_delete'):
+            if (rec.bucket_path and rec.state == 'done'
+                    and not self.env.context.get('skip_bucket_delete')
+                    and not self.env.context.get('_skip_bucket_delete')):
                 try:
                     rec._delete_from_bucket()
                 except Exception:
@@ -1136,6 +1190,10 @@ class SaasInstanceBackup(models.Model):
                 instance, wait_timeout=1800, prefix=instance._snapshot_bucket_prefix(),
                 source='snapshot', name=self.name, placeholder=self)
             instance._append_log("Snapshot '%s' is ready." % self.name)
+            try:
+                self._on_snapshot_ready()
+            except Exception:
+                _logger.exception("Snapshot %s: post-completion hook failed", self.id)
         except Exception as e:
             self.write({'state': 'failed', 'error_message': str(e)[:500]})
             instance._append_log("Snapshot '%s' failed: %s" % (self.name, e))
@@ -1381,7 +1439,7 @@ class SaasInstanceBackup(models.Model):
         subdomain — rewrite to the TARGET instance's subdomain, or the
         restored databases would come back under the old tenant's
         names and nothing would serve them on the target."""
-        source_sub = (self.instance_id.subdomain or '')
+        source_sub = (self.origin_subdomain or self.instance_id.subdomain or '')
         target_sub = (instance.subdomain or '')
         if (
             source_sub and target_sub and source_sub != target_sub

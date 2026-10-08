@@ -3,7 +3,7 @@ import * as React from "react";
 import { usePermissions } from "@/lib/permissions";
 import { usePolling } from "@/hooks/usePolling";
 import { useNavigate, useParams } from "react-router-dom";
-import { Camera, RotateCcw, Trash2, PlusCircle, Rocket } from "lucide-react";
+import { Camera, RotateCcw, Trash2, PlusCircle, Rocket, Receipt } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -14,21 +14,28 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
 import { useToast } from "@/context/ToastContext";
-import { api, ApiError, type ApiBackup, type ApiInstance } from "@/lib/api";
-import { formatDateTime, formatSizeMb } from "@/lib/format";
+import { api, ApiError, type ApiBackup, type ApiInstance, type SnapshotEstimate } from "@/lib/api";
+import { formatDate, formatDateTime, formatSizeMb } from "@/lib/format";
 import { RestoreSnapshotDialog } from "@/pages/portal/Backups";
 
-/** DigitalOcean-style snapshots: taken on demand, kept until deleted.
- *  Restore onto this server, or start a new Production project from one. */
+function money(amount: number, currency = "USD") {
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+}
+
+/** DigitalOcean-style snapshots: taken on demand, kept until deleted,
+ *  billed per GB-month in advance. A customer-wide page (every project,
+ *  including projects that are gone) and a per-server tab (`embedId`). */
 export default function Snapshots({ embedId }: { embedId?: number } = {}) {
   const routeParams = useParams();
-  const id = embedId != null ? String(embedId) : (routeParams.id ?? "");
-  const instanceId = Number(id);
-  const can = usePermissions(instanceId);
+  const scopedId = embedId != null ? embedId : routeParams.id ? Number(routeParams.id) : null;
+  const can = usePermissions(scopedId ?? 0);
   const navigate = useNavigate();
   const toast = useToast();
-  const [backups, setBackups] = React.useState<ApiBackup[] | null>(null);
-  const [ready, setReady] = React.useState(true);
+  const [rows, setRows] = React.useState<ApiBackup[] | null>(null);
   const [instance, setInstance] = React.useState<ApiInstance | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [takeOpen, setTakeOpen] = React.useState(false);
@@ -37,35 +44,37 @@ export default function Snapshots({ embedId }: { embedId?: number } = {}) {
 
   const load = React.useCallback(async () => {
     try {
-      const [b, inst] = await Promise.all([
-        api.backups(instanceId),
-        api.instance(instanceId).catch(() => null),
+      const [all, inst] = await Promise.all([
+        api.snapshotsAll(),
+        scopedId ? api.instance(scopedId).catch(() => null) : Promise.resolve(null),
       ]);
-      setBackups(b.backups);
-      setReady(b.ready);
+      setRows(scopedId ? all.snapshots.filter((s) => s.instance_id === scopedId) : all.snapshots);
       setInstance(inst);
+      setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : i18nText("Could not load snapshots."));
     }
-  }, [instanceId]);
+  }, [scopedId]);
 
   React.useEffect(() => {
     load();
   }, [load]);
 
-  const snapshots = backups ? backups.filter((b) => b.source === "snapshot") : null;
-  const taking = !!snapshots?.some((b) => b.status === "in_progress");
+  const taking = !!rows?.some((b) => b.status === "in_progress");
   usePolling(load, { interval: 5000, enabled: taking });
 
+  const canTake = !!scopedId && can("backup.create") && instance?.state === "running";
+
   const handleRestore = async (backup: ApiBackup, confirm: string) => {
-    await api.backupRestore(instanceId, backup.id, confirm);
-    navigate(`/my/instances/${id}`);
+    if (!backup.instance_id) return;
+    await api.backupRestore(backup.instance_id, backup.id, confirm);
+    navigate(`/my/instances/${backup.instance_id}`);
   };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await api.snapshotDelete(instanceId, deleteTarget.id);
+      await api.snapshotDeleteAny(deleteTarget.id);
       toast.success(i18nText("Snapshot deleted"));
       setDeleteTarget(null);
       await load();
@@ -79,91 +88,124 @@ export default function Snapshots({ embedId }: { embedId?: number } = {}) {
     navigate(`/hosting?${qs.toString()}`);
   };
 
+  const monthlyTotal = (rows || []).filter((b) => b.status === "available").reduce((s, b) => s + (b.monthly_price || 0), 0);
+  const currency = rows?.find((b) => b.currency)?.currency || "USD";
+
   return (
     <div className="animate-fade-in">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{i18nText("Snapshots")}</h1>
-          <p className="mt-1 text-sm text-muted">{i18nText("A snapshot captures your whole server, database and files, whenever you want. Keep it as long as you like, restore it here, or start a new project from it.")}</p>
+          <p className="mt-1 text-sm text-muted">
+            {scopedId
+              ? i18nText("A snapshot captures this server, database and files, whenever you want. Keep it as long as you like, restore it here, or start a new project from it.")
+              : i18nText("All your snapshots, across every project, including projects you have since deleted. Billed per GB per month, in advance, until you delete them.")}
+          </p>
         </div>
-        {can("backup.create") && (
-          <Button onClick={() => setTakeOpen(true)} disabled={!ready || taking}>
+        {canTake && (
+          <Button onClick={() => setTakeOpen(true)} disabled={taking}>
             <Camera className="size-4" />{i18nText("Take snapshot")}</Button>
         )}
       </div>
 
-      {!ready ? (
-        <AlertBanner className="mt-6" variant="warning" title={i18nText("Snapshots unavailable")}
-          description={i18nText("Snapshots become available once the server is running.")} />
-      ) : error ? (
+      {rows && rows.length > 0 && monthlyTotal > 0 && (
+        <p className="mt-4 text-sm text-muted">
+          {i18nText("Current snapshot charges: {0} per month.", [money(monthlyTotal, currency)])}
+        </p>
+      )}
+
+      {error ? (
         <AlertBanner className="mt-6" variant="danger" title={i18nText("Snapshots")} description={error} />
-      ) : !snapshots ? (
+      ) : !rows ? (
         <div className="mt-20 flex justify-center"><Spinner size="lg" label={i18nText("Loading snapshots…")} /></div>
-      ) : snapshots.length === 0 ? (
+      ) : rows.length === 0 ? (
         <EmptyState
           className="mt-8"
           icon={Camera}
           title={i18nText("No snapshots yet")}
-          description={i18nText("Take one before a big change, or to clone this server into a new project.")}
-          action={can("backup.create") ? <Button onClick={() => setTakeOpen(true)}><PlusCircle className="size-4" />{i18nText("Take snapshot")}</Button> : undefined}
+          description={scopedId
+            ? i18nText("Take one before a big change, or to clone this server into a new project.")
+            : i18nText("Take a snapshot from any project's Snapshots tab; it will show up here.")}
+          action={canTake ? <Button onClick={() => setTakeOpen(true)}><PlusCircle className="size-4" />{i18nText("Take snapshot")}</Button> : undefined}
         />
       ) : (
         <Card className="mt-6 divide-y divide-border">
-          {snapshots.map((b) => (
-            <div key={b.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted">
-                  <Camera className="size-4" />
-                </span>
-                <div>
-                  <p className="font-medium">{b.label}</p>
-                  <p className="mt-0.5 text-xs text-muted">
-                    {formatDateTime(b.created)}{b.size_mb ? ` · ${formatSizeMb(b.size_mb)}` : ""}
-                  </p>
-                  {b.status === "failed" && b.error && <p className="mt-1 text-xs text-danger">{b.error}</p>}
+          {rows.map((b) => {
+            const perms = b.permissions || {};
+            return (
+              <div key={b.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted">
+                    <Camera className="size-4" />
+                  </span>
+                  <div>
+                    <p className="font-medium">{b.label}</p>
+                    <p className="mt-0.5 text-xs text-muted">
+                      {!scopedId && (b.project_name ? `${b.project_name}${b.instance_state === "deleted" ? ` (${i18nText("project deleted")})` : ""} · ` : "")}
+                      {formatDateTime(b.created)}{b.size_mb ? ` · ${formatSizeMb(b.size_mb)}` : ""}{b.odoo_version ? ` · Odoo ${b.odoo_version}` : ""}
+                    </p>
+                    {b.monthly_price != null && b.monthly_price > 0 && (
+                      <p className="mt-0.5 text-xs text-muted">
+                        {i18nText("{0} per month", [money(b.monthly_price, b.currency || currency)])}
+                        {b.billing_state === "paid" && b.paid_until ? ` · ${i18nText("paid until {0}", [formatDate(b.paid_until)])}` : ""}
+                      </p>
+                    )}
+                    {b.status === "failed" && b.error && <p className="mt-1 text-xs text-danger">{b.error}</p>}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  {(b.billing_state === "pending" || b.billing_state === "overdue") && b.pending_invoice_id ? (
+                    <Button size="sm" variant={b.billing_state === "overdue" ? "danger" : "secondary"} onClick={() => navigate(`/my/billing/${b.pending_invoice_id}`)}>
+                      <Receipt className="size-4" />{b.billing_state === "overdue" ? i18nText("Overdue — pay now") : i18nText("Pay invoice")}
+                    </Button>
+                  ) : (
+                    <StatusBadge status={b.status} />
+                  )}
+                  {perms.can_new_project && (
+                    <Button size="sm" variant="secondary" disabled={b.status !== "available"} onClick={() => startProject(b)}>
+                      <Rocket className="size-4" /><span className="hidden sm:inline">{i18nText("New project")}</span>
+                    </Button>
+                  )}
+                  {perms.can_restore && (
+                    <Button size="sm" variant="secondary" disabled={b.status !== "available"} onClick={() => setRestoreTarget(b)}>
+                      <RotateCcw className="size-4" /><span className="hidden sm:inline">{i18nText("Restore")}</span>
+                    </Button>
+                  )}
+                  {perms.can_delete && (
+                    <Button size="sm" variant="ghost" aria-label={i18nText("Delete snapshot")} disabled={b.status === "in_progress"} onClick={() => setDeleteTarget(b)}>
+                      <Trash2 className="size-4" />
+                    </Button>
+                  )}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                <StatusBadge status={b.status} />
-                {instance?.is_hosting && can("backup.create") && (
-                  <Button size="sm" variant="secondary" disabled={b.status !== "available"} onClick={() => startProject(b)}>
-                    <Rocket className="size-4" /><span className="hidden sm:inline">{i18nText("New project")}</span>
-                  </Button>
-                )}
-                <Button size="sm" variant="secondary" disabled={!can("db.restore") || b.status !== "available"} onClick={() => setRestoreTarget(b)}>
-                  <RotateCcw className="size-4" /><span className="hidden sm:inline">{i18nText("Restore")}</span>
-                </Button>
-                {can("backup.create") && (
-                  <Button size="sm" variant="ghost" aria-label={i18nText("Delete snapshot")} disabled={b.status === "in_progress"} onClick={() => setDeleteTarget(b)}>
-                    <Trash2 className="size-4" />
-                  </Button>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </Card>
       )}
 
-      <TakeSnapshotDialog
-        open={takeOpen}
-        onClose={() => setTakeOpen(false)}
-        onTake={async (name) => {
-          await api.snapshotCreate(instanceId, name);
-          setTakeOpen(false);
-          toast.success(i18nText("Snapshot started"), i18nText("It appears in the list as soon as it is ready."));
-          await load();
-        }}
-      />
+      {scopedId && (
+        <TakeSnapshotDialog
+          open={takeOpen}
+          instanceId={scopedId}
+          onClose={() => setTakeOpen(false)}
+          onTake={async (name) => {
+            await api.snapshotCreate(scopedId, name);
+            setTakeOpen(false);
+            toast.success(i18nText("Snapshot started"), i18nText("It appears in the list as soon as it is ready."));
+            await load();
+          }}
+        />
+      )}
 
       <RestoreSnapshotDialog
         backup={restoreTarget}
-        instanceName={instance?.name || ""}
+        instanceName={restoreTarget?.origin_subdomain || instance?.name || ""}
         onClose={() => setRestoreTarget(null)}
         onRestore={handleRestore}
       />
 
       <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title={i18nText("Delete snapshot")}>
-        <p className="text-sm text-muted">{i18nText("Delete snapshot {0}? This cannot be undone.", [deleteTarget?.label || ""])}</p>
+        <p className="text-sm text-muted">{i18nText("Delete snapshot {0}? This cannot be undone. Charges stop; the current prepaid period is not refunded.", [deleteTarget?.label || ""])}</p>
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>{i18nText("Cancel")}</Button>
           <Button variant="danger" onClick={handleDelete}><Trash2 className="size-4" />{i18nText("Delete")}</Button>
@@ -173,14 +215,20 @@ export default function Snapshots({ embedId }: { embedId?: number } = {}) {
   );
 }
 
-function TakeSnapshotDialog({ open, onClose, onTake }: { open: boolean; onClose: () => void; onTake: (name: string) => Promise<void> }) {
+function TakeSnapshotDialog({ open, instanceId, onClose, onTake }: { open: boolean; instanceId: number; onClose: () => void; onTake: (name: string) => Promise<void> }) {
   const [name, setName] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  React.useEffect(() => { if (open) { setName(""); setLoading(false); setError(null); } }, [open]);
+  const [estimate, setEstimate] = React.useState<SnapshotEstimate | null>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    setName(""); setLoading(false); setError(null); setEstimate(null);
+    api.snapshotEstimate(instanceId).then(setEstimate).catch(() => setEstimate(null));
+  }, [open, instanceId]);
   const valid = /^[\w .-]{1,60}$/.test(name.trim());
+  const atLimit = !!estimate && estimate.count >= estimate.limit;
   const submit = async () => {
-    if (!valid) return;
+    if (!valid || atLimit) return;
     setLoading(true); setError(null);
     try { await onTake(name.trim()); }
     catch (e) { setError(e instanceof ApiError ? e.message : i18nText("Couldn't start the snapshot.")); setLoading(false); }
@@ -194,10 +242,27 @@ function TakeSnapshotDialog({ open, onClose, onTake }: { open: boolean; onClose:
           onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && valid && submit()} />
         {name && !valid && <p className="text-xs text-danger">{i18nText("Use letters, numbers, spaces, dots or dashes (max 60).")}</p>}
       </div>
+      {estimate && (
+        <div className="mt-4 rounded-lg border border-border bg-card/60 p-3 text-sm">
+          {estimate.monthly_price != null ? (
+            <>
+              <div className="flex justify-between"><span className="text-muted">{i18nText("Estimated size")}</span><span>{i18nText("{0} GB", [String(estimate.billable_gb)])}</span></div>
+              <div className="mt-1 flex justify-between"><span className="text-muted">{i18nText("Monthly price")}</span><span className="font-medium">{money(estimate.monthly_price, estimate.currency || "USD")}</span></div>
+              {estimate.due_now != null && (
+                <div className="mt-2 flex justify-between border-t border-border pt-2"><span className="font-medium">{i18nText("Due now")}</span><span className="font-semibold">{money(estimate.due_now, estimate.currency || "USD")}</span></div>
+              )}
+              <p className="mt-1 text-xs text-muted">{i18nText("Paid in advance, then included in your monthly snapshot invoice until you delete it.")}</p>
+            </>
+          ) : (
+            <p className="text-xs text-muted">{i18nText("Snapshots of this size are free.")}</p>
+          )}
+          {atLimit && <p className="mt-2 text-xs text-danger">{i18nText("You have reached the limit of {0} snapshots for this server. Delete one to take another.", [String(estimate.limit)])}</p>}
+        </div>
+      )}
       <div className="mt-6 flex justify-end gap-2">
         <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
-        <ActionButton loading={loading} loadingText={i18nText("Starting…")} disabled={!valid} onClick={submit}>
-          <Camera className="size-4" />{i18nText("Take snapshot")}</ActionButton>
+        <ActionButton loading={loading} loadingText={i18nText("Starting…")} disabled={!valid || atLimit} onClick={submit}>
+          <Camera className="size-4" />{estimate?.due_now ? i18nText("Pay & take snapshot") : i18nText("Take snapshot")}</ActionButton>
       </div>
     </Dialog>
   );

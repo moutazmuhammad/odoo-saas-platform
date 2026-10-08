@@ -19,6 +19,8 @@ class TestSnapshotBilling(TransactionCase):
         super().setUp()
         self.icp = self.env['ir.config_parameter'].sudo()
         self.icp.set_param('saas_master.snapshot_price_per_gb', '5.0')
+        # These tests pin the per-GB mode; the percentage mode has its own tests.
+        self.icp.set_param('saas_master.daily_backup_pct', '0')
         self.icp.set_param('saas_master.hosting_worker_price', '10.0')
         self.icp.set_param('saas_master.hosting_storage_price_per_gb', '0.3')
         self.product = self.env['saas.product'].sudo().search(

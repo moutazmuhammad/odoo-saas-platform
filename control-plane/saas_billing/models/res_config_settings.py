@@ -160,6 +160,21 @@ class ResConfigSettings(models.TransientModel):
              'environments (lowest hosting spec). 1.0 = full price; 0.7 = 30%% '
              'cheaper than a same-size production server; 0 = free.',
     )
+    saas_daily_backup_pct = fields.Float(
+        string='Daily backups (% of plan price / month)',
+        config_parameter='saas_master.daily_backup_pct',
+        default=20.0,
+        help='Daily backups are billed as this percentage of the plan price, '
+             'with every renewal (prorated when switched on mid-cycle). '
+             'Set 0 to bill per GB instead.',
+    )
+    saas_snapshot_grace_days = fields.Integer(
+        string='Snapshot payment grace (days)',
+        config_parameter='saas_master.snapshot_grace_days',
+        default=7,
+        help='Days after the due date before an unpaid snapshot is deleted. '
+             'A warning email is sent at the due date.',
+    )
     saas_snapshot_price_per_gb = fields.Float(
         string='Snapshot Price per GB (monthly)',
         config_parameter='saas_master.snapshot_price_per_gb',

@@ -167,4 +167,69 @@
         <field name="auto_delete" eval="True"/>
     </record>
 
+    <!-- ============================================================ -->
+    <!--  On-demand snapshots (prepaid, monthly)                       -->
+    <!-- ============================================================ -->
+    <record id="mail_template_saas_snapshot_invoice" model="mail.template">
+        <field name="name">SaaS: Snapshot — payment due</field>
+        <field name="model_id" ref="saas_core.model_saas_instance_backup"/>
+        <field name="subject">Payment due for snapshot "{{ object.name }}"</field>
+        <field name="email_from">{{ (object.env.company.email or user.email) }}</field>
+        <field name="email_to">{{ object.partner_id.email }}</field>
+        <field name="body_html" type="html">
+<div style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
+    <p>Dear <t t-out="object.partner_id.name"/>,</p>
+    <p>Your snapshot <strong><t t-out="object.name"/></strong>
+       (<t t-out="object.billable_gb"/> GB) is kept for you at
+       <strong><t t-out="'%.2f' % object.monthly_price"/>/month</strong>, paid in advance.</p>
+    <p>The invoice for the period up to
+       <strong><t t-out="object.pending_period_end"/></strong> is ready. Please pay it from
+       <a href="/my/billing">Billing</a> in your portal, or add a payment method there so
+       future months are paid automatically.</p>
+    <p>If you no longer need this snapshot, simply delete it from the Snapshots page and
+       nothing more is charged.</p>
+    <p>Best regards,<br/><t t-out="object.env.company.name"/></p>
+</div>
+        </field>
+        <field name="auto_delete" eval="True"/>
+    </record>
+
+    <record id="mail_template_saas_snapshot_overdue" model="mail.template">
+        <field name="name">SaaS: Snapshot — overdue warning</field>
+        <field name="model_id" ref="saas_core.model_saas_instance_backup"/>
+        <field name="subject">Your snapshot "{{ object.name }}" will be deleted soon</field>
+        <field name="email_from">{{ (object.env.company.email or user.email) }}</field>
+        <field name="email_to">{{ object.partner_id.email }}</field>
+        <field name="body_html" type="html">
+<div style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
+    <p>Dear <t t-out="object.partner_id.name"/>,</p>
+    <p>The payment for your snapshot <strong><t t-out="object.name"/></strong>
+       (<t t-out="'%.2f' % object.monthly_price"/>/month) is overdue.</p>
+    <p>To keep it, pay the open invoice from <a href="/my/billing">Billing</a> within
+       <strong><t t-out="object._snapshot_grace_days()"/> days</strong>. After that the
+       snapshot is deleted and cannot be recovered.</p>
+    <p>Best regards,<br/><t t-out="object.env.company.name"/></p>
+</div>
+        </field>
+        <field name="auto_delete" eval="True"/>
+    </record>
+
+    <record id="mail_template_saas_snapshot_deleted" model="mail.template">
+        <field name="name">SaaS: Snapshot — deleted for non-payment</field>
+        <field name="model_id" ref="saas_core.model_saas_instance_backup"/>
+        <field name="subject">Your snapshot "{{ object.name }}" was deleted</field>
+        <field name="email_from">{{ (object.env.company.email or user.email) }}</field>
+        <field name="email_to">{{ object.partner_id.email }}</field>
+        <field name="body_html" type="html">
+<div style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
+    <p>Dear <t t-out="object.partner_id.name"/>,</p>
+    <p>Your snapshot <strong><t t-out="object.name"/></strong> was deleted because its
+       invoice stayed unpaid after the grace period. No further charges apply.</p>
+    <p>You can take a new snapshot at any time from your portal.</p>
+    <p>Best regards,<br/><t t-out="object.env.company.name"/></p>
+</div>
+        </field>
+        <field name="auto_delete" eval="True"/>
+    </record>
+
 </odoo>

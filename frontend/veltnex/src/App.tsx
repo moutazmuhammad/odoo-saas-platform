@@ -119,6 +119,7 @@ export default function App() {
           </Route>
           <Route path="access" element={<ProjectAccess />} />
           <Route path="access/accept" element={<AcceptAccess />} />
+          <Route path="snapshots" element={<Snapshots />} />
           <Route path="billing" element={<Invoices />} />
           <Route path="billing/:id" element={<InvoiceDetail />} />
           <Route path="settings" element={<Settings />} />

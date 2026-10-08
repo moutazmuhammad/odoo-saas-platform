@@ -35,6 +35,9 @@ OPTIONAL_INVOICE_ORIGIN_PREFIXES = (
     # Historical replica-tier invoices remain optional for dunning;
     # the removed feature must never suspend an otherwise paid instance.
     'SAAS:COMPUTE-TIER:',
+    # Snapshots are a separate, prepaid service: an unpaid snapshot invoice
+    # deletes the snapshot after its grace period, never the project.
+    'SAAS:SNAPSHOT:',
 )
 # Days past a daily-backup add-on invoice's due date before snapshots are
 # paused. Snapshots resume automatically once the invoice is paid.
@@ -644,12 +647,15 @@ class SaasInstance(models.Model):
         the charge follows the customer's data over time.
         """
         self.ensure_one()
+        engine = self.env['saas.pricing.engine']
+        pct = engine.daily_backup_pct()
+        if pct > 0 and self.plan_id and self.plan_id.price:
+            # Predictable: "+20% of your plan", billed with every renewal.
+            return round(self.plan_id.price * pct / 100.0, 2)
         # Delegate to the pricing engine so the checkout quote, the portal
         # and the recurring invoice all charge the SAME number.
         used_bytes = self._snapshot_total_bytes() or self.total_storage_bytes or 0
-        return self.env['saas.pricing.engine'].daily_backup_price(
-            used_bytes=used_bytes,
-        )
+        return engine.daily_backup_price(used_bytes=used_bytes)
 
 
     def _get_retained_snapshot_fee(self):

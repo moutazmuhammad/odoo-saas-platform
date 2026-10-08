@@ -49,6 +49,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
   const [instance, setInstance] = React.useState<ApiInstance | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [resetTarget, setResetTarget] = React.useState<string | null>(null);
+  const [upgradeTarget, setUpgradeTarget] = React.useState<string | null>(null);
   const [restoreOpen, setRestoreOpen] = React.useState(false);
   const [backupsTarget, setBackupsTarget] = React.useState<string | null>(null);
   const [backups, setBackups] = React.useState<ApiBackup[]>([]);
@@ -315,6 +316,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                                 >
                                   <MenuItem icon={Archive} label={i18nText("Create backup")} disabled={!can("backup.create")} onClick={async () => { setOpenMenu(null); try { await api.dbBackup(instanceId, db.name, "zip"); await load(true); toast.success(i18nText("Backup queued")); } catch (e) { toast.error(i18nText("Could not create backup"), e instanceof ApiError ? e.message : i18nText("Please try again.")); } }} />
                                   <MenuItem disabled={!can("backup.download")} icon={Download} label={i18nText("Download backup")} onClick={() => { setOpenMenu(null); setBackupsTarget(db.name); }} />
+                                  <MenuItem disabled={!can("db.upgrade")} icon={RefreshCw} label={i18nText("Upgrade modules")} onClick={() => { setOpenMenu(null); setUpgradeTarget(db.name); }} />
                                   <MenuItem disabled={!can("db.password")} icon={KeyRound} label={i18nText("Reset password")} onClick={() => { setOpenMenu(null); setResetTarget(db.name); }} />
                                 </div>
                               </>
@@ -333,6 +335,13 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
 
 
 
+
+      <UpgradeModulesDialog
+        dbName={upgradeTarget}
+        instanceId={instanceId}
+        onClose={() => setUpgradeTarget(null)}
+        onDone={() => load(true)}
+      />
 
       <RestoreDatabaseDialog
         open={restoreOpen}
@@ -510,6 +519,156 @@ async function looksLikeZip(file: File): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function UpgradeModulesDialog({
+  dbName,
+  instanceId,
+  onClose,
+  onDone,
+}: {
+  dbName: string | null;
+  instanceId: number;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [modules, setModules] = React.useState("");
+  const [phase, setPhase] = React.useState<"idle" | "running" | "done" | "failed">("idle");
+  const [error, setError] = React.useState<string | null>(null);
+  const [report, setReport] = React.useState("");
+
+  React.useEffect(() => {
+    if (dbName) {
+      setModules("");
+      setPhase("idle");
+      setError(null);
+      setReport("");
+    }
+  }, [dbName]);
+
+  const start = async () => {
+    if (!dbName) return;
+    setError(null);
+    setReport("");
+    setPhase("running");
+    let opId: number;
+    try {
+      const res = await api.dbUpgrade(instanceId, dbName, modules);
+      opId = res.op_id;
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't start the upgrade."));
+      setPhase("idle");
+      return;
+    }
+    // Poll the op until done/failed. A live module upgrade can take a
+    // while on a big database, so we watch up to ~20 min; the site
+    // stays online throughout. A few network blips are tolerated.
+    const DEADLINE_MS = 20 * 60 * 1000;
+    const startedAt = Date.now();
+    let misses = 0;
+    for (;;) {
+      if (Date.now() - startedAt > DEADLINE_MS) {
+        setError(i18nText("This is taking longer than expected — it may still be finishing in the background. Check back shortly."));
+        setPhase("failed");
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 3000));
+      let op;
+      try {
+        op = await api.dbOperation(instanceId, opId);
+        misses = 0;
+      } catch {
+        if (++misses > 20) {
+          setError(i18nText("Lost connection while upgrading. The upgrade may still be running."));
+          setPhase("failed");
+          return;
+        }
+        continue;
+      }
+      if (op.state === "done") {
+        setReport(op.output || "");
+        setPhase("done");
+        onDone();
+        return;
+      }
+      if (op.state === "failed") {
+        setReport(op.output || "");
+        setError(op.error || i18nText("The upgrade didn't complete."));
+        setPhase("failed");
+        onDone();
+        return;
+      }
+      // still running — keep polling
+    }
+  };
+
+  const busy = phase === "running";
+
+  return (
+    <Dialog
+      open={!!dbName}
+      onClose={onClose}
+      title={i18nText("Upgrade modules")}
+      description={dbName ? i18nText("Update installed modules on “{0}”.", [dbName]) : undefined}
+    >
+      {error && (
+        <AlertBanner
+          className="mb-4"
+          variant={phase === "failed" ? "danger" : "warning"}
+          title={i18nText("Upgrade")}
+          description={error}
+        />
+      )}
+      {phase === "done" && !error && (
+        <AlertBanner
+          className="mb-4"
+          variant="success"
+          title={i18nText("Upgrade complete")}
+          description={i18nText("Your modules were upgraded and your instance stayed online the whole time.")}
+        />
+      )}
+
+      <AlertBanner
+        variant="info"
+        title={i18nText("No downtime")}
+        description={i18nText("The upgrade runs live — your site stays up. You may notice a brief slowdown while it finishes.")}
+      />
+
+      <div className="mt-4 space-y-2">
+        <Label htmlFor="upg-mods">{i18nText("Modules to upgrade")}</Label>
+        <Input
+          id="upg-mods"
+          data-technical
+          placeholder={i18nText("e.g. sale, stock, account")}
+          value={modules}
+          autoFocus
+          disabled={busy || phase === "done"}
+          onChange={(e) => setModules(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && !busy && phase !== "done" && start()}
+        />
+        <p className="text-xs text-muted">{i18nText("Separate several with commas. Use the module's technical name (e.g. ")}<code className="rounded-sm bg-border/60 px-1 font-mono">{"sale"}</code>{i18nText("), or ")}<code className="rounded-sm bg-border/60 px-1 font-mono">{"all"}</code>{i18nText(" to upgrade everything installed.")}</p>
+      </div>
+
+      {report && (
+        <div className="mt-4 space-y-2">
+          <Label>{i18nText("Report")}</Label>
+          <pre dir="ltr" data-technical className="max-h-60 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-xs text-muted">
+            {report}
+          </pre>
+        </div>
+      )}
+
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose} disabled={busy}>
+          {phase === "done" || phase === "failed" ? i18nText("Close") : i18nText("Cancel")}
+        </Button>
+        {phase !== "done" && (
+          <ActionButton loading={busy} loadingText={i18nText("Upgrading\u2026")} onClick={start}>
+            <RefreshCw className="size-4" />{i18nText("Upgrade")}</ActionButton>
+        )}
+      </div>
+    </Dialog>
+  );
 }
 
 function RestoreDatabaseDialog({

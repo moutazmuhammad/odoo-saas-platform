@@ -105,6 +105,41 @@ class TestDeployOnKubernetes(TransactionCase):
         self.assertEqual(create.call_args.kwargs['password'], 'Secret123!')
         self.assertEqual(self.instance.state, 'running')
 
+    def test_production_deploy_requests_its_database_from_the_operator(self):
+        """The CR asks the operator to create <sub>_main before the web pods
+        start; when it did, deploy only secures the admin account."""
+        driver = MagicMock()
+        driver.create.return_value = MagicMock()
+        self.instance.admin_password = 'Secret123!'
+        patched = []
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
+                patch.object(type(self.instance), '_data_service') as mock_ds, \
+                patch.object(type(self.instance), 'hosting_db_list',
+                             return_value=[{'name': 'freshk8s_main', 'admin_login': 'admin'}]), \
+                patch.object(type(self.instance), 'hosting_db_create') as create, \
+                patch.object(type(self.instance), '_hosting_patch_admin_creds',
+                             lambda rec, **kw: patched.append(kw)):
+            mock_ds.return_value._wait_until_healthy.return_value = None
+            self.instance._do_deploy_locked_kubernetes()
+        spec = driver.create.call_args.args[0]
+        self.assertEqual(spec.env['db_name'], 'freshk8s_main')
+        create.assert_not_called()
+        self.assertEqual(len(patched), 1)
+        self.assertEqual((patched[0]['db_name'], patched[0]['login'], patched[0]['password']),
+                         ('freshk8s_main', 'admin', 'Secret123!'))
+        self.assertTrue(self.instance.hosting_db_prepared)
+        # A redeploy never resets the customer's password again.
+        with patch.object(type(self.instance), '_compute_driver', return_value=driver), \
+                patch.object(type(self.instance), '_data_service') as mock_ds, \
+                patch.object(type(self.instance), 'hosting_db_list',
+                             return_value=[{'name': 'freshk8s_main', 'admin_login': 'admin'}]), \
+                patch.object(type(self.instance), '_hosting_patch_admin_creds',
+                             lambda rec, **kw: patched.append(kw)):
+            mock_ds.return_value._wait_until_healthy.return_value = None
+            self.instance.state = 'failed'
+            self.instance._do_deploy_locked_kubernetes()
+        self.assertEqual(len(patched), 1)
+
     def test_redeploy_keeps_the_customer_database(self):
         """A retry/redeploy that already finds a customer database must not
         create a second one (Production allows one)."""

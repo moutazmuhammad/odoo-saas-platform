@@ -39,6 +39,15 @@ type DatabaseSpec struct {
 	// +kubebuilder:default=Managed
 	Mode DatabaseMode `json:"mode,omitempty"`
 
+	// Name of the PostgreSQL database Odoo serves (odoo.conf db_name). It
+	// is created and initialised (base module) by the odoo-init Job before
+	// the web pods start, so the instance never serves without it. Defaults
+	// to "odoo". Set it at creation; the serving database is not renamed.
+	// +optional
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9_-]*$`
+	Name string `json:"name,omitempty"`
+
 	// Version is the PostgreSQL major version to provision. Ignored in
 	// External mode.
 	// +kubebuilder:default="16"

@@ -40,7 +40,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: docker.io/moutazmuhammad/odoo-saas-operator:0.1.29
+          image: docker.io/moutazmuhammad/odoo-saas-operator:0.1.30
           args:
             - --leader-elect=false
             - --networking-provider=gateway-api

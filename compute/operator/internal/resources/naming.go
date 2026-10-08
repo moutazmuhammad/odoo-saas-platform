@@ -156,11 +156,16 @@ func WithComponent(instance *saasv1alpha1.OdooInstance, component string) map[st
 	return l
 }
 
-// OdooDatabaseName is the PostgreSQL database name Odoo connects to. Using
-// a fixed logical name ("odoo") is safe because every tenant has its own
-// database server/namespace already; External mode instances instead take
-// the name embedded in their credentials Secret.
+// OdooDatabaseName is the PostgreSQL database name Odoo connects to:
+// spec.database.name when set (a hosting tenant's "<subdomain>_main", so
+// the customer's real database exists before the web pods ever serve),
+// otherwise the fixed logical name "odoo", which is safe because every
+// tenant has its own database server/namespace already. External mode
+// instances instead take the name embedded in their credentials Secret.
 func OdooDatabaseName(instance *saasv1alpha1.OdooInstance) string {
+	if name := instance.Spec.Database.Name; name != "" {
+		return name
+	}
 	return "odoo"
 }
 

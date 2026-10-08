@@ -4756,6 +4756,10 @@ END $$;
             'database_filter': self._k8s_database_filter(),
             'db_manager_prefix': self._hosting_db_prefix() if self.is_hosting else '',
             'db_manager_max_databases': self._hosting_database_limit(),
+            # Hosting: the served database IS the customer's one database,
+            # created by the operator before the web pods start.
+            'db_name': (self._hosting_db_full_name(self._HOSTING_INITIAL_DB_SUFFIX)
+                        if self.is_hosting else ''),
             'shell': bool(self.is_hosting),
             **self._k8s_plan_resources(),
         }
@@ -4829,6 +4833,9 @@ END $$;
     # with (``<subdomain>_main``).
     _HOSTING_INITIAL_DB_SUFFIX = 'main'
 
+    hosting_db_prepared = fields.Boolean(
+        default=False, copy=False,
+        help="The production database's admin account was set up on first deploy.")
     seed_backup_id = fields.Many2one(
         'saas.instance.backup', string='Start from snapshot', copy=False,
         ondelete='set null',
@@ -4868,19 +4875,37 @@ END $$;
         self.ensure_one()
         if not (self.is_hosting and self.environment == 'production'):
             return False
+        if self.hosting_db_prepared:
+            return False
         try:
-            if self.hosting_db_list():
-                return False
             name = self._hosting_db_full_name(self._HOSTING_INITIAL_DB_SUFFIX)
-            self._append_log("Preparing the production database '%s'..." % name)
             partner = self.partner_id
+            password = self.admin_password or self._generate_random_password()
+            existing = {r['name'] for r in self.hosting_db_list()}
+            if name in existing:
+                # Created by the operator's init Job (admin/admin): give it the
+                # instance admin password and the customer's language now.
+                self._append_log("Securing the production database '%s'..." % name)
+                self._hosting_patch_admin_creds(
+                    db_name=name, login='admin', password=password,
+                    lang=partner.lang or 'en_US',
+                    country_code=partner.country_id.code or None)
+                self.hosting_db_prepared = True
+                self._append_log("Database '%s' ready." % name)
+                return True
+            if existing:
+                self.hosting_db_prepared = True
+                return False
+            # Older operator without spec.database.name: build it ourselves.
+            self._append_log("Preparing the production database '%s'..." % name)
             self.hosting_db_create(
                 name,
                 login='admin',
-                password=self.admin_password or self._generate_random_password(),
+                password=password,
                 lang=partner.lang or 'en_US',
                 country_code=partner.country_id.code or None,
             )
+            self.hosting_db_prepared = True
             return True
         except Exception as e:
             _logger.exception("Could not prepare the production database for %s",

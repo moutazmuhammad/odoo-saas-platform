@@ -2,7 +2,7 @@
 
 image:
   repository: docker.io/moutazmuhammad/odoo-saas-operator
-  tag: "0.1.29"
+  tag: "0.1.30"
   pullPolicy: IfNotPresent
 # Pull secrets for the operator pod itself (Secrets in the release
 # namespace).

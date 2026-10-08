@@ -560,6 +560,11 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         if spec.env.get('database_filter'):
             body['spec']['databaseFilter'] = spec.env['database_filter']
         database = self._database_spec(spec.env)
+        if spec.env.get('db_name'):
+            # The operator's init Job creates and initialises THIS database
+            # before the web pods start, so the tenant never serves without
+            # the customer's real database (an older operator ignores it).
+            database['name'] = spec.env['db_name']
         if database:
             body['spec']['database'] = database
         if spec.env.get('quota'):

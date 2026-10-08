@@ -673,3 +673,25 @@ func TestDatabaseManagerCapacityConfig(t *testing.T) {
 		t.Fatal("unlimited database configuration missing")
 	}
 }
+
+func TestOdooDatabaseName_SpecNameDrivesInitJobConfigAndUpdate(t *testing.T) {
+	instance := testInstance()
+	if got := OdooDatabaseName(instance); got != "odoo" {
+		t.Fatalf("default database name = %q, want odoo", got)
+	}
+	instance.Spec.Database.Name = "acme_main"
+	if got := OdooDatabaseName(instance); got != "acme_main" {
+		t.Fatalf("database name = %q, want acme_main", got)
+	}
+	args := strings.Join(OdooInitJob(instance, Platform{}).Spec.Template.Spec.Containers[0].Args, " ")
+	if !strings.Contains(args, "-d acme_main") {
+		t.Errorf("init Job args = %q, want -d acme_main", args)
+	}
+	if conf := OdooConfigMap(instance).Data["odoo.conf.tmpl"]; !strings.Contains(conf, "db_name = __DB_NAME__") {
+		t.Errorf("config template must keep the db_name placeholder the init container fills from the Secret:\n%s", conf)
+	}
+	instance.Spec.Update = &saasv1alpha1.UpdateSpec{Token: "b", Modules: []string{"sale"}}
+	if got := strings.Join(updateDatabases(instance), ","); got != "acme_main" {
+		t.Errorf("update databases = %q, want acme_main", got)
+	}
+}

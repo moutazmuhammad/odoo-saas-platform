@@ -88,6 +88,13 @@
                             groups="saas_core.group_saas_pod_shell"
                             invisible="state != 'running'"/>
 
+                    <!-- Database manager: staff-only full manager on the tenant
+                         (customers only see the managed page). -->
+                    <button name="action_open_database_manager" string="Database Manager"
+                            type="object" icon="fa-database"
+                            groups="saas_core.group_saas_manager"
+                            invisible="state != 'running' or not is_hosting"/>
+
                     <!-- Create Backup: when running -->
                     <button name="action_create_backup" string="Create Backup"
                             type="object"

@@ -1670,11 +1670,13 @@ class SaasInstance(models.Model):
     # one hour of access.
     _DB_MANAGER_LINK_SECONDS = 120
 
-    def hosting_database_manager_url(self):
+    def hosting_database_manager_url(self, staff=False):
         """A short-lived link that opens Odoo's database manager on this
         hosting instance without the master password (verified by the
         operator's saas_tenant_dbm addon with this instance's key).
-        Raises UserError while access is still being switched on."""
+        ``staff=True`` opens the FULL manager (no prefix restriction, no
+        hidden controls) for platform admins/ops. Raises UserError while
+        access is still being switched on."""
         self.ensure_one()
         if not self.is_hosting or self.state != 'running':
             raise UserError(_("The database manager is available on running hosting instances."))
@@ -1687,13 +1689,28 @@ class SaasInstance(models.Model):
                 "Please try again in a minute."))
         key = driver.database_manager_key(handle)
         host = (self.name or '').strip().lower()
-        payload = base64.urlsafe_b64encode(json.dumps({
+        claims = {
             'h': host,
             'e': int(time.time()) + self._DB_MANAGER_LINK_SECONDS,
             'n': secrets.token_hex(8),
-        }).encode()).decode().rstrip('=')
+        }
+        if staff:
+            claims['s'] = 1
+        payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip('=')
         sig = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
         return 'https://%s/saas/dbm/enter?t=%s.%s' % (host, payload, sig)
+
+    def action_open_database_manager(self):
+        """Backend button (SaaS Manager): open this tenant's full database
+        manager in a new tab — everything the customer cannot reach."""
+        self.ensure_one()
+        if not self.env.user.has_group('saas_core.group_saas_manager'):
+            raise UserError(_("Only SaaS managers can open a tenant's database manager."))
+        url = self.hosting_database_manager_url(staff=True)
+        self.env['saas.audit.log'].saas_audit(
+            'staff_database_manager', model='saas.instance', res_id=self.id,
+            res_name=self.subdomain, detail='Staff opened the database manager')
+        return {'type': 'ir.actions.act_url', 'url': url, 'target': 'new'}
 
     def _hosting_db_prefix(self):
         """Prefix every customer-created DB with the instance subdomain.

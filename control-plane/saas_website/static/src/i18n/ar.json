@@ -1703,7 +1703,7 @@
   "Start with a size that fits your team today — you can change it any time. Increases take effect immediately; reducing workers takes effect on your next bill, and storage can't go below what you're already using.": "ابدأ بموارد تناسب فريقك اليوم، وعدّلها في أي وقت. تسري الزيادة فورًا، ويسري تخفيض Workers مع الفاتورة التالية. ولا يمكن خفض التخزين إلى أقل من المساحة المستخدمة.",
   "Start your ": "ابدأ ",
   "Start, stop, and restart instances.": "تشغيل Instances وإيقافها وإعادة تشغيلها.",
-  "Starting": "جارٍ بدء التشغيل",
+  "Starting": "جارٍ التشغيل",
   "Starting restore…": "جارٍ بدء الاستعادة…",
   "Starting the new version and checking it is ready.": "بدء الإصدار الجديد والتحقق من جاهزيته.",
   "Starting trial...": "جارٍ بدء التجربة...",
@@ -2321,5 +2321,11 @@
   "Deployment in progress: creating the tenant workload.": "جارٍ النشر: يتم إنشاء بيئة العميل.",
   "Deployment in progress: pulling the Odoo image.": "جارٍ النشر: يتم تنزيل صورة Odoo.",
   "Deployment in progress: initialising the database and starting Odoo.": "جارٍ النشر: يتم تهيئة قاعدة البيانات وبدء تشغيل Odoo.",
-  "Deployment in progress: the tenant is starting and not answering yet.": "جارٍ النشر: البيئة قيد بدء التشغيل ولا تستجيب بعد."
+  "Deployment in progress: the tenant is starting and not answering yet.": "جارٍ النشر: البيئة قيد بدء التشغيل ولا تستجيب بعد.",
+  "Working normally": "يعمل بشكل طبيعي",
+  "Temporarily unavailable": "غير متاح مؤقتًا",
+  "Can't connect right now": "تعذّر الاتصال حاليًا",
+  "Checking…": "جارٍ التحقق…",
+  "Waiting to start": "في انتظار البدء",
+  "Setting up your project": "جارٍ تجهيز مشروعك"
 }

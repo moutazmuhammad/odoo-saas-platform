@@ -4858,8 +4858,9 @@ END $$;
     def _hosting_prepare_production_database(self):
         """Create the ready-to-use Production database on first deploy.
 
-        Admin login is the customer's email; the password is the instance
-        admin password (they can reset it from Databases). Idempotent: a
+        Admin login is ``admin`` (as on Odoo.sh); the initial password is
+        the instance admin password, which the customer resets from
+        Databases → Reset password. Idempotent: a
         redeploy/retry that already finds a customer database does
         nothing. Never fails the deploy — the tenant is running; a
         failure is logged and the customer can create/restore from
@@ -4875,7 +4876,7 @@ END $$;
             partner = self.partner_id
             self.hosting_db_create(
                 name,
-                login=(partner.email or 'admin').strip(),
+                login='admin',
                 password=self.admin_password or self._generate_random_password(),
                 lang=partner.lang or 'en_US',
                 country_code=partner.country_id.code or None,

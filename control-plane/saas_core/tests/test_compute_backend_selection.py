@@ -97,7 +97,7 @@ class TestDeployOnKubernetes(TransactionCase):
         self.assertNotEqual(state_at_create[0], 'running')
         name, kw = fake_create.calls[0]
         self.assertEqual(name, 'freshk8s_main')
-        self.assertEqual(kw['login'], 'owner@example.com')
+        self.assertEqual(kw['login'], 'admin')
         self.assertEqual(kw['password'], 'Secret123!')
         self.assertEqual(self.instance.state, 'running')
         return

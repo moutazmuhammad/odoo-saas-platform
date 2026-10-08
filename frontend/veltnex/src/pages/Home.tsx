@@ -6,6 +6,8 @@ import {
   CheckCircle2,
   Database,
   GitBranch,
+  Github,
+  Gitlab,
   Layers,
   Lock,
   Server,
@@ -181,15 +183,34 @@ function HeroChip({ icon: Icon, title, detail }: { icon: LucideIcon; title: stri
 // Trust strip
 // ---------------------------------------------------------------------
 
+function BitbucketIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden fill="currentColor">
+      <path d="M.778 1.213a.768.768 0 0 0-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 0 0 .77-.646l3.27-20.03a.768.768 0 0 0-.768-.891zM14.52 15.53H9.522L8.17 8.466h7.561z" />
+    </svg>
+  );
+}
+
 function TrustStrip({ hosting }: { hosting: boolean }) {
-  const items = hosting
-    ? ["GitHub", "GitLab", "Bitbucket", i18nText("Any Odoo version"), i18nText("Community & Enterprise")]
+  const providers: { label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { label: "GitHub", icon: Github },
+    { label: "GitLab", icon: Gitlab },
+    { label: "Bitbucket", icon: BitbucketIcon },
+  ];
+  const facts = hosting
+    ? [i18nText("Any Odoo version"), i18nText("Community & Enterprise")]
     : [i18nText("Any Odoo version"), i18nText("Community & Enterprise"), i18nText("Daily backups"), i18nText("Free SSL")];
   return (
     <section className="border-y border-border bg-card/30">
       <Container className="flex flex-wrap items-center justify-center gap-x-10 gap-y-3 py-5">
         <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted">{i18nText("Works with")}</span>
-        {items.map((t) => (
+        {hosting && providers.map((p) => (
+          <span key={p.label} className="inline-flex items-center gap-2 text-sm font-semibold text-muted/90">
+            <p.icon className="size-4" />
+            {p.label}
+          </span>
+        ))}
+        {facts.map((t) => (
           <span key={t} className="text-sm font-semibold text-muted/90">{t}</span>
         ))}
       </Container>

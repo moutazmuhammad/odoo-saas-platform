@@ -17,6 +17,24 @@ def observe_runtime(driver, handle, url, lifecycle):
         return result('unknown', 'cluster_unreachable',
                       'Cannot check the tenant workload: cluster access failed.')
     workload = health.status or 'unknown'
+    if lifecycle == 'provisioning':
+        # A deploy is in progress: the workload is being created, pulled or
+        # initialised. Say which phase it is in instead of "unavailable".
+        if health.running:
+            probe = _probe_endpoint(url, workload)
+            if probe['runtime_state'] == 'online':
+                return probe
+            return result('starting', 'provisioning',
+                          'Deployment in progress: the tenant is starting and not answering yet.',
+                          workload, probe.get('runtime_reachable'))
+        if workload in ('not_found', 'missing'):
+            return result('starting', 'provisioning',
+                          'Deployment in progress: creating the tenant workload.', workload)
+        if health.detail in ('ImagePullBackOff', 'ErrImagePull', 'ContainerCreating'):
+            return result('starting', 'provisioning',
+                          'Deployment in progress: pulling the Odoo image.', workload)
+        return result('starting', 'provisioning',
+                      'Deployment in progress: initialising the database and starting Odoo.', workload)
     if lifecycle in ('stopped', 'suspended'):
         if workload == 'exited':
             return result(lifecycle, lifecycle, 'Tenant workload is stopped.', workload)
@@ -31,6 +49,15 @@ def observe_runtime(driver, handle, url, lifecycle):
                 'CreateContainerConfigError', 'CreateContainerError', 'RunContainerError'):
             return result('unavailable', 'workload_failed', 'Tenant workload has stopped or failed.', workload)
         return result('starting', 'pod_not_ready', 'Tenant workload is not ready to serve requests.', workload)
+
+    return _probe_endpoint(url, workload)
+
+
+def _probe_endpoint(url, workload):
+    def result(state, reason, message, workload='unknown', reachable=None):
+        return dict(runtime_state=state, runtime_reason=reason,
+                    runtime_message=message, runtime_workload=workload,
+                    runtime_reachable=reachable)
 
     # Use only the configured tenant origin. No redirects, cookies, credentials,
     # or disabled TLS verification. Odoo's health endpoint checks PostgreSQL too.

@@ -68,6 +68,22 @@ class TestRuntimeHealth(TransactionCase):
         self.assertEqual(result['runtime_reason'], 'workload_missing')
         get.assert_not_called()
 
+    def test_provisioning_is_starting_not_unavailable(self):
+        """While a deploy runs, a missing or not-ready workload is a phase of
+        provisioning, not an outage; the message names the phase."""
+        self.driver.health.return_value = HealthStatus(running=False, status='not_found')
+        result, get = self.observe(lifecycle='provisioning')
+        self.assertEqual(result['runtime_state'], 'starting')
+        self.assertEqual(result['runtime_reason'], 'provisioning')
+        self.assertIn('creating', result['runtime_message'])
+        get.assert_not_called()
+        self.driver.health.return_value = HealthStatus(running=True, status='running')
+        result, _ = self.observe(code=503, lifecycle='provisioning')
+        self.assertEqual(result['runtime_state'], 'starting')
+        self.assertIn('not answering', result['runtime_message'])
+        result, _ = self.observe(lifecycle='provisioning')
+        self.assertEqual(result['runtime_state'], 'online')
+
     def test_crash_loop_is_unavailable(self):
         self.driver.health.return_value = HealthStatus(running=False, status='restarting', detail='CrashLoopBackOff')
         result, _ = self.observe()

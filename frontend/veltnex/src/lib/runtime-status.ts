@@ -38,8 +38,11 @@ export function isRuntimeExpired(instance: RuntimeHealth, now = Date.now()): boo
 /** Saved lifecycle state is never sufficient to display an online tenant. */
 export function displayRuntimeStatus(instance: RuntimeInstance, now = Date.now()): string {
   if (!OBSERVED_STATES.has(instance.state)) return instance.state;
-  if (isRuntimeExpired(instance, now)) return "unknown";
-  return instance.runtime_state || "unknown";
+  const observed = isRuntimeExpired(instance, now) ? "unknown" : instance.runtime_state || "unknown";
+  // A deploy in progress is "Provisioning" until the tenant is actually
+  // online — never "Unavailable"/"Unknown" for a workload that is being built.
+  if (instance.state === "provisioning" && observed !== "online") return "provisioning";
+  return observed;
 }
 
 export function isOnline(instance: RuntimeInstance, now = Date.now()): boolean {

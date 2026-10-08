@@ -18,6 +18,12 @@ describe("Observed production status", () => {
   it("reports stopping while suspension has not finished", () => {
     expect(displayRuntimeStatus({ state: "suspended", runtime_state: "stopping", ...fresh }, now)).toBe("stopping");
   });
+  it("shows provisioning until the deploying tenant is online", () => {
+    expect(displayRuntimeStatus({ state: "provisioning" }, now)).toBe("provisioning");
+    expect(displayRuntimeStatus({ state: "provisioning", runtime_state: "unavailable", ...fresh }, now)).toBe("provisioning");
+    expect(displayRuntimeStatus({ state: "provisioning", runtime_state: "starting", ...fresh }, now)).toBe("provisioning");
+    expect(displayRuntimeStatus({ state: "provisioning", runtime_state: "online", ...fresh }, now)).toBe("online");
+  });
   it("keeps payment and predeployment workflow labels", () => {
     expect(displayRuntimeStatus({ state: "pending_payment" }, now)).toBe("pending_payment");
   });

@@ -18,8 +18,8 @@ describe("Production availability badge", () => {
       state: "running", runtime_state: "unknown", runtime_checked_at: new Date().toISOString(), runtime_received_at: Date.now(),
       runtime_message: "Cannot check the tenant workload: cluster access failed.",
     }} />);
-    expect(screen.getByText("Unknown")).toBeInTheDocument();
-    expect(container.textContent).toBe("Unknown");
+    expect(screen.getByText("Status unknown")).toBeInTheDocument();
+    expect(container.textContent).toBe("Status unknown");
     expect(container.querySelector("[title]")).toBeNull();
   });
   it("removes green online status when no fresh observation arrives", () => {
@@ -30,7 +30,7 @@ describe("Production availability badge", () => {
     }} />);
     expect(screen.getByText("Online")).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(135_000));
-    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    expect(screen.getByText("Status unknown")).toBeInTheDocument();
     expect(screen.queryByText("Online")).not.toBeInTheDocument();
   });
   it("stays online when the server clock is skewed but the response is fresh", () => {

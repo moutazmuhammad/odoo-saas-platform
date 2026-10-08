@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 _PORTAL_ONLY = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Secure access · Database Manager</title>
+<title>Managed by Veltnex · Database</title>
 <style>
 *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:32px 20px;background:#f6f5fb;color:#242033;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 main{width:min(100vw - 40px,540px);padding:40px;border:1px solid #e8e5f0;border-radius:24px;background:#fff;box-shadow:0 16px 48px #3422540d}
@@ -172,10 +172,10 @@ footer{display:flex;align-items:center;gap:8px;margin-top:32px;padding-top:20px;
 @media(max-width:480px){main{padding:28px 24px}h1{font-size:24px}}
 </style></head><body><main>
 <div class="icon" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div>
-<p class="eyebrow">Secure database access</p>
-<h1>Open Database Manager<br>from your control panel</h1>
-<p>For your security, Database Manager opens through a secure link from your instance's Databases page.</p>
-<div class="steps">Go to <strong>your control panel → your instance → Databases</strong>, then select <strong>Database Manager</strong>.</div>
+<p class="eyebrow">Managed by Veltnex</p>
+<h1>Your database is<br>managed for you</h1>
+<p>There is nothing to set up here. Veltnex runs one database for this project and takes care of backups, restores and the admin password.</p>
+<div class="steps">Go to <strong>your control panel → your project → Databases</strong> to back up, restore your own copy, or reset the admin password.</div>
 <div class="notice" role="alert">%s</div>
 <footer>Powered by <strong>VELTNEX</strong></footer>
 </main></body></html>"""

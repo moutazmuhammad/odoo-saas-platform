@@ -23,7 +23,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
 const mockedApi = vi.mocked(api, { deep: true });
 
 // Only the fields Databases.tsx actually reads.
-const RUNNING_HOSTING_INSTANCE = { is_hosting: true, permissions: ["db.view", "db.create", "db.delete", "db.restore", "backup.create", "backup.download"] } as unknown as ApiInstance;
+const RUNNING_HOSTING_INSTANCE = { name: "acme", is_hosting: true, permissions: ["db.view", "db.create", "db.delete", "db.restore", "backup.create", "backup.download"] } as unknown as ApiInstance;
 
 function mockLoaded(overrides: Partial<DbListData> = {}) {
   mockedApi.databases.mockResolvedValue({
@@ -41,7 +41,7 @@ describe("Databases", () => {
     mockLoaded({database_limit: 1});
     const user = userEvent.setup();
     renderWithProviders(<Databases embedId={1} />);
-    await screen.findByText("production");
+    await screen.findByText(/production database/i);
     expect(screen.queryByRole("button", {name: /create database/i})).not.toBeInTheDocument();
     expect(screen.queryByRole("button", {name: /database manager/i})).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", {name: /more actions/i}));
@@ -56,11 +56,12 @@ describe("Databases", () => {
     mockLoaded({database_limit: 1});
     const user = userEvent.setup();
     renderWithProviders(<Databases embedId={1} />);
-    await screen.findByText("production");
+    await screen.findByText(/production database/i);
     await user.click(screen.getByRole("button", {name: /restore database/i}));
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/new database name/i)).not.toBeInTheDocument();
-    expect(screen.getByLabelText(/type production to confirm/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/type acme to confirm/i)).toBeInTheDocument();
+    expect(screen.queryByText("production")).not.toBeInTheDocument();
     expect(screen.getByRole("button", {name: /upload.*restore/i})).toBeDisabled();
   });
 
@@ -80,7 +81,7 @@ describe("Databases", () => {
     renderWithProviders(<Databases embedId={1} />);
 
     expect(screen.getByText(/loading databases/i)).toBeInTheDocument();
-    expect(await screen.findByText("production")).toBeInTheDocument();
+    expect(await screen.findByText(/production database/i)).toBeInTheDocument();
   });
 
   it("shows an error banner when the list fails to load", async () => {

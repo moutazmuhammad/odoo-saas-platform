@@ -224,7 +224,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-start text-xs uppercase tracking-wide text-muted">
-                  <th className="px-5 py-3 font-medium">{i18nText("Name")}</th>
+                  <th className="px-5 py-3 font-medium">{i18nText("Database")}</th>
                   <th className="hidden px-5 py-3 font-medium sm:table-cell">{i18nText("Admin login")}</th>
                   <th className="px-5 py-3 font-medium">{i18nText("Status")}</th>
                   <th className="px-5 py-3 text-end font-medium">{i18nText("Actions")}</th>
@@ -236,7 +236,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2.5">
                         <Database className="size-4 text-muted" />
-                        <span className="font-medium">{op.db_name}</span>
+                        <span className="font-medium">{i18nText("Your database")}</span>
                       </div>
                     </td>
                     <td className="hidden px-5 py-4 text-muted sm:table-cell">—</td>
@@ -256,7 +256,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2.5">
                           <Database className="size-4 text-muted" />
-                          <span className="font-medium">{db.name}</span>
+                          <span className="font-medium">{i18nText("Production database")}</span>
                         </div>
                       </td>
                       <td className="hidden px-5 py-4 text-muted sm:table-cell">{db.login || "—"}</td>
@@ -339,6 +339,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
         instanceId={instanceId}
         existing={data?.databases.map((d) => d.name) || []}
         prefix={data?.prefix || ""}
+        confirmWord={instance?.name || ""}
         onClose={() => setRestoreOpen(false)}
         onDone={() => {
           // The target DB now shows a live "Restoring…" row; the instance
@@ -435,7 +436,7 @@ function DatabaseBackupsDialog({
       open={!!dbName}
       onClose={onClose}
       title={i18nText("Download backup")}
-      description={dbName ? i18nText("Download an available backup of “{0}”.", [dbName]) : undefined}
+      description={dbName ? i18nText("Download an available backup of your database.") : undefined}
     >
       {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Backup")} description={error} />}
       {done && !error && (
@@ -517,6 +518,7 @@ function RestoreDatabaseDialog({
   instanceId,
   existing,
   prefix,
+  confirmWord,
   onClose,
   onDone,
 }: {
@@ -524,6 +526,8 @@ function RestoreDatabaseDialog({
   instanceId: number;
   existing: string[];
   prefix: string;
+  /** The project name the customer types to confirm a replacement. */
+  confirmWord: string;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -551,7 +555,7 @@ function RestoreDatabaseDialog({
 
   const busy = phase === "uploading" || phase === "starting";
   const fullTarget = target;
-  const replacementConfirmed = confirmation.trim() === fullTarget;
+  const replacementConfirmed = !!confirmWord && confirmation.trim() === confirmWord;
   const canSubmit = !!file && !fileError && !busy && (!overwrite || replacementConfirmed);
 
   const pickFile = async (f: File | null) => {
@@ -609,8 +613,8 @@ function RestoreDatabaseDialog({
       <div className="mt-4 space-y-2">
         {overwrite ? (
           <>
-            <p className="text-xs text-danger">{i18nText("This permanently replaces the selected database and all its data. Download a backup before continuing.")}</p>
-            <Label htmlFor="restore-confirm">{i18nText("Type ")}{fullTarget}{i18nText(" to confirm replacement")}</Label>
+            <p className="text-xs text-danger">{i18nText("This permanently replaces your database and all its data. Download a backup before continuing.")}</p>
+            <Label htmlFor="restore-confirm">{i18nText("Type ")}{confirmWord}{i18nText(" to confirm replacement")}</Label>
             <Input id="restore-confirm" data-technical value={confirmation} disabled={busy} onChange={(e) => setConfirmation(e.target.value)} autoComplete="off" />
           </>
         ) : (
@@ -715,7 +719,7 @@ function ResetPasswordDialog({
   };
 
   return (
-    <Dialog open={!!dbName} onClose={onClose} title={i18nText("Reset admin password")} description={dbName ? i18nText("Set a new admin password for {0}.", [dbName]) : undefined}>
+    <Dialog open={!!dbName} onClose={onClose} title={i18nText("Reset admin password")} description={dbName ? i18nText("Set a new admin password for your database.") : undefined}>
       {!done ? (
         <>
           {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't reset password")} description={error} />}

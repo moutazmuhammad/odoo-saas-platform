@@ -12,7 +12,7 @@ Before this guide: [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (how it works) and [
 - You write your values **once**, in `/root/cluster.env` on each node (step 2). Every block after that reads them, so you paste the blocks as they are.
 - Each block says where it runs: **every node**, **node1**, **your workstation**, or the **SaaS server**. On the nodes, work as `root`.
 - After step 2, `kubectl` and `helm` are aliases for `microk8s kubectl` and `microk8s helm3`.
-- Tested on DigitalOcean, Ubuntu 24.04, MicroK8s 1.35, Longhorn 1.12.1. Current operator: 0.1.30 (chart 0.4.17, `compute/charts/odoo-operator`).
+- Tested on DigitalOcean, Ubuntu 24.04, MicroK8s 1.35, Longhorn 1.12.1. Current operator: 0.1.31 (chart 0.4.18, `compute/charts/odoo-operator`).
 
 ---
 
@@ -495,7 +495,7 @@ kubectl get crd odooinstances.saas.odoo.example.com                  # exists
 kubectl -n odoo-system get pods -o wide                              # 1 Running (a single replica, by design)
 kubectl -n odoo-system get deploy odoo-operator \
   -o jsonpath='{.spec.strategy.type} {.spec.template.spec.containers[0].image}{"\n"}'
-                                                                     # Recreate docker.io/moutazmuhammad/odoo-saas-operator:0.1.30
+                                                                     # Recreate docker.io/moutazmuhammad/odoo-saas-operator:0.1.31
 kubectl -n odoo-system logs deploy/odoo-operator --tail=20 | grep -i "starting workers"
 ```
 
@@ -916,7 +916,7 @@ kubectl -n container-registry rollout status deploy/registry
 - [ ] SSH keys only; `microk8s` snap held; clocks synced
 - [ ] Longhorn is the default StorageClass; test volume passed; replica count chosen on purpose (`REPLICAS`) and the trade-off accepted
 - [ ] `*.apps.example.com` resolves to the LB; `letsencrypt-prod` READY
-- [ ] Operator: 1 pod Running, `Recreate`, image 0.1.30; Prometheus PVC Bound
+- [ ] Operator: 1 pod Running, `Recreate`, image 0.1.31; Prometheus PVC Bound
 - [ ] `API_HOST` reaches every control-plane node and is in every node's certificate
 - [ ] Step 13 shows `health ok`; kubeconfig copies deleted
 - [ ] Tenant backups to S3 scheduled; a restore tested; a cluster-state backup (14.2) stored off the cluster

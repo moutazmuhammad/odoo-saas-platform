@@ -2640,5 +2640,10 @@
   "Keep backups": "إبقاء النسخ الاحتياطي",
   "Switching off…": "جارٍ الإيقاف…",
   "Switch off": "إيقاف",
-  "Billed with your plan": "تُحتسب مع خطتك"
+  "Billed with your plan": "تُحتسب مع خطتك",
+  "Your database": "قاعدة بياناتك",
+  "Production database": "قاعدة بيانات الإنتاج",
+  "Download an available backup of your database.": "نزّل نسخة احتياطية متاحة من قاعدة بياناتك.",
+  "Set a new admin password for your database.": "عيّن كلمة مرور جديدة للمسؤول لقاعدة بياناتك.",
+  "This permanently replaces your database and all its data. Download a backup before continuing.": "هذا يستبدل قاعدة بياناتك وكل بياناتها نهائيًا. نزّل نسخة احتياطية قبل المتابعة."
 }

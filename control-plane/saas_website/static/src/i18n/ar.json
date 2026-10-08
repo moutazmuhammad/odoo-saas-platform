@@ -318,7 +318,7 @@
   "Action failed": "فشل الإجراء",
   "Actions": "الإجراءات",
   "Activate Daily Backups": "تفعيل النسخ الاحتياطية اليومية",
-  "Active": "نشط",
+  "Active": "يعمل",
   "Add a ": "أضف ",
   "Add access": "منح الوصول",
   "Add environments from the Production server of the project.": "أضف البيئات من خادم Production الخاص بالمشروع.",
@@ -1463,7 +1463,7 @@
   "Python dependencies": "متطلبات Python",
   "Quantity": "كمية",
   "Quantity: {0}": "الكمية: {0}",
-  "Queued": "في انتظار الإعداد",
+  "Queued": "بالانتظار",
   "Queued…": "في قائمة الانتظار...",
   "Reactivate": "إعادة التفعيل",
   "Reactivate Instance": "إعادة تفعيل Instance",
@@ -2325,7 +2325,10 @@
   "Working normally": "يعمل بشكل طبيعي",
   "Temporarily unavailable": "غير متاح مؤقتًا",
   "Can't connect right now": "تعذّر الاتصال حاليًا",
-  "Checking…": "جارٍ التحقق…",
+  "Checking…": "جارٍ التحقق",
   "Waiting to start": "في انتظار البدء",
-  "Setting up your project": "جارٍ تجهيز مشروعك"
+  "Setting up your project": "جارٍ تجهيز مشروعك",
+  "Down": "متوقف",
+  "Offline": "غير متصل",
+  "Preparing": "جارٍ التجهيز"
 }

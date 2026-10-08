@@ -10,7 +10,7 @@ describe("Production availability badge", () => {
       state: "running", state_label: "Running", runtime_state: "unreachable",
       runtime_checked_at: new Date().toISOString(), runtime_received_at: Date.now(), runtime_message: "Tenant URL is unreachable.",
     }} />);
-    expect(screen.getByText("Can't connect right now")).toBeInTheDocument();
+    expect(screen.getByText("Offline")).toBeInTheDocument();
     expect(screen.queryByText("Running")).not.toBeInTheDocument();
   });
   it("shows only the status to customers, without technical details", () => {
@@ -28,16 +28,16 @@ describe("Production availability badge", () => {
     render(<RuntimeStatusBadge instance={{
       state: "running", runtime_state: "online", runtime_checked_at: new Date().toISOString(), runtime_received_at: Date.now(),
     }} />);
-    expect(screen.getByText("Working normally")).toBeInTheDocument();
+    expect(screen.getByText("Active")).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(135_000));
     expect(screen.getByText("Checking…")).toBeInTheDocument();
-    expect(screen.queryByText("Working normally")).not.toBeInTheDocument();
+    expect(screen.queryByText("Active")).not.toBeInTheDocument();
   });
   it("stays online when the server clock is skewed but the response is fresh", () => {
     render(<RuntimeStatusBadge instance={{
       state: "running", runtime_state: "online", runtime_received_at: Date.now(),
       runtime_checked_at: new Date(Date.now() - 30 * 60_000).toISOString(),
     }} />);
-    expect(screen.getByText("Working normally")).toBeInTheDocument();
+    expect(screen.getByText("Active")).toBeInTheDocument();
   });
 });

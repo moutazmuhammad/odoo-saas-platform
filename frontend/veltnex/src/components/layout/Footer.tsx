@@ -1,11 +1,12 @@
 import { i18nText } from "@/i18n";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Github, Twitter, Linkedin } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { useSections } from "@/lib/useSections";
 
 export function Footer() {
   const sections = useSections();
+  const isHome = useLocation().pathname === "/";
   const year = new Date().getFullYear();
 
   const links = [
@@ -15,6 +16,20 @@ export function Footer() {
     sections.services && { label: i18nText("Services"), to: "/services" },
     { label: i18nText("Sign in"), to: "/login" },
   ].filter(Boolean) as { label: string; to: string }[];
+
+  if (isHome) return (
+    <footer dir="ltr" className="public-home-footer border-t border-border bg-card">
+      <div className="home-container">
+        <div className="home-footer-main">
+          <div><Logo /><p>{i18nText("The Odoo hosting platform")}</p></div>
+          <nav aria-label={i18nText("Footer navigation")}>
+            {links.map(link => <Link key={link.to} to={link.to}>{link.label}</Link>)}
+          </nav>
+        </div>
+        <div className="home-footer-bottom"><span>© {year} {"VELT"}{"NEX"}</span><Link to="/docs/overview">{i18nText("Meet the platform")} →</Link></div>
+      </div>
+    </footer>
+  );
 
   return (
     <footer dir="ltr" className="border-t border-border bg-background">

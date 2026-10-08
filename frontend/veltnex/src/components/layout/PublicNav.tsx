@@ -53,6 +53,20 @@ export function PublicNav() {
   const getStartedTo = "/register";
   const navigate = useNavigate();
   const location = useLocation();
+  React.useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        document.getElementById("public-menu-trigger")?.focus();
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
   // Remember where the user is so signing in returns them here instead
   // of always dumping them on the dashboard. (Don't carry /login itself.)
   const current = location.pathname + location.search;
@@ -71,12 +85,12 @@ export function PublicNav() {
   };
 
   return (
-    <header dir="ltr" className="sticky top-0 z-40 w-full border-b border-border bg-card">
+    <header dir="ltr" className={cn("sticky top-0 z-40 w-full border-b border-border bg-card", location.pathname === "/" && "public-home-header")}>
 
       <div className="mx-auto flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-8">
           <Logo />
-          <nav className="hidden items-center gap-1 md:flex">
+          <nav aria-label={i18nText("Main navigation")} className="hidden items-center gap-1 md:flex">
             {LINKS.map((l) => (
               <NavLink
                 key={l.to}
@@ -113,7 +127,7 @@ export function PublicNav() {
                 state={loginState}
                 className="text-sm font-medium text-muted transition-colors hover:text-foreground"
               >{i18nText("Sign in")}</Link>
-              <Button size="sm" onClick={() => navigate(getStartedTo)}>{i18nText("Get started")}</Button>
+              <Button size="sm" onClick={() => { setOpen(false); navigate(getStartedTo); }}>{i18nText("Get started")}</Button>
             </>
           )}
         </div>
@@ -124,6 +138,9 @@ export function PublicNav() {
           <button
             className="rounded-md p-2 text-muted"
             onClick={() => setOpen((o) => !o)}
+            id="public-menu-trigger"
+            aria-expanded={open}
+            aria-controls="public-mobile-menu"
             aria-label={i18nText("Toggle menu")}
           >
             {open ? <X className="size-5" /> : <Menu className="size-5" />}
@@ -133,7 +150,7 @@ export function PublicNav() {
 
       {open && (
         <div className="border-t border-border bg-background md:hidden animate-fade-in">
-          <nav className="space-y-1 px-4 py-4">
+          <nav id="public-mobile-menu" aria-label={i18nText("Main navigation")} className="space-y-1 px-4 py-4">
             {LINKS.map((l) => (
               <NavLink
                 key={l.to}
@@ -178,8 +195,8 @@ export function PublicNav() {
                 </>
               ) : (
                 <>
-                  <Button variant="secondary" onClick={() => navigate("/login", { state: loginState })}>{i18nText("Sign in")}</Button>
-                  <Button onClick={() => navigate(getStartedTo)}>{i18nText("Get started")}</Button>
+                  <Button variant="secondary" onClick={() => { setOpen(false); navigate("/login", { state: loginState }); }}>{i18nText("Sign in")}</Button>
+                  <Button onClick={() => { setOpen(false); navigate(getStartedTo); }}>{i18nText("Get started")}</Button>
                 </>
               )}
             </div>

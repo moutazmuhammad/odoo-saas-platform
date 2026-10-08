@@ -1,808 +1,340 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { Archive, ArrowRight, ArrowUpRight, Check, Database, GitBranch, Layers, Server, ShieldCheck, Terminal } from "lucide-react";
 import { i18nText } from "@/i18n";
-import { Link, useNavigate } from "react-router-dom";
-import {
-  ArrowRight,
-  ShieldCheck,
-  Zap,
-  Activity,
-  Database,
-  Globe,
-  Cpu,
-  Lock,
-  Gauge,
-  CheckCircle2,
-  GitBranch,
-  Package,
-  Layers,
-  RefreshCw,
-  Server,
-  Sparkles,
-  Terminal,
-  TrendingUp,
-} from "lucide-react";
-import * as React from "react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 import { ServiceIcon } from "@/components/ServiceIcon";
-import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ProductPreview } from "@/components/home/ProductPreview";
 import { api, type ApiService } from "@/lib/api";
-import { useSections } from "@/lib/useSections";
+import { useSections, type Sections } from "@/lib/useSections";
+import { cn } from "@/lib/utils";
+import "./Home.css";
 
-// Lazy-loaded so three.js (~210KB gzipped) lives in its own chunk and
-// is only fetched on the home page — keeping login/portal lean.
-const GlobeViz = React.lazy(() =>
-  import("@/components/Globe").then((m) => ({ default: m.Globe })),
-);
-
-const STATS = [
-  { value: "99.99%", label: i18nText("Uptime SLA") },
-  { value: i18nText("Daily"), label: i18nText("Automatic Backups") },
-  { value: i18nText("Free"), label: i18nText("SSL Certificates") },
-  { value: "24/7", label: i18nText("Expert support") },
-];
-
-const ODOO_VERSIONS = ["13", "14", "15", "16", "17", "18", "19", "20"];
-
-const HOW_IT_WORKS = [
-  {
-    step: "01",
-    icon: Sparkles,
-    title: i18nText("Sign up"),
-    description:
-      i18nText("Create your account in under a minute — no credit card needed to explore the console."),
-  },
-  {
-    step: "02",
-    icon: Server,
-    title: i18nText("Pick your stack"),
-    description:
-      i18nText("Choose any Odoo version (13 → 20), set workers, RAM and storage, and pick a region."),
-  },
-  {
-    step: "03",
-    icon: GitBranch,
-    title: i18nText("Bring your code"),
-    description:
-      i18nText("Link a GitHub, GitLab, or Bitbucket repo. We clone on boot and redeploy on every push."),
-  },
-  {
-    step: "04",
-    icon: TrendingUp,
-    title: i18nText("Scale & ship"),
-    description:
-      i18nText("Dial resources up or down anytime. We handle backups, SSL, monitoring — you ship features."),
-  },
-];
-
-// Shared building blocks ------------------------------------------------
-
-const SectionPill = ({
-  icon: Icon,
-  children,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-}) => (
-  <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-    <Icon className="size-3.5" />
-    {children}
-  </span>
-);
-
-const SectionHeading = ({
-  pill,
-  title,
-  subtitle,
-  align = "center",
-}: {
-  pill?: React.ReactNode;
-  title: React.ReactNode;
-  subtitle?: React.ReactNode;
-  align?: "center" | "left";
-}) => (
-  <div
-    className={
-      align === "center"
-        ? "mx-auto max-w-2xl text-center"
-        : "max-w-2xl text-start"
-    }
+function HomeLink({ to, children, secondary = false }: { to: string; children: ReactNode; secondary?: boolean }) {
+  return <Link
+    to={to}
+    className={cn(buttonVariants({ size: "lg", variant: secondary ? "outline" : "default" }), "home-button")}
   >
-    {pill}
-    <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+    {children}
+    <ArrowRight aria-hidden="true" />
+  </Link>;
+}
+
+function LaunchAction({ sections }: { sections: Sections }) {
+  return sections.hosting ? <HomeLink to="/hosting">
+    {i18nText("Configure your hosting")}
+  </HomeLink> : sections.services ? <HomeLink to="/services">
+    {i18nText("Explore ready-made apps")}
+  </HomeLink> : <HomeLink to="/register">
+    {i18nText("Create an account")}
+  </HomeLink>;
+}
+
+function SectionIntro({ label, title, children }: { label: string; title: string; children?: ReactNode }) {
+  return <div className="home-section-intro">
+    <p className="home-eyebrow">
+      {label}
+    </p>
+    <h2>
       {title}
     </h2>
-    {subtitle && (
-      <p className="mt-4 text-base text-muted sm:text-lg">{subtitle}</p>
-    )}
-  </div>
-);
+    {children && <p className="home-description">
+      {children}
+    </p>}
+  </div>;
+}
 
-// ---------------------------------------------------------------------
+function LaunchPaths({ sections }: { sections: Sections }) {
+  if (!sections.hosting && !sections.services) return null;
+  return <section className="home-section home-container" aria-labelledby="launch-heading">
+    <div className="home-launch-intro">
+      <p className="home-eyebrow">
+        {i18nText("Your starting point")}
+      </p>
+      <h2 id="launch-heading">
+        {i18nText(sections.hosting && sections.services ? "Your code. Or a ready-made app." : sections.hosting ? "Your Odoo. Your configuration." : "Start with a ready-made Odoo app.")}
+      </h2>
+      <p className="home-description">
+        {i18nText("Choose how you start. Manage your project in one place.")}
+      </p>
+    </div>
+    <div className={cn("home-paths", sections.hosting && sections.services && "home-paths-two")}>
+      {sections.hosting && <article className="home-path">
+        <div className="home-path-top">
+          <Server className="size-5 text-primary" />
+          <span>
+            {i18nText("For developers & Odoo teams")}
+          </span>
+        </div>
+        <h3>
+          {i18nText("Odoo hosting")}
+        </h3>
+        <p>
+          {i18nText("Bring your custom addons. Choose your Odoo version, workers, storage, and region, then connect your Git repository.")}
+        </p>
+        <ul>
+          {["Community or Enterprise edition", "Custom addons & Python dependencies", "Optional Staging & Development environments"].map(item => <li key={item}>
+            <Check className="size-4" />
+            {i18nText(item)}
+          </li>)}
+        </ul>
+        <HomeLink to="/hosting">
+          {i18nText("Configure your hosting")}
+        </HomeLink>
+      </article>}
+      {sections.services && <article className="home-path">
+        <div className="home-path-top">
+          <Layers className="size-5 text-primary" />
+          <span>
+            {i18nText("For teams ready to get to work")}
+          </span>
+        </div>
+        <h3>
+          {i18nText("Ready-made apps")}
+        </h3>
+        <p>
+          {i18nText("Start with a preconfigured Odoo service, with its modules and database already in place. Explore the available apps to find your fit.")}
+        </p>
+        <ul>
+          {["Preconfigured modules & database", "Managed service workspace", "Plans available in the app catalog"].map(item => <li key={item}>
+            <Check className="size-4" />
+            {i18nText(item)}
+          </li>)}
+        </ul>
+        <HomeLink to="/services" secondary={sections.hosting}>
+          {i18nText("Explore ready-made apps")}
+        </HomeLink>
+      </article>}
+    </div>
+  </section>;
+}
+
+function HostingWorkflow() {
+  return <section className="home-workflow-section">
+    <div className="home-container home-workflow">
+      <SectionIntro
+        label={i18nText("From development to production")}
+        title={i18nText("A workspace for the whole lifecycle.")}
+      >
+        {i18nText("Keep your code, environments, and operations connected. Build on a Development branch, test in Staging, and manage Production from the same project.")}
+        <Link className="home-text-link" to="/docs/project-workspace">
+          {i18nText("Explore the project workspace")}
+          <ArrowRight className="size-4" />
+        </Link>
+      </SectionIntro>
+      <div className="home-flow" aria-label={i18nText("Development, Staging, and Production")}>
+        {[{ number: "01", title: "Development", branch: "development", text: "Build custom addons on a separate Git branch." }, { number: "02", title: "Staging", branch: "staging", text: "Copy databases between environments to test your changes." }, { number: "03", title: "Production", branch: "main", text: "Merge code and inspect deployment history in your workspace." }].map(step => <div className="home-flow-step" key={step.number}>
+          <span className="home-flow-number">
+            {step.number}
+          </span>
+          <div>
+            <div className="home-flow-title">
+              <h3>
+                {i18nText(step.title)}
+              </h3>
+              <code>
+                <GitBranch className="size-3" />
+                {step.branch}
+              </code>
+            </div>
+            <p>
+              {i18nText(step.text)}
+            </p>
+          </div>
+        </div>)}
+        <p className="home-flow-footnote">
+          {i18nText("Staging and Development require reserved environment slots and a connected repository.")}
+        </p>
+      </div>
+    </div>
+  </section>;
+}
+
+function Operations({ hosting }: { hosting: boolean }) {
+  return <section className="home-container home-section">
+    <SectionIntro label={i18nText("Day-to-day operations")} title={i18nText("Less switching. More visibility.")}>
+      {i18nText("The tools to understand your Odoo environment, look after your data, and give your team the right access.")}
+    </SectionIntro>
+    <div className="home-operations">
+      <article className="home-data-feature">
+        <div className="home-feature-copy">
+          <Archive className="size-5 text-primary" />
+          <h3>
+            {i18nText("Keep your data within reach.")}
+          </h3>
+          <p>
+            {i18nText(hosting ? "Manage databases, create on-demand database backups, and restore full-instance snapshots. Enable optional daily backups when your project needs them." : "Review and restore database snapshots from your service workspace. Enable optional daily backups when your project needs them.")}
+          </p>
+          <Link to="/docs/daily-backups" className="home-text-link">
+            {i18nText("Read about backups")}
+            <ArrowRight className="size-4" />
+          </Link>
+        </div>
+        <div className="home-data-diagram" aria-label={i18nText("Backup and restore workflow")}>
+          <Database className="size-6" />
+          <span className="home-diagram-line" />
+          <Archive className="size-6" />
+          <span className="home-diagram-line" />
+          <ShieldCheck className="size-6" />
+          <span>
+            {i18nText("Database")}
+          </span>
+          <span>
+            {i18nText("Snapshot")}
+          </span>
+          <span>
+            {i18nText("Restore")}
+          </span>
+        </div>
+      </article>
+      <div className="home-operation-details">
+        <article>
+          <Terminal className="size-5 text-primary" />
+          <div>
+            <h3>
+              {i18nText("See what your environment is doing.")}
+            </h3>
+            <p>
+              {i18nText(hosting ? "Inspect resource metrics and application logs. Open the browser Shell or read-only SQL console when you need a closer look." : "Inspect resource metrics and application logs from your service workspace.")}
+            </p>
+            <Link to="/docs/monitoring" className="home-text-link">
+              {i18nText("Explore monitoring")}
+              <ArrowUpRight className="size-4" />
+            </Link>
+          </div>
+        </article>
+        <article>
+          <ShieldCheck className="size-5 text-primary" />
+          <div>
+            <h3>
+              {i18nText("Give each teammate the right access.")}
+            </h3>
+            <p>
+              {i18nText("Assign project roles and scope access to specific environments. Manage teammates and invitations from the portal.")}
+            </p>
+            <Link to="/docs/iam-overview" className="home-text-link">
+              {i18nText("Understand team permissions")}
+              <ArrowUpRight className="size-4" />
+            </Link>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>;
+}
 
 export default function Home() {
-  const navigate = useNavigate();
   const sections = useSections();
-  const [services, setServices] = React.useState<ApiService[]>([]);
-
-  React.useEffect(() => {
-    api.services().then(setServices).catch(() => setServices([]));
+  const [services, setServices] = useState<ApiService[]>([]);
+  useEffect(() => {
+    const originalTitle = document.title;
+    const description = document.querySelector('meta[name="description"]');
+    const originalDescription = description?.getAttribute("content");
+    document.title = i18nText("VELTNEX — The Odoo hosting platform");
+    description?.setAttribute("content", i18nText("Launch and manage Odoo on Veltnex. Hosting, ready-made apps, project environments, databases, snapshots, and monitoring in one workspace."));
+    return () => {
+      document.title = originalTitle;
+      if (originalDescription != null) description?.setAttribute("content", originalDescription);
+    };
   }, []);
+  useEffect(() => {
+    if (!sections.services) return;
+    let active = true;
+    api.services().then(data => { if (active) setServices(data); }).catch(() => { if (active) setServices([]); });
+    return () => { active = false; };
+  }, [sections.services]);
 
-  return (
-    <div className="animate-fade-in">
-      {/* ============================================================== */}
-      {/* HERO — text-first, globe in background, no competing visuals   */}
-      {/* ============================================================== */}
-      <section className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-grid-faint bg-size-[48px_48px] mask-[radial-gradient(ellipse_at_top,black,transparent_70%)]" />
-        <div className="pointer-events-none absolute start-1/2 top-[-160px] h-[620px] w-[1040px] -translate-x-1/2 rounded-full bg-primary/20 blur-[180px]" />
-
-        <div className="relative mx-auto max-w-5xl px-4 pb-28 pt-4 text-center sm:px-6 lg:px-8 lg:pt-6">
-          {/* Globe + overlay stack: BOTH the status pill and the H1 sit
-              centered on top of the globe as a single vertical column.
-              Everything below the globe (subtitle, CTAs) follows in
-              normal flow underneath. */}
-          <div className="relative mx-auto w-[min(600px,92vw)]">
-            <div className="aspect-square mask-[radial-gradient(circle_at_center,black_65%,transparent_95%)]">
-              <ErrorBoundary>
-                <React.Suspense fallback={null}>
-                  <GlobeViz speed={0.12} />
-                </React.Suspense>
-              </ErrorBoundary>
-            </div>
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-5">
-              <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1 text-xs font-medium text-muted backdrop-blur-sm">
-                <span className="relative flex size-1.5">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-                  <span className="relative inline-flex size-1.5 rounded-full bg-success" />
-                </span>{i18nText("All systems operational")}</span>
-              <h1 className="whitespace-nowrap text-3xl font-bold leading-[1.15] tracking-tight drop-shadow-[0_2px_28px_rgba(0,0,0,0.65)] sm:text-5xl lg:text-6xl">{i18nText("Built for stability.")}<br />
-                <span className="bg-linear-to-br from-primary-glow via-info to-foreground bg-clip-text text-transparent">{i18nText("Designed for growth.")}</span>
-              </h1>
-            </div>
-          </div>
-
-          <p className="mx-auto mt-2 max-w-2xl text-lg text-muted sm:text-xl">{i18nText("One managed platform, two ways to run Odoo:")}{" "}
-            <strong className="text-foreground">{i18nText("host your own code")}</strong>{i18nText(" on any version, or launch a")}{" "}
-            <strong className="text-foreground">{i18nText("ready-made app")}</strong>{i18nText(" that ships with its database already set up. Pick a path to see how it works.")}</p>
-
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            {sections.hosting && (
-              <Button size="lg" onClick={() => navigate("/hosting")}>{i18nText("Explore Hosting")}<ArrowRight />
-              </Button>
-            )}
-            {sections.services && (
-              <Button
-                size="lg"
-                variant={sections.hosting ? "secondary" : "default"}
-                onClick={() => navigate("/services")}
-              >{i18nText("Explore Ready-Made Apps")}{!sections.hosting && <ArrowRight />}
-              </Button>
-            )}
-          </div>
-
-          <p className="mt-4 text-sm text-muted">{i18nText("No setup fees · Cancel anytime · Free trial available inside each")}</p>
-
-          {/* Capability strip — the full offering, scannable above the fold */}
-          <div className="mx-auto mt-12 flex max-w-3xl flex-wrap items-center justify-center gap-x-7 gap-y-3 text-sm text-muted">
-            {[
-              i18nText("Any Odoo 13 → 20"),
-              i18nText("Git-based deploys"),
-              i18nText("Staging & dev environments"),
-              i18nText("Automated backups"),
-              i18nText("Live metrics & logs"),
-              i18nText("One-click scaling"),
-            ].map((c) => (
-              <span key={c} className="inline-flex items-center gap-2">
-                <CheckCircle2 className="size-4 text-primary" />
-                {c}
-              </span>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ============================================================== */}
-      {/* TWO WAYS TO LAUNCH — positions Hosting vs Ready-Made Services  */}
-      {/* upfront so every visitor sees both product lines, even when    */}
-      {/* the dynamic services list at the bottom is empty. Only shown    */}
-      {/* when BOTH sections are live — the "two ways" framing makes no    */}
-      {/* sense with one offering disabled.                               */}
-      {/* ============================================================== */}
-      {sections.services && sections.hosting && (
-      <section className="border-y border-border bg-card/20">
-        <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-          <SectionHeading
-            pill={<SectionPill icon={Sparkles}>{i18nText("Two ways to launch")}</SectionPill>}
-            title={
-              <>{i18nText("Bring your own code,")}{" "}
-                <span className="text-muted">{i18nText("or start from a ready-made app")}</span>
-              </>
-            }
-            subtitle={i18nText("Same managed platform, same backups, SSL and uptime — the difference is what's inside when it boots. Open either one to see the full details and start.")}
-          />
-
-          <div className="mt-14 grid gap-6 lg:grid-cols-2">
-            {/* Card 1 — Custom Hosting (you bring the code; empty database) */}
-            <Card className="group relative flex flex-col overflow-hidden p-8">
-              <div className="pointer-events-none absolute -right-20 -top-20 size-72 rounded-full bg-primary/15 blur-3xl transition-opacity group-hover:opacity-80" />
-              <div className="relative flex h-full flex-col">
-                <span className="flex size-12 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                  <Server className="size-6" />
-                </span>
-                <h3 className="mt-6 text-2xl font-semibold">{i18nText("Hosting")}</h3>
-                <p className="mt-1 text-sm font-medium text-primary">{i18nText("You bring the code — we run it on a clean instance.")}</p>
-                <p className="mt-3 text-muted">{i18nText("For teams who write their own Odoo. Pick any version (13 → 20), connect your Git repo, install custom Python packages, and scale on demand. Boots as an ")}<strong className="text-foreground">{i18nText("empty Odoo")}</strong>{i18nText(" — you own the modules and the data.")}</p>
-                <ul className="mt-6 space-y-2.5 text-sm">
-                  {[
-                    i18nText("Any Odoo version, Community or Enterprise"),
-                    i18nText("Link a GitHub / GitLab / Bitbucket repo"),
-                    i18nText("Install custom pip packages per instance"),
-                    i18nText("Scale workers, RAM, and storage independently"),
-                  ].map((it) => (
-                    <li key={it} className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
-                      <span>{it}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-8 flex items-center gap-3 pt-4">
-                  <Button onClick={() => navigate("/hosting")}>{i18nText("Explore Hosting")}<ArrowRight />
-                  </Button>
-                </div>
-              </div>
-            </Card>
-
-            {/* Card 2 — Ready-Made Services (ready code + ready database) */}
-            <Card className="group relative flex flex-col overflow-hidden p-8">
-              <div className="pointer-events-none absolute -right-20 -top-20 size-72 rounded-full bg-info/15 blur-3xl transition-opacity group-hover:opacity-80" />
-              <div className="relative flex h-full flex-col">
-                <span className="flex size-12 items-center justify-center rounded-xl bg-info/15 text-info">
-                  <Layers className="size-6" />
-                </span>
-                <h3 className="mt-6 text-2xl font-semibold">{i18nText("Ready-Made Services")}</h3>
-                <p className="mt-1 text-sm font-medium text-info">{i18nText("Ready code ")}<em>{i18nText("and")}</em>{i18nText(" a ready database — running on day one.")}</p>
-                <p className="mt-3 text-muted">{i18nText("Pre-built Odoo apps for a specific job — pharmacy management, retail, clinics and more. Sign up and your instance boots with the ")}<strong className="text-foreground">{i18nText("modules and starter data already in place")}</strong>{i18nText(". Use it as-is, or tailor it to how you work.")}</p>
-                <ul className="mt-6 space-y-2.5 text-sm">
-                  {[
-                    i18nText("Industry-tuned app, set up and ready to use"),
-                    i18nText("Ships with its database — no blank screen"),
-                    i18nText("Customize it freely whenever you want"),
-                    i18nText("Same backups, SSL & uptime as hosting"),
-                  ].map((it) => (
-                    <li key={it} className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
-                      <span>{it}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-8 flex items-center gap-3 pt-4">
-                  <Button onClick={() => navigate("/services")}>{i18nText("Explore Ready-Made Apps")}<ArrowRight />
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </div>
-        </div>
-      </section>
-      )}
-
-      {/* ============================================================== */}
-      {/* BUILT FOR THE ODOO ECOSYSTEM — header + dashboard preview +    */}
-      {/* ecosystem partners strip, all in one cohesive section.         */}
-      {/* ============================================================== */}
-      <section className="border-y border-border bg-card/20">
-        <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-          <p className="text-center text-xs font-medium uppercase tracking-[0.22em] text-muted">{i18nText("Built for the Odoo ecosystem")}</p>
-
-          {/* Operations console preview — proof of what "managed
-              hosting for Odoo" looks like in practice. */}
-          <div className="relative mx-auto mt-10 max-w-6xl">
-            <div className="pointer-events-none absolute -inset-x-8 -bottom-8 -top-4 rounded-4xl bg-linear-to-b from-primary/25 to-transparent blur-3xl" />
-            <Card className="relative overflow-hidden border-border bg-card p-2 shadow-glow">
-              <div className="rounded-xl border border-border bg-background/95 p-5 text-start sm:p-7">
-                <div className="flex items-center justify-between border-b border-border pb-4">
-                  <div className="flex items-center gap-2.5">
-                    <Globe className="size-4 text-primary" />
-                    <span className="font-mono text-sm">{"my-company.veltnex.com"}</span>
-                    <span className="hidden rounded-sm border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted sm:inline">
-                      v18.0
-                    </span>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
-                    <span className="size-1.5 animate-pulse-soft rounded-full bg-success" />{i18nText("Running")}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3 pt-5 sm:grid-cols-4 sm:gap-4">
-                  {[
-                    { icon: Cpu, label: "CPU", value: "34%", trend: "stable" },
-                    { icon: Activity, label: i18nText("Memory"), value: "58%", trend: "+2%" },
-                    { icon: Database, label: i18nText("Storage"), value: "47%", trend: "+1%" },
-                    { icon: TrendingUp, label: i18nText("Req/min"), value: "1,284", trend: "+12%" },
-                  ].map((m) => (
-                    <div
-                      key={m.label}
-                      className="rounded-lg border border-border bg-card p-3"
-                    >
-                      <div className="flex items-center gap-2 text-muted">
-                        <m.icon className="size-3.5" />
-                        <span className="text-xs">{m.label}</span>
-                      </div>
-                      <p className="mt-2 text-xl font-semibold tabular-nums">
-                        {m.value}
-                      </p>
-                      <p className="mt-0.5 text-[10px] uppercase tracking-wide text-muted">
-                        {m.trend}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  {[
-                    { icon: ShieldCheck, label: "SSL", value: i18nText("Valid · {0}", ["89d"]) },
-                    { icon: RefreshCw, label: i18nText("Last backup"), value: i18nText("2h ago") },
-                    { icon: GitBranch, label: i18nText("Branch"), value: "main · a1b2c3d" },
-                  ].map((r) => (
-                    <div
-                      key={r.label}
-                      className="flex items-center justify-between rounded-lg border border-border bg-card/60 px-3 py-2.5 text-xs"
-                    >
-                      <span className="flex items-center gap-2 text-muted">
-                        <r.icon className="size-3.5 text-primary" />
-                        {r.label}
-                      </span>
-                      <span className="font-mono text-foreground">{r.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Card>
-          </div>
-
-        </div>
-      </section>
-
-      {/* ============================================================== */}
-      {/* STATS — compact, gradient numerals                             */}
-      {/* ============================================================== */}
-      <section className="border-b border-border">
-        <div className="mx-auto grid w-full grid-cols-2 gap-px bg-border lg:grid-cols-4">
-          {STATS.map((s) => (
-            <div
-              key={s.label}
-              className="bg-background py-14 text-center transition-colors hover:bg-card/40"
-            >
-              <p className="bg-linear-to-br from-foreground to-muted bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl">
-                {i18nText(s.value)}
-              </p>
-              <p className="mt-2 text-sm text-muted">{s.label}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ============================================================== */}
-      {/* ODOO VERSIONS                                                  */}
-      {/* ============================================================== */}
-      <section className="relative overflow-hidden border-b border-border">
-        <div className="pointer-events-none absolute start-1/2 top-1/2 size-[680px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/8 blur-[140px]" />
-        <div className="relative mx-auto max-w-7xl px-4 py-20 text-center sm:px-6 lg:px-8">
-          <SectionHeading
-            pill={<SectionPill icon={Layers}>{i18nText("Version freedom")}</SectionPill>}
-            title={
-              <>{i18nText("Every Odoo version —")}{" "}
-                <span className="text-muted">{i18nText("Community & Enterprise")}</span>
-              </>
-            }
-            subtitle={i18nText("Maintaining a legacy install? Starting fresh on the latest release? We run it. Pin your version, upgrade on your schedule, migrate when you're ready.")}
-          />
-          <div className="mt-14 flex flex-wrap items-center justify-center gap-3">
-            {ODOO_VERSIONS.map((v) => (
-              <span
-                key={v}
-                className="group inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-6 py-3 text-lg font-bold transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-glow"
-              >
-                <span className="text-xs font-medium uppercase tracking-wider text-muted transition-colors group-hover:text-primary">{i18nText("Odoo")}</span>
-                {v}
-              </span>
-            ))}
-          </div>
-          <p className="mt-8 text-sm text-muted">{i18nText("Need an older release or a custom patch level?")}{" "}
-            <Link
-              to="/docs"
-              className="font-medium text-primary hover:underline"
-            >{i18nText("Custom images welcome →")}</Link>
+  return <div className="veltnex-home">
+    <section className="home-hero home-container" aria-labelledby="home-heading">
+      <div className="home-hero-copy">
+        <div>
+          <p className="home-eyebrow">
+            <span className="home-eyebrow-rule" />
+            {i18nText("The Odoo hosting platform")}
           </p>
+          <h1 id="home-heading">
+            {i18nText("Your Odoo.")}
+            <br />
+            <span>
+              {i18nText("Under control.")}
+            </span>
+          </h1>
         </div>
-      </section>
-
-      {/* ============================================================== */}
-      {/* BRING YOUR OWN CODE — split layout with terminal mock          */}
-      {/* ============================================================== */}
-      <section className="border-b border-border bg-card/30">
-        <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-          <div className="grid items-center gap-14 lg:grid-cols-2">
-            <div>
-              <SectionHeading
-                align="left"
-                pill={<SectionPill icon={GitBranch}>{i18nText("Bring your own code")}</SectionPill>}
-                title={
-                  <>{i18nText("Connect your repo.")}<br />
-                    <span className="text-muted">{i18nText("We deploy your modules.")}</span>
-                  </>
-                }
-                subtitle={
-                  <>{i18nText("Link a ")}<strong className="text-foreground">{i18nText("GitHub")}</strong>,{" "}
-                    <strong className="text-foreground">{i18nText("GitLab")}</strong>{i18nText(", or")}{" "}
-                    <strong className="text-foreground">{i18nText("Bitbucket")}</strong>{" "}{i18nText("repository. Custom addons are cloned on first boot, and a webhook redeploys them on every push — no SSH, no SCP, no downtime windows.")}</>
-                }
-              />
-              <ul className="mt-9 space-y-3.5 text-sm">
-                {[
-                  i18nText("Private repositories via personal access token"),
-                  i18nText("Auto-redeploy on git push (webhook-driven)"),
-                  i18nText("Pin a branch, tag, or commit per instance"),
-                  i18nText("Install Python dependencies in one click"),
-                ].map((it) => (
-                  <li key={it} className="flex items-start gap-3">
-                    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-success/15">
-                      <CheckCircle2 className="size-3.5 text-success" />
-                    </span>
-                    <span>{it}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-10">
-                {sections.hosting && (
-                <Button onClick={() => navigate("/hosting")}>{i18nText("Start hosting your code")}<ArrowRight />
-                </Button>
-                )}
-              </div>
-            </div>
-
-            <div className="relative">
-              <div className="pointer-events-none absolute -inset-6 rounded-3xl bg-linear-to-br from-primary/30 to-info/10 opacity-50 blur-2xl" />
-              <Card glass className="relative overflow-hidden p-1.5 shadow-glow">
-                <div className="rounded-lg border border-border bg-background/95 text-start">
-                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="size-2.5 rounded-full bg-danger/70" />
-                      <span className="size-2.5 rounded-full bg-warning/70" />
-                      <span className="size-2.5 rounded-full bg-success/70" />
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-muted">
-                      <Terminal className="size-3.5" />
-                      <span>{"deploy.log"}</span>
-                    </div>
-                    <span className="font-mono text-xs text-muted">●</span>
-                  </div>
-                  <div className="px-5 py-4 font-mono text-[13px] leading-relaxed">
-                    <div className="flex items-center gap-2 border-b border-border/60 pb-3">
-                      <GitBranch className="size-3.5 text-primary" />
-                      <span className="truncate text-xs sm:text-sm">{"github.com/your-org/odoo-addons"}</span>
-                      <span className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-success">
-                        <span className="size-1 animate-pulse-soft rounded-full bg-success" />{i18nText("Synced")}</span>
-                    </div>
-                    <pre dir="ltr" data-technical className="mt-4 overflow-x-auto whitespace-pre text-xs">
-{`$ git push origin main
-
-`}<span className="text-primary">→</span>{` webhook received   `}<span className="text-muted">·</span>{` your-org/odoo-addons
-`}<span className="text-primary">→</span>{` pulling commit     `}<span className="text-muted">·</span>{` `}<span className="text-info">a1b2c3d</span>{`
-`}<span className="text-primary">→</span>{` instance           `}<span className="text-muted">·</span>{` my-company
-`}<span className="text-primary">→</span>{` pip install -r requirements.txt
-`}<span className="text-primary">→</span>{` restarting workers ... `}<span className="text-success">{"done"}</span>{`
-
-`}<span className="text-success">{i18nText("✓ deployed in 12s")}</span>
-                    </pre>
-                  </div>
-                </div>
-              </Card>
-            </div>
+        <div className="home-hero-summary">
+          <p>
+            {i18nText(sections.hosting ? "Launch and manage Odoo in one workspace. Connect your code, work across environments, and keep your databases and operations in view." : "Launch a ready-made Odoo app and manage it in one workspace, with your databases and operations in view.")}
+          </p>
+          <div className="home-actions">
+            <LaunchAction sections={sections} />
+            <HomeLink to="/docs/overview" secondary>
+              {i18nText("Meet the platform")}
+            </HomeLink>
           </div>
         </div>
-      </section>
-
-      {/* ============================================================== */}
-      {/* BENTO FEATURES — varied sizes, mini-visuals inside cards       */}
-      {/* ============================================================== */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-          <SectionHeading
-            pill={<SectionPill icon={Zap}>{i18nText("Production-ready by default")}</SectionPill>}
-            title={i18nText("Everything you need to run Odoo")}
-            subtitle={i18nText("A complete operations layer — so your team ships features instead of babysitting servers.")}
-          />
-
-          <div className="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
-            {/* Featured — Live observability with embedded charts */}
-            <Card className="group relative overflow-hidden p-7 sm:col-span-2 lg:col-span-4 lg:row-span-2">
-              <div className="pointer-events-none absolute -right-20 -top-20 size-72 rounded-full bg-primary/15 blur-3xl transition-opacity group-hover:opacity-80" />
-              <div className="relative flex h-full flex-col">
-                <span className="flex size-12 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                  <Activity className="size-6" />
-                </span>
-                <h3 className="mt-6 text-2xl font-semibold">{i18nText("Live observability, baked in")}</h3>
-                <p className="mt-3 max-w-xl text-muted">{i18nText("Real-time CPU, memory and storage metrics with streaming logs for every instance. Tail your logs from the dashboard, no SSH required.")}</p>
-                <div className="mt-8 grid flex-1 grid-cols-3 gap-3">
-                  {[
-                    { label: "CPU", value: "34%", bar: "w-1/3" },
-                    { label: i18nText("Memory"), value: "58%", bar: "w-3/5" },
-                    { label: i18nText("Storage"), value: "47%", bar: "w-[47%]" },
-                  ].map((m) => (
-                    <div
-                      key={m.label}
-                      className="rounded-lg border border-border bg-background/60 p-3"
-                    >
-                      <div className="flex items-baseline justify-between">
-                        <span className="text-xs text-muted">{m.label}</span>
-                        <span className="text-sm font-semibold tabular-nums">
-                          {m.value}
-                        </span>
-                      </div>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
-                        <div
-                          className={`h-full rounded-full bg-linear-to-r from-primary to-primary-glow ${m.bar}`}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div dir="ltr" data-technical className="mt-4 rounded-lg border border-border bg-background/80 p-3 font-mono text-[11px] leading-relaxed text-muted">
-                  <span className="text-success">{i18nText("[INFO]")}</span>{i18nText(" worker pool ready · 4 workers · ")}<span className="text-primary">{i18nText("heartbeat ok")}</span>
-                  <br />
-                  <span className="text-success">{i18nText("[INFO]")}</span>{i18nText(" request")}{" "}
-                  <span className="text-info">GET</span>{i18nText(" /web/login 200")}{" "}
-                  <span className="text-muted">{i18nText("in 38ms")}</span>
-                </div>
-              </div>
-            </Card>
-
-            {/* Provision in seconds — with progress bar mock */}
-            <Card className="group p-6 sm:col-span-1 lg:col-span-2">
-              <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                <Zap className="size-5" />
-              </span>
-              <h3 className="mt-5 text-lg font-semibold">{i18nText("Provision in seconds")}</h3>
-              <p className="mt-2 text-sm text-muted">{i18nText("Production-ready Odoo with one click. Server, database, proxy — all wired up.")}</p>
-              <div className="mt-5 rounded-lg border border-border bg-background/60 p-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-mono text-muted">{"my-company"}</span>
-                  <span className="font-mono text-success">✓ 12s</span>
-                </div>
-                <div className="mt-2 h-1 overflow-hidden rounded-full bg-border">
-                  <div className="h-full w-full rounded-full bg-linear-to-r from-primary via-primary-glow to-success" />
-                </div>
-              </div>
-            </Card>
-
-            {/* Stable by design */}
-            <Card className="group p-6 sm:col-span-1 lg:col-span-2">
-              <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                <ShieldCheck className="size-5" />
-              </span>
-              <h3 className="mt-5 text-lg font-semibold">{i18nText("Stable by design")}</h3>
-              <p className="mt-2 text-sm text-muted">{i18nText("Isolated environments, automatic failover, zero-downtime upgrades keep you online.")}</p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                {["isolated", "auto-failover", "zero-downtime"].map((t) => (
-                  <span
-                    key={t}
-                    className="rounded-md border border-border bg-background/60 px-2 py-0.5 font-mono text-[10px] text-muted"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-            </Card>
-
-            {/* Daily backups — with timeline mock */}
-            <Card className="group p-6 sm:col-span-2 lg:col-span-3">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                    <RefreshCw className="size-5" />
-                  </span>
-                  <h3 className="mt-5 text-lg font-semibold">{i18nText("Daily backups + on-demand")}</h3>
-                  <p className="mt-2 text-sm text-muted">{i18nText("Deduplicated daily snapshots with point-in-time restore, plus one-click downloadable backups.")}</p>
-                </div>
-              </div>
-              <div className="mt-5 space-y-2 font-mono text-xs">
-                {[
-                  { name: "backup-2026-05-28", size: i18nText("1.24 GB"), when: i18nText("2h ago"), tag: "auto" },
-                  { name: "backup-2026-05-27", size: i18nText("1.23 GB"), when: i18nText("1d ago"), tag: "auto" },
-                  { name: "pre-upgrade", size: i18nText("1.21 GB"), when: i18nText("3d ago"), tag: "manual" },
-                ].map((b) => (
-                  <div
-                    key={b.name}
-                    className="flex items-center justify-between rounded-md border border-border bg-background/60 px-3 py-2"
-                  >
-                    <span className="flex items-center gap-2 truncate">
-                      <RefreshCw className="size-3 text-primary" />
-                      <span className="truncate text-muted">{b.name}</span>
-                    </span>
-                    <span className="flex items-center gap-3 text-[11px]">
-                      <span className="text-muted">{b.size}</span>
-                      <span className="text-muted">{b.when}</span>
-                      <span
-                        className={
-                          b.tag === "auto"
-                            ? "rounded-sm border border-success/30 bg-success/10 px-1.5 py-0.5 text-success"
-                            : "rounded-sm border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-primary"
-                        }
-                      >
-                        {b.tag}
-                      </span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            {/* Custom Python packages — with code snippet */}
-            <Card className="group p-6 sm:col-span-2 lg:col-span-3">
-              <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                <Package className="size-5" />
-              </span>
-              <h3 className="mt-5 text-lg font-semibold">{i18nText("Custom Python packages")}</h3>
-              <p className="mt-2 text-sm text-muted">{i18nText("Add pip dependencies per instance from the dashboard — no Docker images to rebuild, no tickets to file.")}</p>
-              <div className="mt-5 rounded-lg border border-border bg-background/80 p-3 font-mono text-xs leading-relaxed">
-                <div className="text-muted">
-                  <span className="text-primary">$</span>{i18nText(" pip install")}{" "}
-                  <span className="text-foreground">{i18nText("pandas openpyxl phonenumbers")}</span>
-                </div>
-                <div className="mt-1 text-success">{i18nText("✓ installed · pip 24.0")}</div>
-              </div>
-            </Card>
-
-            {/* Effortless databases */}
-            <Card className="group p-6 sm:col-span-2 lg:col-span-2">
-              <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                <Database className="size-5" />
-              </span>
-              <h3 className="mt-5 text-lg font-semibold">{i18nText("Effortless databases")}</h3>
-              <p className="mt-2 text-sm text-muted">{i18nText("Create, clone, back up, restore, reset admin passwords — all from the portal.")}</p>
-            </Card>
-
-            {/* Scale on demand */}
-            <Card className="group p-6 sm:col-span-1 lg:col-span-2">
-              <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                <Gauge className="size-5" />
-              </span>
-              <h3 className="mt-5 text-lg font-semibold">{i18nText("Scale on demand")}</h3>
-              <p className="mt-2 text-sm text-muted">{i18nText("Workers, RAM, storage — dial up or down. Prorated, monthly or yearly.")}</p>
-            </Card>
-
-            {/* Security & SSL */}
-            <Card className="group p-6 sm:col-span-1 lg:col-span-2">
-              <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                <Lock className="size-5" />
-              </span>
-              <h3 className="mt-5 text-lg font-semibold">{i18nText("Security & SSL")}</h3>
-              <p className="mt-2 text-sm text-muted">{i18nText("Free wildcard SSL, encrypted backups, isolated networks, audit logs.")}</p>
-            </Card>
-          </div>
+      </div>
+      <ProductPreview hosting={sections.hosting} />
+      <div className="home-capability-strip">
+        <p>
+          {i18nText("Built around your Odoo project")}
+        </p>
+        <div>
+          {(sections.hosting ? ["Git-based deployments", "Separate environments", "Databases & snapshots", "Metrics & logs"] : ["Ready-made apps", "Database snapshots", "Metrics & logs", "Team permissions"]).map(item => <span key={item}>
+            <Check className="size-3.5 text-primary" />
+            {i18nText(item)}
+          </span>)}
         </div>
-      </section>
-
-      {/* ============================================================== */}
-      {/* HOW IT WORKS — 4 steps with connector line                     */}
-      {/* ============================================================== */}
-      <section className="border-b border-border bg-card/20">
-        <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-          <SectionHeading
-            pill={<SectionPill icon={Sparkles}>{i18nText("From signup to production")}</SectionPill>}
-            title={i18nText("How it works")}
-            subtitle={i18nText("Four steps from idea to a production-grade Odoo instance running your code.")}
-          />
-
-          <div className="relative mt-16">
-            <div className="pointer-events-none absolute start-0 end-0 top-12 hidden h-px bg-linear-to-r from-transparent via-border to-transparent lg:block" />
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              {HOW_IT_WORKS.map((s) => (
-                <Card
-                  key={s.step}
-                  className="h-full p-6 transition-all hover:-translate-y-0.5 hover:border-primary/40"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                      <s.icon className="size-5" />
-                    </span>
-                    <span className="font-mono text-xs font-bold tracking-widest text-muted">
-                      {s.step}
-                    </span>
-                  </div>
-                  <h3 className="mt-5 text-lg font-semibold">{s.title}</h3>
-                  <p className="mt-2 text-sm text-muted">{s.description}</p>
-                </Card>
-              ))}
-            </div>
-          </div>
+      </div>
+    </section>
+    <LaunchPaths sections={sections} />
+    {sections.hosting && <HostingWorkflow />}
+    <Operations hosting={sections.hosting} />
+    {sections.services && services.length > 0 && <section className="home-catalog-section">
+      <div className="home-container home-section">
+        <div className="home-catalog-heading">
+          <SectionIntro label={i18nText("Available on Veltnex")} title={i18nText("Find your starting point.")}>
+            {i18nText("Explore the ready-made services available on the platform.")}
+          </SectionIntro>
+          <Link to="/services" className="home-text-link">
+            {i18nText("View all apps")}
+            <ArrowRight className="size-4" />
+          </Link>
         </div>
-      </section>
-
-      {/* ============================================================== */}
-      {/* SERVICES STRIP — Ready-Made Services                           */}
-      {/* ============================================================== */}
-      {sections.services && services.length > 0 && (
-        <section className="border-b border-border">
-          <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-            <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-end">
-              <div className="max-w-xl">
-                <SectionPill icon={Layers}>{i18nText("Ready-made services")}</SectionPill>
-                <h2 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">{i18nText("One platform, every service")}</h2>
-                <p className="mt-3 text-muted">{i18nText("From hosting to commerce to compliance — compose the stack your business needs.")}</p>
-              </div>
-              <Button
-                variant="secondary"
-                onClick={() => navigate("/services")}
-              >{i18nText("Browse all services")}<ArrowRight />
-              </Button>
-            </div>
-            <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-              {services.slice(0, 3).map((s) => (
-                <Link key={s.id} to={`/services/${s.id}`}>
-                  <Card className="group h-full p-6 transition-all hover:-translate-y-0.5 hover:border-primary/40">
-                    <span className="flex size-11 items-center justify-center rounded-xl bg-primary/15 text-primary transition-colors group-hover:bg-primary/25">
-                      <ServiceIcon icon={s.icon} className="size-5" />
-                    </span>
-                    <h3 className="mt-5 text-lg font-semibold">{s.name}</h3>
-                    <p className="mt-2 text-sm text-muted">{s.tagline}</p>
-                    <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">{i18nText("Learn more ")}<ArrowRight className="size-3.5" />
-                    </span>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ============================================================== */}
-      {/* FINAL CTA                                                       */}
-      {/* ============================================================== */}
-      <section className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-grid-faint bg-size-[48px_48px] mask-[radial-gradient(ellipse_at_center,black,transparent_70%)]" />
-        <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-          <Card
-            glass
-            className="relative overflow-hidden p-10 text-center sm:p-16"
-          >
-            <div className="pointer-events-none absolute -left-20 top-1/2 size-96 -translate-y-1/2 rounded-full bg-primary/20 blur-3xl" />
-            <div className="pointer-events-none absolute -right-20 top-1/2 size-96 -translate-y-1/2 rounded-full bg-info/15 blur-3xl" />
-            <div className="relative">
-              <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight sm:text-5xl">{i18nText("Ship on infrastructure that")}{" "}
-                <span className="bg-linear-to-br from-primary-glow to-info bg-clip-text text-transparent">{i18nText("just stays up")}</span>
-              </h2>
-              <p className="mx-auto mt-5 max-w-xl text-lg text-muted">{i18nText("Configure your plan in under a minute. No credit card required to explore the console.")}</p>
-              <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                {sections.hosting ? (
-                <Button size="lg" onClick={() => navigate("/hosting")}>{i18nText("Configure your plan")}<ArrowRight />
-                </Button>
-                ) : sections.services ? (
-                <Button size="lg" onClick={() => navigate("/services")}>{i18nText("Browse services")}<ArrowRight />
-                </Button>
-                ) : null}
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={() => navigate("/docs")}
-                >{i18nText("Read the docs")}</Button>
-              </div>
-              <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted">
-                {[
-                  i18nText("No setup fees"),
-                  i18nText("Cancel anytime"),
-                  i18nText("Daily backups included"),
-                  i18nText("Free wildcard SSL"),
-                ].map((t) => (
-                  <span key={t} className="flex items-center gap-1.5">
-                    <CheckCircle2 className="size-4 text-success" />
-                    {t}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </Card>
+        <div className="home-catalog">
+          {services.slice(0, 3).map(service => <Link key={service.id} to={`/services/${service.id}`} className="home-catalog-item focus-ring">
+            <ServiceIcon icon={service.icon} className="size-5 text-primary" />
+            <h3>
+              {service.name}
+            </h3>
+            <p>
+              {service.tagline}
+            </p>
+            <span>
+              {i18nText("Explore app")}
+              <ArrowUpRight className="size-4" />
+            </span>
+          </Link>)}
         </div>
-      </section>
-    </div>
-  );
+      </div>
+    </section>}
+    <section className="home-container home-section home-start">
+      <div>
+        <p className="home-eyebrow">
+          {i18nText("Your next project starts here")}
+        </p>
+        <h2>
+          {i18nText("Make room for your Odoo.")}
+        </h2>
+        <p className="home-description">
+          {i18nText(sections.hosting ? "Choose the configuration that fits your project. Your code and your operations, together on Veltnex." : "Explore available services and choose the app that fits your team.")}
+        </p>
+      </div>
+      <div className="home-start-actions">
+        <LaunchAction sections={sections} />
+        <Link to={sections.hosting ? "/docs/launch-instance" : "/docs/managed-services"} className="home-text-link">
+          {i18nText("Read the getting-started guide")}
+          <ArrowUpRight className="size-4" />
+        </Link>
+      </div>
+    </section>
+  </div>;
 }

@@ -2,6 +2,7 @@ from . import saas_product
 from . import saas_region
 from . import saas_instance
 from . import saas_instance_health
+from . import saas_instance_alerts
 from . import saas_plan
 from . import res_groups
 from . import res_partner

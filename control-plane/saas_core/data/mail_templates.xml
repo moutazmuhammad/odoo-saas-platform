@@ -164,4 +164,98 @@
     <!-- Bonus wallet credit expiring soon (v47) lives in
          saas_billing/data/mail_templates.xml now, alongside saas.wallet. -->
 
+    <!-- ============================================================ -->
+    <!--  Customer alerts: availability, CPU, storage                  -->
+    <!-- ============================================================ -->
+    <template id="saas_alert_email_footer">
+        <t t-set="support_email" t-value="object.env['ir.config_parameter'].sudo().get_param('saas_master.support_email', '')"/>
+        <p>Open your project in the
+           <a t-attf-href="/my/instances/{{ object.id }}">customer portal</a>
+           to see its status, metrics and logs.</p>
+        <p t-if="support_email">Need help? Contact us at
+           <a t-att-href="'mailto:' + support_email"><t t-out="support_email"/></a>.</p>
+        <p>Best regards,<br/><t t-out="object.company_id.name"/></p>
+    </template>
+
+    <record id="mail_template_saas_service_down" model="mail.template">
+        <field name="name">SaaS: Alert — service down</field>
+        <field name="model_id" ref="saas_core.model_saas_instance"/>
+        <field name="subject">[Alert] {{ object.name }} is not responding</field>
+        <field name="email_from">{{ (object.company_id.email or user.email) }}</field>
+        <field name="email_to">{{ object.partner_id.email }}</field>
+        <field name="body_html" type="html">
+<div style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
+    <p>Dear <t t-out="object.partner_id.name"/>,</p>
+    <p>Our availability checks have been unable to reach
+       <strong><t t-out="object.name"/></strong> since
+       <t t-out="object.alert_down_since"/> (UTC).</p>
+    <p>We are looking into it. You will receive another email as soon as
+       the service is back online. If you recently deployed a change,
+       you can also check the deployment history in your portal.</p>
+    <t t-call="saas_core.saas_alert_email_footer"/>
+</div>
+        </field>
+        <field name="auto_delete" eval="True"/>
+    </record>
+
+    <record id="mail_template_saas_service_restored" model="mail.template">
+        <field name="name">SaaS: Alert — service restored</field>
+        <field name="model_id" ref="saas_core.model_saas_instance"/>
+        <field name="subject">[Resolved] {{ object.name }} is back online</field>
+        <field name="email_from">{{ (object.company_id.email or user.email) }}</field>
+        <field name="email_to">{{ object.partner_id.email }}</field>
+        <field name="body_html" type="html">
+<div style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
+    <p>Dear <t t-out="object.partner_id.name"/>,</p>
+    <p>Good news: <strong><t t-out="object.name"/></strong> is responding
+       again and passing its availability checks.</p>
+    <t t-call="saas_core.saas_alert_email_footer"/>
+</div>
+        </field>
+        <field name="auto_delete" eval="True"/>
+    </record>
+
+    <record id="mail_template_saas_high_cpu" model="mail.template">
+        <field name="name">SaaS: Alert — high CPU</field>
+        <field name="model_id" ref="saas_core.model_saas_instance"/>
+        <field name="subject">[Alert] {{ object.name }} is running at high CPU</field>
+        <field name="email_from">{{ (object.company_id.email or user.email) }}</field>
+        <field name="email_to">{{ object.partner_id.email }}</field>
+        <field name="body_html" type="html">
+<div style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
+    <p>Dear <t t-out="object.partner_id.name"/>,</p>
+    <p><strong><t t-out="object.name"/></strong> has been using about
+       <strong><t t-out="'%.0f%%' % (object.cpu_usage_pct or 0)"/></strong>
+       of its processing capacity for a sustained period. Users may notice
+       slower pages.</p>
+    <p>If this is your normal workload, consider giving the server more
+       power from your portal: open the project, then <em>Change plan</em>.</p>
+    <t t-call="saas_core.saas_alert_email_footer"/>
+</div>
+        </field>
+        <field name="auto_delete" eval="True"/>
+    </record>
+
+    <record id="mail_template_saas_high_storage" model="mail.template">
+        <field name="name">SaaS: Alert — high storage</field>
+        <field name="model_id" ref="saas_core.model_saas_instance"/>
+        <field name="subject">[Alert] {{ object.name }} is almost out of storage</field>
+        <field name="email_from">{{ (object.company_id.email or user.email) }}</field>
+        <field name="email_to">{{ object.partner_id.email }}</field>
+        <field name="body_html" type="html">
+<div style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
+    <p>Dear <t t-out="object.partner_id.name"/>,</p>
+    <p><strong><t t-out="object.name"/></strong> is using about
+       <strong><t t-out="'%.0f%%' % (object.storage_usage_pct or 0)"/></strong>
+       of its storage
+       (<t t-out="'%.1f' % (object.storage_used_gb or 0)"/> GB of
+       <t t-out="'%.0f' % (object.storage_limit_gb or 0)"/> GB).</p>
+    <p>To keep everything running smoothly, add storage from your portal:
+       open the project, then <em>Change plan</em>.</p>
+    <t t-call="saas_core.saas_alert_email_footer"/>
+</div>
+        </field>
+        <field name="auto_delete" eval="True"/>
+    </record>
+
 </odoo>

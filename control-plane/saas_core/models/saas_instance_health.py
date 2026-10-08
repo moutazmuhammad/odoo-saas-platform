@@ -113,6 +113,8 @@ class SaasInstanceHealth(models.Model):
     def _store_runtime_observation(self, observation):
         values = {_RUNTIME_FIELDS[name]: value for name, value in observation.items()}
         Runtime = self.env['saas.instance.runtime'].sudo()
+        stored = False
+        previous_state = None
         try:
             with self.env.cr.savepoint():
                 record = Runtime.search([('instance_id', '=', self.id)], limit=1)
@@ -120,13 +122,22 @@ class SaasInstanceHealth(models.Model):
                     # Never queue behind a concurrent check of the same tenant.
                     self.env.cr.execute(
                         'SELECT id FROM saas_instance_runtime WHERE id = %s FOR UPDATE NOWAIT', [record.id])
+                    previous_state = record.state
                     record.write(values)
                 else:
                     Runtime.create(dict(values, instance_id=self.id))
+                stored = True
         except (psycopg2.OperationalError, psycopg2.IntegrityError) as e:
             # A concurrent check is recording this tenant; its result stands.
             _logger.debug('[runtime-health] skipped storing observation for %s: %s', self.id, e)
         self.invalidate_recordset(list(_RUNTIME_FIELDS) + ['runtime_display_state'])
+        if stored:
+            # Customer alerting rides on the observation we just recorded.
+            try:
+                self._track_availability_alert(
+                    previous_state, values.get('state'), values.get('lifecycle'))
+            except Exception:
+                _logger.exception('[runtime-health] availability alert failed for %s', self.id)
 
     def _runtime_status_dict(self):
         self.ensure_one()

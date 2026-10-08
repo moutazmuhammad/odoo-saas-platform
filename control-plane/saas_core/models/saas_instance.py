@@ -4337,6 +4337,10 @@ END $$;
                                 "usage: skipping storage for the rest of %s this run",
                                 inst.docker_server_id.name)
                 inst.write(vals)
+                try:
+                    inst._track_usage_alerts()
+                except Exception:
+                    _logger.exception("usage: alert evaluation failed for %s", inst.subdomain)
 
     def action_refresh_usage(self):
         """Fetch CPU, RAM, filestore and database size for these instances."""

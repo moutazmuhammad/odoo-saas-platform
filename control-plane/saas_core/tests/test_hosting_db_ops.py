@@ -281,6 +281,50 @@ class TestHostingDbOps(TransactionCase):
         self.assertIn('pg_terminate_backend', first_call_sql)
         self.assertEqual(self.instance.state, 'running')
 
+    def _restore_with_mock(self, instance):
+        driver = self._driver()
+        driver.exec.return_value = ExecResult(rc=0, stdout='dump.sql\nOK', stderr='')
+        Backup = self.env['saas.instance.backup']
+        backup = Backup.sudo().create({
+            'instance_id': instance.id, 'db_name': instance._hosting_db_full_name('main'),
+            'name': 'restore-upload', 'state': 'done', 'bucket_path': 'ondemand/x.zip',
+        })
+        with patch.object(type(instance), '_compute_driver', return_value=driver), \
+             patch.object(type(backup), '_read_manifest_safe', return_value=None), \
+             patch.object(type(backup), '_generate_presigned_url', return_value='https://example.com/x.zip'), \
+             patch.object(type(instance), '_docker_exec_sql', return_value=(0, '', '')) as m_sql, \
+             patch.object(type(instance), '_docker_exec_psql_file', return_value=(0, '', '')):
+            instance._do_restore_backup(backup.id)
+        return m_sql
+
+    def test_restore_on_staging_neutralizes_mail_and_crons(self):
+        """A copy on Staging/Development must never mail customers or run
+        scheduled actions: the restore ends with the neutralize SQL on
+        that database (Odoo.sh behaviour)."""
+        for kind in ('staging', 'development'):
+            child = self.instance.copy({'subdomain': 'dbops-n-' + kind, 'environment': kind,
+                                        'parent_id': self.instance.id, 'state': 'running'})
+            m_sql = self._restore_with_mock(child)
+            neutralize = [c for c in m_sql.call_args_list if 'ir_mail_server' in c.args[0]]
+            self.assertEqual(len(neutralize), 1, kind)
+            sql = neutralize[0].args[0]
+            self.assertEqual(neutralize[0].kwargs.get('db'), 'dbops-n-%s_main' % kind)
+            for table in ('ir_cron', 'fetchmail_server', 'payment_provider', 'iap_account',
+                          'DELETE FROM mail_mail', 'database.is_neutralized'):
+                self.assertIn(table, sql)
+            self.assertEqual(child.state, 'running')
+
+    def test_restore_on_production_is_not_neutralized(self):
+        m_sql = self._restore_with_mock(self.instance)
+        self.assertFalse([c for c in m_sql.call_args_list if 'ir_mail_server' in c.args[0]])
+
+    def test_neutralize_failure_aborts_the_copy(self):
+        child = self.instance.copy({'subdomain': 'dbops-nfail', 'environment': 'staging',
+                                    'parent_id': self.instance.id, 'state': 'running'})
+        with patch.object(type(child), '_docker_exec_sql', return_value=(1, '', 'boom')):
+            with self.assertRaisesRegex(UserError, 'neutralize'):
+                child._hosting_neutralize_database('dbops-nfail_main')
+
     def test_copy_without_overwrite_preserves_a_newly_created_target(self):
         driver = self._driver()
         driver.exec.return_value = ExecResult(

@@ -3331,10 +3331,76 @@ finally:
         driver.exec(handle, 'rm -rf %s %s' % (
             shlex.quote(tmp_zip), shlex.quote(extract_dir)))
 
+        # Odoo.sh-style: a copy on Staging/Development must never act on
+        # the customer's real world — no outgoing/incoming mail, no
+        # scheduled actions, no payments.
+        if self.environment in ('staging', 'development'):
+            self._hosting_neutralize_database(db_name)
+
         self.state = 'running'
         self.pending_operation = False
         self._append_log("Backup '%s' restored successfully." % backup.name)
         self._safe_refresh_usage()
+
+    # Mirrors Odoo's own ``neutralize`` (base/mail/payment neutralize.sql),
+    # run as plain SQL so it works on every Odoo version the tenant runs.
+    # Each table is guarded: a database without that module is fine.
+    _NEUTRALIZE_SQL = """
+DO $$
+BEGIN
+  UPDATE ir_cron SET active = false;
+  IF to_regclass('ir_mail_server') IS NOT NULL THEN
+    UPDATE ir_mail_server SET active = false;
+  END IF;
+  IF to_regclass('fetchmail_server') IS NOT NULL THEN
+    UPDATE fetchmail_server SET active = false;
+  END IF;
+  IF to_regclass('mail_mail') IS NOT NULL THEN
+    -- Queued mails are worthless on a copy: drop them (like Odoo.sh).
+    DELETE FROM mail_mail WHERE state IN ('outgoing', 'exception');
+  END IF;
+  IF to_regclass('payment_provider') IS NOT NULL THEN
+    UPDATE payment_provider SET state = 'disabled' WHERE state != 'disabled';
+  END IF;
+  IF to_regclass('iap_account') IS NOT NULL THEN
+    -- The copy must not spend the customer's IAP credits (SMS, OCR, ...).
+    UPDATE iap_account SET account_token = NULL;
+  END IF;
+  IF to_regclass('website') IS NOT NULL THEN
+    UPDATE website SET domain = NULL;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'res_users' AND column_name = 'oauth_access_token') THEN
+    UPDATE res_users SET oauth_access_token = NULL;
+  END IF;
+  DELETE FROM ir_config_parameter
+   WHERE key IN ('mail.catchall.domain', 'mail.catchall.alias', 'mail.bounce.alias',
+                 'mail.default.from', 'mail.alias.domain', 'web.base.url.freeze');
+  INSERT INTO ir_config_parameter (key, value, create_date, write_date)
+  VALUES ('database.is_neutralized', 'true', now(), now())
+  ON CONFLICT (key) DO UPDATE SET value = 'true', write_date = now();
+END $$;
+"""
+
+    def _hosting_neutralize_database(self, db_name):
+        """Disable everything in ``db_name`` that would touch the customer's
+        live world: mail servers (in and out), scheduled actions, payment
+        providers, IAP/OAuth tokens and the website domain; delete the
+        queued mails (worthless on a copy) and flag the database as
+        neutralized (Odoo shows its test-database banner). Raises on
+        failure so a Staging/Development copy is never left live."""
+        self.ensure_one()
+        self._append_log(
+            "Neutralizing '%s': disabling mail, scheduled actions and payments..."
+            % db_name)
+        rc, out, err = self._docker_exec_sql(
+            self._NEUTRALIZE_SQL, db=db_name, timeout=120)
+        if rc != 0:
+            raise UserError(_(
+                "Could not neutralize database '%s' (mail and scheduled actions "
+                "may still be active):\n%s") % (db_name, (err or out or '')[-500:]))
+        self._append_log("Database '%s' neutralized." % db_name)
+        return True
 
     def action_restore_backup(self, backup_id):
         """Restore a per-database backup to this instance (async)."""

@@ -1022,10 +1022,19 @@ class SaasApi(http.Controller):
                         if crepo:
                             crepo.write({**child_vals, 'state': 'pending'})
                         else:
-                            inst.env['saas.instance.repo'].create({
+                            crepo = inst.env['saas.instance.repo'].create({
                                 **child_vals, 'instance_id': child.id,
                                 'branch': child._env_branch(), 'state': 'pending',
                             })
+                            # The server was created before the repo existed:
+                            # give it its branch (from main) so it deploys.
+                            try:
+                                crepo._create_branch_on_provider(
+                                    crepo.branch, inst.main_branch or 'main')
+                            except Exception as e:
+                                child._append_log(
+                                    "Branch '%s' not created automatically: %s"
+                                    % (crepo.branch, e))
             else:
                 existing.unlink()  # disconnect
                 # Disconnecting at the project level removes it everywhere.
@@ -1687,7 +1696,7 @@ class SaasApi(http.Controller):
             'main_branch': prod.main_branch or 'main',
             'env_server_price': prod._env_server_price(),
             'billing_cycle': prod.billing_period or 'monthly',
-            # Gate: env servers require a repo connected to Production.
+            # A project repo is optional; servers can be created without one.
             'has_repo': bool(repo),
             'repo_url': repo.repo_url or '' if repo else '',
             'environments': [self._serialize_env_child(c) for c in children],
@@ -1930,6 +1939,30 @@ class SaasApi(http.Controller):
             return err(_("Couldn't change the server's plan. Please try again."), 'error')
         return ok(result)
 
+    @http.route('/saas/api/v1/instances/<int:instance_id>/environments/<int:child_id>/branch',
+                type='json', auth='public')
+    def environment_link_branch(self, instance_id, child_id, branch=None, create=False):
+        """Bind a Staging/Development server to a branch of the project's
+        repository: an existing one, or a new one created from main."""
+        partner = self._partner()
+        if not partner:
+            return err(_("Please sign in."), 'auth_required')
+        child = request.env['saas.instance'].sudo().browse(int(child_id or 0))
+        if not child.exists() or not self._can_manage_instance(child, 'deploy'):
+            return err(_("Environment not found."), 'not_found')
+        prod = child.parent_id
+        if not prod or prod.id != int(instance_id) and child.id != int(instance_id):
+            return err(_("Environment not found."), 'not_found')
+        try:
+            result = child.action_link_environment_branch(
+                branch=branch, create=bool(create))
+        except (UserError, ValidationError) as e:
+            return err(str(e), 'error')
+        except Exception:
+            _logger.exception("Branch link failed for %s", child_id)
+            return err(_("Couldn't link the branch. Please try again."), 'error')
+        return ok(result)
+
     @http.route('/saas/api/v1/instances/<int:instance_id>/environments/merge',
                 type='json', auth='public')
     def environment_merge(self, instance_id, source_id=None, target_id=None):
@@ -2083,6 +2116,9 @@ class SaasApi(http.Controller):
                 inst._fields['environment'].selection
             ).get(inst.environment, inst.environment),
             'branch': inst._env_branch(),
+            # Whether THIS server is bound to a Git branch (a project repo may
+            # be connected after the server was created; link it then).
+            'has_repo': bool(inst.repo_ids),
             'state': inst.state,
             'state_label': dict(
                 inst._fields['state'].selection

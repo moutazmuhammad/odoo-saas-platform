@@ -1104,8 +1104,48 @@ footer a[href*="odoo.com"],
     background-color: var(--bg-elevated) !important;
     color: var(--text-muted) !important;
 }
+/* Payment-state pills on the invoice page: the "nuclear override" above
+   repaints every descendant, so each pill gets its own explicit colour
+   (otherwise "Not Paid" could end up text-on-same-colour). */
 #wrapwrap #invoice_content .badge {
     color: inherit !important;
+}
+#wrapwrap #invoice_content .badge.vx-state-paid {
+    background-color: var(--success-light) !important;
+    color: var(--success) !important;
+}
+#wrapwrap #invoice_content .badge.vx-state-partial,
+#wrapwrap #invoice_content .badge.vx-state-unpaid {
+    background-color: var(--warning-light) !important;
+    color: var(--warning) !important;
+}
+#wrapwrap #invoice_content .badge.vx-state-in-payment {
+    background-color: var(--info-light) !important;
+    color: var(--info) !important;
+}
+#wrapwrap #invoice_content .badge.vx-state-reversed {
+    background-color: var(--danger-light) !important;
+    color: var(--danger) !important;
+}
+
+/* Portal list toolbar ("Sort By:" / "Filter By:" + their dropdown buttons):
+   Bootstrap's navbar-light paints the labels near-black, invisible on the
+   dark theme. */
+#wrapwrap .o_portal_navbar .navbar-text,
+#wrapwrap .o_portal_navbar .navbar-text * {
+    color: var(--text-secondary) !important;
+}
+#wrapwrap .o_portal_navbar .btn-light {
+    background: var(--bg-elevated) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+#wrapwrap .o_portal_navbar .btn-light:hover {
+    background: var(--bg-card-hover) !important;
+}
+#wrapwrap .o_portal_navbar .navbar-toggler {
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
 }
 
 /* Sidebar panel itself */

@@ -14,7 +14,6 @@ import {
   Check,
   MoreHorizontal,
   Loader2,
-  Archive,
   Download,
   CopyPlus,
   RefreshCw,
@@ -313,8 +312,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                                   className="fixed z-40 w-44 overflow-hidden rounded-lg border border-border bg-card shadow-card animate-scale-in"
                                   style={{ top: menuPos.top, left: menuPos.left }}
                                 >
-                                  <MenuItem icon={Archive} label={i18nText("Create backup")} disabled={!can("backup.create")} onClick={async () => { setOpenMenu(null); try { await api.dbBackup(instanceId, db.name, "zip"); await load(true); toast.success(i18nText("Backup queued")); } catch (e) { toast.error(i18nText("Could not create backup"), e instanceof ApiError ? e.message : i18nText("Please try again.")); } }} />
-                                  <MenuItem disabled={!can("backup.download")} icon={Download} label={i18nText("Download backup")} onClick={() => { setOpenMenu(null); setBackupsTarget(db.name); }} />
+                                  <MenuItem disabled={!can("backup.download") || !can("backup.create")} icon={Download} label={i18nText("Download backup")} onClick={() => { setOpenMenu(null); setBackupsTarget(db.name); }} />
                                   <MenuItem disabled={!can("db.password")} icon={KeyRound} label={i18nText("Reset password")} onClick={() => { setOpenMenu(null); setResetTarget(db.name); }} />
                                 </div>
                               </>
@@ -490,7 +488,7 @@ function DatabaseBackupsDialog({
           <span className="text-sm text-muted">{i18nText("No backup yet.")}</span>
         )}
         <ActionButton disabled={!canCreate} loading={loading} loadingText={i18nText("Preparing\u2026")} onClick={start}>
-          <Archive className="size-4" />{i18nText("Download backup")}</ActionButton>
+          <Download className="size-4" />{i18nText("Download backup")}</ActionButton>
       </div>
 
       <div className="mt-6 flex justify-end">

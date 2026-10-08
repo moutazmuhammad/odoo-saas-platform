@@ -255,7 +255,8 @@ export default function Environments() {
     [data],
   );
   const selected = allEnvs.find((e) => e.id === selectedId) || allEnvs[0] || null;
-  const canCreate = !!data?.has_repo;
+  const hasRepo = !!data?.has_repo;
+  const canCreate = true; // a repository is optional; link a branch later
 
   const doMerge = (target: EnvChild) => {
     const source = allEnvs.find((e) => e.id === draggingId) || null;
@@ -285,7 +286,7 @@ export default function Environments() {
       <p className="text-sm text-muted">{i18nText("No environments are available in your assigned scopes yet.")}</p>
       {data.can_manage_access && <Link className="inline-block text-primary" to={`/my/instances/${instanceId}/access`}>{i18nText("Manage team & permissions")}</Link>}
       <div className="flex gap-3">{(["staging", "development"] as const).map(type => data.can_create?.[type] && <Button key={type} disabled={!canCreate} onClick={() => setCreateType(type)}>{i18nText("Create ")}{type}{i18nText(" environment")}</Button>)}</div>
-      <CreateEnvDialog instanceId={instanceId} type={createType} onClose={() => setCreateType(null)} onCreated={(_auto, childId) => { setCreateType(null); if (childId) selectEnv(childId); load(); }} />
+      <CreateEnvDialog instanceId={instanceId} hasRepo={hasRepo} type={createType} onClose={() => setCreateType(null)} onCreated={(_auto, childId) => { setCreateType(null); if (childId) selectEnv(childId); load(); }} />
     </div>;
   }
 
@@ -378,7 +379,7 @@ export default function Environments() {
             onChanged={load}
           />
 
-          {tab === "overview" && canCreate && allEnvs.length > 1 && (
+          {tab === "overview" && hasRepo && allEnvs.length > 1 && (
             <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
               <GitMerge className="size-3.5" />{i18nText("Tip: drag a branch onto another in the sidebar to merge it and redeploy.")}</p>
           )}
@@ -387,6 +388,7 @@ export default function Environments() {
 
       <CreateEnvDialog
         instanceId={instanceId}
+        hasRepo={hasRepo}
         type={createType}
         onClose={() => setCreateType(null)}
         onCreated={(auto, childId) => {
@@ -424,7 +426,7 @@ export default function Environments() {
 
   function dragHandlers(env: EnvChild) {
     return {
-      draggable: canCreate && hasPermission(env.permissions, "project.view"),
+      draggable: hasRepo && hasPermission(env.permissions, "project.view"),
       isDragging: draggingId === env.id,
       isDropTarget: dragOverId === env.id && draggingId !== null && draggingId !== env.id,
       onDragStart: () => setDraggingId(env.id),
@@ -614,7 +616,7 @@ function ScaleCard({
           </div>
         </Dialog>
         {!hasRepo && (
-          <p className="mt-2 text-xs text-muted">{i18nText("Reserving needs no repository; creating a server does — connect one below first.")}</p>
+          <p className="mt-2 text-xs text-muted">{i18nText("No repository is needed: servers run the standard Odoo image until you connect one and link a branch to each server.")}</p>
         )}
       </div>
     </Card>
@@ -843,6 +845,9 @@ function MainPanel({
   const [pending, setPending] = React.useState<string | null>(null);
   const [copyOpen, setCopyOpen] = React.useState(false);
   const [planOpen, setPlanOpen] = React.useState(false);
+  const [linkOpen, setLinkOpen] = React.useState(false);
+  // Branch is meaningful only once this server is bound to one.
+  const boundBranch = env.has_repo ? env.branch : "";
 
   const refreshStatus = React.useCallback(async () => {
     try {
@@ -914,11 +919,15 @@ function MainPanel({
             {env.version && <span className="text-xs text-muted">{i18nText("Odoo ")}{env.version}</span>}
           </div>
           <p className="mt-1.5 flex items-center gap-1.5 font-mono text-xs text-muted">
-            <GitBranch className="size-3" />
-            {env.branch}
+            {boundBranch && (
+              <>
+                <GitBranch className="size-3" />
+                {boundBranch}
+              </>
+            )}
             {url && (
               <>
-                <span className="text-border">·</span>
+                {boundBranch && <span className="text-border">·</span>}
                 <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-primary">
                   {env.domain}
                   <ExternalLink className="size-3" />
@@ -972,6 +981,10 @@ function MainPanel({
               onClick={() => run("stop", i18nText("Stopping"))}
             >{i18nText("Stop")}</ActionButton>
           )}
+          {project.repo_url && env.environment !== "production" && can("deploy") && (
+            <Button size="sm" variant="secondary" onClick={() => setLinkOpen(true)}>
+              <GitBranch className="size-4" />{env.has_repo ? i18nText("Change branch") : i18nText("Link branch")}</Button>
+          )}
           {(isRunning || isStopped) && env.environment !== "production" && can("billing.manage") && (
             <Button size="sm" variant="secondary" onClick={() => setPlanOpen(true)}>
               <Server className="size-4" />{i18nText("Change plan")}</Button>
@@ -1013,8 +1026,17 @@ function MainPanel({
                 action={<Button size="sm" onClick={() => (window.location.href = env.checkout_url || `/my/instances/${env.id}/checkout`)}>{i18nText("Pay now")}</Button>}
               />
             )}
-            {project.repo_url && (
+            {project.repo_url && env.has_repo && (
               <RepoCard repoUrl={project.repo_url} branch={env.branch} cloneCmd={cloneCmd} />
+            )}
+            {project.repo_url && !env.has_repo && env.environment !== "production" && (
+              <AlertBanner
+                className="mb-4"
+                variant="info"
+                title={i18nText("This server isn't linked to a branch yet")}
+                description={i18nText("Pick a branch of your repository, or create one from the main branch, and the server will deploy it.")}
+                action={can("deploy") ? <Button size="sm" onClick={() => setLinkOpen(true)}><GitBranch className="size-4" />{i18nText("Link branch")}</Button> : undefined}
+              />
             )}
 
             {/* Deployment history — Odoo.sh-style build timeline with per-build
@@ -1047,6 +1069,16 @@ function MainPanel({
         ) : null}
       </div>
       </div>
+      {env.environment !== "production" && (
+        <LinkBranchDialog
+          open={linkOpen}
+          projectId={project.project_id}
+          mainBranch={project.main_branch}
+          env={env}
+          onClose={() => setLinkOpen(false)}
+          onLinked={(branch) => { setLinkOpen(false); toast.success(i18nText("Branch linked"), i18nText("{0} now deploys from {1}.", [env.name, branch])); onChanged(); }}
+        />
+      )}
       {env.environment !== "production" && (
         <EnvPlanDialog
           open={planOpen}
@@ -1611,11 +1643,13 @@ function BranchPill({ name, branch, highlight }: { name: string; branch: string;
 
 function CreateEnvDialog({
   instanceId,
+  hasRepo,
   type,
   onClose,
   onCreated,
 }: {
   instanceId: number;
+  hasRepo: boolean;
   type: "staging" | "development" | null;
   onClose: () => void;
   onCreated: (autoProvisioned: boolean, childId?: number) => void;
@@ -1634,10 +1668,10 @@ function CreateEnvDialog({
     setBranch("");
     setError(null);
     setLoading(false);
-    if (type === "staging" || type === "development") {
+    if (hasRepo && (type === "staging" || type === "development")) {
       api.instanceBranches(instanceId).then((b) => setBranches(b.branches)).catch(() => setBranches([]));
     }
-  }, [type, instanceId]);
+  }, [type, instanceId, hasRepo]);
 
   const ok = name.trim().length > 0;
 
@@ -1680,12 +1714,12 @@ function CreateEnvDialog({
             onKeyDown={(e) => e.key === "Enter" && ok && submit()}
           />
           <p className="text-xs text-muted">
-            {isStaging
+            {hasRepo
               ? i18nText("A new server is provisioned automatically.")
-              : i18nText("A new server is provisioned automatically.")}
+              : i18nText("A new server is provisioned automatically. Connect a repository to the project later and link a branch to it from the server's Overview.")}
           </p>
         </div>
-        {type && (
+        {type && hasRepo && (
           <div className="space-y-2">
             <Label htmlFor="env-branch">{i18nText("Git branch")}</Label>
             <select
@@ -1708,6 +1742,113 @@ function CreateEnvDialog({
       <div className="mt-6 flex justify-end gap-2">
         <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
         <ActionButton loading={loading} loadingText={i18nText("Creating\u2026")} disabled={!ok} onClick={submit}>{i18nText("Create server")}</ActionButton>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Bind an existing Staging/Development server to a branch of the project
+ *  repository: an existing branch, or a new one created from main (the
+ *  repository may have been connected after the server was created). */
+function LinkBranchDialog({
+  open,
+  projectId,
+  mainBranch,
+  env,
+  onClose,
+  onLinked,
+}: {
+  open: boolean;
+  projectId: number;
+  mainBranch: string;
+  env: EnvChild;
+  onClose: () => void;
+  onLinked: (branch: string) => void;
+}) {
+  const [mode, setMode] = React.useState<"existing" | "new">("existing");
+  const [branch, setBranch] = React.useState("");
+  const [newName, setNewName] = React.useState("");
+  const [branches, setBranches] = React.useState<string[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setLoading(false);
+    setNewName(env.name);
+    setBranch(env.has_repo ? env.branch : "");
+    api.instanceBranches(projectId)
+      .then((b) => { setBranches(b.branches); if (!b.branches.length) setMode("new"); })
+      .catch(() => { setBranches([]); setMode("new"); });
+  }, [open, projectId, env]);
+
+  const chosen = mode === "new" ? newName.trim() : branch;
+  const ok = chosen.length > 0;
+
+  const submit = async () => {
+    if (!ok) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await api.environmentLinkBranch(projectId, env.id, chosen, mode === "new");
+      onLinked(res.branch);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : i18nText("Couldn't link the branch."));
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} title={i18nText("Link a branch")} description={i18nText("{0} will deploy the branch you pick, and redeploy on every push to it.", [env.name])}>
+      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't link")} description={error} />}
+      <div className="grid grid-cols-2 gap-2">
+        {([
+          { v: "existing", title: i18nText("Existing branch"), hint: i18nText("Run code that is already in your repository") },
+          { v: "new", title: i18nText("New branch"), hint: i18nText("Created from {0} and linked to this server", [mainBranch]) },
+        ] as const).map((o) => (
+          <button
+            key={o.v}
+            type="button"
+            disabled={loading}
+            onClick={() => setMode(o.v)}
+            className={cn(
+              "rounded-lg border px-3 py-2 text-start transition-colors disabled:opacity-50",
+              mode === o.v ? "border-primary bg-primary/10" : "border-border hover:bg-border/40",
+            )}
+          >
+            <p className="text-sm font-medium">{o.title}</p>
+            <p className="text-xs text-muted">{o.hint}</p>
+          </button>
+        ))}
+      </div>
+      <div className="mt-4 space-y-2">
+        {mode === "existing" ? (
+          <>
+            <Label htmlFor="link-branch">{i18nText("Git branch")}</Label>
+            <select
+              id="link-branch"
+              className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+            >
+              <option value="">{i18nText("Choose a branch…")}</option>
+              {branches.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          </>
+        ) : (
+          <>
+            <Label htmlFor="link-branch-new">{i18nText("Branch name")}</Label>
+            <Input id="link-branch-new" data-technical autoComplete="off" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ok && submit()} />
+          </>
+        )}
+      </div>
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
+        <ActionButton loading={loading} loadingText={i18nText("Linking\u2026")} disabled={!ok} onClick={submit}>
+          <GitBranch className="size-4" />{i18nText("Link branch")}</ActionButton>
       </div>
     </Dialog>
   );

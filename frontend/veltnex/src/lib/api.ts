@@ -365,6 +365,8 @@ export interface EnvChild extends RuntimeHealth {
   environment: EnvironmentType;
   environment_label: string;
   branch: string;
+  /** This server is bound to a Git branch (repos can be connected after creation). */
+  has_repo?: boolean;
   state: InstanceState;
   state_label: string;
   access_token: string;
@@ -930,6 +932,13 @@ export const api = {
       source_id: sourceId,
       target_id: targetId,
     }),
+  /** Bind a Staging/Development server to a branch of the project repo
+   *  (an existing one, or `create` a new one from main). */
+  environmentLinkBranch: (id: number, childId: number, branch?: string, create = false) =>
+    rpc<{ branch: string; redeployed: boolean }>(
+      `/saas/api/v1/instances/${id}/environments/${childId}/branch`,
+      { branch: branch || undefined, create },
+    ),
   instanceBranches: (id: number) =>
     rpc<{ branches: string[]; main_branch: string }>(
       `/saas/api/v1/instances/${id}/branches`,

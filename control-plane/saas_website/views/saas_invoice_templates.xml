@@ -44,23 +44,23 @@
                             </div>
                             <div>
                                 <span t-if="invoice.payment_state == 'paid'"
-                                      class="badge fs-6" style="background:var(--success-light);color:var(--success);">
+                                      class="badge fs-6 vx-state-paid" style="background:var(--success-light);color:var(--success);">
                                     <i class="fas fa-check-circle me-1"></i>Paid
                                 </span>
                                 <span t-elif="invoice.payment_state == 'partial'"
-                                      class="badge fs-6" style="background:var(--warning-light);color:var(--warning);">
+                                      class="badge fs-6 vx-state-partial" style="background:var(--warning-light);color:var(--warning);">
                                     <i class="fas fa-clock me-1"></i>Partially Paid
                                 </span>
                                 <span t-elif="invoice.payment_state == 'in_payment'"
-                                      class="badge fs-6" style="background:rgba(59,130,246,0.1);color:var(--info);">
+                                      class="badge fs-6 vx-state-in-payment" style="background:rgba(59,130,246,0.1);color:var(--info);">
                                     <i class="fas fa-spinner me-1"></i>In Payment
                                 </span>
                                 <span t-elif="invoice.payment_state == 'reversed'"
-                                      class="badge fs-6" style="background:var(--danger-light);color:var(--danger);">
+                                      class="badge fs-6 vx-state-reversed" style="background:var(--danger-light);color:var(--danger);">
                                     <i class="fas fa-undo me-1"></i>Reversed
                                 </span>
                                 <span t-else=""
-                                      class="badge fs-6" style="background:var(--warning-light);color:var(--warning);">
+                                      class="badge fs-6 vx-state-unpaid" style="background:var(--warning-light);color:var(--warning);">
                                     <i class="fas fa-exclamation-circle me-1"></i>Not Paid
                                 </span>
                             </div>

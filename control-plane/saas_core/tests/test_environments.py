@@ -305,10 +305,36 @@ class TestEnvironments(TransactionCase):
             self.assertAlmostEqual(l.price_unit, price, 2)
 
     # --------------------------------------------------------------- repo gate
-    def test_env_create_requires_repo(self):
-        prod = self._mk_prod('pgate')
+    def test_env_create_without_repo_then_link_branch(self):
+        """A repo is optional at creation; once the project gets one, the
+        server can be linked to a branch (existing or created from main)."""
+        prod = self._mk_prod('pgate', due=date.today() + timedelta(days=20),
+                             last=date.today() - timedelta(days=10))
+        prod.write({'dev_slots': 1})
+        with patch.object(type(prod), '_activate_pending_environment', return_value=True):
+            res = prod.action_create_environment('development', name='feature-x')
+        child = self.env['saas.instance'].sudo().browse(res['child_id'])
+        self.assertFalse(child.repo_ids)
+        # No project repo yet → linking refuses with a clear message.
         with self.assertRaises(Exception):
-            prod.action_create_environment('development', name='feature-x')
+            child.action_link_environment_branch()
+        self.env['saas.instance.repo'].sudo().create({
+            'instance_id': prod.id, 'repo_url': 'https://github.com/o/r.git',
+            'branch': 'main',
+        })
+        Repo = type(self.env['saas.instance.repo'])
+        with patch.object(Repo, '_list_remote_branches', return_value=['main', 'qa']), \
+                patch.object(Repo, '_create_branch_on_provider', return_value=True) as mk, \
+                patch.object(type(child), 'action_redeploy', return_value=True):
+            with self.assertRaises(Exception):
+                child.action_link_environment_branch(branch='nope')
+            child.action_link_environment_branch(branch='qa')
+            self.assertEqual(child.repo_ids.branch, 'qa')
+            mk.assert_not_called()
+            child.action_link_environment_branch(create=True)
+            mk.assert_called_once_with(child.subdomain, 'main')
+            self.assertEqual(child.repo_ids.branch, child.subdomain)
+            self.assertEqual(child._env_branch(), child.subdomain)
 
     def test_env_create_needs_a_reserved_slot(self):
         # Creating is capped at the reserved count: with a repo but 0 reserved

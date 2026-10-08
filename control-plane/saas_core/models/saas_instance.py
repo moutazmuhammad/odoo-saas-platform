@@ -1139,14 +1139,10 @@ class SaasInstance(models.Model):
         if not self.is_hosting:
             raise UserError(_(
                 "Environments are only available for hosting subscriptions."))
-        # Creating (spinning up) a server needs a Git repository — it runs on a
-        # branch. Reserving/paying for slots does NOT (that's a separate action
-        # that only grows the entitlement). So this gate guards CREATION only.
-        if not self.repo_ids:
-            raise UserError(_(
-                "Connect a Git repository to your Production server before "
-                "creating a Staging or Development server. You can still "
-                "reserve slots without one."))
+        # A Git repository is OPTIONAL: without one the server runs the
+        # stock Odoo image, and the customer can connect a repository to the
+        # project later and then link a branch to each server (or create one
+        # from the main branch) via ``action_link_environment_branch``.
         if env_type not in ('staging', 'development'):
             raise UserError(_("Unknown environment type '%s'.") % env_type)
         name = (name or '').strip()
@@ -1316,6 +1312,64 @@ class SaasInstance(models.Model):
             "Environment '%s' created within reserved %s slots (%d/%d used)."
             % (child.subdomain, env_type, used + 1, slots))
         return {'child_id': child.id, 'auto_provisioned': True, 'free': True}
+
+    def action_link_environment_branch(self, branch=None, create=False):
+        """Bind THIS Staging/Development server to a Git branch of the
+        project's repository (connected after the server was created, or to
+        move it onto another branch). ``branch`` defaults to the server's own
+        name; with ``create`` the branch is created from the project's main
+        branch on the provider first. The server then re-clones on its next
+        deploy, which is triggered right away when it is up."""
+        self.ensure_one()
+        if self.environment == 'production':
+            raise UserError(_(
+                "The Production server always runs the main branch."))
+        prod = self.parent_id
+        prod_repo = prod.repo_ids[:1] if prod else self.env['saas.instance.repo']
+        if not prod_repo:
+            raise UserError(_(
+                "Connect a repository to the project first (Production "
+                "server → Code)."))
+        main_branch = prod.main_branch or 'main'
+        branch = (branch or '').strip() or self.subdomain
+        if create:
+            prod_repo._create_branch_on_provider(branch, main_branch)
+        else:
+            try:
+                remote = prod_repo._list_remote_branches()
+            except Exception:
+                remote = []
+            if remote and branch not in remote:
+                raise UserError(_(
+                    "Branch '%s' doesn't exist in your repository. Pick an "
+                    "existing branch or create it from %s.") % (branch, main_branch))
+        vals = {
+            'repo_url': prod_repo.repo_url, 'branch': branch,
+            'github_token': prod_repo.sudo().github_token or False,
+            'webhook_enabled': prod_repo.webhook_enabled, 'state': 'pending',
+        }
+        child_repo = self.repo_ids[:1]
+        if child_repo:
+            child_repo.write(vals)
+        else:
+            child_repo = self.env['saas.instance.repo'].sudo().create(
+                {**vals, 'instance_id': self.id})
+            if child_repo.webhook_enabled and child_repo.sudo().github_token:
+                try:
+                    child_repo._register_webhook_with_retry()
+                except Exception as e:
+                    self._append_log("Webhook registration deferred: %s" % e)
+        self._append_log("Linked to branch '%s'%s." % (
+            branch, " (created from %s)" % main_branch if create else ""))
+        redeployed = False
+        if self.state in ('running', 'stopped'):
+            try:
+                self.action_redeploy()
+                redeployed = True
+            except Exception:
+                _logger.exception("Redeploy after branch link failed for %s",
+                                  self.subdomain)
+        return {'branch': branch, 'redeployed': redeployed}
 
     def action_delete_environment(self, delete_branch=False):
         """Remove a Staging/Development server, FREEING its reserved slot for

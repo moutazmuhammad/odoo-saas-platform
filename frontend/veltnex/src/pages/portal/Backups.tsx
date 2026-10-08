@@ -61,6 +61,22 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
     load();
   }, [load]);
 
+  const [disableOpen, setDisableOpen] = React.useState(false);
+  const [disabling, setDisabling] = React.useState(false);
+  const disableDailyBackup = async () => {
+    setDisabling(true);
+    try {
+      await api.dailyBackupDisable(instanceId);
+      toast.success(i18nText("Daily backups switched off"));
+      setDisableOpen(false);
+      await load();
+    } catch (e) {
+      toast.error(i18nText("Couldn't switch daily backups off"), e instanceof ApiError ? e.message : i18nText("Please try again."));
+    } finally {
+      setDisabling(false);
+    }
+  };
+
   const enableDailyBackup = async () => {
     setEnabling(true);
     try {
@@ -124,6 +140,7 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
               onEnable={enableDailyBackup}
               onCheckout={() => (window.location.href = `/my/instances/${id}/daily-backup/checkout`)}
               onBilling={() => navigate("/my/billing")}
+              onDisable={() => setDisableOpen(true)}
             />
           )}
 
@@ -189,6 +206,14 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
       ) : null}
         </>
       )}
+
+      <Dialog open={disableOpen} onClose={() => setDisableOpen(false)} title={i18nText("Switch daily backups off?")}>
+        <p className="text-sm text-muted">{i18nText("Daily backups stop immediately and the existing automatic backups are removed. The current period is not refunded. Your snapshots are not affected, and you can switch backups back on at any time.")}</p>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setDisableOpen(false)} disabled={disabling}>{i18nText("Keep backups")}</Button>
+          <ActionButton variant="danger" loading={disabling} loadingText={i18nText("Switching off…")} onClick={disableDailyBackup}>{i18nText("Switch off")}</ActionButton>
+        </div>
+      </Dialog>
 
       <RestoreSnapshotDialog
         backup={restoreTarget}
@@ -276,12 +301,14 @@ function DailyBackupCard({
   onEnable,
   onCheckout,
   onBilling,
+  onDisable,
 }: {
   instance: ApiInstance;
   enabling: boolean;
   onEnable: () => void;
   onCheckout: () => void;
   onBilling: () => void;
+  onDisable: () => void;
 }) {
   const price = instance.daily_backup_price || 0;
   const next = instance.daily_backup_next_invoice_date;
@@ -296,10 +323,11 @@ function DailyBackupCard({
           </span>
           <div>
             <p className="font-medium">{i18nText("Daily backups are on")}</p>
-            <p className="text-xs text-muted">{i18nText("Billed monthly by used storage")}{price > 0 ? i18nText(" · currently {0}/month", [price]) : ""}{next ? i18nText(" · next charge {0}", [formatDate(next)]) : ""}.
+            <p className="text-xs text-muted">{i18nText("Billed with your plan")}{price > 0 ? i18nText(" · currently {0}/month", [price]) : ""}{next ? i18nText(" · next charge {0}", [formatDate(next)]) : ""}.
             </p>
           </div>
         </div>
+        <Button variant="ghost" className="shrink-0 text-muted" onClick={onDisable}>{i18nText("Switch off")}</Button>
       </Card>
     );
   }
@@ -317,7 +345,10 @@ function DailyBackupCard({
             <p className="text-xs text-muted">{i18nText("Your monthly backup invoice is overdue. Backups resume automatically once it's paid.")}</p>
           </div>
         </div>
-        <Button variant="secondary" className="shrink-0" onClick={onBilling}>{i18nText("Go to billing")}</Button>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="ghost" className="text-muted" onClick={onDisable}>{i18nText("Switch off")}</Button>
+          <Button variant="secondary" onClick={onBilling}>{i18nText("Go to billing")}</Button>
+        </div>
       </Card>
     );
   }

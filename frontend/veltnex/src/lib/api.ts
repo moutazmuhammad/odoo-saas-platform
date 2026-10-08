@@ -820,6 +820,8 @@ export const api = {
     rpc<DbOperationStatus>(`/saas/api/v1/instances/${id}/databases/operation/${opId}`),
   dbBackup: (id: number, name: string, format: "zip" | "dump" = "zip") =>
     rpc<{ backup_id: number }>(`/saas/api/v1/instances/${id}/databases/backup`, { name, format }),
+  dailyBackupDisable: (id: number) =>
+    rpc<{ daily_backup_enabled: boolean }>(`/saas/api/v1/instances/${id}/daily-backup/disable`),
   dailyBackupEnable: (id: number) =>
     rpc<{ checkout_url: string }>(`/saas/api/v1/instances/${id}/daily-backup/enable`),
   setRepo: (

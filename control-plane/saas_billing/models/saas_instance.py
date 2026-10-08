@@ -824,6 +824,49 @@ class SaasInstance(models.Model):
             'price_unit': support.monthly_price,
         })
 
+    def action_disable_daily_backup(self):
+        """Switch daily backups off, at any time, from the portal.
+
+        No refund: the prepaid period simply isn't renewed (the add-on line
+        disappears from the next renewal). The nightly job is removed, an
+        unpaid activation/renewal invoice for the add-on is cancelled, and
+        the existing automatic backups are deleted — they are part of the
+        add-on. Customer snapshots are a separate service and untouched."""
+        self.ensure_one()
+        pending = self.daily_backup_pending_invoice_id
+        if pending and pending.state == 'posted' and pending.payment_state not in ('paid', 'in_payment'):
+            try:
+                pending.button_cancel()
+            except Exception:
+                _logger.exception("Could not cancel backup add-on invoice %s", pending.id)
+        was_on = self.daily_backup_enabled
+        self.write({
+            'daily_backup_enabled': False,
+            'daily_backup_suspended': False,
+            'daily_backup_pending_invoice_id': False,
+            'daily_backup_next_invoice_date': False,
+        })
+        if was_on and self.docker_server_id:
+            try:
+                self._sync_scheduled_backup()
+            except Exception:
+                _logger.exception("Could not remove the backup schedule for %s", self.subdomain)
+        Backup = self.env['saas.instance.backup'].sudo()
+        old = Backup.search([('instance_id', '=', self.id), ('is_full_instance', '=', True),
+                             ('source', '=', 'scheduled')])
+        for b in old:
+            if b.bucket_path:
+                try:
+                    Backup._delete_bucket_prefix(b.bucket_path)
+                except Exception:
+                    _logger.exception("Could not delete backup data %s", b.bucket_path)
+        old.with_context(skip_bucket_delete=True).unlink()
+        self._append_log("Daily backups switched off by the customer (%d backup(s) removed)." % len(old))
+        self.env['saas.audit.log'].saas_audit(
+            'daily_backup_disable', model='saas.instance', res_id=self.id,
+            res_name=self.subdomain, detail='Daily backups disabled from the portal')
+        return True
+
     def _snapshot_order_line(self, period=None):
         """Sale-order line tuple for the daily-backup add-on over ONE billing
         period, or None. The add-on now follows the SUBSCRIPTION's period

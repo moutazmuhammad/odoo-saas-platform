@@ -34,7 +34,8 @@ describe("Snapshots", () => {
     expect(await screen.findByText("before-upgrade")).toBeInTheDocument();
     expect(screen.getByText("old-shop")).toBeInTheDocument();
     expect(screen.getByText(/project deleted/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /overdue — pay now/i })).toBeInTheDocument();
+    expect(screen.getByText(/your snapshot invoice is overdue/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /pay invoice/i })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /new project/i })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: /restore/i })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: /take snapshot/i })).not.toBeInTheDocument();

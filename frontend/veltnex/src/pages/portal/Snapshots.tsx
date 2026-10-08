@@ -89,6 +89,8 @@ export default function Snapshots({ embedId }: { embedId?: number } = {}) {
   };
 
   const monthlyTotal = (rows || []).filter((b) => b.status === "available").reduce((s, b) => s + (b.monthly_price || 0), 0);
+  const pendingRow = (rows || []).find((b) => b.pending_invoice_id && (b.billing_state === "pending" || b.billing_state === "overdue"));
+  const openInvoice = pendingRow && pendingRow.pending_invoice_id ? { id: pendingRow.pending_invoice_id, overdue: pendingRow.billing_state === "overdue" } : null;
   const currency = rows?.find((b) => b.currency)?.currency || "USD";
 
   return (
@@ -112,6 +114,17 @@ export default function Snapshots({ embedId }: { embedId?: number } = {}) {
         <p className="mt-4 text-sm text-muted">
           {i18nText("Current snapshot charges: {0} per month.", [money(monthlyTotal, currency)])}
         </p>
+      )}
+      {openInvoice && (
+        <AlertBanner
+          className="mt-4"
+          variant={openInvoice.overdue ? "danger" : "warning"}
+          title={openInvoice.overdue ? i18nText("Your snapshot invoice is overdue") : i18nText("Your snapshot invoice is ready")}
+          description={openInvoice.overdue
+            ? i18nText("Pay it now to keep your snapshots; unpaid snapshots are deleted after the grace period.")
+            : i18nText("One invoice covers all your snapshots for the coming month. Add a payment method in Billing to pay it automatically.")}
+          action={<Button size="sm" onClick={() => navigate(`/my/billing/${openInvoice.id}`)}><Receipt className="size-4" />{i18nText("Pay invoice")}</Button>}
+        />
       )}
 
       {error ? (
@@ -154,10 +167,10 @@ export default function Snapshots({ embedId }: { embedId?: number } = {}) {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  {(b.billing_state === "pending" || b.billing_state === "overdue") && b.pending_invoice_id ? (
-                    <Button size="sm" variant={b.billing_state === "overdue" ? "danger" : "secondary"} onClick={() => navigate(`/my/billing/${b.pending_invoice_id}`)}>
-                      <Receipt className="size-4" />{b.billing_state === "overdue" ? i18nText("Overdue — pay now") : i18nText("Pay invoice")}
-                    </Button>
+                  {b.billing_state === "pending" || b.billing_state === "overdue" ? (
+                    <span className={b.billing_state === "overdue" ? "text-xs font-medium text-danger" : "text-xs text-muted"}>
+                      {b.billing_state === "overdue" ? i18nText("Overdue") : i18nText("Awaiting payment")}
+                    </span>
                   ) : (
                     <StatusBadge status={b.status} />
                   )}

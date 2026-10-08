@@ -2628,5 +2628,17 @@
   "You have reached the limit of {0} snapshots for this server. Delete one to take another.": "وصلت إلى الحد الأقصى وهو {0} لقطات لهذا الخادم. احذف واحدة لالتقاط أخرى.",
   "Pay & take snapshot": "ادفع والتقط اللقطة",
   "Automatic daily backups of your whole server, kept for 7 days. {0}% of your plan price, billed with every renewal.": "نسخ احتياطية يومية تلقائية لخادمك بالكامل، تُحفظ 7 أيام. {0}% من سعر خطتك، تُحتسب مع كل تجديد.",
-  "— {0}% of plan: ": "— {0}% من الخطة: "
+  "— {0}% of plan: ": "— {0}% من الخطة: ",
+  "Your snapshot invoice is overdue": "فاتورة اللقطات متأخرة",
+  "Your snapshot invoice is ready": "فاتورة اللقطات جاهزة",
+  "Pay it now to keep your snapshots; unpaid snapshots are deleted after the grace period.": "ادفعها الآن للاحتفاظ بلقطاتك؛ تُحذف اللقطات غير المدفوعة بعد فترة السماح.",
+  "One invoice covers all your snapshots for the coming month. Add a payment method in Billing to pay it automatically.": "فاتورة واحدة تغطي كل لقطاتك للشهر القادم. أضف وسيلة دفع في الفوترة لتُدفع تلقائيًا.",
+  "Daily backups switched off": "تم إيقاف النسخ الاحتياطي اليومي",
+  "Couldn't switch daily backups off": "تعذّر إيقاف النسخ الاحتياطي اليومي",
+  "Switch daily backups off?": "إيقاف النسخ الاحتياطي اليومي؟",
+  "Daily backups stop immediately and the existing automatic backups are removed. The current period is not refunded. Your snapshots are not affected, and you can switch backups back on at any time.": "يتوقف النسخ الاحتياطي اليومي فورًا وتُحذف النسخ التلقائية الحالية. لا تُسترد الفترة الحالية. لقطاتك لا تتأثر، ويمكنك إعادة التفعيل في أي وقت.",
+  "Keep backups": "إبقاء النسخ الاحتياطي",
+  "Switching off…": "جارٍ الإيقاف…",
+  "Switch off": "إيقاف",
+  "Billed with your plan": "تُحتسب مع خطتك"
 }

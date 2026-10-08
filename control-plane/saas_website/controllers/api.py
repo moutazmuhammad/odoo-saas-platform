@@ -1282,6 +1282,24 @@ class SaasApi(http.Controller):
             'output': op.output_log or '',
         })
 
+    @http.route('/saas/api/v1/instances/<int:instance_id>/daily-backup/disable',
+                type='json', auth='public')
+    def daily_backup_disable(self, instance_id, access_token=None, **kw):
+        """Switch daily backups off (no refund; existing automatic backups
+        are removed; snapshots are untouched)."""
+        try:
+            instance = self._instance(instance_id, access_token, write=True, permission='billing.manage')
+        except (AccessError, MissingError):
+            return err(_("Instance not found."), 'not_found')
+        try:
+            instance.action_disable_daily_backup()
+        except UserError as e:
+            return err(str(e), 'error')
+        except Exception:
+            _logger.exception("Daily backup disable failed for %s", instance_id)
+            return err(_("Couldn't switch daily backups off. Please try again."), 'error')
+        return ok({'daily_backup_enabled': False})
+
     @http.route('/saas/api/v1/instances/<int:instance_id>/daily-backup/enable',
                 type='json', auth='public')
     def daily_backup_enable(self, instance_id, access_token=None, **kw):

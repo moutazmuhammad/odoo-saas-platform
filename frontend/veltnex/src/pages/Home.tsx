@@ -198,8 +198,8 @@ function TrustStrip({ hosting }: { hosting: boolean }) {
     { label: "Bitbucket", icon: BitbucketIcon },
   ];
   const facts = hosting
-    ? [i18nText("Any Odoo version"), i18nText("Community & Enterprise")]
-    : [i18nText("Any Odoo version"), i18nText("Community & Enterprise"), i18nText("Daily backups"), i18nText("Free SSL")];
+    ? [i18nText("Odoo 14 → 20"), i18nText("Community & Enterprise")]
+    : [i18nText("Odoo 14 → 20"), i18nText("Community & Enterprise"), i18nText("Daily backups"), i18nText("Free SSL")];
   return (
     <section className="border-y border-border bg-card/30">
       <Container className="flex flex-wrap items-center justify-center gap-x-10 gap-y-3 py-5">
@@ -510,12 +510,12 @@ function Versions() {
       <Container>
         <SectionHeading
           eyebrow={i18nText("Version freedom")}
-          title={i18nText("Any Odoo version. Your choice.")}
+          title={i18nText("Odoo 14 to 20. Your choice.")}
           subtitle={i18nText("Keep the version you rely on, or start on the latest. Upgrade when it suits you, not when it suits us.")}
         />
         <div className="mx-auto mt-10 grid max-w-3xl gap-4 sm:grid-cols-3">
           {[
-            { title: i18nText("Any version"), text: i18nText("From the release you run today to the newest one.") },
+            { title: i18nText("Odoo 14 to 20"), text: i18nText("From the release you run today to the newest one.") },
             { title: i18nText("Community & Enterprise"), text: i18nText("Bring your Enterprise subscription or start with Community.") },
             { title: i18nText("Upgrade on your terms"), text: i18nText("Stay where you are, or move up when your business is ready.") },
           ].map((v) => (
@@ -583,7 +583,7 @@ function FinalCta({ hosting, services }: { hosting: boolean; services: boolean }
     { value: "99.9%", label: i18nText("Uptime target") },
     { value: i18nText("Daily"), label: i18nText("Automatic backups") },
     { value: i18nText("Free"), label: i18nText("TLS certificates") },
-    { value: i18nText("Any"), label: i18nText("Odoo version") },
+    { value: "14 → 20", label: i18nText("Odoo versions") },
   ];
   return (
     <section className="relative overflow-hidden border-t border-border">

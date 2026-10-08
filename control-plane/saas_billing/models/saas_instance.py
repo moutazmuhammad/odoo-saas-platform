@@ -1014,33 +1014,211 @@ class SaasInstance(models.Model):
             billing=period,
             region=anchor.region_id.id if anchor.region_id else None)
 
+    def _env_size_price(self, workers, storage, period=None):
+        """Price of a Staging/Development server sized ``workers``/``storage``
+        for ``period``: the hosting engine price for that size, region-scaled,
+        × env_price_factor — never below the lowest-spec env price."""
+        self.ensure_one()
+        anchor = self._env_anchor()
+        period = period or anchor.billing_period or 'monthly'
+        floor = self._env_server_price(period)
+        engine = self.env['saas.pricing.engine']
+        quote = engine.compute(
+            'hosting', int(workers or 0), float(storage or 0), billing=period,
+            region=anchor.region_id.id if anchor.region_id else None)
+        return max(floor, round((quote.get('total') or 0.0) * engine.env_price_factor(), 2))
+
+    def _env_child_price(self, period=None):
+        """Recurring price of THIS Staging/Development server: the lowest-spec
+        price while it runs the shared environment plan, otherwise the price of
+        its own (upgraded) size."""
+        self.ensure_one()
+        plan = self.plan_id
+        if not plan or plan.name == self.ENV_PLAN_NAME:
+            return self._env_server_price(period)
+        return self._env_size_price(plan.workers, plan.storage_limit, period)
+
+    def _env_live_children(self, env_type):
+        return self.child_env_ids.filtered(
+            lambda c: c.environment == env_type
+            and c.state not in ('cancelled', 'cancelled_by_client')).sorted('id')
+
     def _environment_order_lines(self, period):
-        """Recurring SO lines for the project's purchased Staging/Development
-        SLOTS — one line per slot at the lowest-spec env price. Billing
-        follows the entitlement (what the customer paid for), not how many
-        children they've actually spun up: creating within the slots is
-        free, so renewal must bill slots, not live servers. Only meaningful
-        on the Production anchor; children never self-bill."""
+        """Recurring SO lines for the project's Staging/Development servers.
+        Billing follows the entitlement (purchased SLOTS): every slot is
+        billed — a slot holding a live server at that server's own size
+        (upgraded servers cost more), an empty slot at the lowest-spec price.
+        Only meaningful on the Production anchor; children never self-bill."""
         self.ensure_one()
         if self.environment != 'production':
             return []
-        price = self._env_server_price(period)
-        if price <= 0:
-            return []
+        base_price = self._env_server_price(period)
         labels = dict(self._fields['environment'].selection)
         period_label = 'Yearly' if period == 'yearly' else 'Monthly'
         lines = []
         for env_type, count in (('staging', self.staging_slots or 0),
                                 ('development', self.dev_slots or 0)):
+            children = list(self._env_live_children(env_type))
             for i in range(max(0, count)):
+                child = children[i] if i < len(children) else None
+                price = child._env_child_price(period) if child else base_price
+                if price <= 0:
+                    continue
+                name = _('%s slot #%d (%s)') % (
+                    labels.get(env_type, env_type), i + 1, period_label)
+                if child and child.plan_id and child.plan_id.name != self.ENV_PLAN_NAME:
+                    name = _('%s slot #%d — %s, %dW / %dGB (%s)') % (
+                        labels.get(env_type, env_type), i + 1,
+                        child.subdomain, child.plan_id.workers,
+                        int(child.plan_id.storage_limit), period_label)
                 lines.append((0, 0, {
                     'product_id': self._get_billing_product().id,
-                    'name': _('%s slot #%d (%s)') % (
-                        labels.get(env_type, env_type), i + 1, period_label),
+                    'name': name,
                     'product_uom_qty': 1,
                     'price_unit': price,
                 }))
         return lines
+
+    # ---------- Staging/Development server resize (option: pay for more) ----
+
+    def _env_plan_change_quote(self, workers, storage, period=None):
+        """What changing THIS Staging/Development server to ``workers`` /
+        ``storage`` costs: the recurring price before/after and the prorated
+        charge for the rest of the Production billing cycle."""
+        self.ensure_one()
+        anchor = self._env_anchor()
+        period = period or anchor.billing_period or 'monthly'
+        current = self._env_child_price(period)
+        new = self._env_size_price(workers, storage, period)
+        diff = round(new - current, 2)
+        charge = max(0.0, diff)
+        remaining_days = total_days = 0
+        if diff > 0 and anchor.next_invoice_date and anchor.last_invoice_date:
+            total_days = (anchor.next_invoice_date - anchor.last_invoice_date).days
+            remaining_days = (anchor.next_invoice_date - fields.Date.today()).days
+            if total_days > 0 and 0 < remaining_days < total_days:
+                charge = round(diff * remaining_days / total_days, 2)
+        return {
+            'period': period,
+            'current_price': current,
+            'new_price': new,
+            'difference': diff,
+            'charge_now': charge,
+            'remaining_days': remaining_days,
+            'total_days': total_days,
+        }
+
+    def action_change_environment_plan(self, new_plan_id):
+        """Resize a Staging/Development server to ``new_plan`` (a hosting plan
+        sized by the customer). Bigger: the prorated difference for the rest
+        of the Production cycle is invoiced (wallet, then saved card, then
+        checkout); the new size is applied when it is paid, and the next
+        Production renewal bills the server at its new price. Smaller or
+        equal price: applied now, no refund (the cycle was already paid).
+        Storage can never shrink."""
+        self.ensure_one()
+        if self.environment not in ('staging', 'development'):
+            raise UserError(_("Only Staging and Development servers are resized here."))
+        anchor = self.parent_id
+        if not anchor or anchor.is_trial:
+            raise UserError(_("Upgrade the project to a paid plan before resizing servers."))
+        if self.state not in ('running', 'stopped'):
+            raise UserError(_("The server must be running or stopped to change its plan."))
+        new_plan = self.env['saas.plan'].sudo().browse(int(new_plan_id))
+        if not new_plan.exists() or new_plan.is_trial_plan:
+            raise UserError(_("Invalid plan."))
+        self.env.cr.execute(
+            "SELECT id FROM saas_instance WHERE id = %s FOR UPDATE NOWAIT", (self.id,))
+        if self.pending_plan_id:
+            raise UserError(_(
+                "A plan change is already awaiting payment for this server."))
+        old_plan = self.plan_id
+        if old_plan and new_plan.storage_limit < old_plan.storage_limit:
+            raise UserError(_("Storage cannot be reduced."))
+        if old_plan == new_plan:
+            raise UserError(_("That is already this server's plan."))
+        quote = self._env_plan_change_quote(new_plan.workers, new_plan.storage_limit)
+        label = dict(self._fields['environment'].selection).get(
+            self.environment, self.environment)
+        if quote['charge_now'] <= 0:
+            self._apply_env_plan(new_plan, 'no charge')
+            return {'applied': True, 'charge': 0.0}
+
+        pricelist = self.partner_id.property_product_pricelist
+        order_lines = [(0, 0, {
+            'product_id': self._get_billing_product().id,
+            'name': _('%s server %s: %dW / %dGB (prorated difference, %d of %d days)') % (
+                label, self.subdomain, new_plan.workers, int(new_plan.storage_limit),
+                quote['remaining_days'] or quote['total_days'] or 0,
+                quote['total_days'] or 0),
+            'product_uom_qty': 1,
+            'price_unit': quote['charge_now'],
+        })]
+        wallet_line, wallet_amount = self._wallet_credit_line(order_lines)
+        if wallet_line:
+            order_lines.append(wallet_line)
+        order_vals = {
+            'partner_id': self.partner_id.id,
+            'origin': ORIGIN_PLAN_UPGRADE % self.name,
+            'order_line': order_lines,
+        }
+        if pricelist:
+            order_vals['pricelist_id'] = pricelist.id
+        order = self.env['sale.order'].sudo().create(order_vals)
+        order.action_confirm()
+        invoice = order._create_invoices()
+        invoice.action_post()
+        self._wallet_settle_consumption(invoice, wallet_amount)
+        self.write({
+            'pending_plan_id': new_plan.id,
+            'pending_billing_period': self.billing_period or anchor.billing_period,
+            'pending_change_invoice_id': invoice.id,
+            'sale_order_id': order.id,
+        })
+        self._append_log(
+            "%s server resize to %s — invoice %s (%.2f)."
+            % (label, new_plan.name, invoice.name, quote['charge_now']))
+        if invoice.amount_total <= 0:
+            self._apply_pending_plan_change()
+            return {'applied': True, 'charge': quote['charge_now']}
+        if anchor._auto_renew_method() and anchor._try_auto_charge_invoice(
+                invoice, kind='subscription'):
+            return {'applied': True, 'charge': quote['charge_now']}
+        return {
+            'applied': False,
+            'charge': quote['charge_now'],
+            'invoice_id': invoice.id,
+            'checkout_url': '/my/instances/%s/checkout' % self.id,
+        }
+
+    def _apply_env_plan(self, new_plan, how):
+        """Put a Staging/Development server on ``new_plan`` and resize its
+        workload. Children keep NO billing cycle of their own — the next
+        Production renewal bills the new price."""
+        self.ensure_one()
+        old_plan = self.plan_id
+        self.write({
+            'plan_id': new_plan.id,
+            'pending_plan_id': False,
+            'pending_billing_period': False,
+            'pending_change_invoice_id': False,
+            'pending_wallet_credit': 0.0,
+        })
+        self._append_log("Plan changed: %s -> %s (%s)." % (
+            old_plan.name if old_plan else 'None', new_plan.name, how))
+        self.env['saas.audit.log'].saas_audit(
+            'instance_scale', model='saas.instance', res_id=self.id,
+            res_name=self.subdomain,
+            detail='Plan %s -> %s (%s)' % (
+                old_plan.name if old_plan else 'None', new_plan.name, how))
+        if self.state in ('running', 'stopped', 'suspended'):
+            try:
+                self._update_container_resources()
+            except Exception as e:
+                _logger.exception(
+                    "Failed to update container resources for %s", self.subdomain)
+                self._append_log(
+                    "WARNING: Plan updated but resource update failed: %s" % e)
 
     def _initial_environment_order_lines(self, period, period_label):
         """Initial-invoice lines for the env servers chosen at checkout
@@ -2757,6 +2935,12 @@ class SaasInstance(models.Model):
         new_plan = self.pending_plan_id
         if not new_plan:
             return
+        if self.parent_id and self.environment in ('staging', 'development'):
+            # A Staging/Development server: no cycle of its own to keep or
+            # reset — just switch the plan and resize the workload.
+            self.message_post(body=_(
+                "Payment confirmed. Server resized to %s.") % new_plan.name)
+            return self._apply_env_plan(new_plan, 'payment received')
 
         billing_period = self.pending_billing_period or self.billing_period or 'monthly'
         old_plan = self.plan_id

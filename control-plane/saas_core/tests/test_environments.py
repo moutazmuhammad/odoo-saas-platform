@@ -153,6 +153,114 @@ class TestEnvironments(TransactionCase):
         prod.write({'dev_slots': 0})
         self.assertEqual(len(prod._environment_order_lines('monthly')), 1)
 
+    def test_upgraded_child_is_billed_at_its_own_size(self):
+        """A resized Staging server's slot renews at that server's own price;
+        an empty slot stays at the lowest-spec price."""
+        prod = self._mk_prod('pbig', due=date(2026, 2, 1), last=date(2026, 1, 1))
+        prod.write({'staging_slots': 2})
+        child = self._mk_child(prod, 'staging', sub='pbig-stg')
+        big = self.env['saas.plan'].sudo().create({
+            'name': 'Hosting (6W / 80GB)', 'is_custom': True, 'workers': 6,
+            'storage_limit': 80, 'cpu_limit': 3.0, 'ram_limit': '3g',
+            'price': 84.0, 'yearly_price': 806.4,
+            'currency_id': self.env.company.currency_id.id,
+            'saas_product_ids': [(6, 0, [self.product.id])]})
+        child.plan_id = big
+        lines = prod._environment_order_lines('monthly')
+        self.assertEqual(len(lines), 2)
+        base = prod._env_server_price('monthly')
+        own = child._env_child_price('monthly')
+        self.assertGreater(own, base)
+        self.assertAlmostEqual(own, child._env_size_price(6, 80, 'monthly'), 2)
+        self.assertAlmostEqual(lines[0][2]['price_unit'], own, 2)
+        self.assertIn('pbig-stg', lines[0][2]['name'])
+        self.assertAlmostEqual(lines[1][2]['price_unit'], base, 2)
+
+    def test_child_on_env_plan_costs_the_lowest_spec_price(self):
+        prod = self._mk_prod('plow', due=date(2026, 2, 1), last=date(2026, 1, 1))
+        child = self._mk_child(prod, 'development', sub='plow-dev')
+        child.plan_id = prod._get_env_plan()
+        self.assertAlmostEqual(child._env_child_price('monthly'),
+                               prod._env_server_price('monthly'), 2)
+
+    def test_env_plan_change_quote_prorates_on_the_production_cycle(self):
+        today = date.today()
+        prod = self._mk_prod('pquote', due=today + timedelta(days=10),
+                             last=today - timedelta(days=20))
+        child = self._mk_child(prod, 'staging', sub='pquote-stg')
+        child.plan_id = prod._get_env_plan()
+        q = child._env_plan_change_quote(6, 80)
+        self.assertGreater(q['difference'], 0)
+        self.assertAlmostEqual(q['charge_now'], round(q['difference'] * 10 / 30, 2), 2)
+        # Same size: nothing to pay.
+        same = child._env_plan_change_quote(child.plan_id.workers, child.plan_id.storage_limit)
+        self.assertEqual(same['charge_now'], 0.0)
+
+    def test_env_plan_upgrade_invoices_the_difference_and_applies_on_payment(self):
+        today = date.today()
+        prod = self._mk_prod('pup', due=today + timedelta(days=15),
+                             last=today - timedelta(days=15))
+        child = self._mk_child(prod, 'staging', sub='pup-stg')
+        child.plan_id = prod._get_env_plan()
+        big = self.env['saas.plan'].sudo().create({
+            'name': 'Hosting (6W / 80GB) up', 'is_custom': True, 'workers': 6,
+            'storage_limit': 80, 'cpu_limit': 3.0, 'ram_limit': '3g',
+            'price': 84.0, 'yearly_price': 806.4,
+            'currency_id': self.env.company.currency_id.id,
+            'saas_product_ids': [(6, 0, [self.product.id])]})
+        resized = []
+        with patch.object(type(child), '_update_container_resources',
+                          lambda self: resized.append(self.id)), \
+                patch.object(type(prod), '_auto_renew_method', lambda self: False):
+            result = child.action_change_environment_plan(big.id)
+            self.assertFalse(result['applied'])
+            self.assertIn('/checkout', result['checkout_url'])
+            self.assertEqual(child.pending_plan_id, big)
+            self.assertEqual(child.plan_id, prod._get_env_plan(), "not applied before payment")
+            invoice = child.pending_change_invoice_id
+            self.assertAlmostEqual(invoice.amount_total, result['charge'], 2)
+            self.assertTrue(invoice.invoice_origin.startswith('SAAS:UPGRADE:'))
+            # Payment: the account.move hook calls _apply_pending_plan_change.
+            child._apply_pending_plan_change()
+        self.assertEqual(child.plan_id, big)
+        self.assertFalse(child.pending_plan_id)
+        self.assertFalse(child.next_invoice_date, "children never get their own cycle")
+        self.assertEqual(resized, [child.id])
+        # A second request while one is pending is refused.
+        child.pending_plan_id = big
+        with self.assertRaisesRegex(UserError, 'awaiting payment'):
+            child.action_change_environment_plan(big.id)
+
+    def test_env_plan_downgrade_applies_now_but_never_shrinks_storage(self):
+        prod = self._mk_prod('pdown', due=date(2026, 2, 1), last=date(2026, 1, 1))
+        child = self._mk_child(prod, 'development', sub='pdown-dev')
+        Plan = self.env['saas.plan'].sudo()
+        big = Plan.create({
+            'name': 'Hosting (6W / 80GB) dn', 'is_custom': True, 'workers': 6,
+            'storage_limit': 80, 'cpu_limit': 3.0, 'ram_limit': '3g',
+            'price': 84.0, 'yearly_price': 806.4,
+            'currency_id': self.env.company.currency_id.id,
+            'saas_product_ids': [(6, 0, [self.product.id])]})
+        smaller = Plan.create({
+            'name': 'Hosting (3W / 80GB) dn', 'is_custom': True, 'workers': 3,
+            'storage_limit': 80, 'cpu_limit': 1.5, 'ram_limit': '2g',
+            'price': 54.0, 'yearly_price': 518.4,
+            'currency_id': self.env.company.currency_id.id,
+            'saas_product_ids': [(6, 0, [self.product.id])]})
+        child.plan_id = big
+        with patch.object(type(child), '_update_container_resources', lambda self: None):
+            with self.assertRaisesRegex(UserError, 'Storage cannot be reduced'):
+                child.action_change_environment_plan(prod._get_env_plan().id)
+            result = child.action_change_environment_plan(smaller.id)
+        self.assertTrue(result['applied'])
+        self.assertEqual(child.plan_id, smaller)
+        self.assertFalse(child.pending_change_invoice_id)
+
+    def test_production_cannot_use_the_env_resize(self):
+        prod = self._mk_prod('pnot')
+        with self.assertRaises(UserError):
+            prod.action_change_environment_plan(self.plan.id)
+
     def test_renewal_invoice_includes_environment_lines(self):
         prod = self._mk_prod('prenew', due=date(2026, 1, 1),
                              last=date(2025, 12, 1))

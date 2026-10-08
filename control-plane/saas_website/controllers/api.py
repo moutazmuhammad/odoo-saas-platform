@@ -1772,6 +1772,89 @@ class SaasApi(http.Controller):
             return err(str(e), 'error')
         return ok({'deleted': True})
 
+    def _env_child_for_plan(self, instance_id, child_id):
+        partner = self._partner()
+        if not partner:
+            return None, err(_("Please sign in."), 'auth_required')
+        prod, error = self._project_anchor(instance_id, permission='billing.manage')
+        if error:
+            return None, error
+        child = request.env['saas.instance'].sudo().browse(child_id)
+        if not child.exists() or child.environment == 'production' \
+                or child.parent_id != prod \
+                or not self._can_manage_instance(child, 'billing.manage'):
+            return None, err(_("Environment not found."), 'not_found')
+        return child, None
+
+    def _env_plan_size(self, child, workers, storage):
+        """Clamp a requested Staging/Development size to the hosting
+        configurator's limits (same bounds as Production)."""
+        config = SaasWebsite()._get_hosting_plan_config()
+        try:
+            workers = int(workers or 0)
+            storage = int(storage or 0)
+        except (TypeError, ValueError):
+            raise UserError(_("Please choose valid workers and storage."))
+        workers = max(config['min_workers'], min(workers, config['max_workers']))
+        storage = max(config['min_storage'], min(storage, config['max_storage']))
+        return workers, storage, config
+
+    @http.route('/saas/api/v1/instances/<int:instance_id>/environments/'
+                '<int:child_id>/plan-preview', type='json', auth='public')
+    def environment_plan_preview(self, instance_id, child_id, workers=None, storage=None):
+        """Current size/price of a Staging/Development server and what a new
+        size would cost (recurring + the prorated charge now)."""
+        child, error = self._env_child_for_plan(instance_id, child_id)
+        if error:
+            return error
+        plan = child.plan_id
+        cur_workers = plan.workers if plan else 0
+        cur_storage = int(plan.storage_limit) if plan else 0
+        try:
+            new_workers, new_storage, config = self._env_plan_size(
+                child, workers if workers is not None else cur_workers,
+                storage if storage is not None else cur_storage)
+        except UserError as e:
+            return err(str(e), 'invalid')
+        quote = child._env_plan_change_quote(new_workers, new_storage)
+        return ok({
+            'current': {'workers': cur_workers, 'storage_gb': cur_storage,
+                        'price': quote['current_price']},
+            'new': {'workers': new_workers, 'storage_gb': new_storage,
+                    'price': quote['new_price']},
+            'period': quote['period'],
+            'charge_now': quote['charge_now'],
+            'remaining_days': quote['remaining_days'],
+            'total_days': quote['total_days'],
+            'currency': config.get('currency') or request.env.company.currency_id.name,
+            'limits': {
+                'workers': {'min': config['min_workers'], 'max': config['max_workers']},
+                'storage': {'min': config['min_storage'], 'max': config['max_storage']},
+            },
+            'pending_plan': child.pending_plan_id.name if child.pending_plan_id else '',
+        })
+
+    @http.route('/saas/api/v1/instances/<int:instance_id>/environments/'
+                '<int:child_id>/change-plan', type='json', auth='public')
+    def environment_change_plan(self, instance_id, child_id, workers=None, storage=None):
+        """Resize a Staging/Development server. Returns ``applied`` or a
+        ``checkout_url`` for the prorated difference."""
+        child, error = self._env_child_for_plan(instance_id, child_id)
+        if error:
+            return error
+        try:
+            new_workers, new_storage, config = self._env_plan_size(child, workers, storage)
+            plan = SaasWebsite()._get_or_create_hosting_plan(
+                child.saas_product_id, new_workers, new_storage, config,
+                region=child._env_anchor().region_id or None)
+            result = child.action_change_environment_plan(plan.id)
+        except (UserError, ValidationError) as e:
+            return err(str(e), 'error')
+        except Exception:
+            _logger.exception("Env plan change failed for %s", child_id)
+            return err(_("Couldn't change the server's plan. Please try again."), 'error')
+        return ok(result)
+
     @http.route('/saas/api/v1/instances/<int:instance_id>/environments/merge',
                 type='json', auth='public')
     def environment_merge(self, instance_id, source_id=None, target_id=None):
@@ -1932,6 +2015,9 @@ class SaasApi(http.Controller):
             'is_production': inst.environment == 'production',
             'pending_payment': inst.state == 'pending_payment',
             'pending_invoice_id': inst.env_pending_invoice_id.id or False,
+            'workers': inst.plan_id.workers if inst.plan_id else 0,
+            'storage_gb': int(inst.plan_id.storage_limit) if inst.plan_id else 0,
+            'pending_plan': inst.pending_plan_id.name if inst.pending_plan_id else '',
             **inst._runtime_status_dict(),
         }
 

@@ -131,7 +131,7 @@ kubectl get clusterissuer letsencrypt-prod      # READY True
 
 ## 5. The Odoo operator
 
-The operator image is public on Docker Hub (`docker.io/moutazmuhammad/odoo-saas-operator`, the tag in `compute/charts/odoo-operator/values.yaml`: 0.1.31, chart 0.4.18). Helm doesn't install or upgrade CRDs from `crds/` on upgrades, so apply them first:
+The operator image is public on Docker Hub (`docker.io/moutazmuhammad/odoo-saas-operator`, the tag in `compute/charts/odoo-operator/values.yaml`: 0.1.32, chart 0.4.19). Helm doesn't install or upgrade CRDs from `crds/` on upgrades, so apply them first:
 
 ```bash
 kubectl apply --server-side --force-conflicts -f compute/charts/odoo-operator/crds/

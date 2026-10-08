@@ -92,22 +92,39 @@ def _verify(token):
         data = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
     except ValueError:
         return False
-    return data.get('h') == _request_host() and float(data.get('e') or 0) > time.time()
+    if data.get('h') != _request_host() or float(data.get('e') or 0) <= time.time():
+        return False
+    return data
 
 
-def _access_cookie(until):
+def _access_cookie(until, staff=False):
+    """Signed access cookie: ``<until>.<staff flag>.<hmac>``. The staff flag
+    (set from a control-plane link carrying ``s``) opens the FULL manager
+    for platform admins/ops; customers only ever get the restricted one."""
     until = str(int(until))
-    return until + '.' + _sign('access|%s|%s' % (_request_host(), until))
+    flag = '1' if staff else '0'
+    return until + '.' + flag + '.' + _sign('access|%s|%s|%s' % (_request_host(), until, flag))
+
+
+def _cookie_parts():
+    value = request.httprequest.cookies.get(COOKIE) or ''
+    if not _key() or value.count('.') != 2:
+        return None
+    until, flag, _sig = value.split('.', 2)
+    if not until.isdigit() or int(until) < time.time() or flag not in ('0', '1'):
+        return None
+    if not hmac.compare_digest(_access_cookie(until, staff=(flag == '1')), value):
+        return None
+    return until, flag
 
 
 def _allowed():
-    value = request.httprequest.cookies.get(COOKIE) or ''
-    if not _key() or '.' not in value:
-        return False
-    until, sig = value.split('.', 1)
-    if not until.isdigit() or int(until) < time.time():
-        return False
-    return hmac.compare_digest(_access_cookie(until), value)
+    return _cookie_parts() is not None
+
+
+def _is_staff():
+    parts = _cookie_parts()
+    return bool(parts) and parts[1] == '1'
 
 
 def _same_origin():
@@ -185,11 +202,13 @@ class SaasTenantDatabase(Database):
 
     @http.route('/saas/dbm/enter', type='http', auth='none')
     def saas_dbm_enter(self, t=None, **kw):
-        if not _verify(t):
+        claims = _verify(t)
+        if not claims:
             return request.make_response(_PORTAL_ONLY % '<p><b>This link is invalid or expired.</b></p>', status=403)
         response = request.redirect('/web/database/manager')
         response.set_cookie(
-            COOKIE, _access_cookie(time.time() + ACCESS_SECONDS), max_age=ACCESS_SECONDS,
+            COOKIE, _access_cookie(time.time() + ACCESS_SECONDS, staff=bool(claims.get('s'))),
+            max_age=ACCESS_SECONDS,
             path=COOKIE_PATH, httponly=True, samesite='Lax',
             secure=request.httprequest.scheme == 'https')
         return response
@@ -197,7 +216,7 @@ class SaasTenantDatabase(Database):
     def _render_template(self, **d):
         render = getattr(super(), '_render_template', None) or web_database._render_template
         html = render(**d)
-        if d.get('manage', True) and _allowed():
+        if d.get('manage', True) and _allowed() and not _is_staff():
             script = _HIDE_MASTER_PASSWORD % json.dumps(escape(_prefix()))
             limit = int(config.get('saas_dbm_max_databases') or 0)
             if limit and len([name for name in _db_list() if _own(name)]) >= limit:
@@ -287,7 +306,7 @@ h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justif
         if not _same_origin():
             return self._render_template(error="Request refused: it did not come from this page.")
         limit = int(config.get('saas_dbm_max_databases') or 0)
-        if not new_database or not limit:
+        if not new_database or not limit or _is_staff():
             with _Bypass():
                 return call()
         # Same PostgreSQL lock as portal CREATE DATABASE: multiple HTTP
@@ -308,21 +327,21 @@ h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justif
 
     @http.route('/web/database/create', type='http', auth='none', methods=['POST'], csrf=False)
     def create(self, master_pwd, name, lang, password, **post):
-        name = _with_prefix(name)
+        name = name if _is_staff() else _with_prefix(name)
         return self._guarded(lambda: super(SaasTenantDatabase, self).create(
             master_pwd, name, lang, password, **post), new_database=name)
 
     @http.route('/web/database/duplicate', type='http', auth='none', methods=['POST'], csrf=False)
     def duplicate(self, master_pwd, name, new_name, neutralize_database=False):
-        if not _own(name):
+        if not _own(name) and not _is_staff():
             return self._refuse("Database %r is not yours." % name)
-        new_name = _with_prefix(new_name)
+        new_name = new_name if _is_staff() else _with_prefix(new_name)
         return self._guarded(lambda: super(SaasTenantDatabase, self).duplicate(
             master_pwd, name, new_name, neutralize_database), new_database=new_name)
 
     @http.route('/web/database/drop', type='http', auth='none', methods=['POST'], csrf=False)
     def drop(self, master_pwd, name):
-        if not _own(name):
+        if not _own(name) and not _is_staff():
             return self._refuse("Database %r is not yours." % name)
         return self._guarded(lambda: super(SaasTenantDatabase, self).drop(master_pwd, name))
 
@@ -330,16 +349,17 @@ h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justif
     def rename(self, master_pwd, name, new_name):
         # Odoo 20 added this route. Never inherit an unguarded operation
         # that could rename another database or remove our tenant prefix.
-        if not _own(name):
+        if not _own(name) and not _is_staff():
             return self._refuse("Database %r is not yours." % name)
         rename = getattr(super(), 'rename', None)
         if not rename:
             return self._refuse('Database renaming is unavailable in this Odoo version.')
-        return self._guarded(lambda: rename(master_pwd, name, _with_prefix(new_name)))
+        target = new_name if _is_staff() else _with_prefix(new_name)
+        return self._guarded(lambda: rename(master_pwd, name, target))
 
     @http.route('/web/database/backup', type='http', auth='none', methods=['POST'], csrf=False)
     def backup(self, master_pwd, name, backup_format='zip', **kw):
-        if not _own(name):
+        if not _own(name) and not _is_staff():
             return self._refuse("Database %r is not yours." % name)
         return self._guarded(lambda: super(SaasTenantDatabase, self).backup(
             master_pwd, name, backup_format, **kw))
@@ -347,7 +367,7 @@ h1{font-size:26px;margin:0}p{color:#667085;line-height:1.6}a{display:flex;justif
     @http.route('/web/database/restore', type='http', auth='none', methods=['POST'], csrf=False,
                 max_content_length=None)
     def restore(self, master_pwd, backup_file, name, copy=False, neutralize_database=False):
-        name = _with_prefix(name)
+        name = name if _is_staff() else _with_prefix(name)
         return self._guarded(lambda: super(SaasTenantDatabase, self).restore(
             master_pwd, backup_file, name, copy, neutralize_database), new_database=name)
 

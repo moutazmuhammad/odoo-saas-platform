@@ -42,7 +42,7 @@ Multi-stage: `golang:1.27-bookworm` builds a static binary, runtime is `gcr.io/d
 
 ```bash
 cd compute/operator
-make docker-build docker-push IMG=docker.io/moutazmuhammad/odoo-saas-operator:0.1.31
+make docker-build docker-push IMG=docker.io/moutazmuhammad/odoo-saas-operator:0.1.32
 ```
 
 `docker-build` / `docker-push` are plain `docker build -t $IMG .` / `docker push $IMG` (`Makefile:64-70`). Log in first (`docker login`).
@@ -165,7 +165,7 @@ For Docker Hub, use `--docker-server=https://index.docker.io/v1/` in the Secret 
 
 ```bash
 REG=registry.digitalocean.com/my-registry     # or ghcr.io/my-org, docker.io/my-org
-for img in odoo-saas-operator:0.1.31 odoo-saas-backup-tool:0.1.5; do
+for img in odoo-saas-operator:0.1.32 odoo-saas-backup-tool:0.1.5; do
   docker pull docker.io/moutazmuhammad/$img
   docker tag  docker.io/moutazmuhammad/$img $REG/$img
   docker push $REG/$img
@@ -294,6 +294,6 @@ Checklist:
 
 ## 5. Requirements
 
-A fully private setup needs control plane `saas_core` 18.0.58.4.0 or later, and operator 0.1.31 / chart 0.4.18 or later. Older versions could not pass pull secrets to backup/restore Jobs, plain-image tenants, build pods or PostgreSQL.
+A fully private setup needs control plane `saas_core` 18.0.58.4.0 or later, and operator 0.1.32 / chart 0.4.19 or later. Older versions could not pass pull secrets to backup/restore Jobs, plain-image tenants, build pods or PostgreSQL.
 
 Existing tenants get `pullSecretRefs` on their next image change, and the operator-side `odoo-platform-pull` on their next reconcile.

@@ -78,8 +78,9 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
   // their only backup view. Default to the hosting filter while the
   // instance is still loading to avoid a flicker.
   const isManagedService = !!instance && !instance.is_hosting;
+  // On-demand snapshots have their own page (Snapshots.tsx).
   const snapshots = backups
-    ? backups.filter((b) => (isManagedService ? !b.is_full_instance : b.is_full_instance))
+    ? backups.filter((b) => (isManagedService ? !b.is_full_instance : b.is_full_instance) && b.source !== "snapshot")
     : null;
 
   // Poll while a snapshot is in progress.
@@ -92,12 +93,12 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
     <div className="animate-fade-in">
 
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">{i18nText("Snapshots")}<HelpHint anchor="snapshots" className="ms-1.5" />
+        <h1 className="text-2xl font-bold tracking-tight">{i18nText("Backups")}<HelpHint anchor="snapshots" className="ms-1.5" />
         </h1>
         <p className="mt-1 text-sm text-muted">
           {isManagedService
-            ? i18nText("Automatic daily snapshots of your service. Restore any snapshot with one click.")
-            : i18nText("Automatic daily full-instance snapshots. On-demand, per-database backups are on the Databases page.")}
+            ? i18nText("Automatic daily backups of your service. Restore any backup with one click.")
+            : i18nText("Automatic daily backups of your whole server, kept for the last 7 days. Restore any of them onto this server. For a copy you keep as long as you like, take a snapshot.")}
         </p>
       </div>
 
@@ -105,13 +106,13 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
         <AlertBanner
           className="mt-6"
           variant="warning"
-          title={i18nText("Snapshots unavailable")}
+          title={i18nText("Backups unavailable")}
           description={
             instance?.state === "suspended"
-              ? i18nText("This instance is suspended. Settle the outstanding invoice to access snapshots and daily backups.")
+              ? i18nText("This instance is suspended. Settle the outstanding invoice to access backups.")
               : instance?.state === "stopped"
-                ? i18nText("This instance is stopped. Start it to access snapshots and daily backups.")
-                : i18nText("Snapshots and daily backups become available once the instance is running.")
+                ? i18nText("This instance is stopped. Start it to access backups.")
+                : i18nText("Backups become available once the instance is running.")
           }
         />
       ) : (
@@ -126,16 +127,16 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
             />
           )}
 
-          {error && <AlertBanner className="mt-6" variant="danger" title={i18nText("Snapshots")} description={error} />}
+          {error && <AlertBanner className="mt-6" variant="danger" title={i18nText("Backups")} description={error} />}
 
           {!backups && !error ? (
         <div className="mt-20 flex justify-center">
-          <Spinner size="lg" label={i18nText("Loading snapshots…")} />
+          <Spinner size="lg" label={i18nText("Loading backups…")} />
         </div>
       ) : snapshots ? (
         <>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <InfoCard label={i18nText("Snapshots")} value={snapshots.length} icon={Archive} />
+            <InfoCard label={i18nText("Backups")} value={snapshots.length} icon={Archive} />
             <InfoCard
               label={i18nText("Latest")}
               value={<span className="text-base">{lastDone ? formatDate(lastDone.created) : "—"}</span>}
@@ -147,8 +148,8 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
             <EmptyState
               className="mt-8"
               icon={Archive}
-              title={i18nText("No snapshots yet")}
-              description={i18nText("Full-instance snapshots run automatically every day; the first one will appear here once it completes.")}
+              title={i18nText("No backups yet")}
+              description={i18nText("Backups run automatically every day once Daily Backups is on; the first one appears here when it completes.")}
             />
           ) : (
             <Card className="mt-6 divide-y divide-border">
@@ -164,7 +165,7 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
                         <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">{i18nText("Automatic")}</span>
                       </div>
                       <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
-                        <Clock className="size-3" />{i18nText("Full snapshot")}</p>
+                        <Clock className="size-3" />{i18nText("Full server backup")}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 sm:justify-end">
@@ -199,7 +200,7 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
   );
 }
 
-function RestoreSnapshotDialog({
+export function RestoreSnapshotDialog({
   backup,
   instanceName,
   onClose,
@@ -294,7 +295,7 @@ function DailyBackupCard({
             <ShieldCheck className="size-5" />
           </span>
           <div>
-            <p className="font-medium">{i18nText("Daily snapshots are on")}</p>
+            <p className="font-medium">{i18nText("Daily backups are on")}</p>
             <p className="text-xs text-muted">{i18nText("Billed monthly by used storage")}{price > 0 ? i18nText(" · currently {0}/month", [price]) : ""}{next ? i18nText(" · next charge {0}", [formatDate(next)]) : ""}.
             </p>
           </div>
@@ -312,8 +313,8 @@ function DailyBackupCard({
             <ShieldAlert className="size-5" />
           </span>
           <div>
-            <p className="font-medium">{i18nText("Daily snapshots paused")}</p>
-            <p className="text-xs text-muted">{i18nText("Your monthly backup invoice is overdue. Snapshots resume automatically once it's paid.")}</p>
+            <p className="font-medium">{i18nText("Daily backups paused")}</p>
+            <p className="text-xs text-muted">{i18nText("Your monthly backup invoice is overdue. Backups resume automatically once it's paid.")}</p>
           </div>
         </div>
         <Button variant="secondary" className="shrink-0" onClick={onBilling}>{i18nText("Go to billing")}</Button>
@@ -331,7 +332,7 @@ function DailyBackupCard({
           </span>
           <div>
             <p className="font-medium">{i18nText("Payment pending")}</p>
-            <p className="text-xs text-muted">{i18nText("Finish checkout to turn on daily snapshots.")}</p>
+            <p className="text-xs text-muted">{i18nText("Finish checkout to turn on daily backups.")}</p>
           </div>
         </div>
         <Button className="shrink-0" onClick={onCheckout}>{i18nText("Complete checkout")}</Button>
@@ -347,12 +348,12 @@ function DailyBackupCard({
           <ShieldAlert className="size-5" />
         </span>
         <div>
-          <p className="font-medium">{i18nText("Daily snapshots are off")}<HelpHint anchor="daily-backup" className="ms-1.5" /></p>
-          <p className="text-xs text-muted">{i18nText("Automatic daily full-instance snapshots, billed monthly by used storage")}{price > 0 ? i18nText(" (currently {0}/month)", [price]) : ""}{i18nText(". Renews monthly; pauses if a renewal goes unpaid.")}</p>
+          <p className="font-medium">{i18nText("Daily backups are off")}<HelpHint anchor="daily-backup" className="ms-1.5" /></p>
+          <p className="text-xs text-muted">{i18nText("Automatic daily backups of your whole server, billed monthly by used storage")}{price > 0 ? i18nText(" (currently {0}/month)", [price]) : ""}{i18nText(". Renews monthly; pauses if a renewal goes unpaid.")}</p>
         </div>
       </div>
       <ActionButton className="shrink-0" loading={enabling} loadingText={i18nText("Starting\u2026")} onClick={onEnable}>
-        <ShieldCheck className="size-4" />{i18nText("Enable daily snapshots")}</ActionButton>
+        <ShieldCheck className="size-4" />{i18nText("Enable daily backups")}</ActionButton>
     </Card>
   );
 }

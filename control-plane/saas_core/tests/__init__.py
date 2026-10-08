@@ -42,3 +42,4 @@ from . import test_teardown
 from . import test_job_worker
 from . import test_runtime_health
 from . import test_customer_alerts
+from . import test_snapshots

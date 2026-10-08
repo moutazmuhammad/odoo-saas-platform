@@ -162,6 +162,14 @@ class SaasInstanceBackup(models.Model):
         help='When this on-demand backup is reaped from the bucket. '
              'Only set on ephemeral backups.',
     )
+    # DigitalOcean-style split: automatic backups (the paid daily add-on,
+    # rotated by the operator) vs on-demand snapshots (taken by the
+    # customer, kept until deleted, usable to seed a new project).
+    source = fields.Selection([
+        ('scheduled', 'Automatic backup'),
+        ('snapshot', 'Snapshot'),
+        ('final', 'Final snapshot'),
+    ], default='scheduled', index=True, copy=False)
     is_full_instance = fields.Boolean(
         string='Full Instance', default=False, index=True,
         help='A complete instance snapshot produced by the Kubernetes '
@@ -275,7 +283,7 @@ class SaasInstanceBackup(models.Model):
         are logged but do not block the unlink.
         """
         for rec in self:
-            if rec.bucket_path and rec.state == 'done':
+            if rec.bucket_path and rec.state == 'done' and not self.env.context.get('skip_bucket_delete'):
                 try:
                     rec._delete_from_bucket()
                 except Exception:
@@ -945,7 +953,8 @@ class SaasInstanceBackup(models.Model):
                 "Failed to list backup stamps under prefix %s", prefix)
         return stamps
 
-    def _record_full_instance_backup(self, instance, prefix, stamp):
+    def _record_full_instance_backup(self, instance, prefix, stamp,
+                                     source='scheduled', name=None, placeholder=None):
         """Create/update the ``saas.instance.backup`` row mirroring the
         operator-written run at ``<prefix>/<stamp>/``. Returns the
         record, or an empty recordset if the artifacts aren't fully
@@ -955,14 +964,14 @@ class SaasInstanceBackup(models.Model):
         fs_size = self._bucket_object_size('%s/filestore.tar.gz' % bucket_path)
         if not dump_size and not fs_size:
             return self.browse()
-        existing = self.search([
+        existing = placeholder or self.search([
             ('instance_id', '=', instance.id),
             ('is_full_instance', '=', True),
             ('bucket_path', '=', bucket_path),
         ], limit=1)
         vals = {
             'instance_id': instance.id,
-            'name': stamp,
+            'name': name or stamp,
             'db_name': False,
             'bucket_path': bucket_path,
             'size_mb': round((dump_size + fs_size) / (1024 * 1024), 2),
@@ -970,8 +979,12 @@ class SaasInstanceBackup(models.Model):
             'is_full_instance': True,
             'ephemeral': False,
             'format': 'operator',
+            'source': source,
         }
         if existing:
+            if existing.source == 'snapshot' and not placeholder:
+                # A snapshot keeps its own name/source when re-listed.
+                vals.pop('name'); vals.pop('source')
             existing.write(vals)
             return existing
         return self.create(vals)
@@ -1037,6 +1050,7 @@ class SaasInstanceBackup(models.Model):
                 ('instance_id', '=', instance.id),
                 ('is_full_instance', '=', True),
                 ('format', '=', 'operator'),
+                ('source', '=', 'scheduled'),
             ])
             for rec in local:
                 stamp = (rec.bucket_path or '').rsplit('/', 1)[-1]
@@ -1053,7 +1067,9 @@ class SaasInstanceBackup(models.Model):
         self._cleanup_old_backups()
 
     @api.model
-    def _create_full_instance_backup_sync(self, instance, wait_timeout=180):
+    def _create_full_instance_backup_sync(self, instance, wait_timeout=180,
+                                          prefix=None, source='final', name=None,
+                                          placeholder=None):
         """Best-effort, SYNCHRONOUS full-instance snapshot: trigger a
         one-off Job cloned from the (enabled-if-needed) backup CronJob,
         then poll the bucket until a new stamped run appears or
@@ -1070,31 +1086,60 @@ class SaasInstanceBackup(models.Model):
         driver = instance._compute_driver()
         handle = instance._compute_handle()
         cfg = self._get_backup_config()
-        prefix = instance._backup_bucket_prefix()
+        backup_prefix = instance._backup_bucket_prefix()
+        prefix = prefix or backup_prefix
         before = self._list_backup_stamps(cfg, prefix)
+        # The one-off Job is cloned from the CronJob, which must exist.
         driver.set_scheduled_backup(
-            handle, enabled=True, bucket=cfg['bucket'], prefix=prefix,
+            handle, enabled=True, bucket=cfg['bucket'], prefix=backup_prefix,
             access_key=cfg['access_key'], secret_key=cfg['secret_key'],
             endpoint=self._storage_endpoint_url(cfg))
-        driver.trigger_backup_now(handle)
-        deadline = time.time() + wait_timeout
-        stamp = None
-        while time.time() < deadline:
-            time.sleep(5)
-            after = self._list_backup_stamps(cfg, prefix)
-            new = after - before
-            if new:
-                stamp = sorted(new)[-1]
-                break
+        env = None
+        if prefix != backup_prefix:
+            env = {'DESTINATION_PREFIX': prefix, 'RETENTION': '0'}
+        try:
+            driver.trigger_backup_now(handle, env=env)
+            deadline = time.time() + wait_timeout
+            stamp = None
+            while time.time() < deadline:
+                time.sleep(5)
+                after = self._list_backup_stamps(cfg, prefix)
+                new = after - before
+                if new:
+                    stamp = sorted(new)[-1]
+                    break
+        finally:
+            if source == 'snapshot':
+                # Put the schedule back to what the customer pays for.
+                try:
+                    instance._sync_scheduled_backup()
+                except Exception:
+                    _logger.exception("Could not resync scheduled backup for %s",
+                                      instance.subdomain)
         if not stamp:
             raise UserError(_("Timed out waiting for the snapshot to finish."))
-        backup = self._record_full_instance_backup(instance, prefix, stamp)
+        backup = self._record_full_instance_backup(
+            instance, prefix, stamp, source=source, name=name, placeholder=placeholder)
         if not backup:
             raise UserError(_(
                 "The snapshot job finished but its artifacts weren't "
                 "found in the bucket."
             ))
         return backup
+
+    def _do_take_snapshot(self):
+        """Background worker: ``self`` is the placeholder snapshot row."""
+        self.ensure_one()
+        instance = self.instance_id
+        try:
+            self._create_full_instance_backup_sync(
+                instance, wait_timeout=1800, prefix=instance._snapshot_bucket_prefix(),
+                source='snapshot', name=self.name, placeholder=self)
+            instance._append_log("Snapshot '%s' is ready." % self.name)
+        except Exception as e:
+            self.write({'state': 'failed', 'error_message': str(e)[:500]})
+            instance._append_log("Snapshot '%s' failed: %s" % (self.name, e))
+            raise
 
     def _presigned_get_url(self, object_key, expiry=None):
         """Presigned GET URL for an arbitrary object key (not

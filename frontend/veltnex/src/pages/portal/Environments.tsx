@@ -7,6 +7,7 @@ import { usePolling } from "@/hooks/usePolling";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Search,
+  Camera,
   GitBranch,
   GitMerge,
   Plus,
@@ -63,6 +64,7 @@ import Metrics from "@/pages/portal/Metrics";
 import Databases from "@/pages/portal/Databases";
 import Logs from "@/pages/portal/Logs";
 import Backups from "@/pages/portal/Backups";
+import Snapshots from "@/pages/portal/Snapshots";
 import ShellPage from "@/pages/portal/ShellPage";
 import SqlPage from "@/pages/portal/SqlPage";
 
@@ -93,6 +95,7 @@ type SectionTab =
   | "shell"
   | "sql"
   | "logs"
+  | "backups"
   | "snapshots";
 const SECTION_TABS: { key: SectionTab; label: string; icon: typeof Activity }[] = [
   { key: "overview", label: i18nText("Overview"), icon: LayoutDashboard },
@@ -101,7 +104,8 @@ const SECTION_TABS: { key: SectionTab; label: string; icon: typeof Activity }[] 
   { key: "shell", label: i18nText("Shell"), icon: TerminalSquare },
   { key: "sql", label: "SQL", icon: TableProperties },
   { key: "logs", label: i18nText("Logs"), icon: ScrollText },
-  { key: "snapshots", label: i18nText("Snapshots"), icon: Archive },
+  { key: "backups", label: i18nText("Backups"), icon: Archive },
+  { key: "snapshots", label: i18nText("Snapshots"), icon: Camera },
 ];
 const SECTION_KEYS: readonly string[] = [
   "overview",
@@ -111,6 +115,7 @@ const SECTION_KEYS: readonly string[] = [
   "shell",
   "sql",
   "logs",
+  "backups",
   "snapshots",
 ];
 function asTab(v: string | null): SectionTab {
@@ -128,7 +133,7 @@ function SectionTabBar({
 }) {
   return (
     <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-3">
-      {SECTION_TABS.filter(t => hasPermission(permissions, ({ overview: "project.view", metrics: "project.view", databases: "db.view", shell: "terminal.open", sql: "sql.execute", logs: "logs.view", snapshots: "backup.view" } as Record<string, string>)[t.key])).map((t) => {
+      {SECTION_TABS.filter(t => hasPermission(permissions, ({ overview: "project.view", metrics: "project.view", databases: "db.view", shell: "terminal.open", sql: "sql.execute", logs: "logs.view", backups: "backup.view", snapshots: "backup.view" } as Record<string, string>)[t.key])).map((t) => {
         const active = tab === t.key;
         return (
           <button
@@ -994,8 +999,10 @@ function MainPanel({
           <SqlPage embedId={env.id} />
         ) : tab === "logs" ? (
           <Logs embedId={env.id} />
-        ) : tab === "snapshots" ? (
+        ) : tab === "backups" ? (
           <Backups embedId={env.id} />
+        ) : tab === "snapshots" ? (
+          <Snapshots embedId={env.id} />
         ) : null}
       </div>
       </div>

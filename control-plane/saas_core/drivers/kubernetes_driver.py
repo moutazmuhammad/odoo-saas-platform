@@ -757,7 +757,8 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 % (name, e)) from e
 
     def trigger_backup_now(self, handle: ComputeHandle,
-                           wait_seconds: int = 60) -> str:
+                           wait_seconds: int = 60,
+                           env: Optional[dict] = None) -> str:
         """Create a one-off Job cloned from the operator-managed backup
         CronJob's own template — the Kubernetes-native equivalent of
         ``kubectl create job --from=cronjob/odoo-backup``, for an
@@ -784,13 +785,26 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         if cron.spec.suspend is True:
             raise RuntimeError('Backups are paused for this instance; resume it before creating a backup.')
         job_name = '%s-manual-%d' % (_BACKUP_CRONJOB_NAME, int(time.time()))
+        spec = cron.spec.job_template.spec
+        if env:
+            # An on-demand snapshot writes under its own prefix with no
+            # retention, so the nightly rotation never prunes it.
+            for container in (spec.template.spec.containers or []):
+                existing = {e.name: e for e in (container.env or [])}
+                for key, value in env.items():
+                    if key in existing:
+                        existing[key].value = str(value)
+                        existing[key].value_from = None
+                    else:
+                        container.env = (container.env or []) + [
+                            k8s_client.V1EnvVar(name=key, value=str(value))]
         job = k8s_client.V1Job(
             metadata=k8s_client.V1ObjectMeta(
                 name=job_name,
                 labels=(cron.spec.job_template.metadata.labels
                         if cron.spec.job_template.metadata else None),
             ),
-            spec=cron.spec.job_template.spec,
+            spec=spec,
         )
         try:
             batch.create_namespaced_job(namespace, job)

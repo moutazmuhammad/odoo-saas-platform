@@ -1393,6 +1393,7 @@ class SaasApi(http.Controller):
             return ok({'backups': [], 'ready': False, 'state': instance.state})
         backups = instance.backup_ids.filtered(
             lambda b: b.state in ('done', 'running')
+            or (b.state == 'failed' and b.source == 'snapshot')
         ).sorted('create_date', reverse=True)[:30]
         # Mint a fresh, short-lived presigned link per list (SEC-008): the URL
         # TTL is minutes, so the client must always receive a current one
@@ -1420,6 +1421,40 @@ class SaasApi(http.Controller):
             _logger.exception("Backup create failed for %s", instance_id)
             return err(_("Couldn't start the backup. Please try again."), 'backup_failed')
         return ok({})
+
+    @http.route('/saas/api/v1/instances/<int:instance_id>/snapshots/create',
+                type='json', auth='public')
+    def snapshot_create(self, instance_id, name=None, access_token=None, **kw):
+        """Take an on-demand snapshot (database + files) of a running server."""
+        try:
+            instance = self._instance(instance_id, access_token, write=True, permission='backup.create')
+        except (AccessError, MissingError):
+            return err(_("Instance not found."), 'not_found')
+        try:
+            self._require_running(instance)
+            snapshot = instance.action_take_snapshot(name=name)
+        except UserError as e:
+            return err(str(e), 'snapshot_failed')
+        except Exception:
+            _logger.exception("Snapshot create failed for %s", instance_id)
+            return err(_("Couldn't start the snapshot. Please try again."), 'snapshot_failed')
+        return ok({'snapshot_id': snapshot.id, 'limit': instance._snapshot_limit()})
+
+    @http.route('/saas/api/v1/instances/<int:instance_id>/snapshots/<int:backup_id>/delete',
+                type='json', auth='public')
+    def snapshot_delete(self, instance_id, backup_id, access_token=None, **kw):
+        try:
+            instance = self._instance(instance_id, access_token, write=True, permission='backup.create')
+        except (AccessError, MissingError):
+            return err(_("Instance not found."), 'not_found')
+        try:
+            instance.action_delete_snapshot(backup_id)
+        except UserError as e:
+            return err(str(e), 'delete_failed')
+        except Exception:
+            _logger.exception("Snapshot delete failed for %s", instance_id)
+            return err(_("Couldn't delete the snapshot. Please try again."), 'delete_failed')
+        return ok({'deleted': True})
 
     @http.route('/saas/api/v1/instances/<int:instance_id>/backups/<int:backup_id>/restore',
                 type='json', auth='public')
@@ -2170,6 +2205,8 @@ class SaasApi(http.Controller):
             'is_full_instance': b.is_full_instance,
             'db_name': b.db_name or '',
             'format': b.format or '',
+            'source': b.source or 'scheduled',
+            'error': (b.error_message or '')[:300] if b.state == 'failed' else '',
         }
 
 

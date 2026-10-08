@@ -28,6 +28,7 @@ import Environments from "./pages/portal/Environments";
 import Code from "./pages/portal/Code";
 import Logs from "./pages/portal/Logs";
 import Backups from "./pages/portal/Backups";
+import Snapshots from "./pages/portal/Snapshots";
 import Metrics from "./pages/portal/Metrics";
 import ShellPage from "./pages/portal/ShellPage";
 import SqlPage from "./pages/portal/SqlPage";
@@ -114,6 +115,7 @@ export default function App() {
             <Route path="sql" element={<SqlPage />} />
             <Route path="logs" element={<Logs />} />
             <Route path="backups" element={<Backups />} />
+            <Route path="snapshots" element={<Snapshots />} />
           </Route>
           <Route path="access" element={<ProjectAccess />} />
           <Route path="access/accept" element={<AcceptAccess />} />

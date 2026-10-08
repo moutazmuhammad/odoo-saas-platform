@@ -1153,6 +1153,20 @@ class SaasWebsite(http.Controller):
                 vals['support_plan_id'] = sup.id
         if is_trial:
             vals['is_trial'] = True
+        # DigitalOcean-style: start the new project from one of the
+        # customer's snapshots. Same Odoo version as the source, so the
+        # restored database boots on the code it was taken with.
+        seed_id = int(post.get('seed_backup_id', 0) or 0)
+        if seed_id:
+            seed = request.env['saas.instance.backup'].sudo().browse(seed_id)
+            if (not seed.exists() or seed.source != 'snapshot' or seed.state != 'done'
+                    or seed.instance_id.partner_id != partner):
+                return request.redirect(err_redirect % 'Snapshot+not+found')
+            if seed.instance_id.odoo_version_id and seed.instance_id.odoo_version_id != version:
+                return request.redirect(err_redirect % (
+                    'Choose+the+same+Odoo+version+as+the+snapshot+(%s)'
+                    % seed.instance_id.odoo_version_id.name.replace(' ', '+')))
+            vals['seed_backup_id'] = seed.id
 
         try:
             # Atomic: a deferred constraint (e.g. the one-trial-per-client

@@ -112,6 +112,10 @@ export default function Hosting() {
   // version, region — but skips the paid specs/pricing step and all paid
   // add-ons, and finishes with a $0 "Start free trial" instead of payment.
   const isTrial = searchParams.get("trial") === "1";
+  // DigitalOcean-style: the new project starts from one of the customer's
+  // snapshots (/hosting?from_snapshot=<id>&snapshot_name=…).
+  const fromSnapshotId = Number(searchParams.get("from_snapshot") || 0) || 0;
+  const fromSnapshotName = searchParams.get("snapshot_name") || "";
   const [meta, setMeta] = React.useState<Meta | null>(null);
   const [tiers, setTiers] = React.useState<ApiTier[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -295,6 +299,7 @@ export default function Hosting() {
     // redirect for anonymous buyers). The backend uses the trial plan,
     // skips billing, and deploys immediately — no payment step.
     if (isTrial) f.is_trial = "1";
+    if (fromSnapshotId) f.seed_backup_id = String(fromSnapshotId);
     if (regionId != null) f.region_id = String(regionId);
     if (domainId != null) f.domain_id = String(domainId);
     if (versionId != null) f.odoo_version_id = String(versionId);
@@ -414,6 +419,14 @@ export default function Hosting() {
       <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
         {error && (
           <AlertBanner className="mb-6" variant="danger" title={i18nText("Couldn't load hosting plans")} description={error} />
+        )}
+        {fromSnapshotId > 0 && (
+          <AlertBanner
+            className="mb-6"
+            variant="info"
+            title={i18nText("Starting from a snapshot")}
+            description={i18nText("This project will be created from snapshot {0}: its database and files are restored as soon as the server is up. Choose the same Odoo version the snapshot was taken with.", [fromSnapshotName || String(fromSnapshotId)])}
+          />
         )}
 
         {!config ? (

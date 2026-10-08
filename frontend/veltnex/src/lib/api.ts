@@ -234,6 +234,9 @@ export interface ApiBackup {
   is_full_instance: boolean;
   db_name?: string;
   format?: string;
+  /** "scheduled" = automatic daily backup, "snapshot" = on-demand, kept until deleted. */
+  source?: "scheduled" | "snapshot" | "final";
+  error?: string;
 }
 
 export interface ApiInvoice {
@@ -814,6 +817,10 @@ export const api = {
   backupRestore: (id: number, backupId: number, confirm: string) =>
     rpc<{ state: string }>(`/saas/api/v1/instances/${id}/backups/${backupId}/restore`, { confirm }),
   backupCreate: (id: number) => rpc(`/saas/api/v1/instances/${id}/backups/create`),
+  snapshotCreate: (id: number, name: string) =>
+    rpc<{ snapshot_id: number; limit: number }>(`/saas/api/v1/instances/${id}/snapshots/create`, { name }),
+  snapshotDelete: (id: number, backupId: number) =>
+    rpc<{ deleted: boolean }>(`/saas/api/v1/instances/${id}/snapshots/${backupId}/delete`),
 
   invoices: () => rpc<ApiInvoice[]>("/saas/api/v1/invoices"),
   invoice: (id: number) => rpc<ApiInvoice>(`/saas/api/v1/invoices/${id}`),

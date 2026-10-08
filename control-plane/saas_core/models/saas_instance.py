@@ -3537,17 +3537,15 @@ END $$;
         if self.state != 'running':
             raise UserError(_(
                 "Instance must be Running to restore (start it first)."))
-        if not self.daily_backup_enabled:
-            raise UserError(_(
-                "Restore is part of the Daily Snapshots feature. "
-                "Please enable Daily Backups (and complete the payment) "
-                "before restoring — once active, the Restore button "
-                "becomes available."
-            ))
-
         backup = self.env['saas.instance.backup'].browse(backup_id)
         if not backup.exists() or backup.instance_id != self:
             raise UserError(_("Invalid backup."))
+        if backup.source != 'snapshot' and not self.daily_backup_enabled:
+            raise UserError(_(
+                "Restoring automatic backups is part of the Daily Backups "
+                "feature. Enable it (and complete the payment) first, or "
+                "take a snapshot instead."
+            ))
         if backup.state != 'done':
             raise UserError(_("Only completed backups can be restored."))
         if not backup.is_full_instance:
@@ -3588,6 +3586,85 @@ END $$;
             backup, '_do_restore_full_instance', args=(self.id,), channel='restore',
             lock_key='instance:%s' % self.id, max_attempts=1,
             on_error='_on_restore_full_instance_error', on_error_args=(self.id, prev_state))
+        return True
+
+    # ---------- On-demand snapshots (DigitalOcean-style) ----------
+    _SNAPSHOT_NAME_RE = re.compile(r'^[\w .\-]{1,60}$')
+
+    def _snapshot_bucket_prefix(self):
+        """Snapshots live apart from the nightly rotation so the operator's
+        retention never prunes them."""
+        self.ensure_one()
+        return 'snapshots/%s' % (self.subdomain or '')
+
+    def _snapshot_limit(self):
+        raw = self.env['ir.config_parameter'].sudo().get_param('saas_master.max_snapshots', '5')
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError):
+            return 5
+
+    def snapshot_ids_live(self):
+        return self.env['saas.instance.backup'].sudo().search([
+            ('instance_id', '=', self.id), ('source', '=', 'snapshot'),
+            ('state', 'in', ('done', 'running'))])
+
+    def action_take_snapshot(self, name=None):
+        """Queue an on-demand full snapshot (database + files) of this
+        running server. Kept until the customer deletes it; restorable
+        onto this server or used to start a new Production project."""
+        self.ensure_one()
+        if self.state != 'running':
+            raise UserError(_("The server must be running to take a snapshot."))
+        name = (name or '').strip() or fields.Datetime.now().strftime('snapshot-%Y%m%d-%H%M')
+        if not self._SNAPSHOT_NAME_RE.match(name):
+            raise UserError(_("Use letters, numbers, spaces, dots or dashes for the snapshot name."))
+        live = self.snapshot_ids_live()
+        if any(b.state == 'running' for b in live):
+            raise UserError(_("A snapshot is already being taken. Please wait for it to finish."))
+        if len(live) >= self._snapshot_limit():
+            raise UserError(_(
+                "You have reached the limit of %d snapshots. Delete one to take another.")
+                % self._snapshot_limit())
+        if name in live.mapped('name'):
+            raise UserError(_("A snapshot named '%s' already exists.") % name)
+        Backup = self.env['saas.instance.backup'].sudo()
+        Backup._get_backup_config()   # fail early when storage isn't set up
+        snapshot = Backup.create({
+            'instance_id': self.id, 'name': name, 'state': 'running',
+            'is_full_instance': True, 'ephemeral': False, 'format': 'operator',
+            'source': 'snapshot',
+        })
+        self._append_log("Snapshot '%s' queued..." % name)
+        self.env['saas.audit.log'].saas_audit(
+            'snapshot_create', model='saas.instance', res_id=self.id,
+            res_name=self.subdomain, detail='Snapshot %r queued' % name)
+        self.env['saas.job'].enqueue(
+            snapshot, '_do_take_snapshot', channel='backup',
+            lock_key='snapshot:%s' % self.id, max_attempts=1)
+        return snapshot
+
+    def action_delete_snapshot(self, backup_id):
+        self.ensure_one()
+        snapshot = self.env['saas.instance.backup'].sudo().browse(int(backup_id))
+        if not snapshot.exists() or snapshot.instance_id != self or snapshot.source != 'snapshot':
+            raise UserError(_("Snapshot not found."))
+        if snapshot.state == 'running':
+            raise UserError(_("That snapshot is still being taken."))
+        if self.env['saas.instance'].sudo().search_count(
+                [('seed_backup_id', '=', snapshot.id), ('state', 'in', ('draft', 'paid', 'provisioning', 'pending_provision'))]):
+            raise UserError(_("A new project is being created from this snapshot. Try again later."))
+        name = snapshot.name
+        if snapshot.bucket_path:
+            try:
+                snapshot._delete_bucket_prefix(snapshot.bucket_path)
+            except Exception:
+                _logger.exception("Could not delete snapshot data %s", snapshot.bucket_path)
+        snapshot.with_context(skip_bucket_delete=True).unlink()
+        self._append_log("Snapshot '%s' deleted." % name)
+        self.env['saas.audit.log'].saas_audit(
+            'snapshot_delete', model='saas.instance', res_id=self.id,
+            res_name=self.subdomain, detail='Snapshot %r deleted' % name)
         return True
 
     def _backup_bucket_prefix(self):
@@ -4714,7 +4791,10 @@ END $$;
         # A hosting Production server comes with a ready database so the
         # customer lands in Odoo, not on an empty database selector. They
         # can replace it or restore their own backup from Databases.
-        self._hosting_prepare_production_database()
+        if self.seed_backup_id:
+            self._hosting_seed_from_snapshot()
+        else:
+            self._hosting_prepare_production_database()
         # A new Staging/Development server starts as a copy of Production.
         self._hosting_seed_environment_database()
         self._safe_refresh_usage()
@@ -4743,6 +4823,32 @@ END $$;
     # The suffix of the database every hosting Production server starts
     # with (``<subdomain>_main``).
     _HOSTING_INITIAL_DB_SUFFIX = 'main'
+
+    seed_backup_id = fields.Many2one(
+        'saas.instance.backup', string='Start from snapshot', copy=False,
+        ondelete='set null',
+        help="A customer snapshot this new project is created from: its "
+             "database and files are restored once the server is up.")
+
+    def _hosting_seed_from_snapshot(self):
+        """A project created 'from snapshot' restores it right after the
+        first deploy (instead of preparing an empty database)."""
+        self.ensure_one()
+        snapshot = self.seed_backup_id
+        if not snapshot:
+            return False
+        self.seed_backup_id = False
+        if snapshot.state != 'done' or not snapshot.is_full_instance:
+            self._append_log("WARNING: the snapshot to start from is no longer available.")
+            return False
+        self._append_log("Restoring snapshot '%s' onto the new server..." % snapshot.name)
+        try:
+            self.queue_full_instance_restore(snapshot)
+            return True
+        except Exception as e:
+            _logger.exception("Could not seed %s from snapshot", self.subdomain)
+            self._append_log("WARNING: the snapshot could not be restored (%s)." % e)
+            return False
 
     def _hosting_prepare_production_database(self):
         """Create the ready-to-use Production database on first deploy.

@@ -6,6 +6,7 @@ import {
   Receipt,
   Settings,
   LogOut,
+  Camera,
   Search,
   LifeBuoy,
   LayoutGrid,
@@ -59,7 +60,8 @@ function instanceSections(id: number, isHosting: boolean): NavItem[] {
   return [
     { to: base, label: i18nText("Overview"), icon: LayoutDashboard, end: true },
     { to: `${base}/metrics`, label: i18nText("Metrics"), icon: Activity },
-    { to: `${base}/backups`, label: i18nText("Snapshots"), icon: Archive },
+    { to: `${base}/backups`, label: i18nText("Backups"), icon: Archive },
+    { to: `${base}/snapshots`, label: i18nText("Snapshots"), icon: Camera },
   ];
 }
 

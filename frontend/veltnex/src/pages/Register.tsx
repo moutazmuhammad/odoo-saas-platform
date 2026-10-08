@@ -92,15 +92,21 @@ export default function Register() {
         const { redirect_url } = await api.hostingOrder(fields);
         window.location.assign(redirect_url);
         return;
-      } catch {
-        navigate("/my/instances", { replace: true });
+      } catch (e) {
+        // Don't strand the buyer on an empty projects page: say what went
+        // wrong and send them back to the wizard to place the order again.
+        toast.error(
+          i18nText("Couldn't place your order"),
+          e instanceof ApiError ? e.message : i18nText("Please try again."),
+        );
+        navigate(p.get("is_trial") === "1" ? "/hosting?trial=1" : "/hosting", { replace: true });
         return;
       }
     }
     const dest = postRegisterUrl();
     if (dest.includes("/configure")) window.location.assign(dest);
     else navigate(dest, { replace: true });
-  }, [searchParams, postRegisterUrl, navigate]);
+  }, [searchParams, postRegisterUrl, navigate, toast]);
 
   const [step, setStep] = React.useState<1 | 2>(1);
   const [form, setForm] = React.useState<Form>(EMPTY);

@@ -247,6 +247,38 @@ class TestOrderControllerFixes(HttpCase):
                          "a trial must skip the payment gate entirely: %s"
                          % instance.state)
 
+    def test_transient_serialization_failure_is_retried(self):
+        """A SerializationFailure inside the order (seen live right after
+        sign-up) must NOT be swallowed as 'order_failed' — the API re-raises
+        it so Odoo's dispatcher retries the request, and the second attempt
+        places the order. Before the fix the SPA silently dumped the buyer
+        on /my/instances with no project."""
+        from unittest.mock import patch
+        from psycopg2 import errors
+        from odoo.addons.saas_website.controllers.main import SaasWebsite
+
+        real = SaasWebsite.hosting_order
+        calls = []
+
+        def flaky(ctrl, **post):
+            calls.append(1)
+            if len(calls) == 1:
+                raise errors.SerializationFailure(
+                    'could not serialize access due to concurrent update')
+            return real(ctrl, **post)
+
+        self.authenticate('ordcust@example.com', 'ordpass123')
+        with patch.object(SaasWebsite, 'hosting_order', flaky):
+            res = self._order(project_name='Retry1', subdomain='ordretry',
+                              is_trial='1')
+        self.assertTrue(res and res.get('ok'), res)
+        self.assertIn('/my/instances/', res['data']['redirect_url'])
+        self.assertGreaterEqual(len(calls), 2, "the order must be retried")
+        self.assertEqual(
+            self.env['saas.instance'].sudo().search_count(
+                [('subdomain', '=', 'ordretry')]), 1,
+            "the retry must place exactly one order")
+
     def test_hosting_calculate_returns_real_pricing(self):
         # Public route, no auth needed — exercises the SPA's live slider
         # quote end-to-end through saas.pricing.engine, not just unit-level.

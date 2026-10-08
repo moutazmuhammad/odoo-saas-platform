@@ -2312,5 +2312,6 @@
   "No retained snapshot found for instance '%s'.": "لم يتم العثور على لقطة محفوظة لـInstance '%s'.",
   "Target instance must be running (current: %s).": "يجب أن تكون Instance الهدف قيد التشغيل (الحالة الحالية: %s).",
   "Target instance must belong to the same customer.": "يجب أن تتبع Instance الهدف العميل نفسه.",
-  "{0} of {1} GB": "{0} من {1} GB"
+  "{0} of {1} GB": "{0} من {1} GB",
+  "Couldn't place your order": "تعذّر تنفيذ طلبك"
 }

@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from odoo import http, fields, _
 from odoo.exceptions import AccessError, MissingError, UserError, ValidationError
 from odoo.http import request
+from odoo.service.model import PG_CONCURRENCY_EXCEPTIONS_TO_RETRY
 
 from odoo.addons.saas_core.models.saas_instance import SUBDOMAIN_RE
 from .main import SaasWebsite, _ACTIVE_STATES
@@ -573,6 +574,15 @@ class SaasApi(http.Controller):
             return err(_("Please sign in to continue."), 'auth_required')
         try:
             resp = SaasWebsite().hosting_order(**fields)
+        except PG_CONCURRENCY_EXCEPTIONS_TO_RETRY:
+            # A serialization failure / deadlock right after sign-up (the
+            # fresh partner and the cluster counters are still being touched
+            # by other workers) is transient. Re-raise so Odoo's dispatcher
+            # retries the whole request in a fresh transaction — the order
+            # path never commits mid-way, so a retry can't double-create.
+            # Swallowing it returned 'order_failed' and the SPA dumped the
+            # buyer on /my/instances with no project.
+            raise
         except Exception:
             _logger.exception("SPA hosting order failed")
             return err(_("We couldn't place your order. Please try again."),

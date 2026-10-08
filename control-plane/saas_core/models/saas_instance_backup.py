@@ -307,14 +307,17 @@ class SaasInstanceBackup(models.Model):
                     ('state', 'in', ('draft', 'paid', 'provisioning', 'pending_provision'))]):
                 raise UserError(_("A new project is being created from this snapshot. Try again later."))
             name = snapshot.name
-            if snapshot.bucket_path:
-                try:
-                    snapshot._delete_bucket_prefix(snapshot.bucket_path)
-                except Exception:
-                    _logger.exception("Could not delete snapshot data %s", snapshot.bucket_path)
-            snapshot._on_snapshot_deleted()
+            bucket_path = snapshot.bucket_path
             instance = snapshot.instance_id
+            snapshot._on_snapshot_deleted()
+            # The record goes first: if anything refuses the deletion the
+            # customer keeps a working snapshot. Storage is cleaned after.
             snapshot.with_context(skip_bucket_delete=True).unlink()
+            if bucket_path:
+                try:
+                    self._delete_bucket_prefix(bucket_path)
+                except Exception:
+                    _logger.exception("Could not delete snapshot data %s", bucket_path)
             if instance:
                 instance._append_log("Snapshot '%s' deleted." % name)
                 self.env['saas.audit.log'].saas_audit(
@@ -1262,7 +1265,8 @@ class SaasInstanceBackup(models.Model):
                     "Failed to download %s:\n%s\n%s"
                 ) % (label, r.stdout, r.stderr))
 
-        extra_dbs = self._manifest_extra_databases(driver, handle, workdir)
+        extra_dbs = [n for n in self._manifest_extra_databases(driver, handle, workdir)
+                     if n != db_name and self._map_restore_db_name(n, instance) != db_name]
         for name in extra_dbs:
             self._map_restore_db_name(name, instance)
             dump_url = self._presigned_get_url(
@@ -1309,20 +1313,7 @@ class SaasInstanceBackup(models.Model):
             "conn = ['-h', o.get('db_host', 'localhost'), '-p', o.get('db_port', '5432'),\n"
             "        '-U', o.get('db_user', 'odoo')]\n"
         )
-        # Same flags run-restore.sh uses: --no-owner (the dump's
-        # original role has no reason to exist here), --single-
-        # transaction + --exit-on-error (a partial restore is worse
-        # than no restore — see that script's own comment).
-        script = (
-            conn_prelude
-            + "p = subprocess.run(['pg_restore'] + conn + ['-d', %s,\n"
-              "    '--no-owner', '--single-transaction', '--exit-on-error', %s],\n"
-              "    env=env, capture_output=True, text=True)\n"
-              "sys.stdout.write(p.stdout)\n"
-              "sys.stderr.write(p.stderr)\n"
-              "sys.exit(p.returncode)\n"
-        ) % (repr(db_name), repr('%s/db.dump' % workdir))
-        command = "python3 - <<'SAAS_PGRESTORE_EOF'\n%s\nSAAS_PGRESTORE_EOF" % script
+        command = self._pg_restore_command(conn_prelude, db_name, '%s/db.dump' % workdir)
         r = driver.exec(handle, command, timeout=1800)
         if not r.ok:
             raise UserError(_(
@@ -1361,17 +1352,7 @@ class SaasInstanceBackup(models.Model):
                 'CREATE DATABASE "%s"' % target_db, timeout=120)
             if rc != 0:
                 raise UserError(_("createdb failed for %s:\n%s") % (target_db, err or out))
-            script = (
-                conn_prelude
-                + "p = subprocess.run(['pg_restore'] + conn + ['-d', %s,\n"
-                  "    '--no-owner', '--single-transaction', '--exit-on-error', %s],\n"
-                  "    env=env, capture_output=True, text=True)\n"
-                  "sys.stdout.write(p.stdout)\n"
-                  "sys.stderr.write(p.stderr)\n"
-                  "sys.exit(p.returncode)\n"
-            ) % (repr(target_db), repr(dest))
-            command = ("python3 - <<'SAAS_PGRESTORE_EOF'\n%s\n"
-                       "SAAS_PGRESTORE_EOF") % script
+            command = self._pg_restore_command(conn_prelude, target_db, dest)
             r = driver.exec(handle, command, timeout=1800)
             if not r.ok:
                 raise UserError(_(
@@ -1450,6 +1431,40 @@ class SaasInstanceBackup(models.Model):
         if not re.fullmatch(r'[_a-z][a-z0-9_-]{0,62}', name):
             raise UserError(_("Invalid restored database name: %s") % name)
         return name
+
+    @staticmethod
+    def _pg_restore_command(conn_prelude, db_name, dump_path):
+        """Restore a custom-format dump into ``db_name`` inside the pod.
+
+        The pod's client tools can be newer than the database server (the
+        upstream Odoo image ships the latest PostgreSQL client): a newer
+        ``pg_restore`` emits session settings such as
+        ``SET transaction_timeout`` that an older server rejects, and
+        ``--exit-on-error`` then aborts the whole restore. So the dump is
+        turned into SQL, those settings are dropped, and psql replays it in
+        ONE transaction that stops on the first real error — a partial
+        restore is worse than none."""
+        script = (
+            conn_prelude
+            + "import re\n"
+              "dump = subprocess.Popen(['pg_restore', '--no-owner', '--no-privileges', '-f', '-', %s],\n"
+              "                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)\n"
+              "psql = subprocess.Popen(['psql'] + conn + ['-d', %s, '-q', '-v', 'ON_ERROR_STOP=1',\n"
+              "                        '--single-transaction', '-f', '-'],\n"
+              "                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)\n"
+              "skip = re.compile(rb'^SET (transaction_timeout|idle_in_transaction_session_timeout|statement_timeout|lock_timeout) ')\n"
+              "for line in dump.stdout:\n"
+              "    if skip.match(line):\n"
+              "        continue\n"
+              "    psql.stdin.write(line)\n"
+              "psql.stdin.close()\n"
+              "out, err = psql.communicate()\n"
+              "dump_err = dump.stderr.read(); dump.wait()\n"
+              "sys.stdout.write(out.decode(errors='replace'))\n"
+              "sys.stderr.write(dump_err.decode(errors='replace') + err.decode(errors='replace'))\n"
+              "sys.exit(dump.returncode or psql.returncode)\n"
+        ) % (repr(dump_path), repr(db_name))
+        return "python3 - <<'SAAS_PGRESTORE_EOF'\n%s\nSAAS_PGRESTORE_EOF" % script
 
     def _on_restore_full_instance_error(self, exception, instance_id, prev_state):
         """``on_error`` shim: this job's record is a

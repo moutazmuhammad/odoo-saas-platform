@@ -180,7 +180,9 @@ class TestFullInstanceBackup(TransactionCase):
         pg_restore_cmd = next(c for c in commands if 'pg_restore' in c)
         self.assertIn('--no-owner', pg_restore_cmd)
         self.assertIn('--single-transaction', pg_restore_cmd)
-        self.assertIn('--exit-on-error', pg_restore_cmd)
+        self.assertIn('ON_ERROR_STOP=1', pg_restore_cmd)
+        # A newer pg_restore's session settings must not abort an older server.
+        self.assertIn('transaction_timeout', pg_restore_cmd)
         tar_cmd = next(c for c in commands if c.startswith('tar '))
         self.assertIn('/var/lib/odoo', tar_cmd)
         self.assertIn('filestore.tar.gz', tar_cmd)

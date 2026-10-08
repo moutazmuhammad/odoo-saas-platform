@@ -246,7 +246,6 @@ export interface ApiBackup {
   project_name?: string;
   origin_subdomain?: string;
   odoo_version?: string;
-  billable_gb?: number;
   monthly_price?: number;
   paid_until?: string;
   billing_state?: "free" | "paid" | "pending" | "overdue";
@@ -256,10 +255,8 @@ export interface ApiBackup {
 }
 
 export interface SnapshotEstimate {
-  size_gb: number;
   limit: number;
   count: number;
-  billable_gb?: number;
   monthly_price?: number;
   due_now?: number;
   period_end?: string;

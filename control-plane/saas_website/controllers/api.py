@@ -1474,7 +1474,7 @@ class SaasApi(http.Controller):
         except (AccessError, MissingError):
             return err(_("Instance not found."), 'not_found')
         size = instance.total_storage_bytes or 0
-        data = {'size_gb': round(size / (1024 ** 3), 2), 'limit': instance._snapshot_limit(),
+        data = {'limit': instance._snapshot_limit(),
                 'count': len(instance.snapshot_ids_live())}
         if hasattr(instance, '_snapshot_quote'):
             data.update(instance._snapshot_quote(size))
@@ -2243,7 +2243,7 @@ class SaasApi(http.Controller):
             'id': b.id,
             'label': b.name or _('Backup'),
             'type': 'manual' if b.ephemeral else 'automatic',
-            'size_mb': round(b.size_mb or 0.0, 1),
+            'size_mb': 0.0,  # sizes are an internal detail
             'created': _utc_datetime(b.create_date) if b.create_date else '',
             'status': _BACKUP_STATUS.get(b.state, 'available'),
             'download_url': b.download_url or '',
@@ -2270,7 +2270,6 @@ class SaasApi(http.Controller):
         }
         if hasattr(b, 'monthly_price'):
             data.update({
-                'billable_gb': b.billable_gb,
                 'monthly_price': b.monthly_price,
                 'paid_until': fields.Date.to_string(b.paid_until) if b.paid_until else '',
                 'billing_state': b.billing_state,

@@ -15,7 +15,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
 import { useToast } from "@/context/ToastContext";
 import { api, ApiError, type ApiBackup, type ApiInstance, type SnapshotEstimate } from "@/lib/api";
-import { formatDate, formatDateTime, formatSizeMb } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { RestoreSnapshotDialog } from "@/pages/portal/Backups";
 
 function money(amount: number, currency = "USD") {
@@ -88,7 +88,6 @@ export default function Snapshots({ embedId }: { embedId?: number } = {}) {
     navigate(`/hosting?${qs.toString()}`);
   };
 
-  const monthlyTotal = (rows || []).filter((b) => b.status === "available").reduce((s, b) => s + (b.monthly_price || 0), 0);
   const pendingRow = (rows || []).find((b) => b.pending_invoice_id && (b.billing_state === "pending" || b.billing_state === "overdue"));
   const openInvoice = pendingRow && pendingRow.pending_invoice_id ? { id: pendingRow.pending_invoice_id, overdue: pendingRow.billing_state === "overdue" } : null;
   const currency = rows?.find((b) => b.currency)?.currency || "USD";
@@ -101,7 +100,7 @@ export default function Snapshots({ embedId }: { embedId?: number } = {}) {
           <p className="mt-1 text-sm text-muted">
             {scopedId
               ? i18nText("A snapshot captures this server, database and files, whenever you want. Keep it as long as you like, restore it here, or start a new project from it.")
-              : i18nText("All your snapshots, across every project, including projects you have since deleted. Billed per GB per month, in advance, until you delete them.")}
+              : i18nText("All your snapshots, across every project, including projects you have since deleted. Each has a fixed monthly price, paid in advance, until you delete it.")}
           </p>
         </div>
         {canTake && (
@@ -110,11 +109,6 @@ export default function Snapshots({ embedId }: { embedId?: number } = {}) {
         )}
       </div>
 
-      {rows && rows.length > 0 && monthlyTotal > 0 && (
-        <p className="mt-4 text-sm text-muted">
-          {i18nText("Current snapshot charges: {0} per month.", [money(monthlyTotal, currency)])}
-        </p>
-      )}
       {openInvoice && (
         <AlertBanner
           className="mt-4"
@@ -155,7 +149,7 @@ export default function Snapshots({ embedId }: { embedId?: number } = {}) {
                     <p className="font-medium">{b.label}</p>
                     <p className="mt-0.5 text-xs text-muted">
                       {!scopedId && (b.project_name ? `${b.project_name}${b.instance_state === "deleted" ? ` (${i18nText("project deleted")})` : ""} · ` : "")}
-                      {formatDateTime(b.created)}{b.size_mb ? ` · ${formatSizeMb(b.size_mb)}` : ""}{b.odoo_version ? ` · Odoo ${b.odoo_version}` : ""}
+                      {formatDateTime(b.created)}{b.odoo_version ? ` · Odoo ${b.odoo_version}` : ""}
                     </p>
                     {b.monthly_price != null && b.monthly_price > 0 && (
                       <p className="mt-0.5 text-xs text-muted">
@@ -259,15 +253,14 @@ function TakeSnapshotDialog({ open, instanceId, onClose, onTake }: { open: boole
         <div className="mt-4 rounded-lg border border-border bg-card/60 p-3 text-sm">
           {estimate.monthly_price != null ? (
             <>
-              <div className="flex justify-between"><span className="text-muted">{i18nText("Estimated size")}</span><span>{i18nText("{0} GB", [String(estimate.billable_gb)])}</span></div>
-              <div className="mt-1 flex justify-between"><span className="text-muted">{i18nText("Monthly price")}</span><span className="font-medium">{money(estimate.monthly_price, estimate.currency || "USD")}</span></div>
+              <div className="flex justify-between"><span className="text-muted">{i18nText("Monthly price")}</span><span className="font-medium">{money(estimate.monthly_price, estimate.currency || "USD")}</span></div>
               {estimate.due_now != null && (
                 <div className="mt-2 flex justify-between border-t border-border pt-2"><span className="font-medium">{i18nText("Due now")}</span><span className="font-semibold">{money(estimate.due_now, estimate.currency || "USD")}</span></div>
               )}
               <p className="mt-1 text-xs text-muted">{i18nText("Paid in advance, then included in your monthly snapshot invoice until you delete it.")}</p>
             </>
           ) : (
-            <p className="text-xs text-muted">{i18nText("Snapshots of this size are free.")}</p>
+            <p className="text-xs text-muted">{i18nText("This snapshot is free.")}</p>
           )}
           {atLimit && <p className="mt-2 text-xs text-danger">{i18nText("You have reached the limit of {0} snapshots for this server. Delete one to take another.", [String(estimate.limit)])}</p>}
         </div>

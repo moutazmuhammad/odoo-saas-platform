@@ -2671,5 +2671,7 @@
   "Price per cycle": "السعر لكل دورة",
   "Charged now for the rest of the current cycle, then included in every renewal.": "تُحتسب الآن عن المتبقي من الدورة الحالية، ثم تُضاف إلى كل تجديد.",
   "Reserving…": "جارٍ الحجز…",
-  "Reserve & pay": "احجز وادفع"
+  "Reserve & pay": "احجز وادفع",
+  "All your snapshots, across every project, including projects you have since deleted. Each has a fixed monthly price, paid in advance, until you delete it.": "كل لقطاتك عبر جميع المشاريع، بما فيها مشاريع حذفتها. لكل لقطة سعر شهري ثابت يُدفع مقدمًا حتى تحذفها.",
+  "This snapshot is free.": "هذه اللقطة مجانية."
 }

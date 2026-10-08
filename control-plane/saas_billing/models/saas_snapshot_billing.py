@@ -58,7 +58,7 @@ class SaasInstanceSnapshotQuote(models.Model):
         Backup = self.env['saas.instance.backup']
         gb, monthly = Backup._snapshot_price(size_bytes)
         due_now, period_end = Backup._snapshot_first_charge(self.partner_id, monthly)
-        return {'billable_gb': gb, 'monthly_price': monthly, 'due_now': due_now,
+        return {'monthly_price': monthly, 'due_now': due_now,
                 'period_end': fields.Date.to_string(period_end)}
 
 
@@ -186,16 +186,14 @@ class SaasInstanceBackupBilling(models.Model):
                 continue
             if snap.unbilled_amount and snap.unbilled_period_end:
                 lines.append((snap, snap.unbilled_amount,
-                              _('Snapshot "%s" — %d GB, prorated to %s') % (
-                                  snap.name, snap.billable_gb or 1,
-                                  fields.Date.to_string(snap.unbilled_period_end)),
+                              _('Snapshot "%s" — prorated to %s') % (
+                                  snap.name, fields.Date.to_string(snap.unbilled_period_end)),
                               snap.unbilled_period_end))
             elif snap.paid_until and snap.paid_until - lead <= today:
                 period_end = snap.paid_until + relativedelta(months=1)
                 lines.append((snap, snap.monthly_price,
-                              _('Snapshot "%s" — %d GB, %s to %s') % (
-                                  snap.name, snap.billable_gb or 1,
-                                  fields.Date.to_string(snap.paid_until),
+                              _('Snapshot "%s" — %s to %s') % (
+                                  snap.name, fields.Date.to_string(snap.paid_until),
                                   fields.Date.to_string(period_end)),
                               period_end))
         return lines

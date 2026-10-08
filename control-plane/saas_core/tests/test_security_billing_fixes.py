@@ -439,7 +439,9 @@ class TestApiSecurityHttp(HttpCase):
              'login': 'admin', 'password': 'whatever12'})
         self.assertFalse(res.get('ok'),
                          "a bare token must not authorize db create: %s" % res)
-        self.assertEqual(res.get('code'), 'not_found')
+        # The route is closed for everyone (Odoo.sh model: the platform
+        # manages the single database), token or not.
+        self.assertEqual(res.get('code'), 'not_available')
 
     def test_databases_drop_refuses_token_only_access(self):
         inst = self._running_hosting_instance('dbtoktest2')
@@ -449,7 +451,9 @@ class TestApiSecurityHttp(HttpCase):
             {'access_token': token, 'name': 'production'})
         self.assertFalse(res.get('ok'),
                          "a bare token must not authorize db drop: %s" % res)
-        self.assertEqual(res.get('code'), 'not_found')
+        # The route is closed for everyone (Odoo.sh model: the platform
+        # manages the single database), token or not.
+        self.assertEqual(res.get('code'), 'not_available')
 
     def test_databases_duplicate_refuses_token_only_access(self):
         inst = self._running_hosting_instance('dbtoktest3')
@@ -459,7 +463,9 @@ class TestApiSecurityHttp(HttpCase):
             {'access_token': token, 'source': 'production', 'name': 'copy1'})
         self.assertFalse(res.get('ok'),
                          "a bare token must not authorize db duplicate: %s" % res)
-        self.assertEqual(res.get('code'), 'not_found')
+        # The route is closed for everyone (Odoo.sh model: the platform
+        # manages the single database), token or not.
+        self.assertEqual(res.get('code'), 'not_available')
 
     # ---- B.1.3 follow-up: databases/{create,drop,duplicate} REJECTION
     # paths only was removed (test_databases_duplicate_rejects_missing_source

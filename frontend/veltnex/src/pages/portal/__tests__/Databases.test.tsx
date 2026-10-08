@@ -37,25 +37,38 @@ function mockLoaded(overrides: Partial<DbListData> = {}) {
 }
 
 describe("Databases", () => {
-  it("blocks a second production database but keeps restore and delete available", async () => {
+  it("offers no create, duplicate or delete: the database is managed like Odoo.sh", async () => {
     mockLoaded({database_limit: 1});
     const user = userEvent.setup();
     renderWithProviders(<Databases embedId={1} />);
     await screen.findByText("production");
-    expect(screen.getByRole("button", {name: /create database/i})).toBeDisabled();
-    expect(screen.getByRole("button", {name: /restore database/i})).toBeEnabled();
+    expect(screen.queryByRole("button", {name: /create database/i})).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {name: /database manager/i})).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", {name: /more actions/i}));
+    expect(screen.getByRole("button", {name: /download backup/i})).toBeInTheDocument();
+    expect(screen.getByRole("button", {name: /reset password/i})).toBeInTheDocument();
+    expect(screen.queryByRole("button", {name: /^delete$/i})).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {name: /duplicate/i})).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {name: /upgrade modules/i})).not.toBeInTheDocument();
+  });
+
+  it("restores into the existing database only after its name is typed", async () => {
+    mockLoaded({database_limit: 1});
+    const user = userEvent.setup();
+    renderWithProviders(<Databases embedId={1} />);
+    await screen.findByText("production");
     await user.click(screen.getByRole("button", {name: /restore database/i}));
-    expect(screen.getByRole("checkbox", {name: /replace an existing database/i})).toBeInTheDocument();
-    await user.click(screen.getByRole("checkbox", {name: /replace an existing database/i}));
-    expect(screen.getByLabelText(/database to replace/i)).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/new database name/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/type production to confirm/i)).toBeInTheDocument();
     expect(screen.getByRole("button", {name: /upload.*restore/i})).toBeDisabled();
   });
 
-  it("allows a first production database after the previous one is removed", async () => {
+  it("explains that the first database is prepared automatically", async () => {
     mockLoaded({database_limit: 1, databases: []});
     renderWithProviders(<Databases embedId={1} />);
-    await screen.findByText(/no databases/i);
-    expect(screen.getAllByRole("button", {name: /create database/i})[0]).toBeEnabled();
+    await screen.findByText(/being prepared/i);
+    expect(screen.queryByRole("button", {name: /create database/i})).not.toBeInTheDocument();
   });
 
   beforeEach(() => {
@@ -78,70 +91,5 @@ describe("Databases", () => {
     renderWithProviders(<Databases embedId={1} />);
 
     expect(await screen.findByText("Instance is unreachable.")).toBeInTheDocument();
-  });
-
-  it("creates a database with the values entered in the dialog", async () => {
-    mockLoaded();
-    mockedApi.dbCreate.mockResolvedValue(undefined);
-    const user = userEvent.setup();
-
-    renderWithProviders(<Databases embedId={1} />);
-    await screen.findByText("production");
-
-    await user.click(screen.getByRole("button", { name: /create database/i }));
-    const dialog = screen.getByRole("dialog");
-
-    await user.type(within(dialog).getByLabelText(/database name/i), "staging");
-    await user.type(within(dialog).getByLabelText(/admin password/i), "s3cret!");
-    await user.click(within(dialog).getByRole("button", { name: /create database/i }));
-
-    await waitFor(() =>
-      expect(mockedApi.dbCreate).toHaveBeenCalledWith(1, "staging", "admin", "s3cret!"),
-    );
-    // The create flow re-loads the list rather than showing a toast.
-    await waitFor(() => expect(mockedApi.databases).toHaveBeenCalledTimes(2));
-  });
-
-  it("rejects a database name that fails the naming pattern before calling the API", async () => {
-    mockLoaded();
-    const user = userEvent.setup();
-
-    renderWithProviders(<Databases embedId={1} />);
-    await screen.findByText("production");
-
-    await user.click(screen.getByRole("button", { name: /create database/i }));
-    const dialog = screen.getByRole("dialog");
-
-    await user.type(within(dialog).getByLabelText(/database name/i), "Bad Name!");
-    await user.type(within(dialog).getByLabelText(/admin password/i), "s3cret!");
-    await user.click(within(dialog).getByRole("button", { name: /create database/i }));
-
-    expect(
-      await within(dialog).findByText(/lowercase letters, numbers, or underscores/i),
-    ).toBeInTheDocument();
-    expect(mockedApi.dbCreate).not.toHaveBeenCalled();
-  });
-
-  it("drops a database only after its name is typed to confirm", async () => {
-    mockLoaded();
-    mockedApi.dbDrop.mockResolvedValue(undefined);
-    const user = userEvent.setup();
-
-    renderWithProviders(<Databases embedId={1} />);
-    await screen.findByText("production");
-
-    await user.click(screen.getByRole("button", { name: /more actions/i }));
-    await user.click(screen.getByRole("button", { name: /delete/i }));
-
-    const dialog = screen.getByRole("dialog", { name: /delete database/i });
-    const deleteButton = within(dialog).getByRole("button", { name: /delete database/i });
-    expect(deleteButton).toBeDisabled();
-
-    await user.type(within(dialog).getByLabelText(/type production to confirm/i), "production");
-    expect(deleteButton).toBeEnabled();
-
-    await user.click(deleteButton);
-
-    await waitFor(() => expect(mockedApi.dbDrop).toHaveBeenCalledWith(1, "production"));
   });
 });

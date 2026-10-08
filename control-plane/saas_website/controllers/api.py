@@ -1155,19 +1155,11 @@ class SaasApi(http.Controller):
                 type='json', auth='public')
     def db_create(self, instance_id, name=None, login=None, password=None,
                   access_token=None, **kw):
-        try:
-            instance = self._hosting(instance_id, access_token, write=True, permission='db.create')
-        except (AccessError, MissingError):
-            return err(_("Instance not found."), 'not_found')
-        try:
-            self._require_running(instance)
-            op = instance.hosting_db_create_async(
-                name=name or '', login=login or '',
-                password=password or '', lang='en_US', country_code=None,
-            )
-        except UserError as e:
-            return err(str(e), 'create_failed')
-        return ok({'db_name': op.db_name})
+        # Odoo.sh model: every server has exactly one database, created by
+        # the platform. Customers back it up, restore into it or reset its
+        # admin password — they never create, duplicate or delete one.
+        return err(_("Databases are managed automatically on this server."),
+                   'not_available')
 
     @http.route('/saas/api/v1/instances/<int:instance_id>/databases/duplicate',
                 type='json', auth='public')
@@ -1175,18 +1167,11 @@ class SaasApi(http.Controller):
                      access_token=None, **kw):
         """Duplicate an existing database into a new name. Runs async
         (same in-flight tracking as create) and returns the new DB name."""
-        try:
-            instance = self._hosting(instance_id, access_token, write=True, permission='db.create')
-        except (AccessError, MissingError):
-            return err(_("Instance not found."), 'not_found')
-        try:
-            self._require_running(instance)
-            op = instance.hosting_db_duplicate_async(
-                source=source or '', new_name=name or '',
-            )
-        except UserError as e:
-            return err(str(e), 'duplicate_failed')
-        return ok({'db_name': op.db_name})
+        # Odoo.sh model: every server has exactly one database, created by
+        # the platform. Customers back it up, restore into it or reset its
+        # admin password — they never create, duplicate or delete one.
+        return err(_("Databases are managed automatically on this server."),
+                   'not_available')
 
     @http.route('/saas/api/v1/instances/<int:instance_id>/databases/restore/upload-url',
                 type='json', auth='public')
@@ -1247,16 +1232,11 @@ class SaasApi(http.Controller):
     @http.route('/saas/api/v1/instances/<int:instance_id>/databases/drop',
                 type='json', auth='public')
     def db_drop(self, instance_id, name=None, access_token=None, **kw):
-        try:
-            instance = self._hosting(instance_id, access_token, write=True, permission='db.delete')
-        except (AccessError, MissingError):
-            return err(_("Instance not found."), 'not_found')
-        try:
-            self._require_running(instance)
-            op = instance.hosting_db_drop_async(name=name or '')
-        except UserError as e:
-            return err(str(e), 'drop_failed')
-        return ok({'db_name': op.db_name})
+        # Odoo.sh model: every server has exactly one database, created by
+        # the platform. Customers back it up, restore into it or reset its
+        # admin password — they never create, duplicate or delete one.
+        return err(_("Databases are managed automatically on this server."),
+                   'not_available')
 
     @http.route('/saas/api/v1/instances/<int:instance_id>/databases/upgrade',
                 type='json', auth='public')

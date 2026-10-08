@@ -44,40 +44,12 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
   const embedded = embedId != null;
   const navigate = useNavigate();
   const toast = useToast();
-  const [openingManager, setOpeningManager] = React.useState(false);
-
-  // Open the tab synchronously (pop-up blockers drop window.open after an
-  // await), then point it at the one-time link.
-  const openDatabaseManager = async () => {
-    const tab = window.open("", "_blank");
-    setOpeningManager(true);
-    try {
-      const { url } = await api.databaseManagerUrl(instanceId);
-      if (tab) {
-        tab.opener = null;
-        tab.location.href = url;
-      } else {
-        window.location.href = url;
-      }
-    } catch (err) {
-      tab?.close();
-      toast.error(i18nText("Database manager"), err instanceof ApiError ? err.message : i18nText("Couldn't open the database manager."));
-    } finally {
-      setOpeningManager(false);
-    }
-  };
 
   const [data, setData] = React.useState<DbListData | null>(null);
-  const databaseLimit = data?.database_limit || 0;
-  const capacityReached = databaseLimit > 0 && (data?.databases.length || 0) >= databaseLimit;
   const [instance, setInstance] = React.useState<ApiInstance | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [createOpen, setCreateOpen] = React.useState(false);
   const [resetTarget, setResetTarget] = React.useState<string | null>(null);
-  const [duplicateTarget, setDuplicateTarget] = React.useState<string | null>(null);
-  const [upgradeTarget, setUpgradeTarget] = React.useState<string | null>(null);
   const [restoreOpen, setRestoreOpen] = React.useState(false);
-  const [dropTarget, setDropTarget] = React.useState<string | null>(null);
   const [backupsTarget, setBackupsTarget] = React.useState<string | null>(null);
   const [backups, setBackups] = React.useState<ApiBackup[]>([]);
   const [openMenu, setOpenMenu] = React.useState<string | null>(null);
@@ -149,14 +121,6 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
   const isCreating = (data?.pending_ops ?? []).some((o) => o.operation === "create");
   usePolling(() => load(true), { interval: 5000, enabled: hasPending });
 
-  // Runs the actual delete once confirmed in the dialog. Throws on
-  // failure so the dialog can surface the error inline. No banner —
-  // the row shows a "Deleting…" spinner until it's gone, mirroring
-  // the create flow.
-  const handleDrop = async (name: string) => {
-    await api.dbDrop(instanceId, name);
-    await load(true);
-  };
 
   // One-click backup download: trigger a fresh on-demand backup, poll
   // until it's built + uploaded to the bucket, then start the browser
@@ -219,16 +183,9 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{i18nText("Databases")}<HelpHint anchor="create-database" className="ms-1.5" /></h1>
-          <p className="mt-1 text-sm text-muted">{i18nText("Create, back up, and manage your databases.")}</p>
+          <p className="mt-1 text-sm text-muted">{i18nText("This server runs one database. Back it up, restore your own backup into it, or reset its admin password.")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="secondary"
-            onClick={openDatabaseManager}
-            disabled={!can("database.manager") || !data?.ready || openingManager}
-            title={data?.ready ? i18nText("Odoo's database manager, without the master password.") : i18nText("Available once your instance is running.")}
-          >
-            {openingManager ? <Loader2 className="size-4 animate-spin" /> : <Settings2 className="size-4" />}{i18nText("Database manager")}</Button>
           <Button
             variant="secondary"
             onClick={() => setRestoreOpen(true)}
@@ -236,18 +193,8 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
             title={data?.ready ? undefined : i18nText("Available once your instance is running.")}
           >
             <UploadCloud className="size-4" />{i18nText("Restore database")}</Button>
-          <Button
-            onClick={() => setCreateOpen(true)}
-            disabled={!can("db.create") || !data?.ready || isCreating || capacityReached}
-            title={capacityReached ? i18nText("This server allows one database. Restore or manage the existing database.") : isCreating ? i18nText("A database is already being created on this instance.") : undefined}
-          >
-            {isCreating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-            {isCreating ? i18nText("Creating…") : i18nText("Create database")}
-          </Button>
         </div>
       </div>
-
-      {databaseLimit === 1 && <p className="mt-4 text-sm text-muted">{i18nText("Each server includes one database. You can restore a backup into it or delete it and create a replacement.")}</p>}
 
       {error && <AlertBanner className="mt-6" variant="danger" title={i18nText("Database management")} description={error} />}
 
@@ -267,9 +214,9 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
         <EmptyState
           className="mt-8"
           icon={Database}
-          title={i18nText("No databases yet")}
-          description={i18nText("Create your first database to start using this instance.")}
-          action={can("db.create") ? <Button onClick={() => setCreateOpen(true)}>{i18nText("Create database")}</Button> : undefined}
+          title={i18nText("Your database is being prepared")}
+          description={i18nText("It appears here in a moment. You can also restore one of your own backups.")}
+          action={can("db.restore") ? <Button variant="secondary" onClick={() => setRestoreOpen(true)}><UploadCloud className="size-4" />{i18nText("Restore database")}</Button> : undefined}
         />
       ) : data ? (
         <Card className="mt-6 overflow-hidden">
@@ -368,11 +315,7 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
                                 >
                                   <MenuItem icon={Archive} label={i18nText("Create backup")} disabled={!can("backup.create")} onClick={async () => { setOpenMenu(null); try { await api.dbBackup(instanceId, db.name, "zip"); await load(true); toast.success(i18nText("Backup queued")); } catch (e) { toast.error(i18nText("Could not create backup"), e instanceof ApiError ? e.message : i18nText("Please try again.")); } }} />
                                   <MenuItem disabled={!can("backup.download")} icon={Download} label={i18nText("Download backup")} onClick={() => { setOpenMenu(null); setBackupsTarget(db.name); }} />
-                                  <MenuItem icon={CopyPlus} label={i18nText("Duplicate")} disabled={capacityReached || !can("db.create") || !can("backup.download")} onClick={() => { setOpenMenu(null); setDuplicateTarget(db.name); }} />
-                                  <MenuItem disabled={!can("db.upgrade")} icon={RefreshCw} label={i18nText("Upgrade modules")} onClick={() => { setOpenMenu(null); setUpgradeTarget(db.name); }} />
                                   <MenuItem disabled={!can("db.password")} icon={KeyRound} label={i18nText("Reset password")} onClick={() => { setOpenMenu(null); setResetTarget(db.name); }} />
-                                  <div className="border-t border-border" />
-                                  <MenuItem disabled={!can("db.delete")} icon={Trash2} label={i18nText("Delete")} danger onClick={() => { setOpenMenu(null); setDropTarget(db.name); }} />
                                 </div>
                               </>
                             )}
@@ -388,42 +331,14 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
         </Card>
       ) : null}
 
-      <CreateDatabaseDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        existing={data?.databases.map((d) => d.name) || []}
-        onCreate={async (name, login, password) => {
-          await api.dbCreate(instanceId, name, login, password);
-          // No banner/toast — the new DB now shows as a live "Creating…"
-          // row in the list, and the Create button locks until it's done.
-          await load(true);
-        }}
-      />
 
-      <DuplicateDatabaseDialog
-        source={duplicateTarget}
-        existing={data?.databases.map((d) => d.name) || []}
-        onClose={() => setDuplicateTarget(null)}
-        onDuplicate={async (source, newName) => {
-          await api.dbDuplicate(instanceId, source, newName);
-          // The copy shows up as a live "Duplicating…" row until ready.
-          await load(true);
-        }}
-      />
 
-      <UpgradeModulesDialog
-        dbName={upgradeTarget}
-        instanceId={instanceId}
-        onClose={() => setUpgradeTarget(null)}
-        onDone={() => load(true)}
-      />
 
       <RestoreDatabaseDialog
         open={restoreOpen}
         instanceId={instanceId}
         existing={data?.databases.map((d) => d.name) || []}
         prefix={data?.prefix || ""}
-        databaseLimit={databaseLimit}
         onClose={() => setRestoreOpen(false)}
         onDone={() => {
           // The target DB now shows a live "Restoring…" row; the instance
@@ -443,11 +358,6 @@ export default function Databases({ embedId }: { embedId?: number } = {}) {
         }}
       />
 
-      <DeleteDatabaseDialog
-        dbName={dropTarget}
-        onClose={() => setDropTarget(null)}
-        onConfirm={handleDrop}
-      />
 
       <DatabaseBackupsDialog
         canCreate={can("backup.create")}
@@ -589,237 +499,6 @@ function DatabaseBackupsDialog({
   );
 }
 
-function DuplicateDatabaseDialog({
-  source,
-  existing,
-  onClose,
-  onDuplicate,
-}: {
-  source: string | null;
-  existing: string[];
-  onClose: () => void;
-  onDuplicate: (source: string, newName: string) => Promise<void>;
-}) {
-  const [name, setName] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (source) {
-      setName("");
-      setError(null);
-      setLoading(false);
-    }
-  }, [source]);
-
-  const submit = async () => {
-    if (!source) return;
-    if (!/^[a-z][a-z0-9_]{2,40}$/.test(name)) {
-      return setError(i18nText("Use 3–41 lowercase letters, numbers, or underscores, starting with a letter."));
-    }
-    // existing holds full DB names (e.g. "acme_staging"); the customer
-    // types the new suffix. Catch the common collision client-side; the
-    // backend is the authoritative check.
-    if (existing.some((n) => n === name || n.endsWith("_" + name))) {
-      return setError(i18nText("A database with that name already exists."));
-    }
-    setError(null);
-    setLoading(true);
-    try {
-      await onDuplicate(source, name);
-      onClose();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : i18nText("Couldn't duplicate the database."));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Dialog
-      open={!!source}
-      onClose={onClose}
-      title={i18nText("Duplicate database")}
-      description={source ? i18nText("Create an exact copy of “{0}” under a new name.", [source]) : undefined}
-    >
-      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't duplicate")} description={error} />}
-      <AlertBanner
-        variant="info"
-        title={i18nText("This copies everything")}
-        description={i18nText("The new database starts as a full copy of the source — its data, users, and files. The original is left untouched.")}
-      />
-      <div className="mt-4 space-y-2">
-        <Label htmlFor="dup-name">{i18nText("New database name")}</Label>
-        <Input
-          id="dup-name"
-          data-technical
-          placeholder={"staging"}
-          value={name}
-          autoFocus
-          onChange={(e) => { setName(e.target.value.toLowerCase()); setError(null); }}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-        />
-        <p className="text-xs text-muted">{i18nText("A short suffix — your instance prefix is added automatically.")}</p>
-      </div>
-      <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
-        <ActionButton loading={loading} loadingText={i18nText("Starting\u2026")} onClick={submit}>
-          <CopyPlus className="size-4" />{i18nText("Duplicate")}</ActionButton>
-      </div>
-    </Dialog>
-  );
-}
-
-function UpgradeModulesDialog({
-  dbName,
-  instanceId,
-  onClose,
-  onDone,
-}: {
-  dbName: string | null;
-  instanceId: number;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [modules, setModules] = React.useState("");
-  const [phase, setPhase] = React.useState<"idle" | "running" | "done" | "failed">("idle");
-  const [error, setError] = React.useState<string | null>(null);
-  const [report, setReport] = React.useState("");
-
-  React.useEffect(() => {
-    if (dbName) {
-      setModules("");
-      setPhase("idle");
-      setError(null);
-      setReport("");
-    }
-  }, [dbName]);
-
-  const start = async () => {
-    if (!dbName) return;
-    setError(null);
-    setReport("");
-    setPhase("running");
-    let opId: number;
-    try {
-      const res = await api.dbUpgrade(instanceId, dbName, modules);
-      opId = res.op_id;
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : i18nText("Couldn't start the upgrade."));
-      setPhase("idle");
-      return;
-    }
-    // Poll the op until done/failed. A live module upgrade can take a
-    // while on a big database, so we watch up to ~20 min; the site
-    // stays online throughout. A few network blips are tolerated.
-    const DEADLINE_MS = 20 * 60 * 1000;
-    const startedAt = Date.now();
-    let misses = 0;
-    for (;;) {
-      if (Date.now() - startedAt > DEADLINE_MS) {
-        setError(i18nText("This is taking longer than expected — it may still be finishing in the background. Check back shortly."));
-        setPhase("failed");
-        return;
-      }
-      await new Promise((r) => setTimeout(r, 3000));
-      let op;
-      try {
-        op = await api.dbOperation(instanceId, opId);
-        misses = 0;
-      } catch {
-        if (++misses > 20) {
-          setError(i18nText("Lost connection while upgrading. The upgrade may still be running."));
-          setPhase("failed");
-          return;
-        }
-        continue;
-      }
-      if (op.state === "done") {
-        setReport(op.output || "");
-        setPhase("done");
-        onDone();
-        return;
-      }
-      if (op.state === "failed") {
-        setReport(op.output || "");
-        setError(op.error || i18nText("The upgrade didn't complete."));
-        setPhase("failed");
-        onDone();
-        return;
-      }
-      // still running — keep polling
-    }
-  };
-
-  const busy = phase === "running";
-
-  return (
-    <Dialog
-      open={!!dbName}
-      onClose={onClose}
-      title={i18nText("Upgrade modules")}
-      description={dbName ? i18nText("Update installed modules on “{0}”.", [dbName]) : undefined}
-    >
-      {error && (
-        <AlertBanner
-          className="mb-4"
-          variant={phase === "failed" ? "danger" : "warning"}
-          title={i18nText("Upgrade")}
-          description={error}
-        />
-      )}
-      {phase === "done" && !error && (
-        <AlertBanner
-          className="mb-4"
-          variant="success"
-          title={i18nText("Upgrade complete")}
-          description={i18nText("Your modules were upgraded and your instance stayed online the whole time.")}
-        />
-      )}
-
-      <AlertBanner
-        variant="info"
-        title={i18nText("No downtime")}
-        description={i18nText("The upgrade runs live — your site stays up. You may notice a brief slowdown while it finishes.")}
-      />
-
-      <div className="mt-4 space-y-2">
-        <Label htmlFor="upg-mods">{i18nText("Modules to upgrade")}</Label>
-        <Input
-          id="upg-mods"
-          data-technical
-          placeholder={i18nText("e.g. sale, stock, account")}
-          value={modules}
-          autoFocus
-          disabled={busy || phase === "done"}
-          onChange={(e) => setModules(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !busy && phase !== "done" && start()}
-        />
-        <p className="text-xs text-muted">{i18nText("Separate several with commas. Use the module's technical name (e.g. ")}<code className="rounded-sm bg-border/60 px-1 font-mono">{"sale"}</code>{i18nText("), or ")}<code className="rounded-sm bg-border/60 px-1 font-mono">{"all"}</code>{i18nText(" to upgrade everything installed.")}</p>
-      </div>
-
-      {report && (
-        <div className="mt-4 space-y-2">
-          <Label>{i18nText("Report")}</Label>
-          <pre dir="ltr" data-technical className="max-h-60 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-xs text-muted">
-            {report}
-          </pre>
-        </div>
-      )}
-
-      <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={busy}>
-          {phase === "done" || phase === "failed" ? i18nText("Close") : i18nText("Cancel")}
-        </Button>
-        {phase !== "done" && (
-          <ActionButton loading={busy} loadingText={i18nText("Upgrading\u2026")} onClick={start}>
-            <RefreshCw className="size-4" />{i18nText("Upgrade")}</ActionButton>
-        )}
-      </div>
-    </Dialog>
-  );
-}
-
 // Cheap, fail-fast client check: a real .zip starts with the local-file
 // magic "PK\x03\x04". This catches an obviously-wrong file before we
 // upload a (potentially huge) file; the server then does the
@@ -838,7 +517,6 @@ function RestoreDatabaseDialog({
   instanceId,
   existing,
   prefix,
-  databaseLimit,
   onClose,
   onDone,
 }: {
@@ -846,15 +524,16 @@ function RestoreDatabaseDialog({
   instanceId: number;
   existing: string[];
   prefix: string;
-  databaseLimit: number;
   onClose: () => void;
   onDone: () => void;
 }) {
   const [file, setFile] = React.useState<File | null>(null);
   const [fileError, setFileError] = React.useState<string | null>(null);
-  const [overwrite, setOverwrite] = React.useState(false);
   const [confirmation, setConfirmation] = React.useState("");
-  const [target, setTarget] = React.useState("");
+  // Odoo.sh model: the backup replaces this server's (single) database.
+  // Without one yet, it becomes the server's main database.
+  const overwrite = existing.length > 0;
+  const target = existing[0] ?? `${prefix}main`;
   const [phase, setPhase] = React.useState<"idle" | "uploading" | "starting" | "done">("idle");
   const [progress, setProgress] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
@@ -863,8 +542,6 @@ function RestoreDatabaseDialog({
     if (open) {
       setFile(null);
       setFileError(null);
-      setTarget("");
-      setOverwrite(false);
       setConfirmation("");
       setPhase("idle");
       setProgress(0);
@@ -873,13 +550,9 @@ function RestoreDatabaseDialog({
   }, [open]);
 
   const busy = phase === "uploading" || phase === "starting";
-  const validName = /^[a-z][a-z0-9_]{2,40}$/.test(target) || (overwrite && existing.includes(target));
-  const fullTarget = target.startsWith(prefix) ? target : prefix + target;
-  const nameTaken = existing.includes(fullTarget);
-  const atLimit = databaseLimit > 0 && existing.length >= databaseLimit;
-  const replacementConfirmed = overwrite && nameTaken && confirmation.trim() === fullTarget;
-  const canSubmit = !!file && !fileError && validName && !busy &&
-    (overwrite ? replacementConfirmed : !nameTaken && !atLimit);
+  const fullTarget = target;
+  const replacementConfirmed = confirmation.trim() === fullTarget;
+  const canSubmit = !!file && !fileError && !busy && (!overwrite || replacementConfirmed);
 
   const pickFile = async (f: File | null) => {
     setError(null);
@@ -917,7 +590,7 @@ function RestoreDatabaseDialog({
       open={open}
       onClose={onClose}
       title={i18nText("Restore from file")}
-      description={i18nText("Upload one of your own Odoo backups and restore it into a database.")}
+      description={i18nText("Upload one of your own Odoo backups (.zip). It replaces the database on this server.")}
     >
       {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Restore")} description={error} />}
 
@@ -934,23 +607,15 @@ function RestoreDatabaseDialog({
       </div>
 
       <div className="mt-4 space-y-2">
-        {existing.length > 0 && <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={overwrite} disabled={busy} onChange={(e) => { setOverwrite(e.target.checked); setConfirmation(""); }} />{i18nText("Replace an existing database")}</label>}
-        <Label htmlFor="restore-target">{overwrite ? i18nText("Database to replace") : i18nText("New database name")}</Label>
-        <Input
-          id="restore-target"
-          data-technical
-          placeholder={i18nText("e.g. production")}
-          value={target}
-          disabled={busy}
-          onChange={(e) => setTarget(e.target.value.toLowerCase())}
-        />
-        {!overwrite && nameTaken && <p className="text-xs text-danger">{i18nText("That name is already in use. Select replacement to restore into it.")}</p>}
-        {!overwrite && atLimit && <p className="text-xs text-danger">{i18nText("This server allows one database. Select replacement to restore into your existing database.")}</p>}
-        {overwrite && <p className="text-xs text-danger">{i18nText("This permanently replaces the selected database and all its data. Download a backup before continuing.")}</p>}
-        {overwrite && <><Label htmlFor="restore-confirm">{i18nText("Type ")}{fullTarget || i18nText("the database name")}{i18nText(" to confirm replacement")}</Label>
-          <Input id="restore-confirm" data-technical value={confirmation} disabled={busy} onChange={(e) => setConfirmation(e.target.value)} autoComplete="off" /></>}
-        {!overwrite && !atLimit && !nameTaken && <p className="text-xs text-muted">{i18nText("Your backup is restored into a new database with this name.")}</p>}
+        {overwrite ? (
+          <>
+            <p className="text-xs text-danger">{i18nText("This permanently replaces the selected database and all its data. Download a backup before continuing.")}</p>
+            <Label htmlFor="restore-confirm">{i18nText("Type ")}{fullTarget}{i18nText(" to confirm replacement")}</Label>
+            <Input id="restore-confirm" data-technical value={confirmation} disabled={busy} onChange={(e) => setConfirmation(e.target.value)} autoComplete="off" />
+          </>
+        ) : (
+          <p className="text-xs text-muted">{i18nText("Your backup becomes this server's database.")}</p>
+        )}
       </div>
 
       {phase === "uploading" && (
@@ -982,77 +647,6 @@ function RestoreDatabaseDialog({
   );
 }
 
-function DeleteDatabaseDialog({
-  dbName,
-  onClose,
-  onConfirm,
-}: {
-  dbName: string | null;
-  onClose: () => void;
-  onConfirm: (name: string) => Promise<void>;
-}) {
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [confirmText, setConfirmText] = React.useState("");
-
-  React.useEffect(() => {
-    if (dbName) {
-      setLoading(false);
-      setError(null);
-      setConfirmText("");
-    }
-  }, [dbName]);
-
-  const confirmed = confirmText.trim() === dbName;
-
-  const submit = async () => {
-    if (!dbName || !confirmed) return;
-    setError(null);
-    setLoading(true);
-    try {
-      await onConfirm(dbName);
-      onClose();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : i18nText("Couldn't delete the database."));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Dialog open={!!dbName} onClose={onClose} title={i18nText("Delete database")}>
-      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't delete")} description={error} />}
-      <div className="flex gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger/10 text-danger">
-          <Trash2 className="size-5" />
-        </span>
-        <div className="text-sm">
-          <p className="font-medium text-foreground">{i18nText("Delete database “")}{dbName}”?
-          </p>
-          <p className="mt-1 text-muted">{i18nText("This permanently removes the database and all of its data. This action cannot be undone.")}</p>
-        </div>
-      </div>
-      <div className="mt-5 space-y-2">
-        <Label htmlFor="confirm-name">{i18nText("Type ")}<code className="rounded-sm bg-border/60 px-1 py-0.5 font-mono text-xs text-foreground">{dbName}</code>{i18nText(" to confirm")}</Label>
-        <Input
-          id="confirm-name"
-          data-technical
-          autoFocus
-          autoComplete="off"
-          placeholder={dbName ?? ""}
-          value={confirmText}
-          onChange={(e) => setConfirmText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && confirmed && submit()}
-        />
-      </div>
-      <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
-        <ActionButton variant="danger" loading={loading} loadingText={i18nText("Deleting\u2026")} disabled={!confirmed} onClick={submit}>{i18nText("Delete database")}</ActionButton>
-      </div>
-    </Dialog>
-  );
-}
-
 function MenuItem({ icon: Icon, label, onClick, danger, disabled }: { icon: typeof KeyRound; label: string; onClick: () => void; danger?: boolean; disabled?: boolean }) {
   return (
     <button
@@ -1066,76 +660,6 @@ function MenuItem({ icon: Icon, label, onClick, danger, disabled }: { icon: type
       <Icon className="size-4" />
       {label}
     </button>
-  );
-}
-
-function CreateDatabaseDialog({
-  open,
-  onClose,
-  existing,
-  onCreate,
-}: {
-  open: boolean;
-  onClose: () => void;
-  existing: string[];
-  onCreate: (name: string, login: string, password: string) => Promise<void>;
-}) {
-  const [name, setName] = React.useState("");
-  const [login, setLogin] = React.useState("admin");
-  const [password, setPassword] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (open) {
-      setName("");
-      setLogin("admin");
-      setPassword("");
-      setError(null);
-      setLoading(false);
-    }
-  }, [open]);
-
-  const submit = async () => {
-    if (!/^[a-z][a-z0-9_]{2,40}$/.test(name)) {
-      return setError(i18nText("Use 3–41 lowercase letters, numbers, or underscores, starting with a letter."));
-    }
-    if (existing.includes(name)) return setError(i18nText("A database with that name already exists."));
-    if (password.length < 6) return setError(i18nText("Choose an admin password of at least 6 characters."));
-    setError(null);
-    setLoading(true);
-    try {
-      await onCreate(name, login, password);
-      onClose();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : i18nText("Couldn't create the database."));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onClose={onClose} title={i18nText("Create database")} description={i18nText("Spin up a new Odoo database on this instance.")}>
-      {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't create database")} description={error} />}
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="db-name">{i18nText("Database name")}</Label>
-          <Input id="db-name" data-technical placeholder={"production"} value={name} autoFocus onChange={(e) => { setName(e.target.value.toLowerCase()); setError(null); }} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="db-login">{i18nText("Admin login")}</Label>
-          <Input id="db-login" data-technical placeholder={"admin"} value={login} onChange={(e) => setLogin(e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="db-pass">{i18nText("Admin password")}</Label>
-          <Input id="db-pass" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
-        </div>
-      </div>
-      <div className="mt-6 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose} disabled={loading}>{i18nText("Cancel")}</Button>
-        <ActionButton loading={loading} loadingText={i18nText("Creating\u2026")} onClick={submit}>{i18nText("Create database")}</ActionButton>
-      </div>
-    </Dialog>
   );
 }
 

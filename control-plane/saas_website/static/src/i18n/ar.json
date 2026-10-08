@@ -2334,5 +2334,10 @@
   "This server allows one database. Restore or manage the existing database.": "يسمح هذا الخادم بقاعدة بيانات واحدة. استعد نسخة احتياطية إليها أو أدرها.",
   "Each server includes one database. You can restore a backup into it or delete it and create a replacement.": "يتضمن كل خادم قاعدة بيانات واحدة. يمكنك استعادة نسخة احتياطية إليها أو حذفها وإنشاء بديل.",
   "This server allows one database. Select replacement to restore into your existing database.": "يسمح هذا الخادم بقاعدة بيانات واحدة. اختر الاستبدال للاستعادة إلى قاعدة بياناتك الحالية.",
-  "This server allows one customer database. Restore into the existing database, or delete it before creating another.": "يسمح هذا الخادم بقاعدة بيانات واحدة. استعد إلى قاعدة البيانات الحالية أو احذفها قبل إنشاء أخرى."
+  "This server allows one customer database. Restore into the existing database, or delete it before creating another.": "يسمح هذا الخادم بقاعدة بيانات واحدة. استعد إلى قاعدة البيانات الحالية أو احذفها قبل إنشاء أخرى.",
+  "This server runs one database. Back it up, restore your own backup into it, or reset its admin password.": "يعمل هذا الخادم بقاعدة بيانات واحدة. أنشئ نسخة احتياطية منها، أو استعد نسختك الخاصة إليها، أو أعد تعيين كلمة مرور المسؤول.",
+  "Your database is being prepared": "جارٍ تجهيز قاعدة بياناتك",
+  "It appears here in a moment. You can also restore one of your own backups.": "ستظهر هنا خلال لحظات. يمكنك أيضًا استعادة إحدى نسخك الاحتياطية.",
+  "Upload one of your own Odoo backups (.zip). It replaces the database on this server.": "ارفع إحدى نسخ Odoo الاحتياطية الخاصة بك (.zip). ستحل محل قاعدة البيانات على هذا الخادم.",
+  "Your backup becomes this server's database.": "ستصبح نسختك الاحتياطية قاعدة بيانات هذا الخادم."
 }

@@ -27,8 +27,6 @@ const GlobeViz = React.lazy(() =>
   import("@/components/Globe").then((m) => ({ default: m.Globe })),
 );
 
-const ODOO_VERSIONS = ["13", "14", "15", "16", "17", "18", "19", "20"];
-
 // ---------------------------------------------------------------------
 // Shared building blocks
 // ---------------------------------------------------------------------
@@ -185,8 +183,8 @@ function HeroChip({ icon: Icon, title, detail }: { icon: LucideIcon; title: stri
 
 function TrustStrip({ hosting }: { hosting: boolean }) {
   const items = hosting
-    ? ["GitHub", "GitLab", "Bitbucket", i18nText("Odoo 13 → 20"), i18nText("Community & Enterprise"), "Kubernetes"]
-    : [i18nText("Odoo 13 → 20"), i18nText("Community & Enterprise"), "Kubernetes", i18nText("Daily backups"), i18nText("Free TLS")];
+    ? ["GitHub", "GitLab", "Bitbucket", i18nText("Any Odoo version"), i18nText("Community & Enterprise")]
+    : [i18nText("Any Odoo version"), i18nText("Community & Enterprise"), i18nText("Daily backups"), i18nText("Free SSL")];
   return (
     <section className="border-y border-border bg-card/30">
       <Container className="flex flex-wrap items-center justify-center gap-x-10 gap-y-3 py-5">
@@ -491,18 +489,19 @@ function Versions() {
       <Container>
         <SectionHeading
           eyebrow={i18nText("Version freedom")}
-          title={i18nText("Every Odoo version, Community and Enterprise")}
+          title={i18nText("Any Odoo version. Your choice.")}
           subtitle={i18nText("Keep the version you rely on, or start on the latest. Upgrade when it suits you, not when it suits us.")}
         />
-        <div className="mt-12 flex flex-wrap items-center justify-center gap-3">
-          {ODOO_VERSIONS.map((v) => (
-            <span
-              key={v}
-              className="inline-flex items-baseline gap-1.5 rounded-lg border border-border bg-card px-5 py-2.5 text-lg font-semibold text-foreground transition-colors hover:border-primary/40"
-            >
-              <span className="text-xs font-medium uppercase tracking-wider text-muted">Odoo</span>
-              {v}
-            </span>
+        <div className="mx-auto mt-10 grid max-w-3xl gap-4 sm:grid-cols-3">
+          {[
+            { title: i18nText("Any version"), text: i18nText("From the release you run today to the newest one.") },
+            { title: i18nText("Community & Enterprise"), text: i18nText("Bring your Enterprise subscription or start with Community.") },
+            { title: i18nText("Upgrade on your terms"), text: i18nText("Stay where you are, or move up when your business is ready.") },
+          ].map((v) => (
+            <div key={v.title} className="rounded-xl border border-border bg-card p-6 text-start">
+              <h3 className="text-base font-semibold text-foreground">{v.title}</h3>
+              <p className="mt-1.5 text-sm text-muted">{v.text}</p>
+            </div>
           ))}
         </div>
       </Container>
@@ -563,7 +562,7 @@ function FinalCta({ hosting, services }: { hosting: boolean; services: boolean }
     { value: "99.9%", label: i18nText("Uptime target") },
     { value: i18nText("Daily"), label: i18nText("Automatic backups") },
     { value: i18nText("Free"), label: i18nText("TLS certificates") },
-    { value: "13 → 20", label: i18nText("Odoo versions") },
+    { value: i18nText("Any"), label: i18nText("Odoo version") },
   ];
   return (
     <section className="relative overflow-hidden border-t border-border">

@@ -2547,5 +2547,14 @@
   "Today, 03:00": "اليوم، 03:00",
   "Valid · renews itself": "سارية · تتجدد تلقائيًا",
   "Last deployment": "آخر عملية نشر",
-  "Your code, or a ready-made app": "كودك الخاص، أو تطبيق جاهز"
+  "Your code, or a ready-made app": "كودك الخاص، أو تطبيق جاهز",
+  "Any Odoo version": "أي إصدار من Odoo",
+  "Free SSL": "شهادات SSL مجانية",
+  "Any": "أي",
+  "Any version": "أي إصدار",
+  "From the release you run today to the newest one.": "من الإصدار الذي تعمل عليه اليوم إلى الأحدث.",
+  "Bring your Enterprise subscription or start with Community.": "أحضر اشتراك Enterprise الخاص بك أو ابدأ بنسخة Community.",
+  "Upgrade on your terms": "الترقية وفق شروطك",
+  "Stay where you are, or move up when your business is ready.": "ابقَ حيث أنت، أو انتقل للأحدث عندما يكون عملك جاهزًا.",
+  "Any Odoo version. Your choice.": "أي إصدار من Odoo. الخيار لك."
 }

@@ -2246,7 +2246,7 @@ class SaasApi(http.Controller):
             'size_mb': 0.0,  # sizes are an internal detail
             'created': _utc_datetime(b.create_date) if b.create_date else '',
             'status': _BACKUP_STATUS.get(b.state, 'available'),
-            'download_url': b.download_url or '',
+            'download_url': '' if b.is_full_instance else (b.download_url or ''),
             'is_full_instance': b.is_full_instance,
             'db_name': b.db_name or '',
             'format': b.format or '',

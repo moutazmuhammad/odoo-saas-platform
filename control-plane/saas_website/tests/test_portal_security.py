@@ -688,6 +688,23 @@ class TestPortalBackups(_PortalTestBase):
         location = resp.headers['Location'].replace('%27', "'").replace('%20', ' ')
         self.assertIn("couldn't generate", location)
 
+    def test_snapshots_and_daily_backups_are_never_downloadable(self):
+        """Only the customer's own database export is a file; full-instance
+        artifacts (snapshots, daily backups) are restored by the platform."""
+        backup = self.env['saas.instance.backup'].sudo().create({
+            'instance_id': self.instance.id, 'name': '20260101T000000Z', 'state': 'done',
+            'is_full_instance': True, 'format': 'operator', 'source': 'scheduled',
+            'bucket_path': 'backups/x/20260101T000000Z',
+            'download_url': 'https://bucket.example.com/leak'})
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        resp = self.url_open('/my/instances/%d/backups/%d/download'
+                             % (self.instance.id, backup.id), allow_redirects=False)
+        self.assertIn(resp.status_code, (301, 302, 303))
+        self.assertIn('/backups', resp.headers['Location'])
+        self.assertNotIn('leak', resp.headers['Location'])
+        backup._refresh_download_url()
+        self.assertFalse(backup.download_url, "no presigned link is ever minted for it")
+
     def test_download_success_redirects_to_download_url(self):
         backup = self.env['saas.instance.backup'].sudo().create({
             'instance_id': self.instance.id, 'db_name': 'proddb',

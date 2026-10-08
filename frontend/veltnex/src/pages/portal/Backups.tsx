@@ -120,7 +120,7 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
         <p className="mt-1 text-sm text-muted">
           {isManagedService
             ? i18nText("Automatic daily backups of your service. Restore any backup with one click.")
-            : i18nText("Automatic daily backups of your whole server, kept for the last 7 days. Restore any of them onto this server. For a copy you keep as long as you like, take a snapshot.")}
+            : i18nText("Automatic daily backups of your whole server, kept for the last 7 days. Restore any of them onto this server. For a copy you keep as long as you like, take a snapshot. To export your data, download a backup of your database from the Databases page.")}
         </p>
       </div>
 
@@ -193,7 +193,6 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
                   </div>
                   <div className="flex items-center gap-2 sm:justify-end">
                     <StatusBadge status={b.status} />
-                    {can("backup.download") && b.download_url && <a className="text-sm text-primary" href={b.download_url}>{i18nText("Download")}</a>}
                     <Button
                       size="sm"
                       variant="secondary"

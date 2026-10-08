@@ -2673,5 +2673,6 @@
   "Reserving…": "جارٍ الحجز…",
   "Reserve & pay": "احجز وادفع",
   "All your snapshots, across every project, including projects you have since deleted. Each has a fixed monthly price, paid in advance, until you delete it.": "كل لقطاتك عبر جميع المشاريع، بما فيها مشاريع حذفتها. لكل لقطة سعر شهري ثابت يُدفع مقدمًا حتى تحذفها.",
-  "This snapshot is free.": "هذه اللقطة مجانية."
+  "This snapshot is free.": "هذه اللقطة مجانية.",
+  "Automatic daily backups of your whole server, kept for the last 7 days. Restore any of them onto this server. For a copy you keep as long as you like, take a snapshot. To export your data, download a backup of your database from the Databases page.": "نسخ احتياطية يومية تلقائية لخادمك بالكامل، تُحفظ لآخر 7 أيام. استعد أيًا منها على هذا الخادم. وللحصول على نسخة تحتفظ بها كما تشاء، التقط لقطة. ولتصدير بياناتك، نزّل نسخة احتياطية من قاعدة بياناتك من صفحة قواعد البيانات."
 }

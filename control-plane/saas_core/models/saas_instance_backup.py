@@ -223,6 +223,13 @@ class SaasInstanceBackup(models.Model):
         for rec in self:
             if rec.state != 'done' or not rec.bucket_path:
                 continue
+            if rec.is_full_instance:
+                # Snapshots and daily backups are restored by the platform,
+                # never handed out as files. Customers can export their
+                # own database from the Databases page instead.
+                if rec.download_url:
+                    rec.write({'download_url': False, 'download_url_expiry': False})
+                continue
             if rec.download_url and rec.download_url_expiry and rec.download_url_expiry > now:
                 continue
             try:

@@ -1398,6 +1398,10 @@ class SaasPortal(CustomerPortal):
         ) % instance_id
         if not backup:
             err_redirect = '/my/instances/%d/databases' % instance_id
+        if backup and backup.is_full_instance:
+            # Snapshots and daily backups are never handed out as files;
+            # customers export their own database from the Databases page.
+            return request.redirect('/my/instances/%d/backups' % instance_id)
             return request.redirect('%s?error=%s' % (
                 err_redirect, url_quote(_("Backup not available.")),
             ))

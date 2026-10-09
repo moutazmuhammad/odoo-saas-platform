@@ -555,3 +555,17 @@ class TestApiSecurityHttp(HttpCase):
                          "a trial must not be able to reserve paid slots: %s"
                          % res)
         self.assertEqual(instance.staging_slots, 0)
+
+    def test_environment_reserve_accepts_portal_counts(self):
+        instance = self._authenticated_project_owner(
+            'envbatchres@example.com', 'envbatchreserve')
+        self.env['saas.wallet'].for_partner(instance.partner_id)._credit(
+            10000.0, origin='upgrade_surplus')
+        res = self._call(
+            '/saas/api/v1/instances/%s/environments/reserve' % instance.id,
+            {'staging': 1, 'development': 2})
+        self.assertTrue(res and res.get('ok'), res)
+        self.assertTrue(res['data']['auto_provisioned'])
+        self.assertEqual(res['data']['reserved'], 3)
+        self.assertEqual((instance.staging_slots, instance.dev_slots), (1, 2))
+        self.assertFalse(instance.child_env_ids)

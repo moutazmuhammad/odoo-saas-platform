@@ -1371,6 +1371,28 @@ class SaasInstance(models.Model):
                                   self.subdomain)
         return {'branch': branch, 'redeployed': redeployed}
 
+    def action_delete_project(self):
+        """Customer-initiated deletion of a whole project: the Production
+        server and, by cascade, every Staging/Development server, their
+        daily backups and open invoices. On-demand snapshots are customer
+        assets and survive; the final snapshot ``action_cancel`` retains
+        allows reactivation later. Callers verify the emailed code first."""
+        self.ensure_one()
+        if self.environment != 'production':
+            raise UserError(_("Delete the project from its Production server."))
+        if self.state in ('cancelled', 'cancelled_by_client'):
+            raise UserError(_("This project is already deleted."))
+        if self.state == 'provisioning':
+            raise UserError(_(
+                "The project is busy right now. Try again in a moment."))
+        self.env['saas.audit.log'].saas_audit(
+            'project_delete', model='saas.instance', res_id=self.id,
+            res_name=self.subdomain,
+            detail='Project deletion confirmed by the customer (was %s)' % self.state)
+        self._append_log("Project deletion confirmed by the customer.")
+        self.action_cancel()
+        return True
+
     def action_delete_environment(self, delete_branch=False):
         """Remove a Staging/Development server, FREEING its reserved slot for
         reuse. Deleting is free and does NOT refund or lower the reserved

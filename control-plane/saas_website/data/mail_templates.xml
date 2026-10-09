@@ -2,6 +2,32 @@
 <odoo noupdate="0">
 
     <!-- OTP Verification Email for Registration -->
+    <record id="mail_template_project_delete_otp" model="mail.template">
+        <field name="name">SaaS: Project Deletion Confirmation Code</field>
+        <field name="model_id" ref="model_saas_registration_otp"/>
+        <field name="subject">Confirm deleting {{ ctx.get('project_name') }}: {{ object.code }}</field>
+        <field name="email_from">{{ (object.env.company.email or 'noreply@example.com') }}</field>
+        <field name="email_to">{{ ctx.get('email_to') }}</field>
+        <field name="body_html" type="html">
+<div style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
+    <p>You asked to delete the project <strong><t t-out="ctx.get('project_name')"/></strong>.</p>
+    <p>This removes its Production, Staging and Development servers and their daily backups.
+       Snapshots you took on purpose are kept. Enter this code to confirm:</p>
+    <div style="text-align: center; margin: 24px 0;">
+        <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px;
+                     background: #f0f0f0; padding: 12px 24px; border-radius: 8px;
+                     display: inline-block;">
+            <t t-out="object.code"/>
+        </span>
+    </div>
+    <p>This code expires in <strong>10 minutes</strong>.</p>
+    <p>If you did not request this, ignore this email: nothing is deleted without the code.</p>
+    <p>Best regards,<br/><t t-out="object.env.company.name"/></p>
+</div>
+        </field>
+        <field name="auto_delete" eval="True"/>
+    </record>
+
     <record id="mail_template_registration_otp" model="mail.template">
         <field name="name">SaaS: Registration Email Verification</field>
         <field name="model_id" ref="model_saas_registration_otp"/>

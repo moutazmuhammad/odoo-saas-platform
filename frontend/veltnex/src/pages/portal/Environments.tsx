@@ -593,7 +593,7 @@ function ScaleCard({
           <Button variant="secondary" size="sm" disabled={busy !== null} onClick={() => { setReserveCounts({ staging: 0, development: 0 }); setReserveOpen(true); }}>
             <Plus className="size-4" />{i18nText("Reserve servers")}</Button>
         </div>
-        <Dialog open={reserveOpen} onClose={() => setReserveOpen(false)} title={i18nText("Reserve servers")} description={i18nText("Pick how many Staging and Development servers you want. Everything goes on one invoice; adding more later simply updates it.")}>
+        <Dialog open={reserveOpen} onClose={() => setReserveOpen(false)} title={i18nText("Reserve servers")} description={i18nText("Pick how many Staging and Development servers you want. Both types go on one invoice.")}>
           <div className="grid gap-4 sm:grid-cols-2">
             {([["staging", i18nText("Staging")], ["development", i18nText("Development")]] as const).map(([key, label]) => (
               <div key={key} className="space-y-1">
@@ -619,6 +619,110 @@ function ScaleCard({
           <p className="mt-2 text-xs text-muted">{i18nText("No repository is needed: servers run the standard Odoo image until you connect one and link a branch to each server.")}</p>
         )}
       </div>
+    </Card>
+  );
+}
+
+/* ─────────────────── Danger zone: delete the whole project ─────────────────── */
+// Two steps, both on the owner's side: we email a one-time code, the owner
+// types it (plus the project name) and only then every server goes away.
+function DangerZoneCard({ project, onDeleted }: { project: ProjectEnvironments; onDeleted: () => void }) {
+  const toast = useToast();
+  const [open, setOpen] = React.useState(false);
+  const [step, setStep] = React.useState<"intro" | "code">("intro");
+  const [email, setEmail] = React.useState("");
+  const [testOtp, setTestOtp] = React.useState("");
+  const [code, setCode] = React.useState("");
+  const [typed, setTyped] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const name = project.project_name;
+
+  const reset = () => { setStep("intro"); setCode(""); setTyped(""); setError(null); setLoading(false); setTestOtp(""); };
+  const close = () => { setOpen(false); reset(); };
+
+  const sendCode = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await api.projectDeleteStart(project.production.id);
+      setEmail(res.email);
+      setTestOtp(res.test_otp || "");
+      setStep("code");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : i18nText("Please try again."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirm = async () => {
+    if (typed.trim() !== name || code.trim().length < 4) return;
+    setError(null);
+    setLoading(true);
+    try {
+      await api.projectDeleteConfirm(project.production.id, code.trim());
+      toast.success(i18nText("Project deleted"), i18nText("All servers are being removed. Snapshots you took stay in Snapshots."));
+      close();
+      onDeleted();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : i18nText("Please try again."));
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card className="mt-4 border-danger/40 p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-semibold text-danger">{i18nText("Delete project")}</h2>
+          <p className="mt-0.5 text-xs text-muted">{i18nText("Removes Production, Staging and Development servers, their daily backups and open invoices. Snapshots you took stay available. We email you a code to confirm.")}</p>
+        </div>
+        <Button variant="danger" className="shrink-0" onClick={() => setOpen(true)}>
+          <Trash2 className="size-4" />{i18nText("Delete project")}</Button>
+      </div>
+      <Dialog open={open} onClose={close} title={i18nText("Delete {0}?", [name])}>
+        {error && <AlertBanner className="mb-4" variant="danger" title={i18nText("Couldn't delete")} description={error} />}
+        {step === "intro" ? (
+          <>
+            <AlertBanner
+              variant="warning"
+              title={i18nText("This can't be undone")}
+              description={i18nText("Every server of this project stops and its data is removed. A final copy is kept for a while so you can reactivate, and your snapshots are not touched.")}
+            />
+            <p className="mt-4 text-sm text-muted">{i18nText("To continue, we'll send a one-time confirmation code to your email address.")}</p>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button variant="secondary" onClick={close} disabled={loading}>{i18nText("Cancel")}</Button>
+              <ActionButton variant="danger" loading={loading} loadingText={i18nText("Sending…")} onClick={sendCode}>{i18nText("Send confirmation code")}</ActionButton>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted">{i18nText("We sent a 6-digit code to ")}<span className="font-medium text-foreground">{email}</span>{i18nText(". It expires in 10 minutes.")}</p>
+            {testOtp && (
+              <p className="mt-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">{i18nText("Test mode code: ")}<span className="font-mono">{testOtp}</span></p>
+            )}
+            <div className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="del-code">{i18nText("Confirmation code")}</Label>
+                <Input id="del-code" data-technical inputMode="numeric" autoComplete="one-time-code" autoFocus value={code} onChange={(e) => setCode(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="del-name">{i18nText("Type the project name to confirm")}</Label>
+                <Input id="del-name" data-technical autoComplete="off" placeholder={name} value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => e.key === "Enter" && confirm()} />
+              </div>
+            </div>
+            <div className="mt-6 flex items-center justify-between gap-2">
+              <Button variant="ghost" size="sm" onClick={sendCode} disabled={loading}>{i18nText("Resend code")}</Button>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={close} disabled={loading}>{i18nText("Cancel")}</Button>
+                <ActionButton variant="danger" loading={loading} loadingText={i18nText("Deleting…")} disabled={typed.trim() !== name || code.trim().length < 4} onClick={confirm}>
+                  <Trash2 className="size-4" />{i18nText("Delete project")}</ActionButton>
+              </div>
+            </div>
+          </>
+        )}
+      </Dialog>
     </Card>
   );
 }
@@ -1055,6 +1159,9 @@ function MainPanel({
           <>
             {project.is_project_owner !== false && <ScaleCard project={project} onChanged={onChanged} />}
             <Code embedId={project.production.id} />
+            {project.is_project_owner !== false && hasPermission(project.production.permissions, "billing.manage") && (
+              <DangerZoneCard project={project} onDeleted={() => navigate("/my/instances")} />
+            )}
           </>
         ) : tab === "shell" ? (
           <ShellPage embedId={env.id} />

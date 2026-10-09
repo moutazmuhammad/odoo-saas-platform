@@ -178,6 +178,64 @@ class TestPortalInstanceSecurity(_PortalTestBase):
 
 
 @tagged('post_install', '-at_install')
+class TestProjectDelete(_PortalTestBase):
+    """Deleting a whole project needs the owner AND a code emailed to them."""
+
+    def _otp_for(self):
+        ident = 'delete-project:%d:%s' % (self.instance.id, 'portalowner@example.com')
+        return self.env['saas.registration.otp'].sudo().search(
+            [('identifier', '=', ident), ('channel', '=', 'email')], limit=1)
+
+    def test_intruder_cannot_start(self):
+        self.authenticate('portalintruder@example.com', 'intruderpass123')
+        res = self._json_call('/saas/api/v1/instances/%d/delete/start' % self.instance.id)
+        self.assertFalse(res.get('ok'))
+        self.assertFalse(self._otp_for())
+
+    def test_owner_needs_the_emailed_code(self):
+        self.authenticate('portalowner@example.com', 'ownerpass123')
+        Inst = type(self.env['saas.instance'])
+        with patch.object(Inst, 'action_cancel', autospec=True) as cancel:
+            # Confirm without starting → nothing happens.
+            res = self._json_call('/saas/api/v1/instances/%d/delete/confirm'
+                                  % self.instance.id, {'otp': '123456'})
+            self.assertEqual(res.get('code'), 'otp_invalid')
+            cancel.assert_not_called()
+
+            res = self._json_call('/saas/api/v1/instances/%d/delete/start' % self.instance.id)
+            self.assertTrue(res.get('ok'), res)
+            self.assertEqual(res['data']['email'], 'portalowner@example.com')
+            otp = self._otp_for()
+            self.assertTrue(otp)
+            mail = self.env['mail.mail'].sudo().search(
+                [('email_to', 'ilike', 'portalowner@example.com')], order='id desc', limit=1)
+            self.assertIn('portalinst', (mail.subject or '') + (mail.body_html or ''))
+
+            wrong = '000000' if otp.code != '000000' else '111111'
+            res = self._json_call('/saas/api/v1/instances/%d/delete/confirm'
+                                  % self.instance.id, {'otp': wrong})
+            self.assertEqual(res.get('code'), 'otp_invalid')
+            cancel.assert_not_called()
+
+            res = self._json_call('/saas/api/v1/instances/%d/delete/confirm'
+                                  % self.instance.id, {'otp': otp.code})
+            self.assertTrue(res.get('ok'), res)
+            cancel.assert_called_once()
+            self.assertFalse(self._otp_for(), "code is single-use")
+
+    def test_child_server_is_not_a_project(self):
+        child = self.env['saas.instance'].sudo().create({
+            'subdomain': 'portalinst-stg', 'domain_id': self.instance.domain_id.id,
+            'partner_id': self.owner.partner_id.id, 'parent_id': self.instance.id,
+            'saas_product_id': self.instance.saas_product_id.id,
+            'plan_id': self.instance.plan_id.id, 'billing_period': 'monthly',
+            'environment': 'staging', 'region_id': False, 'state': 'running',
+            'is_hosting': True})
+        with self.assertRaises(UserError):
+            child.action_delete_project()
+
+
+@tagged('post_install', '-at_install')
 class TestPortalChangePlan(_PortalTestBase):
     """B.1.5 continued: /my/instances/<id>/{change-plan,do-change-plan,
     cancel-upgrade,cancel-downgrade} — real portal-layer business logic

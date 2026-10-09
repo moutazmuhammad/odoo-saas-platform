@@ -304,7 +304,139 @@ class TestEnvironments(TransactionCase):
         for l in env_lines:
             self.assertAlmostEqual(l.price_unit, price, 2)
 
+    def _assert_checkout_slots_granted(self, prod):
+        self.assertEqual(prod.staging_slots, 1)
+        self.assertEqual(prod.dev_slots, 2)
+        self.assertEqual(prod.pending_staging_count, 0)
+        self.assertEqual(prod.pending_dev_count, 0)
+        self.assertFalse(prod.child_env_ids, 'Reservations do not create servers')
+        self.assertEqual(len(prod._environment_order_lines('monthly')), 3)
+
+    def test_checkout_slots_granted_on_invoice_payment(self):
+        prod = self._mk_prod('pslotpay', state='draft')
+        prod.write({'pending_staging_count': 1, 'pending_dev_count': 2})
+        prod.action_confirm_and_bill()
+        self.assertEqual(prod.state, 'pending_payment')
+        self.assertEqual((prod.staging_slots, prod.dev_slots), (0, 0))
+        invoice = prod.sale_order_id.invoice_ids
+
+        def queue_deploy(instance, method, **kwargs):
+            self.assertEqual(instance, prod)
+            self.assertEqual(method, '_do_deploy_after_payment')
+            self._assert_checkout_slots_granted(prod)
+
+        with patch('odoo.addons.saas_billing.models.account_move.run_in_background',
+                   side_effect=queue_deploy) as deploy:
+            invoice.write({'payment_state': 'paid'})
+            invoice._saas_check_instance_payment()
+        deploy.assert_called_once()
+        self._assert_checkout_slots_granted(prod)
+
+    def test_checkout_slots_granted_for_wallet_covered_order(self):
+        prod = self._mk_prod('pslotwallet', state='draft')
+        prod.write({'pending_staging_count': 1, 'pending_dev_count': 2})
+        wallet = self.env['saas.wallet'].for_partner(self.partner)
+        wallet._credit(10000.0, origin='upgrade_surplus')
+
+        def deploy_with_slots(instance):
+            self.assertEqual(instance.state, 'paid')
+            self._assert_checkout_slots_granted(instance)
+
+        with patch.object(type(prod), 'action_deploy', deploy_with_slots):
+            prod.action_confirm_and_bill()
+        self.assertAlmostEqual(prod.sale_order_id.invoice_ids.amount_total, 0.0, 2)
+        self._assert_checkout_slots_granted(prod)
+
+    def test_checkout_slots_granted_when_manually_marked_paid(self):
+        prod = self._mk_prod('pslotmanual', state='draft')
+        prod.write({'pending_staging_count': 1, 'pending_dev_count': 2})
+        prod.action_confirm_and_bill()
+
+        def deploy_with_slots(instance):
+            self.assertEqual(instance.state, 'paid')
+            self._assert_checkout_slots_granted(instance)
+
+        with patch.object(type(prod), 'action_deploy', deploy_with_slots):
+            prod.action_mark_as_paid()
+        self._assert_checkout_slots_granted(prod)
+
+    def test_checkout_slot_grant_is_idempotent(self):
+        prod = self._mk_prod('pslotrepeat', state='paid')
+        prod.write({'staging_slots': 2, 'dev_slots': 1,
+                    'pending_staging_count': 1, 'pending_dev_count': 2})
+        prod._spawn_pending_environments()
+        prod._spawn_pending_environments()
+        self.assertEqual((prod.staging_slots, prod.dev_slots), (3, 3))
+        self.assertEqual((prod.pending_staging_count, prod.pending_dev_count), (0, 0))
+        self.assertFalse(prod.child_env_ids)
+
     # --------------------------------------------------------------- repo gate
+    def test_reserve_both_environment_types_on_one_invoice(self):
+        prod = self._mk_prod('preserveboth', due=date.today() + timedelta(days=20),
+                             last=date.today() - timedelta(days=10))
+        with patch.object(type(prod), '_auto_renew_method', return_value=False):
+            result = prod.action_reserve_environment_slots(staging=1, development=2)
+        invoice = prod.slot_reservation_pending_invoice_id
+        self.assertEqual(result['invoice_id'], invoice.id)
+        self.assertEqual(len(invoice.invoice_line_ids), 2)
+        price = prod._env_server_price('monthly')
+        self.assertAlmostEqual(invoice.amount_total,
+                               round(price * 20 / 30, 2) + round(price * 2 * 20 / 30, 2), 2)
+        self.assertEqual((prod.reserved_staging_pending, prod.reserved_dev_pending), (1, 2))
+        self.assertEqual((prod.staging_slots, prod.dev_slots), (0, 0))
+        invoice.write({'payment_state': 'paid'})
+        invoice._saas_check_instance_payment()
+        self._assert_checkout_slots_granted(prod)
+        self.assertFalse(prod.slot_reservation_pending_invoice_id)
+
+    def test_reserve_both_types_with_wallet(self):
+        prod = self._mk_prod('preservewallet')
+        self.env['saas.wallet'].for_partner(self.partner)._credit(
+            10000.0, origin='upgrade_surplus')
+        result = prod.action_reserve_environment_slots(staging=1, development=2)
+        self.assertTrue(result['auto_provisioned'])
+        self.assertEqual(result['reserved'], 3)
+        self._assert_checkout_slots_granted(prod)
+        self.assertFalse(prod.slot_reservation_pending_invoice_id)
+
+    def test_reserve_single_type_api_remains_supported(self):
+        for kind in ('staging', 'development'):
+            prod = self._mk_prod('preserve-' + kind)
+            with patch.object(type(prod), '_auto_renew_method', return_value=False):
+                prod.action_reserve_environment_slots(kind, qty=2)
+            self.assertEqual(len(prod.slot_reservation_pending_invoice_id.invoice_line_ids), 1)
+            pending = (prod.reserved_staging_pending, prod.reserved_dev_pending)
+            self.assertEqual(pending, (2, 0) if kind == 'staging' else (0, 2))
+
+    def test_reserve_rejects_invalid_counts_without_invoice(self):
+        prod = self._mk_prod('preserveinvalid')
+        for counts in ({'staging': 0, 'development': 0}, {'staging': -1},
+                       {'development': 1.5}, {'staging': 'invalid'},
+                       {'staging': True}, {'env_type': 'production'},
+                       {'env_type': 'staging', 'development': 1}):
+            with self.subTest(counts=counts), self.assertRaises(UserError):
+                prod.action_reserve_environment_slots(**counts)
+        self.assertFalse(prod.slot_reservation_pending_invoice_id)
+
+    def test_reserve_does_not_replace_unpaid_invoice(self):
+        prod = self._mk_prod('preservepending')
+        with patch.object(type(prod), '_auto_renew_method', return_value=False):
+            prod.action_reserve_environment_slots(staging=1)
+            invoice = prod.slot_reservation_pending_invoice_id
+            with self.assertRaisesRegex(UserError, 'pending slot reservation'):
+                prod.action_reserve_environment_slots(development=2)
+        self.assertEqual(prod.slot_reservation_pending_invoice_id, invoice)
+        self.assertEqual((prod.reserved_staging_pending, prod.reserved_dev_pending), (1, 0))
+
+    def test_reserve_after_cancel_does_not_grant_cancelled_slots(self):
+        prod = self._mk_prod('preservecancel')
+        with patch.object(type(prod), '_auto_renew_method', return_value=False):
+            prod.action_reserve_environment_slots(staging=1)
+            prod.slot_reservation_pending_invoice_id.button_cancel()
+            prod.action_reserve_environment_slots(development=2)
+        self.assertEqual((prod.reserved_staging_pending, prod.reserved_dev_pending), (0, 2))
+        self.assertEqual((prod.staging_slots, prod.dev_slots), (0, 0))
+
     def test_env_create_without_repo_then_link_branch(self):
         """A repo is optional at creation; once the project gets one, the
         server can be linked to a branch (existing or created from main)."""

@@ -40,28 +40,38 @@ class SaasRegistrationOtp(models.Model):
         return ''.join(random.choices(string.digits, k=OTP_LENGTH))
 
     @api.model
-    def _generate_and_send_email(self, email):
-        """Generate OTP, send via email. Returns the record."""
+    def _generate_and_send_email(self, email, identifier=None, template_xmlid=None,
+                                 template_ctx=None):
+        """Generate OTP, send via email. Returns the record.
+
+        ``identifier`` defaults to the address itself; pass a purpose-scoped
+        key (e.g. ``delete-project:<id>:<email>``) so a code sent for one
+        action can never confirm another. ``template_xmlid`` picks the mail
+        (default: the sign-up one); ``template_ctx`` is exposed to it as
+        ``ctx``."""
+        identifier = identifier or email
         self.search([
-            ('identifier', '=', email),
+            ('identifier', '=', identifier),
             ('channel', '=', 'email'),
         ]).unlink()
 
         code = self._generate_code()
         expires_at = fields.Datetime.now() + timedelta(minutes=OTP_EXPIRY_MINUTES)
         record = self.create({
-            'identifier': email,
+            'identifier': identifier,
             'channel': 'email',
             'code': code,
             'expires_at': expires_at,
         })
 
         template = self.env.ref(
-            'saas_website.mail_template_registration_otp',
+            template_xmlid or 'saas_website.mail_template_registration_otp',
             raise_if_not_found=False,
         )
         if template:
-            template.send_mail(record.id, force_send=True)
+            template.with_context(**(template_ctx or {})).send_mail(
+                record.id, force_send=True,
+                email_values={'email_to': email} if identifier != email else None)
         else:
             _logger.warning("OTP mail template not found — code for %s: %s", email, code)
 

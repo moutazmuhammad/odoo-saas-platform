@@ -1804,14 +1804,16 @@ class SaasApi(http.Controller):
 
     @http.route('/saas/api/v1/instances/<int:instance_id>/environments/reserve',
                 type='json', auth='public')
-    def environment_reserve(self, instance_id, type=None, qty=1):
+    def environment_reserve(self, instance_id, type=None, qty=1,
+                            staging=None, development=None):
         """Reserve (buy) Staging/Development slots — paid capacity, no repo and
         no server created. Returns ``auto_provisioned`` or a ``checkout_url``."""
         prod, error = self._project_anchor(instance_id)
         if error:
             return error
         try:
-            result = prod.action_reserve_environment_slots(type, qty=int(qty or 1))
+            result = prod.action_reserve_environment_slots(
+                type, qty=qty, staging=staging, development=development)
         except (UserError, ValidationError) as e:
             return err(str(e), 'error')
         except Exception:
@@ -1962,6 +1964,72 @@ class SaasApi(http.Controller):
             _logger.exception("Branch link failed for %s", child_id)
             return err(_("Couldn't link the branch. Please try again."), 'error')
         return ok(result)
+
+    # ---------------------------------------------------------------- delete
+    @staticmethod
+    def _project_delete_identifier(prod, email):
+        return 'delete-project:%d:%s' % (prod.id, (email or '').strip().lower())
+
+    @http.route('/saas/api/v1/instances/<int:instance_id>/delete/start',
+                type='json', auth='public')
+    def project_delete_start(self, instance_id):
+        """Email the signed-in owner a one-time code that confirms deleting
+        the whole project (all servers). Nothing changes until confirmed."""
+        prod, error = self._project_anchor(instance_id, permission='billing.manage')
+        if error:
+            return error
+        if prod.state in ('cancelled', 'cancelled_by_client'):
+            return err(_("This project is already deleted."), 'invalid')
+        limited = self._rate_limit('project_delete_start', 5, 600, key=str(prod.id))
+        if limited:
+            return limited
+        user = self._user()
+        email = (user.email or user.login or '').strip()
+        if not email or not EMAIL_RE.match(email):
+            return err(_("Your account has no email address to send the code to."), 'invalid')
+        project_name = prod.project_name or prod.subdomain or prod.name
+        try:
+            otp = request.env['saas.registration.otp'].sudo()._generate_and_send_email(
+                email, identifier=self._project_delete_identifier(prod, email),
+                template_xmlid='saas_website.mail_template_project_delete_otp',
+                template_ctx={'project_name': project_name, 'email_to': email})
+        except Exception:
+            _logger.exception("Project-delete OTP failed for %s", prod.id)
+            return err(_("We couldn't send the code. Please try again."), 'error')
+        payload = {'sent': True, 'email': email, 'project_name': project_name}
+        if request.env['ir.config_parameter'].sudo().get_param(OTP_TEST_MODE_PARAM):
+            payload['test_otp'] = otp.code
+        return ok(payload)
+
+    @http.route('/saas/api/v1/instances/<int:instance_id>/delete/confirm',
+                type='json', auth='public')
+    def project_delete_confirm(self, instance_id, otp=None):
+        """Verify the emailed code and delete the project."""
+        prod, error = self._project_anchor(instance_id, permission='billing.manage')
+        if error:
+            return error
+        code = (otp or '').strip()
+        if not code:
+            return err(_("Please enter the confirmation code from your email."), 'invalid')
+        limited = self._rate_limit('project_delete_confirm', 6, 600, key=str(prod.id))
+        if limited:
+            return limited
+        user = self._user()
+        email = (user.email or user.login or '').strip()
+        identifier = self._project_delete_identifier(prod, email)
+        OTP = request.env['saas.registration.otp'].sudo()
+        if not OTP._verify(identifier, code, 'email'):
+            return err(_("That code is invalid or expired. Please request a new one."),
+                       'otp_invalid')
+        OTP._cleanup(identifier)
+        try:
+            prod.action_delete_project()
+        except (UserError, ValidationError) as e:
+            return err(str(e), 'error')
+        except Exception:
+            _logger.exception("Project delete failed for %s", prod.id)
+            return err(_("Couldn't delete the project. Please try again."), 'error')
+        return ok({'deleted': True, 'state': prod.state})
 
     @http.route('/saas/api/v1/instances/<int:instance_id>/environments/merge',
                 type='json', auth='public')

@@ -932,6 +932,13 @@ export const api = {
       source_id: sourceId,
       target_id: targetId,
     }),
+  /** Whole-project deletion: a code is emailed to the owner, then confirmed. */
+  projectDeleteStart: (id: number) =>
+    rpc<{ sent: boolean; email: string; project_name: string; test_otp?: string }>(
+      `/saas/api/v1/instances/${id}/delete/start`,
+    ),
+  projectDeleteConfirm: (id: number, otp: string) =>
+    rpc<{ deleted: boolean; state: string }>(`/saas/api/v1/instances/${id}/delete/confirm`, { otp }),
   /** Bind a Staging/Development server to a branch of the project repo
    *  (an existing one, or `create` a new one from main). */
   environmentLinkBranch: (id: number, childId: number, branch?: string, create = false) =>

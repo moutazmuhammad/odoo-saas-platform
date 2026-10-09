@@ -229,6 +229,9 @@ class AccountMove(models.Model):
         for instance in instances:
             instance.state = 'paid'
             instance._set_next_invoice_date()
+            # Grant checkout capacity in the payment transaction before
+            # queuing deployment. Pending counters make this idempotent.
+            instance._spawn_pending_environments()
             # Save the card (if customer ticked "Save my card") so
             # the recurring-billing cron can auto-renew.
             paid_for_instance = paid_invoices.filtered(
@@ -252,17 +255,6 @@ class AccountMove(models.Model):
                 error_args=('failed',),
                 thread_name='saas_deploy_payment_%s' % instance.subdomain,
             )
-            # Odoo.sh-style: spawn the Staging/Development servers the customer
-            # chose at checkout (already billed on this initial invoice).
-            if instance.environment == 'production' and (
-                    instance.pending_staging_count or instance.pending_dev_count):
-                try:
-                    instance._spawn_pending_environments()
-                except Exception:
-                    _logger.exception(
-                        "Failed to spawn pending environments for %s",
-                        instance.subdomain)
-
         # --- Handle pending plan changes (trial upgrade or paid plan change) ---
         # Match by the explicit invoice link first (exact — survives
         # sale_order_id being overwritten between request and payment),

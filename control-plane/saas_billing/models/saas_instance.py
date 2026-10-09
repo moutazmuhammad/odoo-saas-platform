@@ -1315,9 +1315,11 @@ class SaasInstance(models.Model):
                 }))
         return lines
 
-    def action_reserve_environment_slots(self, env_type, qty=1):
-        """Reserve (buy) ``qty`` Staging/Development slots on the project — paid
-        capacity, NO Git repo required and NO server created. Prorated for the
+    def action_reserve_environment_slots(self, env_type=None, qty=1,
+                                         staging=None, development=None):
+        """Reserve slots by ``env_type``/``qty`` or both environment counts
+        on one invoice. No Git repo is required and no server is created.
+        Prorated for the
         remainder of the cycle; on payment the slots are granted and the
         customer can create/delete servers within them freely. Mirrors
         ``action_purchase_storage_block``."""
@@ -1328,33 +1330,67 @@ class SaasInstance(models.Model):
         if self.is_trial:
             raise UserError(_(
                 "Upgrade to a paid plan before reserving environment slots."))
-        if env_type not in ('staging', 'development'):
-            raise UserError(_("Unknown environment type."))
-        qty = max(1, int(qty or 1))
+
+        def count(value):
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError, OverflowError):
+                raise UserError(_("Environment counts must be non-negative whole numbers."))
+            if isinstance(value, bool) or parsed < 0 or (
+                    not isinstance(value, str) and parsed != value):
+                raise UserError(_("Environment counts must be non-negative whole numbers."))
+            return parsed
+
+        if staging is not None or development is not None:
+            if env_type is not None:
+                raise UserError(_("Choose environment counts or a single environment type."))
+            counts = {'staging': count(staging if staging is not None else 0),
+                      'development': count(development if development is not None else 0)}
+        else:
+            if env_type not in ('staging', 'development'):
+                raise UserError(_("Unknown environment type."))
+            counts = {env_type: count(qty)}
+        qty = sum(counts.values())
+        if not qty:
+            raise UserError(_("Choose at least one Staging or Development slot."))
+        pending = self.slot_reservation_pending_invoice_id
+        if pending and pending.state != 'cancel':
+            if pending.payment_state in ('paid', 'in_payment'):
+                self._activate_reserved_slots()
+            else:
+                raise UserError(_("Complete or cancel the pending slot reservation before reserving more."))
         period = self.billing_period or 'monthly'
-        full = self._env_server_price(period) * qty
-        charge = full
+        factor = 1.0
         if self.next_invoice_date and self.last_invoice_date:
             total_days = (self.next_invoice_date - self.last_invoice_date).days
             left = (self.next_invoice_date - fields.Date.today()).days
             if total_days > 0 and 0 < left < total_days:
-                charge = round(full * left / total_days, 2)
-        label = dict(self._fields['environment'].selection).get(
-            env_type, env_type)
+                factor = left / total_days
+        labels = dict(self._fields['environment'].selection)
         pricelist = self.partner_id.property_product_pricelist
-        order_lines = [(0, 0, {
-            'product_id': self._get_billing_product().id,
-            'name': _('Reserve %d %s slot(s) — %s (prorated)') % (
-                qty, label, self.name or self.subdomain),
-            'product_uom_qty': 1,
-            'price_unit': charge,
-        })]
+        order_lines = []
+        descriptions = []
+        charge = 0.0
+        for kind, quantity in counts.items():
+            if not quantity:
+                continue
+            amount = round(self._env_server_price(period) * quantity * factor, 2)
+            charge += amount
+            descriptions.append('%d %s slot(s)' % (quantity, labels[kind]))
+            order_lines.append((0, 0, {
+                'product_id': self._get_billing_product().id,
+                'name': _('Reserve %d %s slot(s) — %s (prorated)') % (
+                    quantity, labels[kind], self.name or self.subdomain),
+                'product_uom_qty': 1,
+                'price_unit': amount,
+            }))
+        description = ', '.join(descriptions)
         wallet_line, wallet_amount = self._wallet_credit_line(order_lines)
         if wallet_line:
             order_lines.append(wallet_line)
         order_vals = {
             'partner_id': self.partner_id.id,
-            'origin': ORIGIN_ENVIRONMENT % ('%d %s slot(s)' % (qty, label)),
+            'origin': ORIGIN_ENVIRONMENT % description,
             'order_line': order_lines,
         }
         if pricelist:
@@ -1364,15 +1400,14 @@ class SaasInstance(models.Model):
         invoice = order._create_invoices()
         invoice.action_post()
         self._wallet_settle_consumption(invoice, wallet_amount)
-        field = ('reserved_staging_pending' if env_type == 'staging'
-                 else 'reserved_dev_pending')
         self.write({
-            field: (self[field] or 0) + qty,
+            'reserved_staging_pending': counts.get('staging', 0),
+            'reserved_dev_pending': counts.get('development', 0),
             'slot_reservation_pending_invoice_id': invoice.id,
         })
         self._append_log(
-            "Reserve %d %s slot(s) — invoice %s (%.2f)."
-            % (qty, label, invoice.name, charge))
+            "Reserve %s — invoice %s (%.2f)."
+            % (description, invoice.name, charge))
         if invoice.amount_total <= 0:
             self._activate_reserved_slots()
             return {'auto_provisioned': True, 'reserved': qty}
@@ -1590,7 +1625,7 @@ class SaasInstance(models.Model):
 
         # Odoo.sh-style environments: Staging/Development servers chosen at
         # checkout (counts in pending_staging_count/pending_dev_count). Billed
-        # one full period upfront here; the servers are spawned on payment and
+        # one full period upfront here; slots are granted on payment and
         # then ride the renewal (see _environment_order_lines).
         order_lines += self._initial_environment_order_lines(period, period_label)
 
@@ -1620,6 +1655,8 @@ class SaasInstance(models.Model):
         if invoice.amount_total <= 0:
             self.state = 'paid'
             self._set_next_invoice_date()
+            # Wallet-covered orders bypass the invoice payment callback.
+            self._spawn_pending_environments()
             self._append_log(
                 "Sale order %s confirmed. Zero-amount invoice — deploying automatically."
                 % order.name
@@ -1659,6 +1696,7 @@ class SaasInstance(models.Model):
         # renewal cron never picks up the instance and the customer gets
         # an indefinite free subscription.
         self._set_next_invoice_date()
+        self._spawn_pending_environments()
         self._append_log("Manually marked as paid. Deploying automatically.")
         self.message_post(body=_("Manually marked as paid — deploying now."))
         self.action_deploy()

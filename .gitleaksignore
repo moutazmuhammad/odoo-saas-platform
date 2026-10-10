@@ -24,3 +24,7 @@
 #    private_key_b64`, a plain attribute assignment (the parameter itself
 #    is supplied by the caller at runtime, never a literal here).
 076304773dee3fa462024f3ec914ebb4d2a1a72f:control-plane/saas_core/utils.py:generic-api-key:212
+# 6) Historical host-shell permission test fixture: explicitly fake OpenSSH
+#    body containing "-FAKE-KEY-BYTES", not a usable private key. The test
+#    file was later removed; full-history scanning still finds this commit.
+52b1394b1a3b5fbacbfc1f4b6a2fd3c01d440be3:control-plane/saas_core/tests/test_host_shell_security.py:private-key:15

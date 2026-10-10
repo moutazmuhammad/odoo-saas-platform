@@ -1,6 +1,4 @@
 import { usePolling } from "@/hooks/usePolling";
-import { useRuntimeClock } from "@/hooks/useRuntimeClock";
-import { isOnline, displayRuntimeStatus } from "@/lib/runtime-status";
 import { getLocale } from "@/i18n";
 import { i18nText } from "@/i18n";
 import * as React from "react";
@@ -18,7 +16,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Skeleton, SkeletonCard } from "@/components/ui/skeleton";
-import { RuntimeStatusBadge } from "@/components/RuntimeStatusBadge";
+import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { AlertBanner } from "@/components/AlertBanner";
 import { CustomerFilter } from "@/components/CustomerFilter";
@@ -26,6 +24,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSections } from "@/lib/useSections";
 import { api, ApiError, type DashboardData, type ApiInstance } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { projectStatus } from "@/lib/projects";
 
 function money(n: number, c = "USD") {
   return new Intl.NumberFormat(getLocale(), { style: "currency", currency: c }).format(n);
@@ -47,7 +46,6 @@ function projectLink(i: ApiInstance) {
 }
 
 export default function Dashboard() {
-  const runtimeNow = useRuntimeClock();
   const { user } = useAuth();
   const isStaff = !!(user?.is_staff || user?.is_internal);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -105,7 +103,7 @@ export default function Dashboard() {
     [data, isStaff, customerId],
   );
   const total = customerProjects.length;
-  const running = customerProjects.filter((i) => isOnline(i, runtimeNow)).length;
+  const active = customerProjects.filter((i) => projectStatus(i) === "active").length;
   const wallet = data?.wallet?.total ?? data?.stats.wallet_balance ?? 0;
   // The projects grid excludes awaiting-payment orders (they're surfaced in
   // "Needs your attention" instead) so the customer's project list stays clean.
@@ -195,12 +193,12 @@ export default function Dashboard() {
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <Card className="p-5">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-muted">{i18nText("Fleet health")}</p>
+                <p className="text-sm font-medium text-muted">{i18nText("Active projects")}</p>
                 <Link to={isStaff && customerId ? `/my/instances?customer=${encodeURIComponent(customerId)}` : "/my/instances"} className="text-xs text-primary hover:underline">{i18nText("View projects")}</Link>
               </div>
               <p className="mt-2 text-2xl font-bold tracking-tight">
-                {running}
-                <span className="text-base font-medium text-muted"> / {total}{i18nText(" online")}</span>
+                {active}
+                <span className="text-base font-medium text-muted"> / {total}{i18nText(" active")}</span>
               </p>
               <div className="mt-3 flex gap-1">
                 {Array.from({ length: Math.max(total, 1) }).map((_, i) => (
@@ -208,7 +206,7 @@ export default function Dashboard() {
                     key={i}
                     className={cn(
                       "h-2 flex-1 rounded-full",
-                      total === 0 ? "bg-border" : i < running ? "bg-success" : "bg-border",
+                      total === 0 ? "bg-border" : i < active ? "bg-success" : "bg-border",
                     )}
                   />
                 ))}
@@ -284,7 +282,7 @@ export default function Dashboard() {
                         {isStaff && <p className="truncate text-xs text-muted">{i.customer?.name || "—"}</p>}
                         <p className="truncate text-xs text-muted">{i.region || i.domain}</p>
                       </div>
-                      <RuntimeStatusBadge instance={i} />
+                      <ProjectStatusBadge project={i} />
                     </div>
                     <p className="mt-4 text-xs text-muted">{i.is_hosting ? i18nText("Hosting project") : i18nText("Managed service")}</p>
                   </Card>

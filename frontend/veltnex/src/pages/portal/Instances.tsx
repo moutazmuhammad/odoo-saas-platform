@@ -1,12 +1,10 @@
-import { useRuntimeClock } from "@/hooks/useRuntimeClock";
-import { isOnline, displayRuntimeStatus } from "@/lib/runtime-status";
 import { i18nText } from "@/i18n";
 import * as React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Server, Plus, Search, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { RuntimeStatusBadge } from "@/components/RuntimeStatusBadge";
+import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { AlertBanner } from "@/components/AlertBanner";
 import { PageHeader } from "@/components/PageHeader";
@@ -17,14 +15,13 @@ import { useInstances } from "@/context/InstancesContext";
 import { useSections } from "@/lib/useSections";
 import { formatBytes, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { groupProjects } from "@/lib/projects";
+import { groupProjects, projectStatus } from "@/lib/projects";
 import type { ApiInstance } from "@/lib/api";
 
 const projectLink = (i: ApiInstance) =>
   i.is_hosting ? `/my/instances/${i.id}/environments` : `/my/instances/${i.id}`;
 
 export default function Instances() {
-  const runtimeNow = useRuntimeClock();
   const { instances, loading, error } = useInstances();
   const { user } = useAuth();
   const canCreate = user?.can_create_projects !== false;
@@ -43,7 +40,7 @@ export default function Instances() {
     const next = new URLSearchParams(searchParams);
     next.set("category", value);
     setSearchParams(next, { replace: true });
-    setOnlyRunning(false);
+    setOnlyActive(false);
   };
   const categoryProjects = isStaff ? projects : category === "my" ? ownedProjects : sharedProjects;
   const customerProjects = categoryProjects.filter((i) => !isStaff || !customerId || String(i.customer?.id) === customerId);
@@ -52,15 +49,15 @@ export default function Instances() {
   // Send "Create instance" to whichever offering is live.
   const createTo = sections.hosting ? "/hosting" : "/services";
   const [query, setQuery] = React.useState("");
-  const [onlyRunning, setOnlyRunning] = React.useState(false);
+  const [onlyActive, setOnlyActive] = React.useState(false);
 
-  const runningTotal = customerProjects.filter((i) => isOnline(i, runtimeNow)).length;
+  const activeTotal = customerProjects.filter((i) => projectStatus(i) === "active").length;
 
   const filtered = customerProjects.filter((i) => {
     const q = query.toLowerCase();
     const matchesQuery =
       i.name.toLowerCase().includes(q) || (i.region || "").toLowerCase().includes(q);
-    return matchesQuery && (!onlyRunning || isOnline(i, runtimeNow));
+    return matchesQuery && (!onlyActive || projectStatus(i) === "active");
   });
 
   const columns: Column<ApiInstance>[] = [
@@ -84,7 +81,7 @@ export default function Instances() {
     { key: "type", header: i18nText("Type"), hideBelow: "sm", sortValue: (i) => (i.is_hosting ? 0 : 1), className: "text-muted", render: (i) => (i.is_hosting ? i18nText("Hosting") : i18nText("Service")) },
     { key: "region", header: i18nText("Region"), hideBelow: "md", className: "text-muted", render: (i) => i.region || "—" },
     { key: "size", header: i18nText("Size"), hideBelow: "lg", className: "text-muted", render: (i) => i18nText("{0} workers · {1}", [i.workers, formatBytes(i.storage_gb)]) },
-    { key: "status", header: i18nText("Status"), sortValue: (i) => displayRuntimeStatus(i), render: (i) => <RuntimeStatusBadge instance={i} /> },
+    { key: "status", header: i18nText("Status"), sortValue: (i) => projectStatus(i), render: (i) => <ProjectStatusBadge project={i} /> },
     { key: "created", header: i18nText("Created"), hideBelow: "md", className: "text-muted", sortValue: (i) => i.created, render: (i) => (i.created ? formatDate(i.created) : "—") },
     { key: "go", header: "", align: "right", width: "44px", render: () => <ChevronRight className="size-4 text-muted" /> },
   ];
@@ -128,14 +125,14 @@ export default function Instances() {
             <div className="ms-auto inline-flex rounded-md border border-border p-0.5">
               {([
                 { key: false, label: i18nText("All") },
-                { key: true, label: `Online (${runningTotal})` },
+                { key: true, label: i18nText("Active ({0})", [activeTotal]) },
               ] as const).map((opt) => (
                 <button
                   key={String(opt.key)}
-                  onClick={() => setOnlyRunning(opt.key)}
+                  onClick={() => setOnlyActive(opt.key)}
                   className={cn(
                     "rounded-sm px-3 py-1 text-sm font-medium transition-colors",
-                    onlyRunning === opt.key ? "bg-primary/15 text-primary" : "text-muted hover:text-foreground",
+                    onlyActive === opt.key ? "bg-primary/15 text-primary" : "text-muted hover:text-foreground",
                   )}
                 >
                   {opt.label}
@@ -148,13 +145,13 @@ export default function Instances() {
           <EmptyState
             className="m-0 py-14"
             icon={Server}
-            title={query || onlyRunning || (isStaff && customerId) ? i18nText("No matching projects") : !isStaff && category === "shared" ? i18nText("No shared projects yet") : i18nText("No projects yet")}
+            title={query || onlyActive || (isStaff && customerId) ? i18nText("No matching projects") : !isStaff && category === "shared" ? i18nText("No shared projects yet") : i18nText("No projects yet")}
             description={
-              query || onlyRunning || (isStaff && customerId)
+              query || onlyActive || (isStaff && customerId)
                 ? i18nText("Try a different search term or filter.")
                 : !isStaff && category === "shared" ? i18nText("Projects shared by other owners will appear here.") : canCreate ? i18nText("Create your first project to deploy an Odoo environment.") : i18nText("Ask your customer owner to grant you access to a project.")
             }
-            action={canCreate && (isStaff || category === "my") && !query && !onlyRunning && (!isStaff || !customerId) && <Button onClick={() => navigate(createTo)}>{i18nText("Create project")}</Button>}
+            action={canCreate && (isStaff || category === "my") && !query && !onlyActive && (!isStaff || !customerId) && <Button onClick={() => navigate(createTo)}>{i18nText("Create project")}</Button>}
           />
         }
         columns={columns}

@@ -2714,5 +2714,8 @@
   "Webhook delivery confirmed": "تم تأكيد وصول أحداث الـ webhook",
   "Webhook verification failed": "فشل التحقق من الـ webhook",
   "Waiting for webhook delivery confirmation": "في انتظار تأكيد وصول حدث الـ webhook",
-  "Last webhook received: {0}": "آخر حدث webhook تم استقباله: {0}"
+  "Last webhook received: {0}": "آخر حدث webhook تم استقباله: {0}",
+  "Active projects": "المشاريع النشطة",
+  " active": " نشط",
+  "Active ({0})": "نشط ({0})"
 }

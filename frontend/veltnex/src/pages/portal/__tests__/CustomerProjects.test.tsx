@@ -20,7 +20,7 @@ vi.mock("@/lib/api", async (original) => ({
 const projects = [
   { id: 1, name: "alpha", customer: { id: 10, name: "Acme" }, state: "running", runtime_state: "online", runtime_checked_at: new Date().toISOString(), runtime_received_at: Date.now() },
   { id: 2, name: "beta", customer: { id: 20, name: "Zen" }, state: "stopped" },
-  { id: 3, name: "gamma", customer: { id: 10, name: "Acme" }, state: "stopped" },
+  { id: 3, name: "gamma", customer: { id: 10, name: "Acme" }, state: "cancelled" },
 ].map((project) => ({ domain: "example.com", region: "EU", created: "", workers: 2, storage_gb: 10, state_label: project.state, is_owned_project: project.customer.id === 10, ...project } as ApiInstance));
 
 beforeEach(() => {
@@ -32,7 +32,7 @@ beforeEach(() => {
 });
 
 describe("Staff customer project filtering", () => {
-  it("shows all customers by default, filters projects, and combines search and running filters", async () => {
+  it("shows all customers by default, filters projects, and combines search and active filters", async () => {
     const user = userEvent.setup();
     renderWithProviders(<Instances />);
     expect(screen.getByText("alpha")).toBeInTheDocument();
@@ -41,7 +41,7 @@ describe("Staff customer project filtering", () => {
     await user.selectOptions(screen.getByLabelText("Customer"), "10");
     expect(screen.queryByText("beta")).not.toBeInTheDocument();
     expect(screen.getByText("gamma")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Online (1)" }));
+    await user.click(screen.getByRole("button", { name: "Active (1)" }));
     expect(screen.queryByText("gamma")).not.toBeInTheDocument();
     await user.type(screen.getByPlaceholderText("Search projects…"), "missing");
     expect(screen.getByText("No matching projects")).toBeInTheDocument();
@@ -69,10 +69,12 @@ describe("Staff customer project filtering", () => {
     expect(screen.getByText("beta")).toBeInTheDocument();
     expect(screen.queryByText("alpha")).not.toBeInTheDocument();
     expect(screen.queryByText("gamma")).not.toBeInTheDocument();
-    expect(screen.getByText("/ 1 online", { exact: false })).toBeInTheDocument();
+    // A stopped server is still an active project: availability is per environment.
+    expect(screen.getByText("Active", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByText("/ 1 active", { exact: false })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Customer"), "");
     expect(screen.getByText("alpha")).toBeInTheDocument();
-    expect(screen.getByText("/ 3 online", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("/ 3 active", { exact: false })).toBeInTheDocument();
   });
 });
 

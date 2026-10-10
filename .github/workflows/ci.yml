@@ -53,6 +53,9 @@ jobs:
 
   odoo-tests:
     name: Odoo test suite (all production addons)
+    # Temporarily opt-in at the user's request; set the repository variable
+    # RUN_ODOO_TESTS=true to restore this validation gate.
+    if: ${{ vars.RUN_ODOO_TESTS == 'true' }}
     runs-on: ubuntu-latest
     services:
       postgres:

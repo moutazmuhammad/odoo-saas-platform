@@ -92,6 +92,8 @@ Open **Settings → Secrets and variables → Actions → Variables → New repo
 | `IMAGE_NAMESPACE` | Your Docker Hub username or organization |
 | `DEPLOY_CLUSTERS` | `["production-cluster"]` |
 
+The Odoo test job is temporarily disabled at the user's request. To restore it, add another **repository variable** named `RUN_ODOO_TESTS` with value `true`. If absent or set to another value, the job is skipped in CI and CD validation; all other validation jobs remain enabled.
+
 These are repository variables, rather than secrets inside an environment. Additional clusters require additional environments, each containing its own two cluster secrets, and their names added to this JSON list.
 
 Optional environment variables, only if you need different defaults:

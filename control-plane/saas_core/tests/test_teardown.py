@@ -62,6 +62,37 @@ class TestKubernetesTeardown(TransactionCase):
         self.assertIn(self.inst.state, ('cancelled', 'cancelled_by_client'))
         self.assertTrue(self.inst.infra_cleanup_pending)
 
+    # ---------------- races (double delete, delete during deploy) ----------------
+    def test_second_teardown_skips_an_already_cancelled_server(self):
+        self.inst.state = 'cancelled'
+        self._delete()
+        self.driver.destroy.assert_not_called()
+        self.assertEqual(self.inst.state, 'cancelled')
+
+    def test_second_cancel_click_starts_no_second_teardown(self):
+        self.inst.write({'state': 'provisioning', 'pending_operation': 'cancel'})
+        with patch('odoo.addons.saas_core.models.saas_instance.run_in_background') as bg:
+            self.inst.action_cancel()
+        bg.assert_not_called()
+
+    def test_late_failure_never_brings_a_cancelled_server_back(self):
+        self.inst.state = 'cancelled'
+        self.inst._on_background_error(Exception('could not serialize access'), 'running')
+        self.assertEqual(self.inst.state, 'cancelled')
+
+    def test_queued_deploy_skips_a_server_cancelled_meanwhile(self):
+        self.inst.write({'state': 'cancelled', 'pending_operation': False})
+        with patch.object(type(self.inst), '_do_deploy_locked') as deploy:
+            self.assertFalse(self.inst._do_deploy())
+        deploy.assert_not_called()
+        self.assertEqual(self.inst.state, 'cancelled')
+
+    def test_deploy_still_runs_when_queued_normally(self):
+        self.inst.write({'state': 'provisioning', 'pending_operation': 'deploy'})
+        with patch.object(type(self.inst), '_do_deploy_locked', return_value=True) as deploy:
+            self.inst._do_deploy()
+        deploy.assert_called_once()
+
     # ---------------- retries ----------------
     def test_cron_retries_pending_cleanup(self):
         self.inst.write({'state': 'cancelled', 'infra_cleanup_pending': True})

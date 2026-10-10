@@ -4787,6 +4787,16 @@ END $$;
             "SELECT pg_advisory_lock(%s, %s)",
             (self._OP_LOCK_NAMESPACE, self.id))
         try:
+            # The server may have been deleted while this deploy waited in
+            # the queue: deploying now would bring a cancelled server back.
+            self.invalidate_recordset(['state', 'pending_operation'])
+            if self.state != 'provisioning' or self.pending_operation != 'deploy':
+                _logger.info("Deploy of %s skipped: state=%s, operation=%s",
+                             self.subdomain, self.state, self.pending_operation)
+                self._append_log(
+                    "Deployment skipped: the server changed while it was "
+                    "queued (now %s)." % (self.pending_operation or self.state))
+                return False
             return self._do_deploy_locked()
         finally:
             self.env.cr.execute(
@@ -5183,6 +5193,11 @@ END $$;
         if cascade:
             cascade.action_cancel()
         for rec in self:
+            if rec.state in ('cancelled', 'cancelled_by_client') or (
+                    rec.state == 'provisioning' and rec.pending_operation == 'cancel'):
+                # Already cancelled or being cancelled (e.g. a second click):
+                # a second teardown would race the first.
+                continue
             if rec.docker_server_id:
                 # Infrastructure may exist (fully or partially) — clean up
                 prev_state = rec.state
@@ -5242,6 +5257,29 @@ END $$;
         return True
 
     def _do_delete_instance(self):
+        """Tear the server down once no deploy of it is running.
+
+        Waits on the deploy's operation lock: tearing down mid-deploy would
+        let the deploy recreate the workload (or fail on a serialization
+        error with the infrastructure half removed)."""
+        self.ensure_one()
+        self.env.cr.execute(
+            "SELECT pg_advisory_lock(%s, %s)",
+            (self._OP_LOCK_NAMESPACE, self.id))
+        try:
+            # Start a fresh snapshot: see what the finished deploy committed.
+            self.env.cr.commit()
+            self.invalidate_recordset()
+            if self.state in ('cancelled', 'cancelled_by_client'):
+                # Another teardown of this server finished while we waited.
+                return False
+            return self._do_delete_instance_locked()
+        finally:
+            self.env.cr.execute(
+                "SELECT pg_advisory_unlock(%s, %s)",
+                (self._OP_LOCK_NAMESPACE, self.id))
+
+    def _do_delete_instance_locked(self):
         """Delete instance (runs in background thread).
 
         Cancellation rule — every cancel drops **every** pre-existing
@@ -5518,6 +5556,13 @@ END $$;
         For non-deploy failures: revert to the previous state.
         """
         error_msg = str(exception)
+        self.invalidate_recordset(['state'])
+        if self.state in ('cancelled', 'cancelled_by_client'):
+            # Another operation already cancelled this server: restoring the
+            # failed operation's earlier state would bring it back.
+            self._append_log("Ignored a late failure (%s): the server is "
+                             "already cancelled." % error_msg)
+            return
         self._append_log("OPERATION FAILED: %s" % error_msg)
         self.env['saas.alert']._notify(
             'operation_failed',

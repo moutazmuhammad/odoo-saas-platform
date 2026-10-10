@@ -16,6 +16,7 @@ class OperatorDeploymentTests(unittest.TestCase):
             for tool in ('helm', 'kubectl'):
                 executable = path / tool
                 executable.write_text('#!/bin/bash\nprintf "%s\\n" "$0 $*" >> "$COMMAND_LOG"\n'
+                                      'if [[ $1 == upgrade && $2 == --help ]]; then echo "${HELM_ROLLBACK_FLAG:---atomic}"; fi\n'
                                       'if [[ ${FAIL_CRD:-} == true && $1 == apply ]]; then exit 1; fi\n')
                 executable.chmod(0o755)
             env = dict(os.environ, PATH=f'{path}:{os.environ["PATH"]}',
@@ -45,3 +46,9 @@ class OperatorDeploymentTests(unittest.TestCase):
         code, log = self.execute(FAIL_CRD='true')
         self.assertNotEqual(code, 0)
         self.assertNotIn('upgrade --install', log)
+
+    def test_helm4_retains_rollback_and_wait(self):
+        code, log = self.execute(HELM_ROLLBACK_FLAG='--rollback-on-failure')
+        self.assertEqual(code, 0)
+        self.assertIn('--rollback-on-failure --wait', log)
+        self.assertNotIn('--atomic', log)

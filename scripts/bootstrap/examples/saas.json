@@ -1,0 +1,10 @@
+{
+  "ssh": {"host": "saas.example.com", "user": "root", "port": 22, "key": "~/.ssh/id_ed25519", "known_hosts": "~/.ssh/known_hosts"},
+  "domain": "saas.example.com",
+  "email": "admin@example.com",
+  "database": "saas",
+  "admin_login": "admin@example.com",
+  "admin_password_file": ".local-deploy/admin-password",
+  "deploy_public_key": "~/.ssh/saas-deploy.pub",
+  "workers": 2
+}

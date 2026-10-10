@@ -35,7 +35,9 @@ The control plane only talks to the Kubernetes API. Full explanation: [setup/01-
 
 ---
 
-For direct deployment from your workstation, see [Local deploy](setup/08-LOCAL-DEPLOY.md).
+For direct deployment from your workstation, see [Local deploy](setup/08-LOCAL-DEPLOY.md) with dedicated [DOKS](setup/08-LOCAL-DEPLOY.md#deploy-to-doks-from-this-machine) and [SaaS server](setup/08-LOCAL-DEPLOY.md#deploy-the-saas-server-from-this-machine) walkthroughs.
+
+For new infrastructure, use the [three bootstrap scripts](setup/09-BOOTSTRAP.md): SaaS on Ubuntu, one/multiple MicroK8s VMs, or an existing DOKS cluster, including readiness checks and optional SaaS registration.
 
 ## Repository layout
 

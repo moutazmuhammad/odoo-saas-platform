@@ -295,6 +295,27 @@ class TestImageBuildPipeline(TransactionCase):
         self.assertEqual(self.driver.deploy_image.call_args.kwargs['modules'],
                          ['brand_new', 'other'])
 
+    def test_single_addon_repo_and_mixed_layout_reach_tenant_runtime(self):
+        build = self._build(stage='building', job_name='mixed-layout', image_ref='r:tenant-build')
+        status = self._succeeded(modules={'app': '1.0', 'sale_extra': '1.0'}, subdir='')
+        status['result']['repos'][0]['addons_subdirs'] = ['..', 'addons']
+        self.driver.build_status.return_value = status
+        self.instance._job_poll_build(build.id)
+        kw = self.driver.deploy_image.call_args.kwargs
+        self.assertEqual(kw['addons_paths'], ['/opt/tenant-addons', '/opt/tenant-addons/app/addons'])
+        self.assertEqual(kw['modules'], ['app', 'sale_extra'])
+        self.assertEqual(build.stage, 'deploying')
+        self.assertEqual(build.state, 'running')
+
+    def test_build_cannot_select_addons_outside_tenant_directory(self):
+        build = self._build(stage='building', job_name='bad-layout', image_ref='r:tenant-build')
+        status = self._succeeded()
+        status['result']['repos'][0]['addons_subdirs'] = ['../../..']
+        self.driver.build_status.return_value = status
+        with self.assertRaises(UserError):
+            self.instance._job_poll_build(build.id)
+        self.driver.deploy_image.assert_not_called()
+
     # ---- rollout step -------------------------------------------------
     def test_rollout_success_when_the_operator_applied_it(self):
         build = self._build(stage='deploying', image_ref='localhost:32000/acme/tenant-bldinst:18.0-b1')
@@ -452,7 +473,7 @@ class TestImageBuildDriver(TransactionCase):
         self.assertEqual(settings['worker']['oci']['gckeepstorage'], '8GB')
         self.assertNotIn('--export-cache', config['build.sh'])
         self.assertNotIn('--import-cache', config['build.sh'])
-        self.assertIn('--opt no-cache', config['build.sh'])
+        self.assertIn('--opt no-cache=', config['build.sh'])
         # Init containers run sequentially, but their largest request counts
         # for the pod's entire lifetime. They must not reserve their CPU limits
         # and prevent a build fitting into a node with 500m CPU available.

@@ -109,7 +109,7 @@ What happens when a customer pushes to a connected repo, or presses Redeploy (`m
 3. **Job.** One Job `build-<id>-<sub>` in namespace `odoo-builds` (`k8s_builds.py:224-273`): `backoffLimit: 0`, 30-minute deadline, deleted 1 h after it ends, no ServiceAccount token. A NetworkPolicy allows only DNS and public 80/443 (no cluster or metadata IPs), plus the in-cluster registry if the push host is a `*.svc` name (`k8s_builds.py:104-141`). A per-build Secret holds the clone URLs (with tokens) and `config.json`; a ConfigMap holds the Dockerfile and scripts. Both are owned by the Job and go with it.
 4. **`fetch`** init container, image = `git_image` (default `alpine/git:v2.45.2`): `templates/build/fetch.sh` shallow-clones every repo at the exact commit into `/workspace/addons/<dir>` (two at a time), verifies a pinned SHA, deletes `.git`.
 5. **`inspect`** init container, image = **the Odoo base image** (for its Python): `templates/build/inspect.py` finds each repo's addons folder and module versions, merges the repos' root `requirements.txt` into `/workspace/requirements.txt`, writes `/workspace/meta/result.json`.
-6. **`build`** container, image = `builder_image` (default `moby/buildkit:v0.16.0-rootless`), uid 1000, seccomp/AppArmor `Unconfined` (rootless BuildKit requirement), 20 GiB scratch `emptyDir`. `templates/build/build.sh` runs `buildctl-daemonless.sh build ... --opt no-cache --output type=image,name=$IMAGE_REF,push=true`. **No cache** is imported or exported (`k8s_builds.py:158-161`).
+6. **`build`** container, image = `builder_image` (default `moby/buildkit:v0.16.0-rootless`), uid 1000, seccomp/AppArmor `Unconfined` (rootless BuildKit requirement), 20 GiB scratch `emptyDir`. `templates/build/build.sh` runs `buildctl-daemonless.sh build ... --opt no-cache= --output type=image,name=$IMAGE_REF,push=true`. The empty option value disables cache for all stages; a bare `--opt no-cache` is rejected. **No cache** is imported or exported (`k8s_builds.py:158-161`).
 7. **The Dockerfile** (`templates/build/Dockerfile.jinja`):
    ```dockerfile
    FROM <docker_image>:<docker_image_tag>     # the version's official Odoo image
@@ -123,6 +123,21 @@ What happens when a customer pushes to a connected repo, or presses Redeploy (`m
 8. **Push.** Ref = `<registry_push_host or registry_host>/<registry_prefix>/tenant-<subdomain>:<base tag>-b<build id>` (`saas_instance_build.py:150-161, 197, 216`). The log prints `SAAS_BUILD_DIGEST` / `SAAS_BUILD_RESULT`, which the control plane reads (`k8s_builds.py:79-91`).
 9. **Deploy.** `deploy_image` (`k8s_builds.py:362-389`) writes the `tenant-registry` pull Secret into the tenant namespace and patches the OdooInstance: `spec.image` (pull host + tag, `pullSecretRefs: [tenant-registry]`), `spec.addonsPaths`, `spec.update` (token + changed modules).
 10. **Operator update gate.** The operator runs an `odoo -u` Job against the new image first; only if it succeeds does it roll the web pod. If it fails, the old image keeps serving (`compute/operator/internal/resources/update_job.go:42-47`). The control plane waits until `status.observedImage` equals the new ref (`saas_instance_build.py:323`).
+
+### Where the customer's repository runs
+
+The connected repository is copied into the tenant image at `/opt/tenant-addons/<repo-directory>`. The customer's running Odoo container receives that image on its own cluster. GitHub pushes to the linked branch and manual redeploys use the same pipeline; a push pins the triggering repository to the delivered commit SHA. A failed build never reaches the tenant rollout.
+
+The inspection stage adds every discovered module's parent to `spec.addonsPaths`, including these layouts:
+
+| Repository layout | Tenant Odoo search path |
+| --- | --- |
+| `customer_app/__manifest__.py` (repo is one addon) | `/opt/tenant-addons` |
+| `repo/sale_extra/__manifest__.py` | `/opt/tenant-addons/repo` |
+| `repo/addons/sale_extra/__manifest__.py` | `/opt/tenant-addons/repo/addons` |
+| Modules under both `repo/addons/` and `repo/custom/` | Both parent directories |
+
+In the single-addon layout, the repository directory is the module's technical name. Installing a newly added addon in an Odoo database is a separate action; the pipeline upgrades changed modules that are already installed. Deployment success requires the current build's update token to be applied, tenant phase `Ready`, and the observed image to match the built image. Repository linking alone does not prove the code is live.
 
 ### Registry auth
 

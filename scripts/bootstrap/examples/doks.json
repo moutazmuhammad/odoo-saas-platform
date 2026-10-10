@@ -1,0 +1,12 @@
+{
+  "name": "doks-prod",
+  "kubeconfig": "~/Downloads/production-kubeconfig.yaml",
+  "context": "do-fra1-production",
+  "domain": "apps.example.com",
+  "email": "admin@example.com",
+  "storage_class": "do-block-storage",
+  "output": ".local-deploy/doks-prod-tenant-kubeconfig.json",
+  "operator_values": "compute/examples/doks/operator-values.yaml",
+  "region_code": "fra1",
+  "region_name": "Frankfurt"
+}

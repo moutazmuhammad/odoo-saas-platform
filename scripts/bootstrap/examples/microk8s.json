@@ -1,0 +1,16 @@
+{
+  "name": "microk8s-prod",
+  "channel": "1.35/stable",
+  "api_host": "203.0.113.11",
+  "ingress_ip": "203.0.113.11",
+  "domain": "apps.example.com",
+  "email": "admin@example.com",
+  "storage_class": "longhorn",
+  "storage_replicas": 1,
+  "output": ".local-deploy/microk8s-prod-tenant-kubeconfig.json",
+  "region_code": "local1",
+  "region_name": "Private cloud",
+  "nodes": [
+    {"name": "node1", "private_ip": "10.0.0.11", "host": "203.0.113.11", "user": "root", "port": 22, "key": "~/.ssh/id_ed25519", "known_hosts": "~/.ssh/known_hosts"}
+  ]
+}

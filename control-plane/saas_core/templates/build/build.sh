@@ -12,7 +12,7 @@ buildctl-daemonless.sh build \
   --local context=/workspace \
   --local dockerfile=/files \
   --opt filename=Dockerfile \
-  --opt no-cache \
+  --opt no-cache= \
   --output "$output" \
   --metadata-file /workspace/meta/build.json
 digest=$(grep -o '"containerimage.digest": *"[^"]*"' /workspace/meta/build.json | sed 's/.*"\(sha256:[^"]*\)"/\1/')

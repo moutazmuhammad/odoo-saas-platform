@@ -46,11 +46,16 @@ def main():
         path = os.path.join(ROOT, name)
         mods = list(manifests(path))
         subdir = detect_subdir(mods)
-        base = os.path.join(path, subdir) if subdir else path
-        for mod in sorted(os.listdir(base)):
-            mf = os.path.join(base, mod, '__manifest__.py')
-            if not os.path.isfile(mf):
-                continue
+        # Every module contributes its parent to Odoo's addons search path.
+        # A single-addon repo needs the parent of the repo itself; mixed
+        # layouts need multiple paths rather than one guessed common folder.
+        addon_parents = set()
+        for relative in sorted(mods):
+            module_path = os.path.normpath(os.path.join(path, relative))
+            mod = os.path.basename(module_path)
+            parent = os.path.relpath(os.path.dirname(module_path), path)
+            addon_parents.add('' if parent == '.' else parent)
+            mf = os.path.join(module_path, '__manifest__.py')
             try:
                 with open(mf) as fh:
                     manifest = ast.literal_eval(fh.read())
@@ -63,7 +68,8 @@ def main():
         if os.path.isfile(req):
             with open(req) as fh:
                 req_lines += fh.read().splitlines()
-        repos.append({'dir': name, 'subdir': subdir, 'sha': shas.get(idx, '')})
+        repos.append({'dir': name, 'subdir': subdir, 'sha': shas.get(idx, ''),
+                      'addons_subdirs': sorted(addon_parents) or ['']})
     seen, merged = set(), []
     for line in req_lines:
         line = line.strip()

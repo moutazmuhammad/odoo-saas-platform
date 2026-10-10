@@ -1,5 +1,9 @@
 """Local deploy routing, immutable worktrees and failure receipts; no live targets."""
 import importlib.util
+import contextlib
+import io
+import stat
+import sys
 import os
 from pathlib import Path
 import subprocess
@@ -21,7 +25,7 @@ class LocalDeploymentTests(unittest.TestCase):
         self.values = self.root / 'values.yaml'
         self.values.write_text('{}\n')
         self.config = {'saas': {'host': 'example.com', 'key': '/tmp/key'},
-                       'images': {'prefix': 'registry:5000/team'},
+                       'images': {'prefix': 'registry:5000/team', 'platforms': 'linux/amd64'},
                        'clusters': [{'name': 'client', 'context': 'client',
                                      'kubeconfig': '/tmp/kube', 'values': str(self.values)}]}
         self.files = {'control-plane/saas_core/a.py': 'a', 'frontend/veltnex/a.ts': 'b',
@@ -190,6 +194,71 @@ class LocalDeploymentTests(unittest.TestCase):
         with self.assertRaises(deploy.DeployError):
             deploy.source_files(self.root)
 
+    def test_preflight_captures_snap_kubectl_through_pipe_without_logging_credentials(self):
+        binary_dir = self.root / 'bin'
+        binary_dir.mkdir()
+        kubectl = binary_dir / 'kubectl'
+        kubectl.write_text(
+            '#!' + sys.executable + '\n'
+            'import os, stat, sys\n'
+            'if stat.S_ISREG(os.fstat(1).st_mode):\n'
+            '    sys.stderr.write("error: write /dev/stdout: bad file descriptor\\n")\n'
+            '    sys.exit(1)\n'
+            'os.write(1, b"apiVersion: v1\\nusers: [private-test-credential]\\n")\n')
+        kubectl.chmod(0o755)
+        original_run = deploy.run
+        commands = []
+        def execute(args, **kwargs):
+            commands.append((args, kwargs))
+            if '--raw' in args:
+                return original_run(args, **kwargs)
+            return b''
+        log = io.StringIO()
+        with patch.dict(os.environ, PATH=str(binary_dir) + os.pathsep + os.environ['PATH']), \
+                patch.object(deploy, 'require'), patch.object(deploy, 'run', side_effect=execute), \
+                contextlib.redirect_stdout(log):
+            prepared = deploy.preflight(self.plan(target='cluster'), self.config, self.root, self.root)
+        env, _, _ = prepared['client']
+        kubeconfig = Path(env['KUBECONFIG'])
+        self.assertIn(b'private-test-credential', kubeconfig.read_bytes())
+        self.assertEqual(stat.S_IMODE(kubeconfig.stat().st_mode), 0o600)
+        self.assertNotIn('private-test-credential', log.getvalue())
+        raw_args, raw_kwargs = next((args, kw) for args, kw in commands if '--raw' in args)
+        self.assertTrue(raw_kwargs['capture'])
+        self.assertEqual(raw_args[raw_args.index('--context') + 1], 'client')
+
+    def test_failed_kubeconfig_capture_does_not_create_partial_credentials_file(self):
+        with patch.object(deploy, 'require'), \
+                patch.object(deploy, 'run', side_effect=subprocess.CalledProcessError(1, ['kubectl'])), \
+                self.assertRaises(subprocess.CalledProcessError):
+            deploy.preflight(self.plan(target='cluster'), self.config, self.root, self.root)
+        self.assertEqual(list(self.root.glob('*.kubeconfig')), [])
+
+    def test_auto_platforms_build_only_architectures_of_target_nodes(self):
+        self.config['images']['platforms'] = 'auto'
+        calls = []
+        def run(args, **kwargs):
+            calls.append(args)
+            if args[:3] == ['kubectl', 'get', 'nodes']:
+                return b'{"items":[{"status":{"nodeInfo":{"architecture":"amd64"}}}]}'
+            return b'private-kubeconfig'
+        plan = self.plan(target='cluster')
+        with patch.object(deploy, 'require'), patch.object(deploy, 'run', side_effect=run):
+            prepared = deploy.preflight(plan, self.config, self.root, self.root)
+            deploy.deploy(plan, self.config, self.root, self.root, prepared, '123-1-' + 'a' * 40)
+        builds = [args for args in calls if args[:3] == ['docker', 'buildx', 'build']]
+        self.assertEqual(len(builds), 2)
+        for args in builds:
+            self.assertEqual(args[args.index('--platform') + 1], 'linux/amd64')
+
+    def test_auto_platforms_refuses_empty_cluster_before_build(self):
+        self.config['images']['platforms'] = 'auto'
+        def run(args, **kwargs):
+            return b'{"items":[]}' if args[:3] == ['kubectl', 'get', 'nodes'] else b'kubeconfig'
+        with patch.object(deploy, 'require'), patch.object(deploy, 'run', side_effect=run), \
+                self.assertRaises(deploy.DeployError):
+            deploy.preflight(self.plan(target='cluster'), self.config, self.root, self.root)
+
     def test_dry_run_never_builds_uploads_or_contacts_targets(self):
         path = self.root / 'config.json'
         deploy.save_json(path, self.config)
@@ -203,6 +272,24 @@ class LocalDeploymentTests(unittest.TestCase):
         preflight.assert_not_called()
         execute.assert_not_called()
         self.assertEqual(list((self.root / 'state').rglob('*.json')), [])
+
+    def test_init_defaults_to_this_machines_doks_context(self):
+        path = self.root / 'doks/config.json'
+        deploy.initialize(path)
+        cluster = deploy.read_json(path)['clusters'][0]
+        self.assertEqual(cluster['name'], 'doks')
+        self.assertEqual(cluster['context'], 'do-fra1-node')
+        self.assertEqual(cluster['kubeconfig'], '~/Downloads/node-kubeconfig.yaml')
+        self.assertEqual(Path(cluster['values']).read_text(), '{}\n')
+
+    def test_init_accepts_an_explicit_cluster_context(self):
+        path = self.root / 'other/config.json'
+        deploy.initialize(path, cluster_name='doks-prod', kubeconfig='/tmp/doks.yaml',
+                          context='do-ams3-production')
+        cluster = deploy.read_json(path)['clusters'][0]
+        self.assertEqual(cluster['name'], 'doks-prod')
+        self.assertEqual(cluster['context'], 'do-ams3-production')
+        self.assertEqual(cluster['kubeconfig'], '/tmp/doks.yaml')
 
     def test_init_does_not_overwrite_machine_configuration(self):
         path = self.root / 'machine/config.json'

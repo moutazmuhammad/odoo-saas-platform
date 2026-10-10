@@ -247,10 +247,17 @@ class SaasInstance(models.Model):
         repos_by_dir = {r._get_repo_dir_name(): r for r in self.repo_ids}
         addons_paths = []
         for item in result.get('repos') or []:
-            path = '%s/%s' % (_TENANT_ADDONS_ROOT, item['dir'])
-            if item.get('subdir'):
-                path += '/' + item['subdir'].strip('/')
-            addons_paths.append(path)
+            # New build metadata covers single-addon repos and mixed layouts.
+            # Keep accepting metadata from Jobs started before the SaaS update.
+            subdirs = item.get('addons_subdirs')
+            if subdirs is None:
+                subdirs = [item.get('subdir') or '']
+            for subdir in subdirs:
+                path = os.path.normpath(os.path.join(_TENANT_ADDONS_ROOT, item['dir'], subdir))
+                if os.path.commonpath([_TENANT_ADDONS_ROOT, path]) != _TENANT_ADDONS_ROOT:
+                    raise UserError(_("Build returned an addons path outside the tenant code directory."))
+                if path not in addons_paths:
+                    addons_paths.append(path)
             repo = repos_by_dir.get(item['dir'])
             if repo:
                 repo.sudo().write({

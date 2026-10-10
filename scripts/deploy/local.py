@@ -26,12 +26,12 @@ class DeployError(Exception):
     pass
 
 
-def run(args, *, cwd=ROOT, env=None, capture=False, output=None):
+def run(args, *, cwd=ROOT, env=None, capture=False):
     # Arguments are passed directly, never interpolated into a local shell.
     if not capture:
         print('+ ' + shlex.join(map(str, args)), flush=True)
     result = subprocess.run(list(map(str, args)), cwd=cwd, env=env,
-                            stdout=output if output else (subprocess.PIPE if capture else None),
+                            stdout=subprocess.PIPE if capture else None,
                             check=True)
     return result.stdout if capture else None
 
@@ -186,6 +186,14 @@ def require(*commands):
             raise DeployError(f'Required command not installed: {command}')
 
 
+def helm_wait_flags(help_text):
+    if b'--atomic' in help_text:
+        return ['--atomic', '--wait']
+    if b'--rollback-on-failure' in help_text:
+        return ['--rollback-on-failure', '--wait']
+    raise DeployError('Helm must support --atomic (v3) or --rollback-on-failure (v4).')
+
+
 def ssh_options(server):
     host = server['host']
     user = server.get('user', 'saas-deploy')
@@ -229,13 +237,23 @@ def preflight(plan, config, frozen, work):
         if not context:
             raise DeployError(f"Explicit Kubernetes context required for {cluster['name']}.")
         kubeconfig = work / (digest(cluster['name'].encode())[:12] + '.kubeconfig')
-        with kubeconfig.open('wb') as output:
-            run(['kubectl', '--kubeconfig', local_path(cluster['kubeconfig']),
-                 '--context', context, 'config', 'view', '--minify', '--flatten', '--raw'],
-                output=output)
-        kubeconfig.chmod(0o600)
+        # Snap-wrapped kubectl may reopen /dev/stdout and reject an inherited
+        # regular-file descriptor. Capture through a pipe, then write locally.
+        # Raw kubeconfig contains credentials: never print it or use shell tee.
+        kubeconfig_data = run(
+            ['kubectl', '--kubeconfig', local_path(cluster['kubeconfig']),
+             '--context', context, 'config', 'view', '--minify', '--flatten', '--raw'],
+            capture=True)
+        with os.fdopen(os.open(kubeconfig, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb') as output:
+            output.write(kubeconfig_data)
         env = dict(os.environ, KUBECONFIG=str(kubeconfig))
         run(['kubectl', 'cluster-info'], env=env)
+        if config.get('images', {}).get('platforms', 'auto') == 'auto':
+            nodes = json.loads(run(['kubectl', 'get', 'nodes', '-o', 'json'], env=env, capture=True))
+            architectures = {node['status']['nodeInfo']['architecture'] for node in nodes['items']}
+            if not architectures or not architectures <= {'amd64', 'arm64'}:
+                raise DeployError('Cannot determine supported node architectures (amd64/arm64).')
+            env['SAAS_BUILD_PLATFORMS'] = ','.join('linux/' + arch for arch in sorted(architectures))
         values = work / (kubeconfig.stem + '-values.yaml')
         shutil.copyfile(local_path(cluster['values']), values)
         if digest(values.read_bytes()) != item['operator']['files']['@operator-values']:
@@ -281,8 +299,12 @@ def deploy(plan, config, frozen, work, prepared, release_id):
             ('backup', 'compute/tools/backup-tool', 'odoo-saas-backup-tool')):
         if any(item[component]['needed'] for item in plan['clusters']):
             image = f"{config['images']['prefix'].rstrip('/')}/{repository}:local-{release_id}"
-            run(['docker', 'buildx', 'build', '--pull', '--platform',
-                 config['images'].get('platforms', 'linux/amd64,linux/arm64'),
+            platforms = config['images'].get('platforms', 'auto')
+            if platforms == 'auto':
+                selected = [prepared[item['config']['name']][0]['SAAS_BUILD_PLATFORMS']
+                            for item in plan['clusters'] if item[component]['needed']]
+                platforms = ','.join(sorted({p for group in selected for p in group.split(',')}))
+            run(['docker', 'buildx', 'build', '--pull', '--platform', platforms,
                  '--tag', image, '--push', frozen / context])
             images[component] = image
     archive = None
@@ -325,9 +347,10 @@ def deploy(plan, config, frozen, work, prepared, release_id):
             if (chart / 'crds').is_dir():
                 run(['kubectl', 'apply', '--server-side', '--field-manager=saas-local-deploy',
                      '-f', chart / 'crds'], env=base_env)
+            readiness = helm_wait_flags(run(['helm', 'upgrade', '--help'], capture=True))
             run(['helm', 'upgrade', '--install', release['name'], chart,
                  '--namespace', release['namespace'], '--create-namespace',
-                 '--reset-then-reuse-values', *args, '--atomic', '--wait',
+                 '--reset-then-reuse-values', *args, *readiness,
                  '--timeout', '10m', '--history-max', '20'], env=base_env)
             mark(entry, release_id)
     if archive:
@@ -340,20 +363,23 @@ def deploy(plan, config, frozen, work, prepared, release_id):
         mark(plan['saas'], release_id)
 
 
-def initialize(path):
+def initialize(path, cluster_name='doks', kubeconfig='~/Downloads/node-kubeconfig.yaml',
+               context='do-fra1-node'):
     if path.exists():
         raise DeployError(f'Config already exists: {path}')
+    if not re.fullmatch(r'[A-Za-z0-9_-]+', cluster_name):
+        raise DeployError('Invalid cluster name.')
     config = {
         'saas': {'enabled': True, 'host': 'main.eagle-tech.info', 'user': 'saas-deploy',
                  'port': 22, 'key': '~/saas-ci', 'known_hosts': '~/.ssh/known_hosts'},
-        'images': {'prefix': 'docker.io/moutazmuhammad', 'platforms': 'linux/amd64,linux/arm64'},
-        'clusters': [{'name': 'microk8s', 'enabled': True, 'context': 'microk8s',
-                      'kubeconfig': '~/.kube/config',
-                      'values': str(path.parent / 'microk8s-values.yaml'),
+        'images': {'prefix': 'docker.io/moutazmuhammad', 'platforms': 'auto'},
+        'clusters': [{'name': cluster_name, 'enabled': True, 'context': context,
+                      'kubeconfig': kubeconfig,
+                      'values': str(path.parent / (cluster_name + '-values.yaml')),
                       'namespace': 'odoo-system', 'release': 'odoo-operator', 'releases': []}],
     }
     save_json(path, config)
-    values = path.parent / 'microk8s-values.yaml'
+    values = path.parent / (cluster_name + '-values.yaml')
     if not values.exists():
         values.write_text('{}\n')  # Keep installed Helm values; don't guess cluster settings.
         values.chmod(0o600)
@@ -366,6 +392,8 @@ def main(argv=None):
     parser.add_argument('--config', type=Path, default=DEFAULT_CONFIG)
     parser.add_argument('--target', choices=('auto', 'saas', 'cluster', 'all'), default='auto')
     parser.add_argument('--cluster', action='append', default=[], help='Cluster name; repeat for multiple clusters')
+    parser.add_argument('--kubeconfig', help='Kubeconfig path for init')
+    parser.add_argument('--context', help='Explicit Kubernetes context for init')
     parser.add_argument('--full', action='store_true', help='Deploy selected targets even if inputs are unchanged')
     parser.add_argument('--dry-run', action='store_true', help='Plan only; no build, upload or remote commands')
     args = parser.parse_args(argv)
@@ -375,8 +403,14 @@ def main(argv=None):
         args.target = 'cluster'
     config_path = args.config.expanduser().resolve()
     if args.command == 'init':
-        initialize(config_path)
+        if len(args.cluster) > 1:
+            raise DeployError('init accepts one --cluster name.')
+        initialize(config_path, cluster_name=args.cluster[0] if args.cluster else 'doks',
+                   kubeconfig=args.kubeconfig or '~/Downloads/node-kubeconfig.yaml',
+                   context=args.context or 'do-fra1-node')
         return
+    if args.kubeconfig or args.context:
+        raise DeployError('--kubeconfig and --context are init options; edit the config for deployment.')
     config = read_json(config_path)
     if not config:
         raise DeployError(f'Config missing: run {sys.argv[0]} init first.')

@@ -1,5 +1,7 @@
 # Build stage.
-FROM golang:1.27-bookworm AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-bookworm AS builder
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /workspace
 
 COPY go.mod go.sum ./
@@ -11,7 +13,9 @@ COPY internal/ internal/
 
 # CGO disabled + static binary: the runtime image below has no libc tooling
 # to link against, and a static binary is what makes distroless viable.
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -a -o /workspace/manager ./cmd
+# Run the Go compiler on the builder's CPU, cross-compile for the target.
+# Neither architecture needs QEMU: the runtime stage has no RUN steps.
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -a -o /workspace/manager ./cmd
 
 # Runtime stage: distroless nonroot — no shell, no package manager, minimal
 # attack surface for a cluster-privileged controller.

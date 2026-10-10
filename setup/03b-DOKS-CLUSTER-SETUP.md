@@ -4,6 +4,8 @@ From an empty DigitalOcean account to a cluster that takes customer orders from 
 
 Before this guide: [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (how it works) and [02-SAAS-SERVER-SETUP.md](02-SAAS-SERVER-SETUP.md) (install the SaaS server first; step 9 here runs on it). For your own servers instead, use [03a-MICROK8S-CLUSTER-SETUP.md](03a-MICROK8S-CLUSTER-SETUP.md).
 
+After initial setup, use [Deploy to DOKS from this machine](08-LOCAL-DEPLOY.md#deploy-to-doks-from-this-machine) to build/push changed platform images and deploy directly from your workstation.
+
 The control-plane side is the same in both cluster guides:
 
 | What | This guide | MicroK8s guide |

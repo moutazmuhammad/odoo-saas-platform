@@ -13,16 +13,17 @@ Complete the server setup in [02](02-SAAS-SERVER-SETUP.md) and cluster setup in 
 2. CD compares the target commit with the last fully delivered commit. A successful `delivered-<SHA>` artifact records that baseline, including compatibility with earlier CI-triggered deliveries. Failed/partial deployments do not advance it, so a later push retries outstanding changes. The first delivery, missing/expired baseline, or non-ancestor history rebuilds everything. A superseded queued commit skips delivery.
 3. The selected frontend release and container images build **in parallel**. The frontend uses Vite directly, without tests or TypeScript checking, and is packaged with the control-plane addons in a `saas-release` artifact in the same CD run.
 4. Selected images are published for **linux/amd64 and linux/arm64**, with BuildKit caching, SBOM and provenance. No vulnerability scan runs in CD during this temporary mode. Tags are unique: `sha-<40-character SHA>-<run ID>-<attempt>`; images are never published as `latest`.
-5. Each configured Kubernetes cluster gets CRDs explicitly applied and a Helm upgrade with readiness checks and automatic Helm rollback on failure. Backup-only changes update the backup and restore image flags without rebuilding the operator.
+5. Each configured Kubernetes cluster gets CRDs explicitly applied and a Helm upgrade with readiness checks and automatic Helm rollback on failure. Backup-only changes update the backup and restore image flags without rebuilding the operator. Chart-only changes apply CRDs and Helm values without building either image. SaaS-only changes skip image publishing and cluster deployment.
 6. The SaaS deploy waits for its package and required cluster deployments, checks that the installed root-owned deployment script matches the release source, uploads the built artifact, creates an isolated Python environment, drains/stops both services, backs up the database/filestore/config, upgrades all four addons, switches code/environment symlinks, restarts both services and checks HTTP health.
 7. Only complete success records the delivery baseline. The production concurrency lock never cancels a running deployment. GitHub may replace pending runs; cumulative comparison carries their changes forward.
 
 | Changed paths | Published/deployed |
 |---|---|
-| `compute/operator/**`, `compute/charts/**`, `compute/examples/**` | Operator image and operator chart on all configured clusters |
+| `compute/operator/**` | Operator image, rolled out through the operator chart |
+| `compute/charts/odoo-operator/**`, `scripts/deploy/operator.sh` | CRDs and operator Helm release only; existing image tags are retained |
 | `compute/tools/backup-tool/**` | Backup image; operator Helm settings for backup and restore |
-| `control-plane/**`, `frontend/**`, `scripts/generate-customer-docs.py` | SaaS addons + freshly built SPA as one release |
-| `.github/workflows/**`, `scripts/ci/**`, `scripts/deploy/**` | All owned components |
+| `control-plane/**`, `frontend/**`, `scripts/generate-customer-docs.py`, `scripts/deploy/saas-deploy.sh` | SaaS addons + freshly built SPA as one release |
+| `.github/workflows/**`, `scripts/ci/**`, `scripts/deploy/local.*`, examples and unconfigured vendor charts | No runtime deployment |
 | Documentation only | No build or production changes |
 
 The control plane runs natively with systemd; it does not need a new Docker image. Official Odoo/PostgreSQL, BuildKit and vendor images are upstream images and are not rebuilt by this repository. Customer tenant images continue to build from their connected Git repositories through the runtime pipeline in [04](04-IMAGES-AND-REGISTRY.md#3-tenant-image-pipeline-customer-git-repos). A platform push does not rebuild every customer's image or change their pinned image. Vendor infrastructure releases (Traefik, storage, monitoring, cert-manager) stay under the cluster setup guides; CD deploys the operator chart when its files change.
@@ -146,7 +147,7 @@ The first successful release moves existing real `platform`/`venv` directories t
 2. Merge/push these files to `main`. CD starts immediately; the first delivery selects every owned component.
 3. Inspect Actions → CD: plan → frontend packaging and image publishing in parallel → cluster deployment → SaaS deployment → receipt. CI runs only when explicitly requested manually.
 4. Check the portal, both systemd services, operator rollout and a tenant backup/restore smoke test.
-5. Future pushes deploy changed components. To rebuild everything, choose **Actions → CD → Run workflow → main**, keeping `full=true`. Set `full=false` to use the cumulative diff. Manual CD runs on other branches skip delivery.
+5. Future pushes and manual runs deploy changed components by default (`full=false`). To rebuild everything explicitly, choose **Actions → CD → Run workflow → main** and enable `full=true`. Manual CD runs on other branches skip delivery.
 
 The server-side SaaS release ID is `<run ID>-<attempt>-<SHA>`. Re-running a failed workflow creates a new attempt and release directory. Do not retry a failed database upgrade blindly: inspect the error and maintenance state first.
 

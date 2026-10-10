@@ -273,7 +273,7 @@ Verify the server fingerprint if prompted. The output should list permission to 
 Once this succeeds:
 
 1. Ensure the CI/CD files are committed and pushed to `main`.
-2. Open **GitHub → Actions → CD** and inspect the push-triggered run, or select **Run workflow → main**, keeping `full=true` for the first full delivery.
+2. Open **GitHub → Actions → CD** and inspect the push-triggered run, or select **Run workflow → main**, enabling `full=true` only when a full rebuild is intended. The default `full=false` selects changed components; the first delivery without a baseline selects all components automatically.
 3. Watch Actions → CD: frontend packaging and image publishing run in parallel, followed by cluster deployment, SaaS deployment, and the final delivery receipt. Push and manual CD runs bypass tests, lint, typechecks and security scans in the current temporary mode.
 4. Verify the portal, both SaaS services, operator rollout, and a tenant backup/restore smoke test.
 

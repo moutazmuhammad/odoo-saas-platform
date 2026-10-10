@@ -66,6 +66,23 @@ class WorkflowConditions(unittest.TestCase):
             group = CD['concurrency']['group'].removeprefix('delivery-')
             self.assertEqual(evaluate(group, github=github), 'production' if expected else 456)
 
+    def test_chart_only_runs_cluster_deployment_without_image_builds(self):
+        needs = self.needs(images='[]', clusters='["cluster"]', image_result='skipped',
+                           operator_result='success', saas='false')
+        self.assertTrue(evaluate(CD['jobs']['operator']['if'], needs=needs))
+        self.assertTrue(evaluate(CD['jobs']['delivered']['if'], needs=needs))
+
+    def test_saas_only_skips_cluster_deployment(self):
+        self.assertFalse(evaluate(CD['jobs']['operator']['if'], needs=self.needs()))
+
+    def test_cluster_deployment_requires_selected_image_builds_to_succeed(self):
+        for result in ['failure', 'skipped', 'cancelled']:
+            self.assertFalse(evaluate(CD['jobs']['operator']['if'], needs=self.needs(
+                images='[{}]', clusters='["cluster"]', image_result=result)))
+
+    def test_manual_deployment_is_incremental_by_default(self):
+        self.assertIs(CD[True]['workflow_dispatch']['inputs']['full']['default'], False)
+
     def test_failed_or_skipped_package_blocks_saas(self):
         for result in ['failure', 'skipped', 'cancelled']:
             self.assertFalse(evaluate(CD['jobs']['saas']['if'],
@@ -139,11 +156,36 @@ else:
         self.assertEqual(outputs['operator'], 'false')
         self.assertEqual(outputs['clusters'], '["cluster"]')
 
+    def test_chart_only_has_cluster_but_no_image_builds(self):
+        result, outputs, _ = self.execute('compute/charts/odoo-operator/templates/deployment.yaml')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(outputs['chart'], 'true')
+        self.assertEqual(outputs['images'], '[]')
+        self.assertEqual(outputs['clusters'], '["cluster"]')
+        self.assertEqual(outputs['saas'], 'false')
+
+    def test_operator_only_builds_operator_image(self):
+        result, outputs, _ = self.execute('compute/operator/cmd/change.go')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([x['name'] for x in json.loads(outputs['images'])], ['operator'])
+        self.assertEqual(outputs['saas'], 'false')
+        self.assertEqual(outputs['backup'], 'false')
+
+    def test_local_deploy_and_ci_changes_do_not_trigger_remote_deployment(self):
+        for path in ['scripts/deploy/local.py', 'scripts/ci/test_changes.py',
+                     '.github/workflows/ci.yml', '.github/workflows/cd.yml']:
+            with self.subTest(path=path):
+                result, outputs, _ = self.execute(path, clusters='')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(outputs['images'], '[]')
+                self.assertEqual(outputs['clusters'], '[]')
+                self.assertEqual(outputs['saas'], 'false')
+
     def test_first_delivery_and_full_delivery_select_everything(self):
         for option in [{'first': True}, {'full': True}]:
             result, outputs, _ = self.execute('README.md', **option)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual([outputs[x] for x in ['saas', 'operator', 'backup']], ['true'] * 3)
+            self.assertEqual([outputs[x] for x in ['saas', 'operator', 'backup', 'chart']], ['true'] * 4)
 
     def test_superseded_commit_has_no_delivery_receipt_target(self):
         result, outputs, _ = self.execute('control-plane/change.py', stale=True)

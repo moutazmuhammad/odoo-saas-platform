@@ -8,7 +8,7 @@ on:
       full:
         description: Rebuild and deploy every owned component
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -32,6 +32,7 @@ jobs:
       sha: ${{ steps.plan.outputs.sha }}
       operator: ${{ steps.plan.outputs.operator }}
       backup: ${{ steps.plan.outputs.backup }}
+      chart: ${{ steps.plan.outputs.chart }}
       saas: ${{ steps.plan.outputs.saas }}
       images: ${{ steps.plan.outputs.images }}
       clusters: ${{ steps.plan.outputs.clusters }}
@@ -54,7 +55,7 @@ jobs:
           latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
           if [[ "$latest" != "$TARGET_SHA" ]]; then
             echo 'Commit superseded on main; skipping delivery.'
-            for component in operator backup saas; do echo "$component=false" >> "$GITHUB_OUTPUT"; done
+            for component in operator backup chart saas; do echo "$component=false" >> "$GITHUB_OUTPUT"; done
             echo 'images=[]' >> "$GITHUB_OUTPUT"
             echo 'clusters=[]' >> "$GITHUB_OUTPUT"
             exit 0
@@ -75,12 +76,12 @@ jobs:
           done <<< "$runs"
           if [[ "$FORCE_FULL" == true ]]; then base=''; fi
           selection=$(python3 scripts/ci/changes.py "$base" "$TARGET_SHA")
-          for component in operator backup saas; do
+          for component in operator backup chart saas; do
             echo "$component=$(jq -r ".$component" <<< "$selection")" >> "$GITHUB_OUTPUT"
           done
-          matrix=$(jq -c '[to_entries[] | select(.value == true and .key != "saas") | if .key == "operator" then {name: "operator", context: "compute/operator", repository: "odoo-saas-operator"} else {name: "backup", context: "compute/tools/backup-tool", repository: "odoo-saas-backup-tool"} end]' <<< "$selection")
+          matrix=$(jq -c '[to_entries[] | select(.value == true and (.key == "operator" or .key == "backup")) | if .key == "operator" then {name: "operator", context: "compute/operator", repository: "odoo-saas-operator"} else {name: "backup", context: "compute/tools/backup-tool", repository: "odoo-saas-backup-tool"} end]' <<< "$selection")
           echo "images=$matrix" >> "$GITHUB_OUTPUT"
-          if [[ $(jq '.operator or .backup' <<< "$selection") == true ]]; then
+          if [[ $(jq '.operator or .backup or .chart' <<< "$selection") == true ]]; then
             jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and test("^[a-zA-Z0-9_-]+$"))' <<< "$CLUSTERS" >/dev/null
             echo "clusters=$(jq -c . <<< "$CLUSTERS")" >> "$GITHUB_OUTPUT"
           else
@@ -163,7 +164,9 @@ jobs:
 
   operator:
     needs: [plan, images]
-    if: needs.images.result == 'success'
+    if: >-
+      always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.clusters != '[]' &&
+      (needs.plan.outputs.images == '[]' || needs.images.result == 'success')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

@@ -1,19 +1,20 @@
-"""Select release components from a cumulative git diff (fail closed)."""
+"""Select runtime components from the diff since the last successful delivery."""
 import json
 import subprocess
 import sys
 
 
 def components(paths, full=False):
-    result = {"operator": full, "backup": full, "saas": full}
+    result = {"operator": full, "backup": full, "chart": full, "saas": full}
     for path in paths:
-        if path.startswith((".github/workflows/", "scripts/ci/", "scripts/deploy/")):
-            return dict.fromkeys(result, True)
-        if path.startswith(("compute/operator/", "compute/charts/", "compute/examples/")):
+        if path.startswith("compute/operator/"):
             result["operator"] = True
+        if path.startswith("compute/charts/odoo-operator/") or path == "scripts/deploy/operator.sh":
+            result["chart"] = True
         if path.startswith("compute/tools/backup-tool/"):
             result["backup"] = True
-        if path.startswith(("control-plane/", "frontend/", "scripts/generate-customer-docs.py")):
+        if path.startswith(("control-plane/", "frontend/")) or path in (
+                "scripts/generate-customer-docs.py", "scripts/deploy/saas-deploy.sh"):
             result["saas"] = True
     return result
 

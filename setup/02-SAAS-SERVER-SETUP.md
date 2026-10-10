@@ -244,6 +244,8 @@ sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable
 
 ## 9. Operating it
 
+For automated builds and production updates, follow [06-CICD.md](06-CICD.md). It lists the required GitHub secrets and server preparation, builds the SPA on CI, and deploys both services with pre-upgrade backups. Once enabled, use that release process instead of `git pull` on the managed release symlink.
+
 **Updating the code:**
 
 ```bash

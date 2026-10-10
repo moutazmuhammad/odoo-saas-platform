@@ -1,5 +1,6 @@
 name: CI
 
+# Checks for PRs, development branches, and the reusable CD validation gate.
 # ARCH-007 — block merges that break the SPA typecheck, the Odoo test suite,
 # or the Compute operator. Runs on every PR and on pushes to the long-lived
 # branches.
@@ -8,13 +9,14 @@ name: CI
 # (veltnex), compute/ (the Kubernetes operator). Each job below checks out
 # the whole repo (default) and scopes itself to its component's directory.
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [main, newhosting, architecture-evolution]
 
 # A newer push to the same ref cancels the older in-flight run.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -28,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/veltnex/package-lock.json
       - name: Install deps
@@ -41,8 +43,16 @@ jobs:
         working-directory: frontend/veltnex
         run: npm run build
 
+      - name: Package deployable control plane (includes freshly built SPA)
+        run: tar -czf /tmp/saas-release.tar.gz control-plane
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saas-release
+          path: /tmp/saas-release.tar.gz
+          retention-days: 14
+
   odoo-tests:
-    name: Odoo test suite (saas_core + saas_website)
+    name: Odoo test suite (all production addons)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -109,14 +119,14 @@ jobs:
           # gated on a threshold yet — just made visible on every run.
           python -m coverage run \
             --data-file="$GITHUB_WORKSPACE/.coverage" \
-            --source="$GITHUB_WORKSPACE/control-plane/saas_core,$GITHUB_WORKSPACE/control-plane/saas_website" \
+            --source="$GITHUB_WORKSPACE/control-plane/saas_core,$GITHUB_WORKSPACE/control-plane/saas_billing,$GITHUB_WORKSPACE/control-plane/saas_website,$GITHUB_WORKSPACE/control-plane/saas_iam" \
             --omit="*/tests/*,*/migrations/*" \
             "$HOME/odoo/odoo-bin" \
             -c "$HOME/odoo.conf" \
             -d ci \
-            -i saas_core,saas_website \
+            -i saas_core,saas_billing,saas_website,saas_iam \
             --test-enable \
-            --test-tags '/saas_core,/saas_website' \
+            --test-tags '/saas_core,/saas_billing,/saas_website,/saas_iam' \
             --without-demo=all \
             --http-port=8069 \
             --stop-after-init \
@@ -228,3 +238,29 @@ jobs:
         run: trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --skip-version-check odoo-operator:ci
       - name: Scan backup-tool image
         run: trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --skip-version-check backup-tool:ci
+
+  delivery-checks:
+    name: Delivery scripts, backup tests and Helm charts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install delivery check tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          pip install kubernetes==36.0.3
+      - run: |
+          bash -n scripts/deploy/saas-deploy.sh scripts/deploy/operator.sh
+          shellcheck scripts/deploy/*.sh
+          python3 -m unittest discover -s scripts/ci -p 'test_*.py'
+          python3 compute/tools/backup-tool/test_backup_restore.py
+          python3 -m unittest discover -s scripts/tests
+          helm lint compute/charts/odoo-operator
+          helm lint compute/charts/odoo-instance --set-string image.tag=ci-test --set-string domain.hostname=ci.example.com
+          helm template odoo-operator compute/charts/odoo-operator >/dev/null

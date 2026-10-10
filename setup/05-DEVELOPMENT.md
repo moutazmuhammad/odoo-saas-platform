@@ -225,3 +225,7 @@ Always a new tag. Which files carry the tag, and how to roll it out: [04-IMAGES-
 | Tenant stuck | `kubectl describe odooinstance -n <ns> <name>`: the conditions say why (image pull, database, route/TLS, update Job) |
 
 `control-plane/scripts/rt_register.py` and `view-metrics-locally.sh` are leftovers from the removed SSH/Docker backend and specific test databases; don't use them.
+
+## Automated delivery
+
+[06-CICD.md](06-CICD.md) explains how CI validates the project, how CD builds images and deploys changed components, and which GitHub secrets and server configuration are required.

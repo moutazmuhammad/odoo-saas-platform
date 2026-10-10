@@ -2,6 +2,8 @@
 
 Which container images the platform runs, which ones we build (and how), and how to move to a **private registry**. Reference for [03a](03a-MICROK8S-CLUSTER-SETUP.md) / [03b](03b-DOKS-CLUSTER-SETUP.md) step 11; local builds: [05-DEVELOPMENT.md](05-DEVELOPMENT.md).
 
+For automatic publishing and rollout on repository changes, see [06-CICD.md](06-CICD.md), including registry secrets, cluster configuration and unique image tags.
+
 Every statement cites the code it comes from. Paths are from the repo root. Line numbers are from commit `8c10c89`.
 
 ---
@@ -10,8 +12,8 @@ Every statement cites the code it comes from. Paths are from the repo root. Line
 
 | Image | Built from | Who builds it | Pulled from (today) | Tag comes from | Runs in |
 |---|---|---|---|---|---|
-| **Operator** `docker.io/moutazmuhammad/odoo-saas-operator` | `compute/operator/Dockerfile` | You, by hand (`make docker-build docker-push`) | Docker Hub, public | `compute/charts/odoo-operator/values.yaml` (`image.tag`) | `odoo-system/odoo-operator` Deployment |
-| **Backup tool** `docker.io/moutazmuhammad/odoo-saas-backup-tool` | `compute/tools/backup-tool/Dockerfile` | You, by hand (`docker build`) | Docker Hub, public | `DefaultBackupToolImage` / `DefaultRestoreToolImage` constants, or the chart's `backup.toolImage` / `restore.toolImage` | Backup CronJob + restore Job in each tenant namespace |
+| **Operator** `docker.io/moutazmuhammad/odoo-saas-operator` | `compute/operator/Dockerfile` | CI/CD or manually (`make docker-build docker-push`) | Docker Hub, public | `compute/charts/odoo-operator/values.yaml` (`image.tag`) | `odoo-system/odoo-operator` Deployment |
+| **Backup tool** `docker.io/moutazmuhammad/odoo-saas-backup-tool` | `compute/tools/backup-tool/Dockerfile` | CI/CD or manually (`docker build`) | Docker Hub, public | `DefaultBackupToolImage` / `DefaultRestoreToolImage` constants, or the chart's `backup.toolImage` / `restore.toolImage` | Backup CronJob + restore Job in each tenant namespace |
 | **Odoo base** (per version) `docker.io/library/odoo:<ver>` | Third-party (official Odoo image) | Nobody, pulled | Docker Hub, public | `saas.odoo.version` fields `docker_image` + `docker_image_tag` | Tenant pod (`odoo`, `render-config`, cron, shell), init/update Jobs, build `inspect` step |
 | **Tenant image** `<registry_host>/<registry_prefix>/tenant-<sub>:<ver>-b<build id>` | `control-plane/saas_core/templates/build/Dockerfile.jinja` | The control plane, at runtime, as a Job inside the cluster | The cluster's registry (cluster form, **Image Builds** tab) | `saas_instance_build.py:197` | Same pods as the Odoo base, for tenants with Git repos |
 | PostgreSQL `docker.io/library/postgres:<16>` | Third-party | Pulled | Docker Hub | `spec.database.version` (default `"16"`); repository from the chart's `images.postgresRepository` | Tenant `postgresql` StatefulSet |
@@ -24,7 +26,7 @@ Every statement cites the code it comes from. Paths are from the repo root. Line
 
 Sources: `compute/charts/odoo-operator/values.yaml:3-7`, `compute/operator/internal/resources/backup.go:25`, `restore.go:23`, `control-plane/saas_core/data/saas_odoo_version_data.xml:5-6`, `control-plane/saas_core/models/saas_instance_build.py:140-161`, `compute/operator/internal/resources/database.go:87`, `cnpg.go:55`, `control-plane/saas_core/models/saas_server.py:108-115`, `control-plane/saas_core/drivers/kubernetes_driver.py:250`.
 
-**We build exactly three images:** the operator, the backup tool (both by hand) and the tenant images (automatically, per Git push). The Odoo image itself is the official one, unchanged.
+**We build exactly three images:** the operator, the backup tool (automatically through CI/CD or manually) and the tenant images (automatically, per Git push). The Odoo image itself is the official one, unchanged.
 
 ### Removed leftovers
 

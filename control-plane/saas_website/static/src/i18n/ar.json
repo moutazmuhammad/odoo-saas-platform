@@ -2693,5 +2693,20 @@
   "Created from {0} and linked to this server": "يُنشأ من {0} ويُربط بهذا الخادم",
   "Choose a branch…": "اختر فرعًا…",
   "Branch name": "اسم الفرع",
-  "Linking…": "جارٍ الربط…"
+  "Linking…": "جارٍ الربط…",
+  "Pick how many Staging and Development servers you want. Both types go on one invoice.": "اختر عدد خوادم Staging وDevelopment التي تريدها. يُضاف النوعان إلى فاتورة واحدة.",
+  "Project deleted": "تم حذف المشروع",
+  "All servers are being removed. Snapshots you took stay in Snapshots.": "جارٍ حذف جميع الخوادم. تظل اللقطات التي أخذتها متاحة في قسم اللقطات.",
+  "Delete project": "حذف المشروع",
+  "Removes Production, Staging and Development servers, their daily backups and open invoices. Snapshots you took stay available. We email you a code to confirm.": "يحذف خوادم Production وStaging وDevelopment ونسخها الاحتياطية اليومية وفواتيرها المفتوحة. تظل اللقطات التي أخذتها متاحة. نرسل رمزًا إلى بريدك الإلكتروني للتأكيد.",
+  "Delete {0}?": "حذف {0}؟",
+  "This can't be undone": "لا يمكن التراجع عن هذا الإجراء",
+  "Every server of this project stops and its data is removed. A final copy is kept for a while so you can reactivate, and your snapshots are not touched.": "تتوقف جميع خوادم هذا المشروع وتُحذف بياناتها. نحتفظ بنسخة أخيرة لفترة لتتمكن من إعادة التفعيل، وتظل لقطاتك كما هي.",
+  "To continue, we'll send a one-time confirmation code to your email address.": "للمتابعة، سنرسل رمز تأكيد يُستخدم مرة واحدة إلى بريدك الإلكتروني.",
+  "Send confirmation code": "إرسال رمز التأكيد",
+  "We sent a 6-digit code to ": "أرسلنا رمزًا من 6 أرقام إلى ",
+  ". It expires in 10 minutes.": ". تنتهي صلاحيته خلال 10 دقائق.",
+  "Test mode code: ": "رمز وضع الاختبار: ",
+  "Confirmation code": "رمز التأكيد",
+  "Type the project name to confirm": "اكتب اسم المشروع للتأكيد"
 }

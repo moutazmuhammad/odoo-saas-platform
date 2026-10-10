@@ -91,6 +91,8 @@ References:
 |---|---|
 | [setup/04-IMAGES-AND-REGISTRY.md](setup/04-IMAGES-AND-REGISTRY.md) | Every image, building them, the tenant build pipeline, private registries |
 | [setup/05-DEVELOPMENT.md](setup/05-DEVELOPMENT.md) | Local dev environment, tests, SPA build, customer docs |
+| [setup/06-CICD.md](setup/06-CICD.md) | Automated builds/deployments, required GitHub secrets, server bootstrap and rollback |
+| [setup/07-CICD-UI-WALKTHROUGH.md](setup/07-CICD-UI-WALKTHROUGH.md) | Step-by-step GitHub UI secrets setup and DigitalOcean/SaaS server commands |
 | [docs/iam.md](docs/iam.md) | Project roles and permissions |
 | [docs/frontend-languages.md](docs/frontend-languages.md) | English/Arabic in the SPA |
 | [docs/arabic-localization-glossary.md](docs/arabic-localization-glossary.md) | Arabic terminology |

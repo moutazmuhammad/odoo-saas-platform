@@ -1,0 +1,218 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Rebuild and deploy every owned component
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: read
+
+# Never cancel an in-progress database migration or Helm upgrade.
+concurrency:
+  group: delivery-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+
+  plan:
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      operator: ${{ steps.plan.outputs.operator }}
+      backup: ${{ steps.plan.outputs.backup }}
+      saas: ${{ steps.plan.outputs.saas }}
+      images: ${{ steps.plan.outputs.images }}
+      clusters: ${{ steps.plan.outputs.clusters }}
+      tag: ${{ steps.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compare with last completely successful delivery
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_FULL: ${{ inputs.full || false }}
+          CLUSTERS: ${{ vars.DEPLOY_CLUSTERS }}
+        run: |
+          set -euo pipefail
+          # A queued older commit must not overwrite a newer main deployment.
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$latest" != "$GITHUB_SHA" ]]; then
+            echo 'Commit superseded on main; skipping delivery.'
+            for component in operator backup saas; do echo "$component=false" >> "$GITHUB_OUTPUT"; done
+            echo 'images=[]' >> "$GITHUB_OUTPUT"
+            echo 'clusters=[]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base=''
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/cd.yml/runs?branch=main&status=success&per_page=100" \
+            --jq '.workflow_runs[] | [.id, .head_sha] | @tsv')
+          while IFS=$'\t' read -r run_id commit; do
+            [[ -n "$run_id" ]] || continue
+            receipt=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
+              --jq '[.artifacts[] | select(.name == "delivered" and .expired == false)] | length')
+            if [[ "$receipt" -gt 0 ]]; then base=$commit; break; fi
+          done <<< "$runs"
+          if [[ "$FORCE_FULL" == true ]]; then base=''; fi
+          selection=$(python3 scripts/ci/changes.py "$base" "$GITHUB_SHA")
+          for component in operator backup saas; do
+            echo "$component=$(jq -r ".$component" <<< "$selection")" >> "$GITHUB_OUTPUT"
+          done
+          matrix=$(jq -c '[to_entries[] | select(.value == true and .key != "saas") | if .key == "operator" then {name: "operator", context: "compute/operator", repository: "odoo-saas-operator"} else {name: "backup", context: "compute/tools/backup-tool", repository: "odoo-saas-backup-tool"} end]' <<< "$selection")
+          echo "images=$matrix" >> "$GITHUB_OUTPUT"
+          if [[ $(jq '.operator or .backup' <<< "$selection") == true ]]; then
+            jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and test("^[a-zA-Z0-9_-]+$"))' <<< "$CLUSTERS" >/dev/null
+            echo "clusters=$(jq -c . <<< "$CLUSTERS")" >> "$GITHUB_OUTPUT"
+          else
+            echo 'clusters=[]' >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=sha-$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          echo "### Release selection" >> "$GITHUB_STEP_SUMMARY"
+          echo "Base: ${base:-first/full release}; target: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "$selection" >> "$GITHUB_STEP_SUMMARY"
+
+  images:
+    needs: plan
+    if: needs.plan.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    environment: production-images
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.images) }}
+    env:
+      REGISTRY: ${{ vars.IMAGE_REGISTRY || 'docker.io' }}
+      NAMESPACE: ${{ vars.IMAGE_NAMESPACE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Validate registry configuration
+        run: test -n "$NAMESPACE"
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ matrix.repository }}:${{ needs.plan.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          provenance: true
+          sbom: true
+
+  operator:
+    needs: [plan, images]
+    if: needs.images.result == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cluster: ${{ fromJSON(needs.plan.outputs.clusters) }}
+    environment: ${{ matrix.cluster }}
+    env:
+      REGISTRY: ${{ vars.IMAGE_REGISTRY || 'docker.io' }}
+      NAMESPACE: ${{ vars.IMAGE_NAMESPACE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.32.3
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+      - name: Deploy CRDs, operator and backup/restore image settings
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+          VALUES_YAML: ${{ secrets.OPERATOR_VALUES_YAML }}
+          OPERATOR_CHANGED: ${{ needs.plan.outputs.operator }}
+          BACKUP_CHANGED: ${{ needs.plan.outputs.backup }}
+          IMAGE_TAG: ${{ needs.plan.outputs.tag }}
+          OPERATOR_NAMESPACE: ${{ vars.OPERATOR_NAMESPACE || 'odoo-system' }}
+          OPERATOR_RELEASE: ${{ vars.OPERATOR_RELEASE || 'odoo-operator' }}
+        run: |
+          set -euo pipefail
+          umask 077
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          export OPERATOR_VALUES_FILE="$RUNNER_TEMP/operator-values.yaml"
+          trap 'rm -f "$KUBECONFIG" "$OPERATOR_VALUES_FILE"' EXIT
+          test -n "$KUBECONFIG_B64"
+          test -n "$VALUES_YAML"
+          printf '%s' "$KUBECONFIG_B64" | base64 --decode > "$KUBECONFIG"
+          printf '%s' "$VALUES_YAML" > "$OPERATOR_VALUES_FILE"
+          if [[ "$OPERATOR_CHANGED" == true ]]; then
+            export OPERATOR_IMAGE="$REGISTRY/$NAMESPACE/odoo-saas-operator:$IMAGE_TAG"
+          fi
+          if [[ "$BACKUP_CHANGED" == true ]]; then
+            export BACKUP_IMAGE="$REGISTRY/$NAMESPACE/odoo-saas-backup-tool:$IMAGE_TAG"
+          fi
+          scripts/deploy/operator.sh
+
+  saas:
+    needs: [plan, images, operator]
+    if: >-
+      always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.saas == 'true' &&
+      (needs.images.result == 'success' || needs.images.result == 'skipped') &&
+      (needs.operator.result == 'success' || needs.operator.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: production-saas
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: saas-release
+          path: release
+      - name: Upload tested release and deploy both systemd services
+        env:
+          SSH_HOST: ${{ secrets.SAAS_SSH_HOST }}
+          SSH_USER: ${{ secrets.SAAS_SSH_USER }}
+          SSH_KEY: ${{ secrets.SAAS_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SAAS_SSH_KNOWN_HOSTS }}
+          SSH_PORT: ${{ vars.SAAS_SSH_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_USER" && test -n "$SSH_KEY" && test -n "$SSH_KNOWN_HOSTS"
+          [[ "$SSH_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$SSH_USER" =~ ^[a-zA-Z0-9_-]+$ && "$SSH_PORT" =~ ^[0-9]+$ ]]
+          umask 077
+          key="$RUNNER_TEMP/deploy-key"
+          known="$RUNNER_TEMP/known-hosts"
+          trap 'rm -f "$key" "$known"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$known"
+          options=(-i "$key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known")
+          release_id="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$GITHUB_SHA"
+          scp "${options[@]}" -P "$SSH_PORT" release/saas-release.tar.gz \
+            "$SSH_USER@$SSH_HOST:/var/lib/saas-deploy/incoming/$release_id.tar.gz"
+          ssh "${options[@]}" -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "sudo -n /usr/local/sbin/saas-deploy $release_id"
+
+  delivered:
+    needs: [plan, images, operator, saas]
+    if: >-
+      always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.tag != '' &&
+      (needs.plan.outputs.images == '[]' || needs.images.result == 'success') &&
+      (needs.plan.outputs.clusters == '[]' || needs.operator.result == 'success') &&
+      (needs.plan.outputs.saas != 'true' || needs.saas.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record fully delivered commit
+        run: printf '%s\n' "$GITHUB_SHA" > delivered.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: delivered
+          path: delivered.txt
+          retention-days: 90

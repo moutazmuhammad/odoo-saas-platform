@@ -1,3 +1,5 @@
+import { formatDateTime } from "@/lib/format";
+import { usePolling } from "@/hooks/usePolling";
 import { i18nText } from "@/i18n";
 import * as React from "react";
 import { hasPermission } from "@/lib/permissions";
@@ -41,6 +43,8 @@ export default function Code({ embedId }: { embedId?: number } = {}) {
   React.useEffect(() => {
     load();
   }, [load]);
+
+  usePolling(load, { interval: 10000, enabled: !!instance?.repo?.webhook_enabled });
 
   // Code & packages is a hosting-only (self-managed) feature. Managed
   // services have no code access — bounce back to the instance overview.
@@ -102,6 +106,21 @@ function RepoSection({
   const navigate = useNavigate();
   const repo = instance.repo || { url: "", branch: "main", has_token: false, state: "" };
   const connected = !!repo.url;
+  const webhookStatus = connected && (
+    <p className={`mt-4 text-sm ${repo.webhook_health === "error" ? "text-danger" : "text-muted"}`}>
+      {i18nText("Automatic deployment: ")}
+      {!repo.webhook_enabled ? i18nText("Disabled")
+        : !repo.webhook_registered ? i18nText("Webhook registration not confirmed")
+        : repo.webhook_health === "healthy" ? i18nText("Webhook delivery confirmed")
+        : repo.webhook_health === "error" ? i18nText("Webhook verification failed")
+        : i18nText("Waiting for webhook delivery confirmation")}
+      {repo.webhook_last_received && (
+        <span className="mt-1 block text-xs text-muted">
+          {i18nText("Last webhook received: {0}", [formatDateTime(repo.webhook_last_received)])}
+        </span>
+      )}
+    </p>
+  );
   // Repo + token are configured ONCE per project (Production). On a child
   // environment, the repo is inherited and read-only here.
   const isChild = !!instance.parent_id && instance.environment !== "production";
@@ -158,6 +177,7 @@ function RepoSection({
             onClick={() => navigate(`/my/instances/${instance.parent_id}/code`)}
           >{i18nText("Manage on project")}</Button>
         </div>
+        {webhookStatus}
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <div>
             <Label>{i18nText("Repository")}</Label>
@@ -194,6 +214,7 @@ function RepoSection({
         )}
       </div>
 
+      {webhookStatus}
       <div className="mt-5 space-y-4">
         <div>
           <Label htmlFor="repo-url">{i18nText("Repository URL")}</Label>

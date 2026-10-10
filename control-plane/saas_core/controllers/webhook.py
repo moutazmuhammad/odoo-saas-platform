@@ -129,7 +129,34 @@ class SaasWebhookController(http.Controller):
                 )
             repo.write({'last_delivery_id': delivery_id})
 
-        # 5. Sanity-check instance and repo state.
+        # Parse before state checks so a ping can confirm transport even
+        # while an instance's initial build is still provisioning.
+        try:
+            payload = json.loads(payload_body)
+            if not isinstance(payload, dict):
+                raise ValueError('expected an object')
+        except (ValueError, TypeError):
+            return request.make_json_response(
+                {'status': 'error', 'reason': 'invalid JSON'}, status=400,
+            )
+        repo.webhook_last_received = fields.Datetime.now()
+        event_type = (
+            headers.get('X-GitHub-Event')
+            or headers.get('X-Gitea-Event')
+            or headers.get('X-Gitlab-Event', '').replace(' ', '_').lower()
+            or headers.get('X-Event-Key', '')
+        )
+        github_hook_matches = (
+            repo.webhook_provider_id
+            and headers.get('X-GitHub-Hook-ID') == repo.webhook_provider_id
+            and bool(headers.get('X-GitHub-Delivery'))
+        )
+        if event_type == 'ping':
+            if github_hook_matches:
+                repo.write({'webhook_health': 'healthy',
+                            'webhook_health_message': 'Signed GitHub ping received successfully.'})
+            return request.make_json_response({'status': 'ok', 'event': 'ping'})
+
         instance = repo.instance_id
         if instance.state not in ('running', 'stopped'):
             return request.make_json_response(
@@ -140,21 +167,6 @@ class SaasWebhookController(http.Controller):
                 {'status': 'ignored', 'reason': 'repo not cloned'},
             )
 
-        # 6. Parse body now that signature has been verified.
-        try:
-            payload = json.loads(payload_body)
-        except (ValueError, TypeError):
-            return request.make_json_response(
-                {'status': 'error', 'reason': 'invalid JSON'}, status=400,
-            )
-
-        # 7. Determine event type and filter to push events on the tracked branch.
-        event_type = (
-            headers.get('X-GitHub-Event')
-            or headers.get('X-Gitea-Event')
-            or headers.get('X-Gitlab-Event', '').replace(' ', '_').lower()
-            or headers.get('X-Event-Key', '')
-        )
         if not self._is_push_event(event_type, payload):
             return request.make_json_response(
                 {'status': 'ignored', 'reason': 'not a push event'},
@@ -192,6 +204,9 @@ class SaasWebhookController(http.Controller):
             idempotent=True,
             on_error='_on_webhook_deploy_error', on_error_args=(build.id,))
 
+        if github_hook_matches:
+            repo.write({'webhook_health': 'healthy',
+                        'webhook_health_message': 'Signed GitHub push received and deployment queued.'})
         return request.make_json_response({
             'status': 'ok',
             'message': 'Auto-deploy triggered for %s' % repo.name,

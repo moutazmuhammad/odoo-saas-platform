@@ -3826,7 +3826,9 @@ END $$;
             # Already registered and valid?
             if repo.webhook_provider_id:
                 try:
-                    if repo._verify_webhook_on_provider():
+                    if repo._check_webhook_health() and repo.webhook_health != 'error':
+                        if repo._detect_provider() == 'github':
+                            repo._queue_github_webhook_ping()
                         self._append_log(
                             "Webhook verified for %s (provider ID: %s)."
                             % (repo.name, repo.webhook_provider_id)
@@ -3834,8 +3836,7 @@ END $$;
                         continue
                 except Exception:
                     pass
-                # Stale provider ID — clear and re-register
-                repo.webhook_provider_id = False
+                # Reconcile configuration and secret while retaining the ID.
 
             # Register (or re-register)
             self._append_log(
@@ -4306,7 +4307,7 @@ END $$;
     def _cron_verify_webhooks(self):
         """Cron: verify and re-register webhooks for all running instances.
 
-        Runs every 6 hours.  For each running instance with repos that
+        Runs every 15 minutes. For each running instance with repos that
         have ``webhook_enabled=True``, verifies the webhook is still
         active on the Git provider and re-registers if needed.
         """
@@ -4344,7 +4345,6 @@ END $$;
                 lambda r: r.state == 'cloned'
                 and r.webhook_enabled
                 and r.sudo().github_token
-                and not r.webhook_provider_id
             )
             if not repos_needing_webhook:
                 continue

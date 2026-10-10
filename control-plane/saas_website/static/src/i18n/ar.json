@@ -2708,5 +2708,11 @@
   ". It expires in 10 minutes.": ". تنتهي صلاحيته خلال 10 دقائق.",
   "Test mode code: ": "رمز وضع الاختبار: ",
   "Confirmation code": "رمز التأكيد",
-  "Type the project name to confirm": "اكتب اسم المشروع للتأكيد"
+  "Type the project name to confirm": "اكتب اسم المشروع للتأكيد",
+  "Automatic deployment: ": "النشر التلقائي: ",
+  "Webhook registration not confirmed": "لم يتم تأكيد تسجيل الـ webhook",
+  "Webhook delivery confirmed": "تم تأكيد وصول أحداث الـ webhook",
+  "Webhook verification failed": "فشل التحقق من الـ webhook",
+  "Waiting for webhook delivery confirmation": "في انتظار تأكيد وصول حدث الـ webhook",
+  "Last webhook received: {0}": "آخر حدث webhook تم استقباله: {0}"
 }

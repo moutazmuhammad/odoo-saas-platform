@@ -146,10 +146,21 @@ class SaasInstanceRepo(models.Model):
         help='Automatically pull and restart when code is pushed to the tracked branch.',
     )
     webhook_registered = fields.Boolean(
-        string='Webhook Active',
+        string='Webhook Registered',
         compute='_compute_webhook_registered',
-        help='Whether the webhook is actually registered on the Git provider.',
+        help='Configuration verified on the Git provider; delivery is checked separately.',
     )
+    webhook_provider_verified = fields.Boolean(readonly=True, copy=False)
+    webhook_health = fields.Selection([
+        ('pending', 'Awaiting delivery'),
+        ('healthy', 'Delivery confirmed'),
+        ('error', 'Verification failed'),
+    ], default='pending', readonly=True, copy=False, string='Webhook Delivery')
+    webhook_last_received = fields.Datetime(readonly=True, copy=False)
+    webhook_last_checked = fields.Datetime(readonly=True, copy=False)
+    webhook_ping_requested = fields.Datetime(readonly=True, copy=False)
+    webhook_health_message = fields.Char(readonly=True, copy=False)
+
     webhook_secret = fields.Char(
         string='Webhook Secret',
         copy=False,
@@ -200,7 +211,32 @@ class SaasInstanceRepo(models.Model):
                 vals['webhook_secret'] = secrets.token_hex(20)
             if 'webhook_enabled' not in vals:
                 vals['webhook_enabled'] = True
-        return super().create(vals_list)
+        records = super().create(vals_list)
+        records._queue_webhook_reconciliation()
+        return records
+
+    def _queue_webhook_reconciliation(self):
+        """Creation and source/token changes share the same durable setup path."""
+        for rec in self.filtered(lambda r: r.webhook_enabled and r.sudo().github_token):
+            jobs = self.env['saas.job'].sudo()
+            if not jobs.search_count([
+                    ('model', '=', rec._name), ('res_id', '=', rec.id),
+                    ('method', '=', '_register_webhook_with_retry'),
+                    ('state', 'in', ('pending', 'running'))]):
+                jobs.enqueue(rec, '_register_webhook_with_retry', channel='default',
+                             lock_key='webhook:%s' % rec.id, run_now=False,
+                             idempotent=True, on_error='_on_webhook_ping_error')
+
+    def write(self, vals):
+        if {'repo_url', 'github_token', 'webhook_secret', 'webhook_enabled',
+                'webhook_provider_id'} & vals.keys():
+            vals = dict(vals, webhook_provider_verified=False,
+                        webhook_health='pending', webhook_health_message=False,
+                        webhook_ping_requested=False, webhook_last_received=False)
+        result = super().write(vals)
+        if {'repo_url', 'github_token', 'webhook_secret', 'webhook_enabled'} & vals.keys():
+            self._queue_webhook_reconciliation()
+        return result
 
     @api.depends('repo_url')
     def _compute_name(self):
@@ -262,16 +298,17 @@ class SaasInstanceRepo(models.Model):
         if self.repo_url:
             self.repo_url = self._strip_userinfo(self.repo_url.strip())
 
-    @api.depends('webhook_enabled', 'webhook_provider_id')
+    @api.depends('webhook_enabled', 'webhook_provider_id', 'webhook_provider_verified')
     def _compute_webhook_registered(self):
         for rec in self:
             rec.webhook_registered = bool(
                 rec.webhook_enabled and rec.webhook_provider_id
+                and rec.webhook_provider_verified
             )
 
     @api.depends('webhook_secret')
     def _compute_webhook_url(self):
-        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url', '')
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url', '').rstrip('/')
         for rec in self:
             if rec.webhook_secret and rec.id:
                 rec.webhook_url = '%s/saas/webhook/%s' % (base_url, rec.webhook_secret)
@@ -305,19 +342,15 @@ class SaasInstanceRepo(models.Model):
             self.instance_id._append_log(
                 "Auto-deploy webhook NOT registered: web.base.url is not a public HTTPS URL."
             )
+            self.write({'webhook_provider_verified': False, 'webhook_health': 'error',
+                        'webhook_health_message': 'Public HTTPS webhook URL is not configured.'})
             return False
 
-        # If already registered, verify it still exists; skip if valid
-        if self.webhook_provider_id:
-            try:
-                if self._verify_webhook_on_provider():
-                    _logger.info("Webhook already registered and valid for %s", self.name)
-                    return True
-            except Exception:
-                pass
-            # Old hook is gone, clear and re-register
-            self.webhook_provider_id = False
+        if not self.webhook_enabled:
+            return False
 
+        # Reconcile even an existing GitHub hook: GitHub masks the stored
+        # secret, so reading its config cannot detect a stale signing key.
         # Retry registration
         last_error = None
         for attempt in range(1, max_retries + 1):
@@ -337,14 +370,18 @@ class SaasInstanceRepo(models.Model):
                 "Auto-deploy webhook registration failed after %d attempts: %s"
                 % (max_retries, last_error)
             )
+            self.write({'webhook_provider_verified': False, 'webhook_health': 'error',
+                        'webhook_health_message': 'Webhook registration failed. Check token permissions and provider access.'})
             return False
 
         # Verify it's actually registered
         try:
-            registered = self._verify_webhook_on_provider()
+            registered = self._check_webhook_health()
             if registered:
+                if self._detect_provider() == 'github':
+                    self._queue_github_webhook_ping()
                 self.instance_id._append_log(
-                    "Auto-deploy webhook registered and verified for %s" % self.name
+                    "Webhook configuration verified for %s; delivery confirmation is separate." % self.name
                 )
                 return True
             else:
@@ -356,10 +393,79 @@ class SaasInstanceRepo(models.Model):
         except Exception as e:
             _logger.warning("Webhook verification failed for %s: %s", self.name, e)
             self.instance_id._append_log(
-                "Auto-deploy webhook registered for %s (verification skipped: %s)"
+                "Auto-deploy webhook verification failed for %s: %s"
                 % (self.name, e)
             )
-            return True
+            self.write({'webhook_health': 'error',
+                        'webhook_health_message': 'Webhook verification or test request failed.'})
+            return False
+
+    def _check_webhook_health(self):
+        """Persist provider configuration and latest GitHub delivery failure."""
+        self.ensure_one()
+        self.write({'webhook_provider_verified': False,
+                    'webhook_last_checked': fields.Datetime.now()})
+        valid = self._verify_webhook_on_provider()
+        self.webhook_provider_verified = valid
+        if (valid and self.webhook_health == 'pending' and self.webhook_ping_requested
+                and (fields.Datetime.now() - self.webhook_ping_requested).total_seconds() > 300):
+            self.write({'webhook_health': 'error', 'webhook_health_message':
+                        'No signed GitHub delivery received within 5 minutes. Check ingress, TLS and signing secret.'})
+        if not valid:
+            self.write({'webhook_health': 'error', 'webhook_health_message':
+                        'Webhook configuration could not be verified. Check provider access and settings.'})
+        return valid
+
+    def _queue_github_webhook_ping(self):
+        self.ensure_one()
+        jobs = self.env['saas.job'].sudo()
+        if jobs.search_count([
+                ('model', '=', self._name), ('res_id', '=', self.id),
+                ('method', '=', '_request_github_webhook_ping'),
+                ('state', 'in', ('pending', 'running'))]):
+            return
+        self.write({'webhook_health': 'error' if self.webhook_health == 'error' else 'pending',
+                    'webhook_ping_requested': fields.Datetime.now(),
+                    'webhook_health_message': self.webhook_health_message if self.webhook_health == 'error'
+                    else 'Waiting for a signed delivery from GitHub.'})
+        # Deferred until the creating/linking transaction commits. A callback
+        # must not race an invisible repo or wait through its image build.
+        self.env['saas.job'].enqueue(
+            self, '_request_github_webhook_ping',
+            args=(self.webhook_provider_id,), channel='default',
+            lock_key='webhook:%s' % self.id, idempotent=True, run_now=False,
+            on_error='_on_webhook_ping_error')
+
+    def _on_webhook_ping_error(self, exception):
+        self.write({'webhook_health': 'error',
+                    'webhook_health_message': 'GitHub could not start the delivery test. Check webhook write permission and provider access.'})
+        self.instance_id._append_log('Webhook delivery test failed for %s.' % self.name)
+
+    def _request_github_webhook_ping(self, hook_id):
+        """Ask GitHub to deliver asynchronously; a 204 is NOT delivery proof.
+
+        Never wait here: this transaction may hold the repo row lock or
+        contain a newly created repo, so the callback needs us to commit first.
+        """
+        self.ensure_one()
+        if (not self.webhook_enabled or not self.webhook_provider_id
+                or self.webhook_provider_id != hook_id):
+            return  # Disabled or replaced while queued.
+        owner, repo = self._parse_owner_repo()
+        self.write({'webhook_health': 'error' if self.webhook_health == 'error' else 'pending',
+                    'webhook_ping_requested': fields.Datetime.now(),
+                    'webhook_health_message': self.webhook_health_message if self.webhook_health == 'error'
+                    else 'Waiting for a signed delivery from GitHub.'})
+        response = http_requests.post(
+            '%s/repos/%s/%s/hooks/%s/pings' % (
+                self._get_provider_base_url(), owner, repo, self.webhook_provider_id),
+            headers={'Authorization': 'token %s' % self.sudo().github_token,
+                     'Accept': 'application/vnd.github+json'},
+            timeout=15,
+        )
+        response.raise_for_status()
+        if response.status_code != 204:
+            raise UserError(_("GitHub did not accept the webhook test."))
 
     def _verify_webhook_on_provider(self):
         """Check if our webhook URL exists on the Git provider. Returns True/False."""
@@ -390,6 +496,11 @@ class SaasInstanceRepo(models.Model):
                     return False
                 hook = resp.json()
                 config = hook.get('config') or {}
+                last_response = hook.get('last_response') or {}
+                code = last_response.get('code')
+                if code is not None and not 200 <= int(code) < 300:
+                    self.write({'webhook_health': 'error',
+                                'webhook_health_message': 'GitHub delivery failed (HTTP %s). Check ingress, TLS and signature configuration.' % code})
                 return (hook.get('active') is True
                         and config.get('url') == self.webhook_url
                         and config.get('content_type') == 'json'
@@ -556,7 +667,7 @@ class SaasInstanceRepo(models.Model):
                 hooks = resp.json()
                 for h in hooks:
                     url = h.get('config', {}).get('url', '')
-                    if webhook_url and webhook_url in url:
+                    if webhook_url and webhook_url == url:
                         return str(h.get('id', ''))
 
             elif provider == 'gitlab':
@@ -570,7 +681,7 @@ class SaasInstanceRepo(models.Model):
                 resp.raise_for_status()
                 hooks = resp.json()
                 for h in hooks:
-                    if webhook_url and webhook_url in h.get('url', ''):
+                    if webhook_url and webhook_url == h.get('url', ''):
                         return str(h.get('id', ''))
 
             elif provider == 'gitea':
@@ -587,7 +698,7 @@ class SaasInstanceRepo(models.Model):
                 hooks = resp.json()
                 for h in hooks:
                     url = h.get('config', {}).get('url', '')
-                    if webhook_url and webhook_url in url:
+                    if webhook_url and webhook_url == url:
                         return str(h.get('id', ''))
         except Exception:
             pass
@@ -656,6 +767,7 @@ class SaasInstanceRepo(models.Model):
                 "Failed to update existing webhook %s on %s: %s",
                 hook_id, provider, e,
             )
+            raise
 
     # ------------------------------------------------------------------
     # Branch automation (Odoo.sh-style environments). Every Staging /
@@ -961,7 +1073,8 @@ class SaasInstanceRepo(models.Model):
             self._update_existing_webhook(
                 provider, base, owner, repo, token, existing_id, webhook_url,
             )
-            self.webhook_provider_id = existing_id
+            if self.webhook_provider_id != existing_id:
+                self.webhook_provider_id = existing_id
             _logger.info(
                 "Webhook already exists on %s for %s/%s (hook_id=%s), updated secret",
                 provider, owner, repo, existing_id,
@@ -1135,137 +1248,35 @@ class SaasInstanceRepo(models.Model):
                 provider, owner, repo, e,
             )
 
+    def _webhook_notification(self, message, level='info'):
+        return {'type': 'ir.actions.client', 'tag': 'display_notification',
+                'params': {'title': _('Webhook verification'), 'message': message,
+                           'type': level, 'sticky': True}}
+
     def action_check_webhook(self):
-        """Check if the webhook is correctly registered on the Git provider."""
+        """Keep the result (UserError would roll back health updates)."""
         self.ensure_one()
-        token = self.sudo().github_token
-        if not token:
-            raise UserError(_("No token configured. Cannot check webhook status."))
-
-        provider = self._detect_provider()
-        owner, repo_name = self._parse_owner_repo()
-        if not provider or not owner or not repo_name:
-            raise UserError(_("Could not detect provider or parse owner/repo from URL."))
-
-        base = self._get_provider_base_url()
-        hooks = []
-
-        try:
-            if provider == 'github':
-                resp = http_requests.get(
-                    '%s/repos/%s/%s/hooks' % (base, owner, repo_name),
-                    headers={
-                        'Authorization': 'token %s' % token,
-                        'Accept': 'application/vnd.github+json',
-                    },
-                    timeout=15,
-                )
-                resp.raise_for_status()
-                hooks = resp.json()
-
-            elif provider == 'gitlab':
-                from urllib.parse import quote as url_quote
-                project_path = '%s/%s' % (owner, repo_name)
-                resp = http_requests.get(
-                    '%s/projects/%s/hooks' % (base, url_quote(project_path, safe='')),
-                    headers={'PRIVATE-TOKEN': token},
-                    timeout=15,
-                )
-                resp.raise_for_status()
-                hooks = resp.json()
-
-            elif provider == 'gitea':
-                parsed = urlparse(self.repo_url)
-                gitea_base = '%s://%s/api/v1' % (parsed.scheme or 'https', parsed.hostname)
-                resp = http_requests.get(
-                    '%s/repos/%s/%s/hooks' % (gitea_base, owner, repo_name),
-                    headers={'Authorization': 'token %s' % token},
-                    timeout=15,
-                )
-                resp.raise_for_status()
-                hooks = resp.json()
-
-        except http_requests.RequestException as e:
-            raise UserError(_("Failed to fetch webhooks from %s: %s") % (provider, e))
-
-        # Check if our webhook URL is in the list
-        webhook_url = self.webhook_url
-        found = False
-        details = []
-        for h in hooks:
-            # GitHub/Gitea: config.url, GitLab: url
-            hook_url = ''
-            if isinstance(h, dict):
-                hook_url = h.get('config', {}).get('url', '') or h.get('url', '')
-            details.append("  ID=%s  URL=%s  Active=%s" % (
-                h.get('id', '?'), hook_url, h.get('active', h.get('push_events', '?')),
-            ))
-            if webhook_url and webhook_url in hook_url:
-                found = True
-
-        msg = "Provider: %s\nRepo: %s/%s\nOur webhook URL: %s\n\n" % (
-            provider, owner, repo_name, webhook_url,
-        )
-        if found:
-            msg += "FOUND - Webhook is registered on %s" % provider
-        else:
-            msg += "NOT FOUND - Webhook is NOT registered on %s\n\n" % provider
-            msg += "Registered webhooks (%d):\n%s" % (len(hooks), '\n'.join(details) if details else '  (none)')
-            msg += "\n\nTIP: Click 'Enable Webhook' to register it, or add the URL manually in your repo settings."
-
-        raise UserError(msg)
+        valid = self._check_webhook_health()
+        message = (_("Provider configuration verified. ") if valid else '')
+        message += self.webhook_health_message or _("Delivery has not been confirmed yet.")
+        return self._webhook_notification(message, 'warning' if not valid or self.webhook_health != 'healthy' else 'success')
 
     def action_test_webhook(self):
-        """Send a test ping to our own webhook endpoint to verify it's reachable."""
+        """Use GitHub's actual delivery path, without causing a deployment."""
         self.ensure_one()
-        import hashlib
-        webhook_url = self.webhook_url
-        if not webhook_url:
-            raise UserError(_("No webhook URL configured."))
-
-        payload = json.dumps({
-            'zen': 'Webhook test from SaaS platform',
-            'repository': {'clone_url': self.repo_url},
-        }).encode()
-        sig = 'sha256=' + hmac.new(
-            self.webhook_secret.encode(), payload, hashlib.sha256,
-        ).hexdigest()
-
+        if self._detect_provider() != 'github':
+            return self._webhook_notification(
+                _("Provider delivery testing is currently available for GitHub repositories."), 'warning')
+        if not self._check_webhook_health():
+            return self._webhook_notification(self.webhook_health_message, 'warning')
         try:
-            resp = http_requests.post(
-                webhook_url,
-                data=payload,
-                headers={
-                    'Content-Type': 'application/json',
-                    'X-GitHub-Event': 'ping',
-                    'X-Hub-Signature-256': sig,
-                },
-                timeout=15,
-            )
-            body = resp.text[:500]
-            msg = (
-                "Test result:\n\n"
-                "URL: %s\n"
-                "Status: %s %s\n"
-                "Response: %s"
-            ) % (webhook_url, resp.status_code, resp.reason, body)
-
-            if resp.status_code == 200:
-                msg += "\n\nWebhook endpoint is reachable and accepted the request."
-            else:
-                msg += "\n\nWebhook endpoint returned an error. Check the URL and server logs."
-        except http_requests.RequestException as e:
-            msg = (
-                "Test FAILED:\n\n"
-                "URL: %s\n"
-                "Error: %s\n\n"
-                "The webhook endpoint is NOT reachable. Check:\n"
-                "- web.base.url is set to the public HTTPS domain\n"
-                "- Nginx proxies /saas/webhook/* to Odoo\n"
-                "- Firewall allows incoming HTTPS"
-            ) % (webhook_url, e)
-
-        raise UserError(msg)
+            self._queue_github_webhook_ping()
+        except (http_requests.RequestException, UserError):
+            self.write({'webhook_health': 'error',
+                        'webhook_health_message': 'GitHub could not start the delivery test. Check webhook write permission.'})
+            return self._webhook_notification(self.webhook_health_message, 'danger')
+        return self._webhook_notification(
+            _("Test requested from GitHub. Delivery is pending until a signed callback arrives. Refresh to see the result."))
 
     @staticmethod
     def _normalize_repo_url(url):

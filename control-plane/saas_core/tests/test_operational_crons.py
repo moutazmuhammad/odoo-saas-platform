@@ -140,14 +140,14 @@ class TestOperationalCrons(TransactionCase):
             self.Instance._cron_verify_webhooks()
         self.assertEqual(calls, ['wh1'])
 
-    def test_verify_webhooks_skips_already_registered(self):
+    def test_verify_webhooks_checks_already_registered(self):
         inst = self._inst('wh2')
         self._repo(inst, webhook_provider_id='hook-123')
         calls = []
         with patch.object(type(inst), '_ensure_webhooks_registered',
                            lambda self: calls.append(self.subdomain)):
             self.Instance._cron_verify_webhooks()
-        self.assertEqual(calls, [])
+        self.assertEqual(calls, ['wh2'])
 
     def test_verify_webhooks_skips_without_token(self):
         inst = self._inst('wh3')

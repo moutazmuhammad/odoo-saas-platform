@@ -2274,6 +2274,10 @@ class SaasApi(http.Controller):
                     'branch': instance.repo_ids[:1].branch or 'main',
                     'has_token': bool(instance.repo_ids[:1].github_token),
                     'state': instance.repo_ids[:1].state or '',
+                    'webhook_enabled': instance.repo_ids[:1].webhook_enabled,
+                    'webhook_registered': instance.repo_ids[:1].webhook_registered,
+                    'webhook_health': instance.repo_ids[:1].webhook_health or 'pending',
+                    'webhook_last_received': _utc_datetime(instance.repo_ids[:1].webhook_last_received),
                 } if (instance.is_hosting and instance.repo_ids) else {
                     'url': '', 'branch': 'main', 'has_token': False, 'state': '',
                 }),

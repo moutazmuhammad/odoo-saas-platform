@@ -35,6 +35,8 @@ The control plane only talks to the Kubernetes API. Full explanation: [setup/01-
 
 ---
 
+For direct deployment from your workstation, see [Local deploy](setup/08-LOCAL-DEPLOY.md).
+
 ## Repository layout
 
 | Path | What |

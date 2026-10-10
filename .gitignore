@@ -17,3 +17,6 @@ Thumbs.db
 
 __pycache__/
 *.pyc
+
+# Machine-specific deployment destinations, values and success receipts.
+.local-deploy/

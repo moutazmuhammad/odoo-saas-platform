@@ -254,10 +254,17 @@
                                            decoration-info="state == 'pending'"/>
                                     <field name="last_pull"/>
                                     <field name="webhook_enabled" string="Auto-Deploy"/>
-                                    <field name="webhook_registered" string="Webhook Active"
+                                    <field name="webhook_registered" string="Webhook Registered"
                                            widget="boolean"
                                            decoration-success="webhook_registered"
                                            decoration-danger="not webhook_registered and webhook_enabled"/>
+                                    <field name="webhook_health" widget="badge"
+                                           decoration-success="webhook_health == 'healthy'"
+                                           decoration-danger="webhook_health == 'error'"
+                                           invisible="not webhook_enabled"/>
+                                    <field name="webhook_health_message" optional="show"/>
+                                    <field name="webhook_last_checked" optional="hide"/>
+                                    <field name="webhook_last_received" optional="hide"/>
                                     <button name="action_clone_repo" type="object"
                                             string="Clone" icon="fa-clone"
                                             invisible="state == 'cloned'"/>

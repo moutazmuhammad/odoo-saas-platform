@@ -472,7 +472,10 @@ export interface ApiInstance extends RuntimeHealth {
   daily_backup_next_invoice_date?: string;
   compute_driver?: "kubernetes" | "ssh_docker";
   last_error?: string;
-  repo?: { url: string; branch: string; has_token: boolean; state: string };
+  repo?: { url: string; branch: string; has_token: boolean; state: string;
+    webhook_enabled?: boolean; webhook_registered?: boolean;
+    webhook_health?: "pending" | "healthy" | "error"; webhook_last_received?: string;
+  };
   pending_plan?: string;
   scheduled_plan?: string;
   backups?: ApiBackup[];

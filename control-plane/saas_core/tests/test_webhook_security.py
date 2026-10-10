@@ -116,8 +116,96 @@ class TestWebhookSecurity(HttpCase):
             resp = self._signed_post(
                 self._push_payload(), headers={'X-GitHub-Event': 'ping'})
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json().get('reason'), 'not a push event')
+        self.assertEqual(resp.json(), {'status': 'ok', 'event': 'ping'})
         mock_enqueue.assert_not_called()
+
+    def test_provider_id_alone_is_not_registration_proof(self):
+        self.repo.webhook_provider_id = '123'
+        self.assertFalse(self.repo.webhook_registered)
+
+    def test_signed_github_ping_confirms_delivery_while_provisioning(self):
+        self.repo.webhook_provider_id = '123'
+        self.instance.state = 'provisioning'
+        self.repo.state = 'pending'
+        with self._patched_enqueue() as queued:
+            resp = self._signed_post({}, headers={
+                'Content-Type': 'application/json', 'X-GitHub-Event': 'ping',
+                'X-GitHub-Hook-ID': '123', 'X-GitHub-Delivery': 'ping-123'})
+        self.assertEqual(resp.json(), {'status': 'ok', 'event': 'ping'})
+        self.repo.invalidate_recordset()
+        self.assertEqual(self.repo.webhook_health, 'healthy')
+        self.assertTrue(self.repo.webhook_last_received)
+        queued.assert_not_called()
+
+    def test_ping_for_another_hook_does_not_confirm_delivery(self):
+        self.repo.webhook_provider_id = '123'
+        self._signed_post({}, headers={
+            'X-GitHub-Event': 'ping', 'X-GitHub-Hook-ID': '456',
+            'X-GitHub-Delivery': 'wrong-hook'})
+        self.repo.invalidate_recordset()
+        self.assertEqual(self.repo.webhook_health, 'pending')
+
+    def test_github_accepting_ping_does_not_confirm_delivery(self):
+        self.repo.write({'webhook_provider_id': '123', 'github_token': 'test-token'})
+        response = MagicMock(status_code=204)
+        with patch('odoo.addons.saas_core.models.saas_instance_repo.http_requests.post',
+                   return_value=response) as post:
+            self.repo._request_github_webhook_ping('123')
+        self.assertEqual(self.repo.webhook_health, 'pending')
+        self.assertTrue(post.call_args.args[0].endswith('/hooks/123/pings'))
+
+    def test_retrying_a_failed_ping_keeps_error_visible_until_callback(self):
+        self.repo.write({'webhook_provider_id': '123', 'github_token': 'test-token'})
+        self.repo.write({'webhook_health': 'error', 'webhook_health_message': 'Delivery failed'})
+        response = MagicMock(status_code=204)
+        with patch('odoo.addons.saas_core.models.saas_instance_repo.http_requests.post',
+                   return_value=response):
+            self.repo._request_github_webhook_ping('123')
+        self.assertEqual(self.repo.webhook_health, 'error')
+        self.assertEqual(self.repo.webhook_health_message, 'Delivery failed')
+
+    def test_github_failed_delivery_is_visible_despite_valid_configuration(self):
+        self.repo.write({'github_token': 'test-token', 'webhook_provider_id': '123'})
+        response = MagicMock(status_code=200)
+        response.json.return_value = {
+            'active': True, 'events': ['push'],
+            'config': {'url': self.repo.webhook_url, 'content_type': 'json'},
+            'last_response': {'code': 404}}
+        with patch('odoo.addons.saas_core.models.saas_instance_repo.http_requests.get',
+                   return_value=response):
+            self.assertTrue(self.repo._check_webhook_health())
+        self.assertTrue(self.repo.webhook_registered)
+        self.assertEqual(self.repo.webhook_health, 'error')
+        self.assertIn('404', self.repo.webhook_health_message)
+
+    def test_failed_secret_update_is_not_silently_accepted(self):
+        response = MagicMock()
+        response.raise_for_status.side_effect = RuntimeError('forbidden')
+        with patch('odoo.addons.saas_core.models.saas_instance_repo.http_requests.patch',
+                   return_value=response), self.assertRaises(RuntimeError):
+            self.repo._update_existing_webhook(
+                'github', 'https://api.github.com', 'acme', 'widgets',
+                'test-token', '123', self.repo.webhook_url)
+
+    def test_repo_creation_queues_registration_without_spawning_worker(self):
+        with patch.object(type(self.env['saas.job']), '_spawn_worker') as spawn:
+            repo = self.env['saas.instance.repo'].sudo().create({
+                'instance_id': self.instance.id,
+                'repo_url': 'https://github.com/acme/another.git',
+                'github_token': 'test-token', 'webhook_enabled': True})
+        job = self.env['saas.job'].sudo().search([
+            ('model', '=', repo._name), ('res_id', '=', repo.id),
+            ('method', '=', '_register_webhook_with_retry')])
+        self.assertEqual(len(job), 1)
+        spawn.assert_not_called()
+
+    def test_repo_link_token_change_queues_registration(self):
+        self.repo.write({'github_token': 'test-token'})
+        self.repo.write({'github_token': 'replacement-token'})
+        jobs = self.env['saas.job'].sudo().search([
+            ('model', '=', self.repo._name), ('res_id', '=', self.repo.id),
+            ('method', '=', '_register_webhook_with_retry')])
+        self.assertEqual(len(jobs), 1)
 
     def test_provider_verification_checks_configuration(self):
         self.repo.write({'github_token': 'test-token', 'webhook_provider_id': '123'})

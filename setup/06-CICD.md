@@ -8,11 +8,11 @@ Complete the server setup in [02](02-SAAS-SERVER-SETUP.md) and cluster setup in 
 ## 1. How delivery works
 
 1. PRs and pushes to `main`, `newhosting`, and `architecture-evolution` run CI: frontend coverage/typecheck/build, tests for all four production Odoo addons, Go vet/unit/envtest, secret scanning, container vulnerability scanning, deployment script tests, backup tests and chart checks.
-2. A push to **main** starts CD, which calls the same CI workflow as a required validation gate. Standalone CI also runs on main; this deliberately keeps PR checks independent of production delivery. No secrets are inherited by validation.
-3. After validation, CD compares the target commit with the last fully delivered commit. A successful `delivered` artifact records that baseline. Failed/partial deployments do not advance it, so a later push retries outstanding changes. The first delivery, missing/expired baseline, or non-ancestor history rebuilds everything. A superseded queued commit skips delivery.
-4. Selected images are published for **linux/amd64 and linux/arm64**, with BuildKit caching, SBOM and provenance. Tags are unique: `sha-<40-character SHA>-<run ID>-<attempt>`; images are never published as `latest`.
+2. A push to **main** runs CI once. A newer push cancels the older CI run for that branch. Automatic CD starts only from a successful CI push on main in this repository; it checks out that exact tested commit and downloads the SaaS artifact from that CI run. Failed, cancelled, PR and fork CI completions cannot deploy or displace a queued production delivery. Manual CD runs call the reusable CI workflow as their required validation gate. No deployment secrets are inherited by validation.
+3. After validation, CD compares the target commit with the last fully delivered commit. A successful `delivered-<tested SHA>` artifact records that baseline. The SHA comes from the receipt, since a workflow_run delivery may have a different default-branch workflow SHA. Failed/partial deployments do not advance it, so a later push retries outstanding changes. The first delivery, missing/expired baseline, or non-ancestor history rebuilds everything. A superseded queued commit skips delivery.
+4. Selected images are published for **linux/amd64 and linux/arm64**, with BuildKit caching, SBOM and provenance. The published digest is scanned for both architectures before cluster deployment; a failed scan blocks rollout even if publication succeeded. Tags are unique: `sha-<40-character SHA>-<run ID>-<attempt>`; images are never published as `latest`.
 5. Each configured Kubernetes cluster gets CRDs explicitly applied and a Helm upgrade with readiness checks and automatic Helm rollback on failure. Backup-only changes update the backup and restore image flags without rebuilding the operator.
-6. The SaaS deploy waits for required cluster deployments, uploads the frontend-built control-plane artifact, creates an isolated Python environment, drains/stops both services, backs up the database/filestore/config, upgrades all four addons, switches code/environment symlinks, restarts both services and checks HTTP health.
+6. The SaaS deploy waits for required cluster deployments, checks that the installed root-owned deployment script matches the tested version, uploads the frontend-built control-plane artifact from the successful CI run, creates an isolated Python environment, drains/stops both services, backs up the database/filestore/config, upgrades all four addons, switches code/environment symlinks, restarts both services and checks HTTP health.
 7. Only complete success records the delivery baseline. The production concurrency lock never cancels a running deployment. GitHub may replace pending runs; cumulative comparison carries their changes forward.
 
 | Changed paths | Published/deployed |
@@ -132,7 +132,7 @@ Create `/etc/sudoers.d/saas-deploy` using `sudo visudo -f /etc/sudoers.d/saas-de
 saas-deploy ALL=(root) NOPASSWD: /usr/local/sbin/saas-deploy *
 ```
 
-The script validates its single release-ID argument; the SSH user cannot choose a command or arbitrary archive path. Keep the script and configuration writable only by root. **When `scripts/deploy/saas-deploy.sh` changes, reinstall the reviewed script on the server before running the new delivery.** The workflow deliberately invokes this installed script, rather than granting sudo execution of an uploaded script.
+The script validates its single release-ID argument; the SSH user cannot choose a command or arbitrary archive path. Keep the script and configuration writable only by root. **When `scripts/deploy/saas-deploy.sh` changes, reinstall the reviewed script on the server before running the new delivery.** The workflow deliberately invokes this installed script, rather than granting sudo execution of an uploaded script. CD compares its SHA-256 checksum with the tested script and fails before maintenance if they differ. Reinstall the script whenever it changes; this review fixes creation of the new virtualenv directory so it is writable by `odoo`.
 
 Verify services already work and that `/opt/saas/data/filestore/saas` exists. Make sure `/opt/saas`, `/opt/saas/releases`, and the symlink locations are root-owned; `odoo` owns only release contents/data/logs. Allow the runner to reach SSH and the server to reach Python package repositories. Each release creates a fresh virtualenv using the already installed `/opt/saas/odoo18` source, which the pipeline does not update.
 
@@ -141,14 +141,14 @@ The first successful release moves existing real `platform`/`venv` directories t
 ## 4. First run and routine use
 
 1. Add repository variables, environments and secrets; prepare the server and cluster pull credentials.
-2. Merge/push these files to `main`. The first CD run selects every owned component.
-3. Inspect Actions → CD: validation → plan → image publishing → cluster deployment → SaaS deployment → receipt.
+2. Merge/push these files to `main`. After CI passes, the first CD delivery selects every owned component.
+3. Inspect Actions → CI for validation, then Actions → CD: plan → image publishing/scanning → cluster deployment → SaaS deployment → receipt. Manual CD runs include their own validation step.
 4. Check the portal, both systemd services, operator rollout and a tenant backup/restore smoke test.
 5. Future pushes deploy changed components. To rebuild everything, choose **Actions → CD → Run workflow → main**, keeping `full=true`. Set `full=false` to use the cumulative diff. Manual runs on other branches skip validation/delivery.
 
 The server-side SaaS release ID is `<run ID>-<attempt>-<SHA>`. Re-running a failed workflow creates a new attempt and release directory. Do not retry a failed database upgrade blindly: inspect the error and maintenance state first.
 
-Changing the production branch requires updating the CD trigger, branch guard, branch lookup/baseline query, CI push branches and environment branch restrictions together. Adding a new image build context requires adding its change selection and image matrix entry in `scripts/ci/changes.py` / `cd.yml`.
+Changing the production branch requires updating the CI push branches, CD workflow_run branch filter and trusted-event guards, branch lookup/baseline query, and environment branch restrictions together. Adding a new image build context requires adding its change selection and image matrix entry in `scripts/ci/changes.py` / `cd.yml`.
 
 ## 5. Failures, backups and rollback
 
@@ -171,6 +171,7 @@ python3 -m unittest discover -s scripts/ci -p 'test_*.py'
 python3 compute/tools/backup-tool/test_backup_restore.py
 bash -n scripts/deploy/saas-deploy.sh scripts/deploy/operator.sh
 shellcheck scripts/deploy/*.sh
+actionlint
 helm lint compute/charts/odoo-operator
 helm lint compute/charts/odoo-instance --set-string image.tag=ci-test --set-string domain.hostname=ci.example.com
 ```

@@ -15,7 +15,7 @@ root=/opt/saas
 release=$root/releases/$release_id
 archive=/var/lib/saas-deploy/incoming/$release_id.tar.gz
 [[ -f $archive && ! -e $release ]] || { echo 'Archive missing or release already exists.' >&2; exit 1; }
-install -d -o odoo -g odoo "$release/platform"
+install -d -o odoo -g odoo "$release/platform" "$release/venv"
 runuser -u odoo -- tar -xzf "$archive" -C "$release/platform" --no-same-owner --no-same-permissions
 [[ -f $release/platform/control-plane/saas_core/__manifest__.py ]]
 [[ -f $release/platform/control-plane/saas_website/static/spa/index.html ]]

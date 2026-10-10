@@ -134,20 +134,9 @@ jobs:
             --log-level=test 2>&1 | tee odoo.log
 
       - name: Assert no test failures
-        run: |
-          # Odoo prints a summary line like "N failed, M error(s) of K tests".
-          # Require it to exist AND report zero failures/errors — a crash that
-          # prints no summary must also fail the job.
-          if ! grep -qE "tests when loading database" odoo.log; then
-            echo "::error::No test summary found — the run crashed before tests completed."
-            exit 1
-          fi
-          if ! grep -qE "0 failed, 0 error\(s\)" odoo.log; then
-            echo "::error::Odoo tests failed."
-            grep -E "FAIL:|ERROR:|failed, [1-9]" odoo.log || true
-            exit 1
-          fi
-          echo "All Odoo tests passed."
+        if: >-
+          !cancelled() && (steps.odoo-test-run.outcome == 'success' || steps.odoo-test-run.outcome == 'failure')
+        run: python3 scripts/ci/check_odoo_log.py odoo.log
 
       - name: Coverage report
         run: python -m coverage report --data-file="$GITHUB_WORKSPACE/.coverage"
@@ -244,9 +233,9 @@ jobs:
             https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz
           sudo tar xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
       - name: Build operator image
-        run: docker build -t odoo-operator:ci compute/operator
+        run: docker build --pull -t odoo-operator:ci compute/operator
       - name: Build backup-tool image
-        run: docker build -t backup-tool:ci compute/tools/backup-tool
+        run: docker build --pull -t backup-tool:ci compute/tools/backup-tool
       - name: Scan operator image
         run: trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --skip-version-check odoo-operator:ci
       - name: Scan backup-tool image
@@ -263,6 +252,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install workflow linter
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/actionlint.tar.gz" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz
+          sudo tar xzf "$RUNNER_TEMP/actionlint.tar.gz" -C /usr/local/bin actionlint
       - name: Install delivery check tools
         run: |
           sudo apt-get update
@@ -270,6 +264,7 @@ jobs:
           # Storage tests import the migration's XML helpers as well as Kubernetes.
           python -m pip install kubernetes==36.0.3 lxml
       - run: |
+          actionlint
           bash -n scripts/deploy/saas-deploy.sh scripts/deploy/operator.sh
           shellcheck scripts/deploy/*.sh
           python3 -m unittest discover -s scripts/ci -p 'test_*.py'

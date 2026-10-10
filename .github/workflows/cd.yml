@@ -1,7 +1,9 @@
 name: CD
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -16,18 +18,33 @@ permissions:
 
 # Never cancel an in-progress database migration or Helm upgrade.
 concurrency:
-  group: delivery-production
+  # Ignored/failed CI events must not replace a pending production release.
+  group: >-
+    delivery-${{ ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)) && 'production' || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   validate:
-    if: github.ref == 'refs/heads/main'
+    # Manual releases validate here; automatic releases reuse the completed CI run.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/ci.yml
 
   plan:
     needs: validate
+    # workflow_run can be privileged: accept successful same-repository main pushes only.
+    if: >-
+      always() && !cancelled() &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && needs.validate.result == 'success') ||
+       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
     outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      ci_run_id: ${{ steps.plan.outputs.ci_run_id }}
       operator: ${{ steps.plan.outputs.operator }}
       backup: ${{ steps.plan.outputs.backup }}
       saas: ${{ steps.plan.outputs.saas }}
@@ -38,17 +55,20 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Compare with last completely successful delivery
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id || github.run_id }}
           FORCE_FULL: ${{ inputs.full || false }}
           CLUSTERS: ${{ vars.DEPLOY_CLUSTERS }}
         run: |
           set -euo pipefail
           # A queued older commit must not overwrite a newer main deployment.
           latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
-          if [[ "$latest" != "$GITHUB_SHA" ]]; then
+          if [[ "$latest" != "$TARGET_SHA" ]]; then
             echo 'Commit superseded on main; skipping delivery.'
             for component in operator backup saas; do echo "$component=false" >> "$GITHUB_OUTPUT"; done
             echo 'images=[]' >> "$GITHUB_OUTPUT"
@@ -57,15 +77,20 @@ jobs:
           fi
           base=''
           runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/cd.yml/runs?branch=main&status=success&per_page=100" \
-            --jq '.workflow_runs[] | [.id, .head_sha] | @tsv')
-          while IFS=$'\t' read -r run_id commit; do
+            --jq '.workflow_runs[] | [.id, .head_sha, .event] | @tsv')
+          while IFS=$'\t' read -r run_id commit event; do
             [[ -n "$run_id" ]] || continue
-            receipt=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
-              --jq '[.artifacts[] | select(.name == "delivered" and .expired == false)] | length')
-            if [[ "$receipt" -gt 0 ]]; then base=$commit; break; fi
+            artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100")
+            receipt=$(jq -r '[.artifacts[] | select(.expired == false and (.name | test("^delivered-[a-f0-9]{40}$")))][0].name // ""' <<< "$artifacts")
+            if [[ -n "$receipt" ]]; then base=${receipt#delivered-}; break; fi
+            # Compatibility with receipts from the previous push-based CD.
+            if [[ "$event" != workflow_run ]] && jq -e 'any(.artifacts[]; .name == "delivered" and .expired == false)' <<< "$artifacts" >/dev/null; then
+              base=$commit
+              break
+            fi
           done <<< "$runs"
           if [[ "$FORCE_FULL" == true ]]; then base=''; fi
-          selection=$(python3 scripts/ci/changes.py "$base" "$GITHUB_SHA")
+          selection=$(python3 scripts/ci/changes.py "$base" "$TARGET_SHA")
           for component in operator backup saas; do
             echo "$component=$(jq -r ".$component" <<< "$selection")" >> "$GITHUB_OUTPUT"
           done
@@ -77,14 +102,20 @@ jobs:
           else
             echo 'clusters=[]' >> "$GITHUB_OUTPUT"
           fi
-          echo "tag=sha-$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-          echo "### Release selection" >> "$GITHUB_STEP_SUMMARY"
-          echo "Base: ${base:-first/full release}; target: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "$selection" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "sha=$TARGET_SHA"
+            echo "ci_run_id=$CI_RUN_ID"
+            echo "tag=sha-$TARGET_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release selection"
+            echo "Base: ${base:-first/full release}; target: $TARGET_SHA"
+            echo "$selection"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   images:
     needs: plan
-    if: needs.plan.outputs.images != '[]'
+    if: needs.plan.result == 'success' && needs.plan.outputs.images != '[]'
     runs-on: ubuntu-latest
     environment: production-images
     strategy:
@@ -96,6 +127,8 @@ jobs:
       NAMESPACE: ${{ vars.IMAGE_NAMESPACE }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Validate registry configuration
@@ -106,15 +139,32 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_TOKEN }}
       - uses: docker/build-push-action@v6
+        id: build
         with:
           context: ${{ matrix.context }}
           platforms: linux/amd64,linux/arm64
           push: true
+          pull: true
           tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ matrix.repository }}:${{ needs.plan.outputs.tag }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           provenance: true
           sbom: true
+
+      - name: Scan the published digest on both architectures
+        env:
+          IMAGE_REPOSITORY: ${{ matrix.repository }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/trivy.tar.gz" \
+            https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz
+          tar xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          for platform in linux/amd64 linux/arm64; do
+            "$RUNNER_TEMP/trivy" image --platform "$platform" \
+              --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --skip-version-check \
+              "$REGISTRY/$NAMESPACE/$IMAGE_REPOSITORY@$IMAGE_DIGEST"
+          done
 
   operator:
     needs: [plan, images]
@@ -130,6 +180,8 @@ jobs:
       NAMESPACE: ${{ vars.IMAGE_NAMESPACE }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: azure/setup-kubectl@v4
         with:
           version: v1.32.3
@@ -167,17 +219,23 @@ jobs:
     needs: [plan, images, operator]
     if: >-
       always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.saas == 'true' &&
-      (needs.images.result == 'success' || needs.images.result == 'skipped') &&
-      (needs.operator.result == 'success' || needs.operator.result == 'skipped')
+      (needs.plan.outputs.images == '[]' || needs.images.result == 'success') &&
+      (needs.plan.outputs.clusters == '[]' || needs.operator.result == 'success')
     runs-on: ubuntu-latest
     environment: production-saas
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/download-artifact@v4
         with:
           name: saas-release
           path: release
+          run-id: ${{ needs.plan.outputs.ci_run_id }}
+          github-token: ${{ github.token }}
       - name: Upload tested release and deploy both systemd services
         env:
+          TARGET_SHA: ${{ needs.plan.outputs.sha }}
           SSH_HOST: ${{ secrets.SAAS_SSH_HOST }}
           SSH_USER: ${{ secrets.SAAS_SSH_USER }}
           SSH_KEY: ${{ secrets.SAAS_SSH_PRIVATE_KEY }}
@@ -194,7 +252,15 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$key"
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$known"
           options=(-i "$key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known")
-          release_id="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$GITHUB_SHA"
+          # Refuse an outdated installed deploy script before entering maintenance.
+          expected=$(sha256sum scripts/deploy/saas-deploy.sh | cut -d ' ' -f1)
+          installed=$(ssh "${options[@]}" -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            'sha256sum /usr/local/sbin/saas-deploy' | cut -d ' ' -f1)
+          if [[ "$installed" != "$expected" ]]; then
+            echo '::error::Server deployment script is outdated. Reinstall scripts/deploy/saas-deploy.sh as /usr/local/sbin/saas-deploy before retrying.'
+            exit 1
+          fi
+          release_id="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$TARGET_SHA"
           scp "${options[@]}" -P "$SSH_PORT" release/saas-release.tar.gz \
             "$SSH_USER@$SSH_HOST:/var/lib/saas-deploy/incoming/$release_id.tar.gz"
           ssh "${options[@]}" -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
@@ -210,9 +276,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Record fully delivered commit
-        run: printf '%s\n' "$GITHUB_SHA" > delivered.txt
+        env:
+          TARGET_SHA: ${{ needs.plan.outputs.sha }}
+        run: printf '%s\n' "$TARGET_SHA" > delivered.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: delivered
+          name: delivered-${{ needs.plan.outputs.sha }}
           path: delivered.txt
           retention-days: 90

@@ -207,7 +207,7 @@ scp scripts/deploy/saas-deploy.sh ADMIN_USER@main.eagle-tech.info:/tmp/saas-depl
 sudo install -o root -g root -m 755 /tmp/saas-deploy.sh /usr/local/sbin/saas-deploy
 ```
 
-Repeat this installation whenever the reviewed deployment script changes. The workflow calls this root-owned installed script.
+Repeat this installation whenever the reviewed deployment script changes. The workflow calls this root-owned installed script and verifies that its SHA-256 checksum matches the tested version before uploading the release. An outdated script blocks deployment before services are stopped.
 
 ## 11. Create server configuration and sudo permission
 
@@ -274,8 +274,10 @@ Once this succeeds:
 
 1. Ensure the CI/CD files are committed and pushed to `main`.
 2. Open **GitHub → Actions → CD** and inspect the push-triggered run, or select **Run workflow → main**, keeping `full=true` for the first full delivery.
-3. Watch validation, image publishing, cluster deployment, SaaS deployment, and the final delivery receipt.
+3. Watch the CI validation run, then the automatic CD run for image publishing/scanning, cluster deployment, SaaS deployment, and the final delivery receipt. Automatic CD reuses that successful CI run and its artifact. Manual CD runs perform validation first.
 4. Verify the portal, both SaaS services, operator rollout, and a tenant backup/restore smoke test.
+
+New pushes cancel superseded CI runs for the same branch. Production deployments finish once started; queued superseded commits skip delivery. Failed or cancelled CI completions cannot replace a queued production delivery.
 
 Before the first release, arrange the backup retention and off-server copies described in [06-CICD.md](06-CICD.md). SaaS deployment stops both services during the backup and addon upgrade, then starts them again.
 

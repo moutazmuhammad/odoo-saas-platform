@@ -5025,7 +5025,12 @@ END $$;
                     "Production is not running — its database was not copied. "
                     "Use 'Copy databases' once it is.")
                 return False
-            if self.hosting_db_list():
+            # The operator creates an empty ``<sub>_main`` on every hosting
+            # server; only that one may be replaced. Any other database
+            # means the customer already has data here (a redeploy).
+            initial = self._hosting_db_full_name(self._HOSTING_INITIAL_DB_SUFFIX)
+            existing = [r['name'] for r in self.hosting_db_list()]
+            if any(name != initial for name in existing):
                 return False
             sources = [r['name'] for r in prod.hosting_db_list()]
             if not sources:
@@ -5035,7 +5040,9 @@ END $$;
             self._append_log(
                 "Copying the Production database '%s' onto this server..."
                 % sources[0])
-            self.hosting_db_copy_from(prod, sources[:1])
+            self.hosting_db_copy_from(
+                prod, sources[:1],
+                overwrite_names=[initial] if initial in existing else None)
             return True
         except Exception as e:
             _logger.exception("Could not seed %s from Production", self.subdomain)

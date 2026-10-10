@@ -53,9 +53,6 @@ jobs:
 
   odoo-tests:
     name: Odoo test suite (all production addons)
-    # Temporarily opt-in at the user's request; set the repository variable
-    # RUN_ODOO_TESTS=true to restore this validation gate.
-    if: ${{ vars.RUN_ODOO_TESTS == 'true' }}
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -115,9 +112,10 @@ jobs:
           CONF
 
       - name: Install modules + run tests (with coverage)
+        id: odoo-test-run
         run: |
           set -o pipefail
-          # B.5: coverage.py wraps the run, scoped to our two addons only
+          # B.5: coverage.py wraps the run, scoped to our four production addons
           # (Odoo core itself is excluded) so the % reflects our code. Not
           # gated on a threshold yet — just made visible on every run.
           python -m coverage run \
@@ -153,6 +151,18 @@ jobs:
 
       - name: Coverage report
         run: python -m coverage report --data-file="$GITHUB_WORKSPACE/.coverage"
+
+      - name: Preserve Odoo test diagnostics, including failed runs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: odoo-test-diagnostics
+          path: |
+            odoo.log
+            .coverage
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
 
   csrf-lint:
     # SEC-019 — the audit recommended a CI lint for csrf=False routes but

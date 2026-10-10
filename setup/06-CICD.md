@@ -7,7 +7,7 @@ Complete the server setup in [02](02-SAAS-SERVER-SETUP.md) and cluster setup in 
 
 ## 1. How delivery works
 
-1. PRs and pushes to `main`, `newhosting`, and `architecture-evolution` run CI: frontend coverage/typecheck/build, optional tests for all four production Odoo addons (see below), Go vet/unit/envtest, secret scanning, container vulnerability scanning, deployment script tests, backup tests and chart checks.
+1. PRs and pushes to `main`, `newhosting`, and `architecture-evolution` run CI: frontend coverage/typecheck/build, tests for all four production Odoo addons, Go vet/unit/envtest, secret scanning, container vulnerability scanning, deployment script tests, backup tests and chart checks.
 2. A push to **main** starts CD, which calls the same CI workflow as a required validation gate. Standalone CI also runs on main; this deliberately keeps PR checks independent of production delivery. No secrets are inherited by validation.
 3. After validation, CD compares the target commit with the last fully delivered commit. A successful `delivered` artifact records that baseline. Failed/partial deployments do not advance it, so a later push retries outstanding changes. The first delivery, missing/expired baseline, or non-ancestor history rebuilds everything. A superseded queued commit skips delivery.
 4. Selected images are published for **linux/amd64 and linux/arm64**, with BuildKit caching, SBOM and provenance. Tags are unique: `sha-<40-character SHA>-<run ID>-<attempt>`; images are never published as `latest`.
@@ -35,7 +35,7 @@ Open **Settings → Secrets and variables → Actions**. Add these as **reposito
 | `IMAGE_NAMESPACE` | `moutazmuhammad` or your registry organization/path; required |
 | `DEPLOY_CLUSTERS` | JSON array of GitHub environment names: `["production-doks", "production-microk8s"]`; required and nonempty |
 
-**Temporary Odoo test setting:** the Odoo test job is currently skipped unless the repository variable `RUN_ODOO_TESTS` is exactly `true`. This applies to standalone CI and the CD validation gate. To re-enable it, open **Settings → Secrets and variables → Actions → Variables**, add `RUN_ODOO_TESTS` with value `true`, and start a new run. While skipped, deployments are not validated by the Odoo install/test suite. The reported shutdown log did not establish the underlying failure; inspect the earlier error/traceback before diagnosing it.
+**Odoo validation:** the test job runs automatically in CI and CD validation; the previous `RUN_ODOO_TESTS` opt-in has been removed. It installs and tests all four production addons against a temporary CI database. Failed test runs retain `odoo.log` and coverage data in the `odoo-test-diagnostics` artifact on the Actions run page. Diagnose the first ERROR/FAIL and its traceback; normal shutdown messages alone do not identify the failure.
 
 Create these environments in **Settings → Environments**. Restrict deployment branches to `main`. Required reviewers are optional; leave them unset for fully automatic deployment.
 

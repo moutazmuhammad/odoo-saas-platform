@@ -1692,6 +1692,9 @@ class SaasApi(http.Controller):
         return ok({
             'project_id': prod.id,
             'project_name': prod.project_name or prod.subdomain or prod.name,
+            # Subscription state of the whole project; each server below
+            # carries its own runtime availability.
+            'project_status': prod._project_status(),
             'production': self._serialize_env_child(prod),
             'main_branch': prod.main_branch or 'main',
             'env_server_price': prod._env_server_price(),
@@ -2241,6 +2244,9 @@ class SaasApi(http.Controller):
             ).get(instance.environment, instance.environment),
             'branch': instance._env_branch(),
             'parent_id': instance.parent_id.id or False,
+            # Project rows show this (Active/Unpaid/Suspended/Cancelled),
+            # never the production server's runtime availability.
+            'project_status': instance._project_status(),
             **instance._runtime_status_dict(),
         }
         if self._is_staff():

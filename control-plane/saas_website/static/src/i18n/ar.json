@@ -318,7 +318,7 @@
   "Action failed": "فشل الإجراء",
   "Actions": "الإجراءات",
   "Activate Daily Backups": "تفعيل النسخ الاحتياطية اليومية",
-  "Active": "يعمل",
+  "Active": "نشط",
   "Add a ": "أضف ",
   "Add access": "منح الوصول",
   "Add environments from the Production server of the project.": "أضف البيئات من خادم Production الخاص بالمشروع.",
@@ -2717,5 +2717,6 @@
   "Last webhook received: {0}": "آخر حدث webhook تم استقباله: {0}",
   "Active projects": "المشاريع النشطة",
   " active": " نشط",
-  "Active ({0})": "نشط ({0})"
+  "Active ({0})": "نشط ({0})",
+  "Unpaid": "غير مدفوع"
 }

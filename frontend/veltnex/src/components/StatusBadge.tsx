@@ -31,6 +31,8 @@ const STATUS_STYLES: Record<
   maintenance: { label: i18nText("Maintenance"), dot: "bg-warning", text: "text-warning", bg: "bg-warning/10 border-warning/30" },
   available: { label: i18nText("Available"), dot: "bg-success", text: "text-success", bg: "bg-success/10 border-success/30" },
   in_progress: { label: i18nText("In progress"), dot: "bg-info", text: "text-info", bg: "bg-info/10 border-info/30", pulse: true },
+  // project (subscription)
+  unpaid: { label: i18nText("Unpaid"), dot: "bg-danger", text: "text-danger", bg: "bg-danger/10 border-danger/30" },
   // invoice
   paid: { label: i18nText("Paid"), dot: "bg-success", text: "text-success", bg: "bg-success/10 border-success/30" },
   open: { label: i18nText("Open"), dot: "bg-info", text: "text-info", bg: "bg-info/10 border-info/30" },

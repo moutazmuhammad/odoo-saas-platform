@@ -3189,6 +3189,33 @@ class SaasInstance(models.Model):
                 "Scheduled downgrade to %s has been cancelled."
             ) % plan_name)
 
+    def _project_status(self):
+        """Customer-facing state of the whole project: its subscription,
+        never a server's runtime (stopped/offline belong to each server).
+
+        ``suspended`` wins over ``unpaid`` (a project suspended for
+        non-payment reads Suspended); ``unpaid`` is an order awaiting its
+        first payment or a mandatory invoice past due (the dunning rule)."""
+        self.ensure_one()
+        if self.state in ('cancelled', 'cancelled_by_client'):
+            return 'cancelled'
+        if self.state == 'suspended' or self.pending_operation == 'suspend':
+            return 'suspended'
+        if self.state in ('draft', 'pending_payment'):
+            return 'unpaid'
+        if not self.is_trial and self.partner_id:
+            today = fields.Date.today()
+            overdue = self._get_all_invoices().filtered(
+                lambda m: m.move_type == 'out_invoice'
+                and m.payment_state not in ('paid', 'in_payment', 'reversed')
+                and m.state == 'posted'
+                and m.invoice_date_due
+                and m.invoice_date_due < today
+            )
+            if any(not self._is_optional_invoice(m) for m in overdue):
+                return 'unpaid'
+        return 'active'
+
     def _has_overdue_invoices_past_grace(self):
         """Return True if this instance has invoices overdue past the grace period."""
         self.ensure_one()

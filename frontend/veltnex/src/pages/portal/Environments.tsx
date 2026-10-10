@@ -47,6 +47,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { ActionButton } from "@/components/ActionButton";
 import { AlertBanner } from "@/components/AlertBanner";
 import { RuntimeStatusBadge } from "@/components/RuntimeStatusBadge";
+import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
 import { displayRuntimeStatus } from "@/lib/runtime-status";
 import { Spinner } from "@/components/Spinner";
 import { useToast } from "@/context/ToastContext";
@@ -315,7 +316,10 @@ export default function Environments() {
             <div className="p-2">
               <div className="px-2 py-1.5">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{i18nText("Project")}</p>
-                <p className="mt-0.5 truncate text-sm font-semibold">{data.project_name}</p>
+                <div className="mt-0.5 flex items-center justify-between gap-2">
+                  <p className="min-w-0 truncate text-sm font-semibold">{data.project_name}</p>
+                  <ProjectStatusBadge project={{ state: data.production.state, project_status: data.project_status }} />
+                </div>
                 {data.repo_url && (
                   <p className="truncate text-xs text-muted">{repoShort(data.repo_url)}</p>
                 )}

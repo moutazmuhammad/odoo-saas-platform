@@ -220,6 +220,9 @@ export type InstanceState =
   | "cancelled"
   | "cancelled_by_client";
 
+/** Subscription state of a whole project; servers carry their own runtime status. */
+export type ProjectStatus = "active" | "unpaid" | "suspended" | "cancelled";
+
 export interface ApiUsage {
   cpu: number;
   ram: number;
@@ -401,6 +404,7 @@ export interface ProjectEnvironments {
   is_project_owner?: boolean;
   project_id: number;
   project_name: string;
+  project_status?: ProjectStatus;
   production: EnvChild;
   main_branch: string;
   env_server_price: number;
@@ -446,6 +450,7 @@ export interface ApiInstance extends RuntimeHealth {
   version: string;
   state: InstanceState;
   state_label: string;
+  project_status?: ProjectStatus;
   workers: number;
   storage_gb: number;
   billing_cycle: "monthly" | "yearly";

@@ -174,7 +174,7 @@ npm run lint           # tsc --noEmit
 npm run test:coverage
 ```
 
-CI (`.github/workflows/ci.yml`) runs the SPA tests + build, the Odoo tests (`saas_core`, `saas_website`), the CSRF lint, gitleaks, the operator `make test`, and a trivy scan of both images on every PR.
+Automatic CI checks are temporarily disabled for fast deployment. CI (`.github/workflows/ci.yml`) can be run manually from Actions for SPA tests/build, all four production Odoo addon suites, CSRF lint, gitleaks, operator tests and image scanning. CD deploys pushes to `main` directly without waiting for these checks; see [06-CICD.md](06-CICD.md).
 
 ---
 

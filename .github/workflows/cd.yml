@@ -1,9 +1,7 @@
 name: CD
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -18,33 +16,20 @@ permissions:
 
 # Never cancel an in-progress database migration or Helm upgrade.
 concurrency:
-  # Ignored/failed CI events must not replace a pending production release.
   group: >-
-    delivery-${{ ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)) && 'production' || github.run_id }}
+    delivery-${{ github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'production' || github.run_id }}
   cancel-in-progress: false
 
 jobs:
-  validate:
-    # Manual releases validate here; automatic releases reuse the completed CI run.
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/ci.yml
-
   plan:
-    needs: validate
-    # workflow_run can be privileged: accept successful same-repository main pushes only.
+    # Temporary direct deployment: no CI validation prerequisite.
     if: >-
-      always() && !cancelled() &&
-      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && needs.validate.result == 'success') ||
-       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' &&
-        github.event.workflow_run.head_repository.full_name == github.repository))
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
-      ci_run_id: ${{ steps.plan.outputs.ci_run_id }}
       operator: ${{ steps.plan.outputs.operator }}
       backup: ${{ steps.plan.outputs.backup }}
       saas: ${{ steps.plan.outputs.saas }}
@@ -55,13 +40,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
       - name: Compare with last completely successful delivery
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-          CI_RUN_ID: ${{ github.event.workflow_run.id || github.run_id }}
+          TARGET_SHA: ${{ github.sha }}
           FORCE_FULL: ${{ inputs.full || false }}
           CLUSTERS: ${{ vars.DEPLOY_CLUSTERS }}
         run: |
@@ -104,7 +88,6 @@ jobs:
           fi
           {
             echo "sha=$TARGET_SHA"
-            echo "ci_run_id=$CI_RUN_ID"
             echo "tag=sha-$TARGET_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           } >> "$GITHUB_OUTPUT"
           {
@@ -112,6 +95,33 @@ jobs:
             echo "Base: ${base:-first/full release}; target: $TARGET_SHA"
             echo "$selection"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  package:
+    needs: plan
+    if: needs.plan.outputs.saas == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/veltnex/package-lock.json
+      - name: Install frontend build dependencies
+        working-directory: frontend/veltnex
+        run: npm ci
+      - name: Build SPA without tests or typechecking
+        working-directory: frontend/veltnex
+        run: npx --no-install vite build
+      - name: Package control plane and freshly built SPA
+        run: tar -czf /tmp/saas-release.tar.gz control-plane
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saas-release
+          path: /tmp/saas-release.tar.gz
+          retention-days: 14
 
   images:
     needs: plan
@@ -150,21 +160,6 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           provenance: true
           sbom: true
-
-      - name: Scan the published digest on both architectures
-        env:
-          IMAGE_REPOSITORY: ${{ matrix.repository }}
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          set -euo pipefail
-          curl -fsSL -o "$RUNNER_TEMP/trivy.tar.gz" \
-            https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz
-          tar xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
-          for platform in linux/amd64 linux/arm64; do
-            "$RUNNER_TEMP/trivy" image --platform "$platform" \
-              --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --skip-version-check \
-              "$REGISTRY/$NAMESPACE/$IMAGE_REPOSITORY@$IMAGE_DIGEST"
-          done
 
   operator:
     needs: [plan, images]
@@ -216,9 +211,10 @@ jobs:
           scripts/deploy/operator.sh
 
   saas:
-    needs: [plan, images, operator]
+    needs: [plan, package, images, operator]
     if: >-
       always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.saas == 'true' &&
+      needs.package.result == 'success' &&
       (needs.plan.outputs.images == '[]' || needs.images.result == 'success') &&
       (needs.plan.outputs.clusters == '[]' || needs.operator.result == 'success')
     runs-on: ubuntu-latest
@@ -231,9 +227,7 @@ jobs:
         with:
           name: saas-release
           path: release
-          run-id: ${{ needs.plan.outputs.ci_run_id }}
-          github-token: ${{ github.token }}
-      - name: Upload tested release and deploy both systemd services
+      - name: Upload built release and deploy both systemd services
         env:
           TARGET_SHA: ${{ needs.plan.outputs.sha }}
           SSH_HOST: ${{ secrets.SAAS_SSH_HOST }}

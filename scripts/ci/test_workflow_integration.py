@@ -26,11 +26,11 @@ def evaluate(expression, **context):
 
 class WorkflowConditions(unittest.TestCase):
     def needs(self, images='[]', clusters='[]', saas='true', image_result='skipped',
-              operator_result='skipped', saas_result='success'):
+              operator_result='skipped', saas_result='success', package_result='success'):
         return NS(plan=NS(result='success', outputs=NS(images=images, clusters=clusters,
                                                       saas=saas, tag='release')),
                   images=NS(result=image_result), operator=NS(result=operator_result),
-                  saas=NS(result=saas_result), validate=NS(result='skipped'))
+                  saas=NS(result=saas_result), package=NS(result=package_result))
 
     def test_saas_only_release_runs_despite_skipped_compute_jobs(self):
         self.assertTrue(evaluate(CD['jobs']['saas']['if'], needs=self.needs()))
@@ -52,23 +52,24 @@ class WorkflowConditions(unittest.TestCase):
         self.assertFalse(evaluate(CD['jobs']['delivered']['if'],
                                   needs=self.needs(saas_result='failure')))
 
-    def test_only_trusted_successful_push_ci_can_start_automatic_release(self):
-        for conclusion, event, repo, expected in [
-            ('success', 'push', 'owner/repo', True),
-            ('failure', 'push', 'owner/repo', False),
-            ('cancelled', 'push', 'owner/repo', False),
-            ('success', 'pull_request', 'fork/repo', False),
-            ('success', 'push', 'fork/repo', False),
+    def test_only_main_push_or_manual_run_can_start_release(self):
+        for event, ref, expected in [
+            ('push', 'refs/heads/main', True),
+            ('workflow_dispatch', 'refs/heads/main', True),
+            ('push', 'refs/heads/dev', False),
+            ('workflow_dispatch', 'refs/heads/dev', False),
+            ('workflow_run', 'refs/heads/main', False),
+            ('pull_request', 'refs/heads/main', False),
         ]:
-            github = NS(event_name='workflow_run', ref='refs/heads/main',
-                        repository='owner/repo', run_id=456,
-                        event=NS(workflow_run=NS(conclusion=conclusion, event=event,
-                                                head_branch='main', head_repository=NS(full_name=repo))))
-            self.assertEqual(bool(evaluate(CD['jobs']['plan']['if'], github=github,
-                                           needs=self.needs())), expected)
-            # Ignored completions cannot displace pending production deployments.
+            github = NS(event_name=event, ref=ref, run_id=456)
+            self.assertEqual(bool(evaluate(CD['jobs']['plan']['if'], github=github)), expected)
             group = CD['concurrency']['group'].removeprefix('delivery-')
             self.assertEqual(evaluate(group, github=github), 'production' if expected else 456)
+
+    def test_failed_or_skipped_package_blocks_saas(self):
+        for result in ['failure', 'skipped', 'cancelled']:
+            self.assertFalse(evaluate(CD['jobs']['saas']['if'],
+                                      needs=self.needs(package_result=result)))
 
 
 class PlannerIntegration(unittest.TestCase):
@@ -115,7 +116,7 @@ else:
             env = dict(os.environ, PATH=f'{fake}:{os.environ["PATH"]}',
                        GITHUB_REPOSITORY='owner/repo', GITHUB_OUTPUT=str(output),
                        GITHUB_STEP_SUMMARY=str(path / 'summary'), GITHUB_SHA='0' * 40,
-                       GITHUB_RUN_ID='456', GITHUB_RUN_ATTEMPT='1', CI_RUN_ID='789',
+                       GITHUB_RUN_ID='456', GITHUB_RUN_ATTEMPT='1',
                        TARGET_SHA=head, LATEST='f' * 40 if stale else head,
                        BASE=base, FIRST=str(first).lower(), LEGACY=str(legacy).lower(),
                        FORCE_FULL=str(full).lower(), CLUSTERS=clusters)
@@ -124,13 +125,12 @@ else:
             outputs = dict(line.split('=', 1) for line in output.read_text().splitlines()) if output.exists() else {}
             return result, outputs, head
 
-    def test_saas_only_uses_tested_sha_and_original_ci_artifact(self):
+    def test_saas_only_uses_selected_release_sha(self):
         result, outputs, head = self.execute('frontend/veltnex/src/App.tsx', clusters='')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(outputs['saas'], 'true')
         self.assertEqual(outputs['images'], '[]')
         self.assertEqual(outputs['sha'], head)
-        self.assertEqual(outputs['ci_run_id'], '789')
 
     def test_backup_only_matrix_and_legacy_receipt(self):
         result, outputs, _ = self.execute('compute/tools/backup-tool/run-backup.sh', legacy=True)

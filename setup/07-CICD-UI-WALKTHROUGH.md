@@ -92,7 +92,7 @@ Open **Settings → Secrets and variables → Actions → Variables → New repo
 | `IMAGE_NAMESPACE` | Your Docker Hub username or organization |
 | `DEPLOY_CLUSTERS` | `["production-cluster"]` |
 
-The Odoo test job is enabled automatically. The previous `RUN_ODOO_TESTS` repository variable is no longer used and can be removed if you created it. Failed Odoo runs upload an `odoo-test-diagnostics` artifact containing the test log for investigation.
+Automatic tests are temporarily disabled. Pushes to `main` deploy directly; no extra variable is needed. CI, including the Odoo suite, remains available through **Actions → CI → Run workflow**. The previous `RUN_ODOO_TESTS` variable is unused. Cancel any already-running CI manually on its Actions page.
 
 These are repository variables, rather than secrets inside an environment. Additional clusters require additional environments, each containing its own two cluster secrets, and their names added to this JSON list.
 
@@ -207,7 +207,7 @@ scp scripts/deploy/saas-deploy.sh ADMIN_USER@main.eagle-tech.info:/tmp/saas-depl
 sudo install -o root -g root -m 755 /tmp/saas-deploy.sh /usr/local/sbin/saas-deploy
 ```
 
-Repeat this installation whenever the reviewed deployment script changes. The workflow calls this root-owned installed script and verifies that its SHA-256 checksum matches the tested version before uploading the release. An outdated script blocks deployment before services are stopped.
+Repeat this installation whenever the reviewed deployment script changes. The workflow calls this root-owned installed script and verifies that its SHA-256 checksum matches the release version before uploading the release. An outdated script blocks deployment before services are stopped.
 
 ## 11. Create server configuration and sudo permission
 
@@ -274,10 +274,10 @@ Once this succeeds:
 
 1. Ensure the CI/CD files are committed and pushed to `main`.
 2. Open **GitHub → Actions → CD** and inspect the push-triggered run, or select **Run workflow → main**, keeping `full=true` for the first full delivery.
-3. Watch the CI validation run, then the automatic CD run for image publishing/scanning, cluster deployment, SaaS deployment, and the final delivery receipt. Automatic CD reuses that successful CI run and its artifact. Manual CD runs perform validation first.
+3. Watch Actions → CD: frontend packaging and image publishing run in parallel, followed by cluster deployment, SaaS deployment, and the final delivery receipt. Push and manual CD runs bypass tests, lint, typechecks and security scans in the current temporary mode.
 4. Verify the portal, both SaaS services, operator rollout, and a tenant backup/restore smoke test.
 
-New pushes cancel superseded CI runs for the same branch. Production deployments finish once started; queued superseded commits skip delivery. Failed or cancelled CI completions cannot replace a queued production delivery.
+CI has no automatic push/PR trigger in the current mode. Production deployments finish once started; queued superseded commits skip delivery. CI results do not gate CD.
 
 Before the first release, arrange the backup retention and off-server copies described in [06-CICD.md](06-CICD.md). SaaS deployment stops both services during the backup and addon upgrade, then starts them again.
 

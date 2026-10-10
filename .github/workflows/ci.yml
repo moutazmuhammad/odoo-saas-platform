@@ -1,20 +1,12 @@
 name: CI
 
-# Checks for PRs, development branches, and the reusable CD validation gate.
-# ARCH-007 — block merges that break the SPA typecheck, the Odoo test suite,
-# or the Compute operator. Runs on every PR and on pushes to the long-lived
-# branches.
-#
-# Monorepo layout (see /README.md): control-plane/ (Odoo), frontend/
-# (veltnex), compute/ (the Kubernetes operator). Each job below checks out
-# the whole repo (default) and scopes itself to its component's directory.
+# Automatic validation is temporarily disabled at the user's request.
+# Run CI manually from Actions when checks are wanted; CD deploys independently.
 on:
   workflow_call:
-  pull_request:
-  push:
-    branches: [main, newhosting, architecture-evolution]
+  workflow_dispatch:
 
-# A newer push to the same ref cancels the older in-flight run.
+# A newer manually requested CI run on the same ref cancels the older run.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

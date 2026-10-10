@@ -2,17 +2,19 @@
 
 The repository includes `.github/workflows/ci.yml` and `.github/workflows/cd.yml`.
 
+**Temporary fast deployment mode:** pushes to `main` deploy directly through CD. Automatic tests, typechecks, lint and security scans are disabled. CI remains available through **Actions → CI → Run workflow**; it does not gate deployment. Builds, deployment readiness checks, backups and HTTP health checks remain enabled. Existing CI runs can be stopped with **Cancel workflow** on their Actions page.
+
 For step-by-step setup through the GitHub UI, including the DigitalOcean cluster and `main.eagle-tech.info` server commands, start with [07-CICD-UI-WALKTHROUGH.md](07-CICD-UI-WALKTHROUGH.md).
 Complete the server setup in [02](02-SAAS-SERVER-SETUP.md) and cluster setup in [03a](03a-MICROK8S-CLUSTER-SETUP.md) or [03b](03b-DOKS-CLUSTER-SETUP.md) first. CI needs no deployment secrets. CD needs the configuration below; adding workflow files alone does not connect production.
 
 ## 1. How delivery works
 
-1. PRs and pushes to `main`, `newhosting`, and `architecture-evolution` run CI: frontend coverage/typecheck/build, tests for all four production Odoo addons, Go vet/unit/envtest, secret scanning, container vulnerability scanning, deployment script tests, backup tests and chart checks.
-2. A push to **main** runs CI once. A newer push cancels the older CI run for that branch. Automatic CD starts only from a successful CI push on main in this repository; it checks out that exact tested commit and downloads the SaaS artifact from that CI run. Failed, cancelled, PR and fork CI completions cannot deploy or displace a queued production delivery. Manual CD runs call the reusable CI workflow as their required validation gate. No deployment secrets are inherited by validation.
-3. After validation, CD compares the target commit with the last fully delivered commit. A successful `delivered-<tested SHA>` artifact records that baseline. The SHA comes from the receipt, since a workflow_run delivery may have a different default-branch workflow SHA. Failed/partial deployments do not advance it, so a later push retries outstanding changes. The first delivery, missing/expired baseline, or non-ancestor history rebuilds everything. A superseded queued commit skips delivery.
-4. Selected images are published for **linux/amd64 and linux/arm64**, with BuildKit caching, SBOM and provenance. The published digest is scanned for both architectures before cluster deployment; a failed scan blocks rollout even if publication succeeded. Tags are unique: `sha-<40-character SHA>-<run ID>-<attempt>`; images are never published as `latest`.
+1. A push to **main** starts CD immediately. Manual CD also deploys directly. Neither waits for CI. PRs do not run automatic tests in this temporary mode.
+2. CD compares the target commit with the last fully delivered commit. A successful `delivered-<SHA>` artifact records that baseline, including compatibility with earlier CI-triggered deliveries. Failed/partial deployments do not advance it, so a later push retries outstanding changes. The first delivery, missing/expired baseline, or non-ancestor history rebuilds everything. A superseded queued commit skips delivery.
+3. The selected frontend release and container images build **in parallel**. The frontend uses Vite directly, without tests or TypeScript checking, and is packaged with the control-plane addons in a `saas-release` artifact in the same CD run.
+4. Selected images are published for **linux/amd64 and linux/arm64**, with BuildKit caching, SBOM and provenance. No vulnerability scan runs in CD during this temporary mode. Tags are unique: `sha-<40-character SHA>-<run ID>-<attempt>`; images are never published as `latest`.
 5. Each configured Kubernetes cluster gets CRDs explicitly applied and a Helm upgrade with readiness checks and automatic Helm rollback on failure. Backup-only changes update the backup and restore image flags without rebuilding the operator.
-6. The SaaS deploy waits for required cluster deployments, checks that the installed root-owned deployment script matches the tested version, uploads the frontend-built control-plane artifact from the successful CI run, creates an isolated Python environment, drains/stops both services, backs up the database/filestore/config, upgrades all four addons, switches code/environment symlinks, restarts both services and checks HTTP health.
+6. The SaaS deploy waits for its package and required cluster deployments, checks that the installed root-owned deployment script matches the release source, uploads the built artifact, creates an isolated Python environment, drains/stops both services, backs up the database/filestore/config, upgrades all four addons, switches code/environment symlinks, restarts both services and checks HTTP health.
 7. Only complete success records the delivery baseline. The production concurrency lock never cancels a running deployment. GitHub may replace pending runs; cumulative comparison carries their changes forward.
 
 | Changed paths | Published/deployed |
@@ -21,9 +23,9 @@ Complete the server setup in [02](02-SAAS-SERVER-SETUP.md) and cluster setup in 
 | `compute/tools/backup-tool/**` | Backup image; operator Helm settings for backup and restore |
 | `control-plane/**`, `frontend/**`, `scripts/generate-customer-docs.py` | SaaS addons + freshly built SPA as one release |
 | `.github/workflows/**`, `scripts/ci/**`, `scripts/deploy/**` | All owned components |
-| Documentation only | Validation; no production changes |
+| Documentation only | No build or production changes |
 
-The control plane runs natively with systemd; it does not need a new Docker image. Official Odoo/PostgreSQL, BuildKit and vendor images are upstream images and are not rebuilt by this repository. Customer tenant images continue to build from their connected Git repositories through the runtime pipeline in [04](04-IMAGES-AND-REGISTRY.md#3-tenant-image-pipeline-customer-git-repos). A platform push does not rebuild every customer's image or change their pinned image. Vendor infrastructure releases (Traefik, storage, monitoring, cert-manager) stay under the cluster setup guides; this workflow validates chart-related changes and deploys the operator chart only.
+The control plane runs natively with systemd; it does not need a new Docker image. Official Odoo/PostgreSQL, BuildKit and vendor images are upstream images and are not rebuilt by this repository. Customer tenant images continue to build from their connected Git repositories through the runtime pipeline in [04](04-IMAGES-AND-REGISTRY.md#3-tenant-image-pipeline-customer-git-repos). A platform push does not rebuild every customer's image or change their pinned image. Vendor infrastructure releases (Traefik, storage, monitoring, cert-manager) stay under the cluster setup guides; CD deploys the operator chart when its files change.
 
 ## 2. GitHub variables and environments
 
@@ -35,7 +37,7 @@ Open **Settings → Secrets and variables → Actions**. Add these as **reposito
 | `IMAGE_NAMESPACE` | `moutazmuhammad` or your registry organization/path; required |
 | `DEPLOY_CLUSTERS` | JSON array of GitHub environment names: `["production-doks", "production-microk8s"]`; required and nonempty |
 
-**Odoo validation:** the test job runs automatically in CI and CD validation; the previous `RUN_ODOO_TESTS` opt-in has been removed. It installs and tests all four production addons against a temporary CI database. Failed test runs retain `odoo.log` and coverage data in the `odoo-test-diagnostics` artifact on the Actions run page. Diagnose the first ERROR/FAIL and its traceback; normal shutdown messages alone do not identify the failure.
+**Odoo validation:** disabled automatically along with the other tests. Run CI manually when you want the full validation suite, including all four production addons. The previous `RUN_ODOO_TESTS` opt-in is unused. Manual failed runs retain logs and coverage in the `odoo-test-diagnostics` artifact.
 
 Create these environments in **Settings → Environments**. Restrict deployment branches to `main`. Required reviewers are optional; leave them unset for fully automatic deployment.
 
@@ -141,14 +143,14 @@ The first successful release moves existing real `platform`/`venv` directories t
 ## 4. First run and routine use
 
 1. Add repository variables, environments and secrets; prepare the server and cluster pull credentials.
-2. Merge/push these files to `main`. After CI passes, the first CD delivery selects every owned component.
-3. Inspect Actions → CI for validation, then Actions → CD: plan → image publishing/scanning → cluster deployment → SaaS deployment → receipt. Manual CD runs include their own validation step.
+2. Merge/push these files to `main`. CD starts immediately; the first delivery selects every owned component.
+3. Inspect Actions → CD: plan → frontend packaging and image publishing in parallel → cluster deployment → SaaS deployment → receipt. CI runs only when explicitly requested manually.
 4. Check the portal, both systemd services, operator rollout and a tenant backup/restore smoke test.
-5. Future pushes deploy changed components. To rebuild everything, choose **Actions → CD → Run workflow → main**, keeping `full=true`. Set `full=false` to use the cumulative diff. Manual runs on other branches skip validation/delivery.
+5. Future pushes deploy changed components. To rebuild everything, choose **Actions → CD → Run workflow → main**, keeping `full=true`. Set `full=false` to use the cumulative diff. Manual CD runs on other branches skip delivery.
 
 The server-side SaaS release ID is `<run ID>-<attempt>-<SHA>`. Re-running a failed workflow creates a new attempt and release directory. Do not retry a failed database upgrade blindly: inspect the error and maintenance state first.
 
-Changing the production branch requires updating the CI push branches, CD workflow_run branch filter and trusted-event guards, branch lookup/baseline query, and environment branch restrictions together. Adding a new image build context requires adding its change selection and image matrix entry in `scripts/ci/changes.py` / `cd.yml`.
+Changing the production branch requires updating the CD push branch and event guards, concurrency group, branch lookup/baseline query, and environment branch restrictions together. Adding a new image build context requires adding its change selection and image matrix entry in `scripts/ci/changes.py` / `cd.yml`.
 
 ## 5. Failures, backups and rollback
 
@@ -164,7 +166,9 @@ kubectl -n odoo-system rollout status deployment/odoo-operator
 
 Backups here are local pre-upgrade recovery points. Arrange scheduled off-server copies of these backups and the configuration as described in guide 02. Retain older release directories/virtualenvs and images until rollback is no longer needed; clean them and local backups according to your retention policy. No automatic cleanup deletes recovery data.
 
-## 6. Local verification and builds
+## 6. Optional local verification and builds
+
+These commands are for manually requested verification; they are not executed by direct CD. To restore automatic validation, restore CI push/PR triggers and make CD depend on successful CI again.
 
 ```bash
 python3 -m unittest discover -s scripts/ci -p 'test_*.py'

@@ -33,7 +33,7 @@ flowchart LR
 | Earlier plan | What changes here | Why |
 | --- | --- | --- |
 | A · Backup & Restore | Its Phase 0 (disk safety, alert webhook) and Phase 1 (streaming restore with swap) move into P0. Its Phases 2–4 (integrity checks, restic) move into P1. Added: a backup client per PostgreSQL major, start times spread by tenant, and a nightly second-region copy for Production. The shared backup key is narrowed to the backup bucket now (P0.5). After files move to Spaces, backup Jobs run in a platform namespace (P3.4). restic repositories stay in the backup bucket, not the customer bucket, so a customer key can never delete backups. | Restore safety and key scope are launch blockers; Odoo.sh keeps backups in 3 locations. |
-| B · Spaces Filestore | The customer bucket and scoped key are created at provisioning from P1.4, before the filestore uses them, so every new customer already has one. The filestore itself is P3.1. The module ships through the operator's existing platform-addons ConfigMap (`compute/operator/internal/resources/platformaddons.go`), so stock images still work. Sessions in PostgreSQL join the same module (P3.2). Adapter order follows the version range decided in open question 1: 17–19 first, then 16 and 20, and older generations only if that range is sold. | Statelessness needs sessions too; the platform-addons path already delivers server-wide modules without custom images. |
+| B · Spaces Filestore | The customer bucket and scoped key are created at provisioning from P1.4, before the filestore uses them, so every new customer already has one. The filestore itself is P3.1. The module ships through the operator's existing platform-addons ConfigMap (`compute/operator/internal/resources/platformaddons.go`), so stock images still work. Sessions in PostgreSQL join the same module (P3.2). All four generations are built, because Odoo 11–20 are sold (P1.7): 17–19 first, then 16 and 20, then 14–15, then 11–13. | Statelessness needs sessions too; the platform-addons path already delivers server-wide modules without custom images. |
 | C · Cluster Capacity | Its Phase 1 (capacity reader, placement, alerts) is P0.12. Its Phase 2 (size classes) grows from Standard and Large to four pools (Standard, Large, Shared, Build) with labels and taints (P2.5). Its Phases 3 and 4 (moves, limited simultaneous updates) are P3.5 and P3.6. Decisions recorded on 2026-10-11 stand. | Non-production and builds must not take Production headroom. |
 | D · PostgreSQL | Sleep (its P1) and the shared CloudNativePG cluster (its P2) are both P2. Production tuning (its P3) is P3.3. HA and PITR (its P4) are P4.1 and P4.2. Added: archive of long-idle dev environments (P2.3), and idle detection from Traefik metrics in Prometheus, so nothing new has to collect traffic. | Same design; the order follows the business case. |
 
@@ -41,22 +41,43 @@ flowchart LR
 
 Before launch. These close the risks in the security review rated Critical or High.
 
-**P0.1 Least-privilege cluster access for the control plane.**
-- **What:** replace the cluster-admin binding with a ClusterRole that allows only:
-    - OdooInstance CRUD;
-    - get and list on nodes, pods and events;
-    - `pods/exec` and `pods/log` in `odoo-tenant-*`;
-    - Jobs, ConfigMaps and Secrets in `odoo-builds`;
-    - read on the `cluster-autoscaler-status` ConfigMap.
+**P0.1 Least-privilege cluster access for the control plane.** Launch blocker.
+- **Today:** bootstrap binds the control plane's ServiceAccount to `cluster-admin` (`scripts/bootstrap/bootstrap.py:215`). The control plane is internet-facing (107 public API routes), so a compromise of it means every cluster.
+- **What the control plane actually calls** (grep of `saas_core`):
+    - OdooInstance get, create, patch and delete;
+    - namespaces read and list;
+    - deployments listed across all namespaces;
+    - in tenant namespaces: pods (list, read, create, delete, exec, log), secrets (create, read, patch, replace), jobs, a cron job read, a deployment patch for restarts, config maps, network policies, a service-account read and a lease read;
+    - the Prometheus service proxy;
+    - Jobs and pods in `odoo-builds` and the toolbox namespace;
+    - one config map in `kube-system`.
+- **Design:** RBAC cannot grant "every namespace named `odoo-tenant-*`", so the grant is split three ways.
+    1. **ClusterRole `veltnex-control-plane`:**
+        - OdooInstances: get, list, watch, create, patch, delete;
+        - namespaces: get, list;
+        - nodes: get, list (for P0.12);
+        - deployments: list;
+        - nothing else cluster-wide.
+    2. **Namespaced Roles in fixed namespaces:**
+        - `odoo-builds`: jobs, pods, pods/log, secrets, config maps, network policies;
+        - the toolbox namespace: pods and pods/exec;
+        - `monitoring`: get `services/proxy` on the Prometheus service only (`resourceNames`);
+        - `kube-system`: get on the `cluster-autoscaler-status` config map only.
+    3. **Per-tenant RoleBinding created by the operator:** in every tenant namespace, bound to a ClusterRole `veltnex-tenant-access` that lists the tenant verbs above. The operator already creates every per-namespace object, so the binding appears and disappears with the namespace.
+- **Steps:**
+    1. Add the ClusterRoles, Roles and ServiceAccount to the operator chart (`compute/charts/odoo-operator/templates/controlplane-rbac.yaml`).
+    2. Add the RoleBinding to the operator's tenancy reconcile (`compute/operator/internal/resources/tenancy.go`). The operator's own ClusterRole needs `bind` on `veltnex-tenant-access` only.
+    3. Move namespace creation for `odoo-builds` and the toolbox namespace into bootstrap, so the control plane never needs `create namespace`.
+    4. Bootstrap issues the new kubeconfig (`bootstrap.py`, `register_cluster.py`), and the docs drop cluster-admin (`setup/03a`, `03b` §7, `09`).
+    5. On the test cluster, upload the new kubeconfig to the `saas.server` and run the full UI walk-through. Log every 403 from the driver; each one is a missing verb to add or a call to remove.
+    6. Repeat per cluster. Remove the cluster-admin binding only after a clean week.
+- **Rollout and rollback:** no tenant is touched; switching kubeconfig is instant. Rollback means re-uploading the old kubeconfig while its binding still exists.
+- **Done when:**
+    - `kubectl auth can-i --list --as=<sa>` shows no cluster-wide write except OdooInstances;
+    - `can-i delete nodes` and `can-i get secrets -n kube-system` are both "no";
+    - the walk-through passes: deploy, shell, logs, build, backup, restore, metrics, delete.
 
-  Re-issue the kubeconfig for each registered cluster.
-- **Where:** `scripts/bootstrap/bootstrap.py` (the `cluster-admin` roleRef near line 215), `setup/03b-DOKS-CLUSTER-SETUP.md` §7, `setup/03a-MICROK8S-CLUSTER-SETUP.md`, `control-plane/saas_core/drivers/kubernetes_driver.py` (list every API call it makes so the role matches).
-- **Done when:** the full customer UI walk-through passes on DOKS with the new kubeconfig, and `kubectl auth can-i --list` for the account shows no cluster-wide write outside the list above.
-
-**P0.2 Platform database recovery.**
-- **What:** move the platform database to a managed PostgreSQL with PITR, or archive WAL to Spaces with a nightly base backup. Run a restore drill into a throwaway server.
-- **Where:** `setup/02-SAAS-SERVER-SETUP.md`, `scripts/deploy/saas-deploy.sh` (keep its pre-deploy dump), `scripts/bootstrap/ubuntu_saas.py`.
-- **Done when:** a restore to a point 10 minutes ago brings up a working control plane, and the restore drill is written down as a runbook.
+**P0.2 Platform database recovery.** Closed on 2026-10-11: the owner runs the platform database backups outside the repository. Keep one item: a short restore-drill runbook in `setup/02-SAAS-SERVER-SETUP.md`, practised monthly.
 
 **P0.3 Private registry and pinned platform images.**
 - **What:**
@@ -75,27 +96,58 @@ Before launch. These close the risks in the security review rated Critical or Hi
 - **Where:** `compute/operator/internal/resources/backup.go:73`, `restore.go:94`, `compute/tools/backup-tool/run-restore.sh`, `control-plane/saas_core/models/saas_instance.py` (`_do_restore_backup`, `_do_copy_dbs`).
 - **Done when:** the acceptance checks in Appendix A for disk safety, large streaming restore, safe failure and bad upload all pass.
 
-**P0.5 Backup credentials and coverage.**
-- **What:**
-    - Replace the account-wide backup key with a key granted only on the backup bucket.
-    - Encrypt the backup keys in settings.
-    - Ship `pg_dump` and `pg_restore` for every PostgreSQL major the CRD allows, or narrow the CRD enum to 16 until they ship.
-    - Spread backup start times by a hash of the tenant id across 01:00–05:00.
-- **Where:** `control-plane/saas_core/models/res_config_settings.py:100`, `control-plane/saas_core/models/saas_instance.py` (`_sync_scheduled_backup`, pass a `schedule`), `control-plane/saas_core/drivers/kubernetes_driver.py` (`set_scheduled_backup`), `compute/tools/backup-tool/Dockerfile`, `compute/operator/api/v1alpha1/odooinstance_types.go:54`.
+**P0.5 Backup key scope.** Launch blocker.
+- **Today:**
+    - One S3 key from settings (`ir.config_parameter`, plain text, `res_config_settings.py:100`) is copied into a Secret in every tenant namespace (`saas_instance.py:3787`, `set_scheduled_backup`).
+    - Anyone who can read one tenant's Secret can list, read and delete every customer's backups.
+- **Steps**, each shippable on its own:
+    1. **Narrow the key:** create a Spaces key granted only on the backup bucket, not account-wide. Save it in settings. `_cron_sync_scheduled_backups` rewrites each tenant Secret within 30 minutes. Revoke the old key once every backup has run once with the new one.
+    2. **Encrypt it:** move the access and secret key to encrypted fields (`EncryptedChar`, which fails closed after P0.8).
+    3. **Survive deletion:** turn on versioning for the backup bucket, with a lifecycle rule that expires old versions after 30 days. A leaked key can then delete nothing for good. Verify that Spaces supports noncurrent-version expiry before relying on it; if not, add a nightly copy to the second-region bucket (P1.5) under a different key.
+    4. **Make reading useless:** use a per-tenant restic repository password (Appendix A, Workstream B, in P1.5), so the bucket key alone cannot read any backup.
+    5. **Remove it from tenant namespaces:** in P3.4, backup Jobs move to a platform namespace once Odoo is stateless.
+- **Residual risk until P3.4:** a staff member, or an operator bug that reads tenant Secrets, still holds a working key. Steps 3 and 4 limit what that key can do.
+- **Rollout and rollback:** a key change is a Secret update with no pod restart; the next backup uses it. Rollback means restoring the old key before it is revoked.
 - **Done when:**
-    - a PostgreSQL 17 test tenant backs up and restores;
-    - 20 test tenants show 20 distinct start minutes;
-    - the old key is revoked and backups still run.
+    - the old key is revoked and every tenant's next backup succeeds;
+    - the new key cannot list any other bucket;
+    - a deleted backup object is restored from its previous version.
 
-**P0.6 Guard PostgreSQL major-version changes.**
-- **What:** reject a change of `spec.database.version` across majors on an existing instance. Major upgrades go only through dump and restore into a new instance.
-- **Where:** `compute/operator/internal/controller/validate.go`, `compute/operator/internal/controller/database.go:256`; envtest in `validate_test.go`.
-- **Done when:** patching 16 to 17 on a live CR leaves the database running and sets a clear condition.
+**P0.6 Guard PostgreSQL major-version changes.** Launch blocker.
+- **Today:** the CRD allows 13–17 (`odooinstance_types.go:54`). A changed `spec.database.version` changes the image, and `syncDatabasePod` deletes the pod (`controller/database.go:256`). The new major then refuses the old data directory, so the tenant is down with no automatic way back.
+- **Design, two layers:**
+    1. **API server:** a CEL transition rule on `spec.database`, `self.version == oldSelf.version`, with the message "PostgreSQL major version cannot change in place; restore into a new environment". This blocks every writer (control plane, kubectl, Helm) without a webhook. The CRD already uses CEL for `replicas`.
+    2. **Operator, defence in depth:** record the running major in `status.database.runningMajor` from the StatefulSet's image. If the spec ever disagrees, keep the old image and set a `DatabaseMajorChangeRejected` condition.
+- **The upgrade path customers get instead:** "Upgrade PostgreSQL" creates a new environment on the new major from the latest backup (streaming restore, P0.4). The customer tests it and then switches. An in-place dump and reload at a customer-chosen time can come later, like pool moves.
+- **Control plane:** the version field is read-only after creation in the UI and the API.
+- **Where:** `compute/operator/api/v1alpha1/odooinstance_types.go`, `compute/operator/internal/controller/database.go`, `validate.go`, the CRD in `compute/charts/odoo-operator/crds`, `control-plane/saas_core/drivers/kubernetes_driver.py`.
+- **Done when:**
+    - `kubectl patch` from 16 to 17 on a live CR is refused by the API server and the database keeps serving;
+    - an envtest covers both layers;
+    - a same-major image change still applies.
 
-**P0.7 Wildcard TLS for base domains.**
-- **What:** one wildcard certificate per base domain through DNS-01, shared by all environments on that domain. HTTP-01 per host remains only for custom domains (P1.1).
-- **Where:** `compute/operator/internal/resources/tls.go`, `route.go`, `control-plane/saas_core/drivers/kubernetes_driver.py:525` (issuer), `control-plane/saas_core/models/saas_domain.py`, `scripts/bootstrap/doks.sh` (DNS provider credentials for cert-manager), `setup/03b-DOKS-CLUSTER-SETUP.md`.
-- **Done when:** 60 test environments are created in one day on one base domain with valid TLS, and Let's Encrypt is asked for no new certificate per environment.
+**P0.7 Wildcard TLS for base domains.** Launch blocker.
+- **Today:**
+    - Every environment gets its own Let's Encrypt certificate through the cluster issuer (`kubernetes_driver.py:525`; operator `tls.go`, `route.go`), using HTTP-01.
+    - Let's Encrypt allows 50 new certificates per registered domain per 7 days, so the base domain caps new environments at about 50 a week.
+    - A failed or rate-limited issuance leaves a new environment without TLS.
+- **Design:**
+    - **The certificate:** one certificate `*.<base-domain>` per base domain, issued with DNS-01. Use cert-manager's DigitalOcean DNS solver if the zone is on DigitalOcean DNS, otherwise the DNS provider's cert-manager webhook. The DNS token is a Secret in the `cert-manager` namespace, scoped to DNS records only.
+    - **Serving it:** the certificate lives in Traefik's namespace and is listed in Traefik's default `TLSStore`. Ingresses for base-domain hosts carry no per-tenant certificate, and Traefik serves the wildcard by SNI.
+    - **CRD:** add `spec.domain.tls.mode: PerHost | Shared` (default `Shared` for base-domain hosts). In `Shared` mode the operator creates no Certificate and sets the router TLS annotation.
+    - **Custom domains** (P1.1) keep HTTP-01 per host. Those certificates count against the customer's domain, not ours.
+- **Steps:**
+    1. Vendored cert-manager: add the DNS-01 ClusterIssuer and the token Secret (`scripts/bootstrap/doks.sh`, `setup/03b`).
+    2. Create the wildcard Certificate and the Traefik `TLSStore` (chart values in `compute/charts/vendor/traefik`).
+    3. Operator: add `Shared` mode in `tls.go` and `route.go`, plus tests in `route_test.go`.
+    4. Control plane: new environments use `Shared` (`kubernetes_driver.py`).
+    5. Existing tenants: switch them to `Shared` in batches of 10. Traefik already holds the wildcard, so the switch is a plain Ingress update. After a day, delete the old per-tenant Certificates and Secrets.
+    6. Update the bootstrap readiness check (`bootstrap-check.<domain>`) to expect the wildcard.
+- **Rollout and rollback:** an HTTP poll on a switched tenant shows no TLS error and no failed request. Rollback means setting `PerHost` again; the old Secret is kept for a day for that reason.
+- **Done when:**
+    - 60 environments are created in one day on one base domain, all with valid TLS;
+    - Let's Encrypt shows one order per base domain;
+    - P0.11's certificate-expiry alert covers the wildcard.
 
 **P0.8 Request hardening.**
 - **What:** take the client IP from the proxy-appended address only. Make secret encryption fail closed: refuse to start without a key. Encrypt `webhook_secret`.
@@ -129,12 +181,22 @@ Before launch. These close the risks in the security review rated Critical or Hi
 - **Where:** `control-plane/saas_core/models/saas_server.py` (`_has_capacity_for`), `control-plane/saas_core/models/saas_instance.py` (`_allocate_servers`, `_cron_retry_pending_provision`).
 - **Done when:** the Appendix C Phase 1 acceptance checks pass.
 
-**P0.13 Tenant network policy.**
-- **What:** allow egress on 465 and 587 to the internet. Deny cluster, service and VPC ranges on 443. Inside a namespace, allow only Odoo to PostgreSQL on 5432 plus the existing gateway paths.
-- **Where:** `compute/operator/internal/resources/networkpolicy.go`, `compute/operator/internal/controller/network.go`.
+**P0.13 Tenant network policy: mail allowed, cluster blocked.** Launch blocker.
+- **Today:** tenant egress allows DNS, PostgreSQL inside the namespace, and TCP 443 to any address (`networkpolicy.go`). This causes two problems:
+    - outgoing mail over SMTP (465, 587) and Odoo's incoming mail servers (IMAP 993, POP3 995) are blocked;
+    - 443 reaches in-cluster addresses as well as the internet.
+- **Design:**
+    - Egress to the internet is allowed on 443, 465, 587, 993 and 995 through an `ipBlock` of `0.0.0.0/0` with `except` set to the pod, service and VPC ranges.
+    - The ports come from an operator value, `tenantEgress.ports`, so operations can add one (for example 2525 or LDAP 636) without a release.
+    - The ranges come from `tenantEgress.privateCIDRs`, filled by bootstrap from the cluster's settings (`doctl kubernetes cluster get`).
+    - Port 25 stays closed: DigitalOcean blocks it on Droplets, and customers should use submission ports.
+    - Inside a namespace, ingress narrows to Odoo to PostgreSQL on 5432, plus the existing gateway and ACME paths.
+- **Where:** `compute/operator/internal/resources/networkpolicy.go`, `compute/operator/internal/controller/network.go`, `compute/charts/odoo-operator/values.yaml` and `values.schema.json`, `scripts/bootstrap/doks.sh`.
+- **Rollout and rollback:** a NetworkPolicy change applies live with no pod restart. Rollback means the previous chart values.
 - **Done when:**
-    - a customer's outgoing SMTP on 587 works;
-    - `curl https://kubernetes.default` from a tenant pod times out;
+    - a tenant sends mail through an external SMTP server on 587;
+    - an incoming mail server on IMAP 993 fetches;
+    - `curl https://kubernetes.default` and a connection to another tenant's pod IP both fail;
     - the UI walk-through passes.
 
 **P0.14 Safe cancel.**
@@ -147,14 +209,75 @@ Before launch. These close the risks in the security review rated Critical or Hi
 - **Where:** `compute/charts/odoo-operator/templates/deployment.yaml:45`, `values.yaml`.
 - **Done when:** deleting the leader pod hands over within 30 seconds with no reconcile lost.
 
+**P0.16 Spread backup start times.** Launch blocker.
+- **Today:** `set_scheduled_backup` defaults to `0 2 * * *`, and `_sync_scheduled_backup` never passes a schedule (`kubernetes_driver.py:701`, `saas_instance.py:3787`). Every tenant's backup starts at 02:00, all competing for node disk, network and the bucket at once.
+- **Design:**
+    - A deterministic minute per tenant, `offset = crc32(subdomain) % 240`, with the schedule `M H * * *`, where `H = 1 + offset // 60` and `M = offset % 60`. That spreads backups across 01:00–04:59, and the same tenant always gets the same time.
+    - CronJob `timeZone: UTC` is set explicitly.
+    - A customer-chosen backup window can come later; the hash stays the default.
+- **Steps:** compute the schedule in `_sync_scheduled_backup` and pass it to `set_scheduled_backup`. `_cron_sync_scheduled_backups` re-patches every tenant, so existing tenants move within 30 minutes with no restart.
+- **Done when:** 20 test tenants show 20 different start minutes, and all of the next night's backups succeed.
+
+**P0.17 Backup tools for every PostgreSQL major.** Launch blocker.
+- **Today:**
+    - The backup-tool image installs only `postgresql-client-16` (`compute/tools/backup-tool/Dockerfile:27`), while the CRD allows 13–17. pg_dump 16 refuses a 17 server, so backups of a PostgreSQL 17 tenant fail.
+    - The control plane does not set `spec.database.version` today, so live tenants run the default 16 and the failure is latent. It becomes real with the Odoo 11–20 matrix (P1.7).
+    - On-demand dumps and downloads run `pg_dump` inside the Odoo container with the Odoo image's own client (`saas_instance_backup.py:73`, `exec_stream_out`). That client may not match the server either.
+- **Design:**
+    - The backup-tool image installs `postgresql-client-13` to `-17` from the PGDG repository its base image already carries.
+    - The scripts take `PG_MAJOR` from the operator, which sets it from `spec.database.version`, and use `/usr/lib/postgresql/$PG_MAJOR/bin`.
+    - The scripts check `server_version_num` first and stop with a clear message on a mismatch.
+    - On-demand dumps and restores run in the PostgreSQL container, whose tools always match its server, instead of the Odoo container.
+- **Where:** `compute/tools/backup-tool/Dockerfile`, `run-backup.sh`, `run-restore.sh`, `test_backup_restore.py`, `compute/operator/internal/resources/backup.go` and `restore.go` (env), `control-plane/saas_core/models/saas_instance_backup.py`, `kubernetes_driver.py` (container choice in `exec_stream_out`).
+- **Until it ships:** the control plane offers only majors the backup image supports.
+- **Done when:** the shell test matrix passes for 13–17, and on the test cluster a PostgreSQL 17 tenant backs up, downloads a dump and restores.
+
+**P0.18 Pricing floor at 60% gross margin.**
+- **What:**
+    - Price at least 2.5 × the package cost for 60% gross margin. The target at scale is 70% or more, which means at least 3.3 × cost.
+    - The cost comes from the formula in the architecture's cost section.
+    - Add-ons (HA, PITR, extra storage, awake staging, dedicated pools) follow the same floor.
+    - The margin cron alerts when any live plan or add-on falls below 60%.
+    - Margin never comes from cutting Production isolation, backups or security.
+- **Where:** `control-plane/saas_billing/models/saas_pricing.py` (cost floor), the margin cron in `saas_billing`, `control-plane/saas_core/models/saas_plan.py` (`_package()` cost inputs).
+- **Done when:** a plan priced below the floor cannot be published, and the margin report lists every plan with its cost and margin.
+
 ## P1 · Launch features
 
 Before launch. These are the Odoo.sh gaps that would lose deals.
 
-**P1.1 Custom domains.**
-- **What:** a customer adds a domain to an environment, points a CNAME at the base domain, and the platform checks DNS before issuing an HTTP-01 certificate for that host. Several domains per environment; one is primary.
-- **Where:** new model in `control-plane/saas_core/models/saas_domain.py` (or `saas_instance_domain.py`), the CRD `spec.domain` (`odooinstance_types.go:174`; add extra hosts), `compute/operator/internal/resources/route.go`, `tls.go`, `frontend/veltnex` (domain settings page).
-- **Done when:** a domain added from the UI serves Odoo with a valid certificate within 5 minutes, and removing it leaves the base URL working.
+**P1.1 Custom domains for Production.**
+- **What the customer gets:** they connect their own domain, for example `erp.customer.com`, to their Production environment instead of the Veltnex default domain. Staging and dev keep the default domain.
+- **Flow:**
+    1. In the portal, the customer adds `erp.customer.com` to Production. Several domains are allowed (a cap such as 5 is assumed), and one is marked primary.
+    2. The portal shows the DNS record to create:
+        - for a subdomain: a CNAME to `<sub>.<base-domain>`;
+        - for an apex domain: an A record to the cell's load balancer IP, with a warning that the IP can change, so a `www` subdomain or the provider's CNAME flattening is better.
+    3. **Verification:** the platform checks that the name resolves to the cell's load balancer. It then fetches a one-time token over HTTP at `/.well-known/veltnex/<token>`, which the platform serves for that host until verified.
+    4. **Activation:**
+        - the control plane adds the host to the CR;
+        - the operator adds an Ingress rule and a Certificate for the host (HTTP-01, cert-manager);
+        - the state moves to Active.
+    5. **Primary domain:** the control plane sets `web.base.url` (and `web.base.url.freeze`) in the Production database, so links and emails use the customer's domain. The default domain keeps working; redirecting it to the primary is a per-project option.
+- **Safety:**
+    - A host is unique across all tenants (database constraint), so one customer cannot claim another's domain.
+    - DNS is re-checked daily. If the domain stops pointing to Veltnex for 7 days, the host is disabled and the customer is told, which prevents stale routing and takeover.
+    - Certificates for custom domains count against the customer's registered domain, not ours.
+- **Removal:** the host leaves the Ingress and its Certificate is deleted. If it was primary, `web.base.url` returns to the default domain.
+- **Where:**
+    - new model `saas.instance.domain` in `control-plane/saas_core/models/` (host, state, primary, verification token, last check);
+    - `kubernetes_driver.py`;
+    - CRD `spec.domain.extraHosts` (`odooinstance_types.go:174`);
+    - operator `route.go`, `tls.go` and `networkpolicy.go` (the ACME path on 8089 already exists);
+    - `control-plane/saas_website/controllers/api.py` (add, verify, set primary, remove);
+    - `frontend/veltnex` (domain settings page, Arabic strings in `ar.json`).
+- **Rollout:** adding or removing a host updates the Ingress only; Odoo is not restarted.
+- **Done when:**
+    - a domain added in the UI serves Odoo with a valid certificate within 5 minutes;
+    - an HTTP poll on the default domain shows zero failed requests during add and remove;
+    - links in an emailed invitation use the primary domain;
+    - a second tenant cannot add a host that is already taken;
+    - a domain whose DNS is removed is disabled after the grace period.
 
 **P1.2 Git submodules.**
 - **What:** fetch submodules recursively, with the same credentials for the same host, and record each submodule's commit in the build. Deploy keys per submodule are out of scope.
@@ -188,6 +311,15 @@ Before launch. These are the Odoo.sh gaps that would lose deals.
 - **Where:** `control-plane/saas_core/controllers/container_logs.py`, `kubernetes_driver.py` (`open_log_stream`, add `previous`), `frontend/veltnex`.
 - **Done when:** after a forced crash, the customer sees the crash trace in the portal.
 
+**P1.7 Odoo 11–20 support matrix.** Decided on 2026-10-11: versions 11 to 20 are sold.
+- **What:**
+    - **Matrix:** a support matrix of Odoo version, image, Python and PostgreSQL major. Map versions onto as few PostgreSQL majors as possible, because each major means another shared non-production cluster per cell (P2.2). Odoo 11–12 must be tested on PostgreSQL 13, the CRD minimum, before they are offered. If they fail there, they run on a dedicated database only.
+    - **Chart:** `supportedOdooVersions` covers 11.0–20.0.
+    - **Filestore adapters:** all four generations of Appendix B, built in this order: 17–19, then 16 and 20, then 14–15, then 11–13.
+    - **Portal notice:** versions Odoo no longer patches carry a notice and an upgrade offer.
+- **Where:** `compute/charts/odoo-operator/values.yaml`, `control-plane/saas_core/models/saas_odoo_version.py` (PostgreSQL major per version), `kubernetes_driver.py` (set `spec.database.version` from it), `setup/04-IMAGES-AND-REGISTRY.md`.
+- **Done when:** one tenant per version from 11 to 20 deploys, builds a custom addon, backs up and restores on the test cluster.
+
 ### Gate A · Launch
 
 - [ ] All P0 and P1 items done.
@@ -200,7 +332,8 @@ For the first 100 environments. These cut the cost of non-production.
 
 **P2.1 Sleep and wake for non-production.** Appendix D, "Sleep when idle".
 - **What:**
-    - **Idle detection:** no requests for N hours (open question 3), read from Traefik's per-service request counter in Prometheus with one query per cluster.
+    - **Idle windows (decided 2026-10-11):** Production never sleeps; Development sleeps after 1 idle hour, Staging after 2, Trials after 1.
+    - **Idle detection:** no requests within the window, read from Traefik's per-service request counter in Prometheus with one query per cluster.
     - **Sleep:** scale Odoo to 0, keeping the database and volumes.
     - **Wake:** a small activator in `odoo-system` serves a "Waking up your server…" page for sleeping hosts (Traefik fallback route), patches the CR, and redirects once ready. Wakes are rate-limited per cell.
     - **Opt-out:** "Always awake" is a per-environment option, billed.
@@ -346,7 +479,7 @@ On demand.
 - **Done when:** a new customer in the new region is provisioned end to end with no change to existing customers.
 
 **P4.6 Control plane on two application servers.**
-- **What:** two Odoo application servers and one `saas-jobs` worker in front of the managed database from P0.2, with sticky sessions at the proxy.
+- **What:** two Odoo application servers and one `saas-jobs` worker in front of the platform database (a managed PostgreSQL becomes worth it at this point), with sticky sessions at the proxy.
 - **Where:** `setup/02-SAAS-SERVER-SETUP.md`, `scripts/deploy/saas-deploy.sh`.
 
 ## Open questions
@@ -355,8 +488,6 @@ See [ARCHITECTURE-TARGET.md](ARCHITECTURE-TARGET.md#open-questions-and-assumptio
 
 | Question | Blocks |
 | --- | --- |
-| Odoo version range sold at launch | P3.1 adapter order |
-| Sleep window and whether staging sleeps | P2.1 |
 | Archive window | P2.3 |
 | Whether trials share the cluster | P2.2 |
 | Second region for backup copies | P1.5 |

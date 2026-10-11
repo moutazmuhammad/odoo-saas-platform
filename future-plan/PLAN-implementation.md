@@ -897,7 +897,7 @@ Before launch. "Launch blocker" marks a finding from the review.
             - its memory limit is set from server size (*assumed* 256 MiB on 4 GB servers, 512 MiB on 8 GB and up), not a fixed 2 GB;
             - short retention;
             - its PostgreSQL collector off (oec.sh's lesson);
-            - the control plane reads it through Traefik at a private path allowed only from the platform's IPs, so there is no central streaming parent to pay for.
+            - it listens on `127.0.0.1` only, and the control plane reads it over the platform's SSH connection. That leaves no public route and no central streaming parent to pay for (implemented in `scripts/byos/install.sh`).
     - **Done differently:**
         - **Pinned images:** images and binaries are pinned by version and digest, not `stable` or `v3.6`.
         - **Verified script:** the script itself is signed, and its checksum is shown in the portal.
@@ -916,13 +916,13 @@ Before launch. "Launch blocker" marks a finding from the review.
     - blue-green updates through Traefik (start new, health-check, switch, stop old), reusing the old `SshDockerDriver` "shadow" approach;
     - the update gate (`-u`) runs before the switch.
 - **Backups:** **none on Free** (upgrade needed, with a warning the customer acknowledges). Daily to the customer's own S3 from Starter. Veltnex off-site restic, with the P1.5 consistency model, from Pro.
-- **Monitoring:** health and resources through Netdata (read through Traefik from the platform's IPs only), `pg_slow_queries.log` and the performance collector on the server, with results fetched over SSH.
+- **Monitoring:** health and resources through Netdata (local only, read over SSH), `pg_slow_queries.log` and the performance collector on the server, with results fetched over SSH.
 - **Treated as untrusted:** the server gets only its own credentials. Data it reports is trusted only for that customer.
 - **Billing:** by subscription (P1.33). Sleep is off. There is no infrastructure SLA.
 - **Detach:** the platform key, Netdata's platform route and the platform's scheduled jobs are removed, and data stays on the server.
 - **Where:**
     - `control-plane/saas_core/drivers/docker_compose_driver.py` (new; start from `git show cb9038d^:control-plane/saas_core/drivers/ssh_docker_driver.py`);
-    - `scripts/byos/install.sh` (generated per token);
+    - `scripts/byos/install.sh`: **written** (clean-room; preflight, fresh-server rule, confirmation, registration, firewall, per-server key, Docker with fingerprint check, Traefik and Netdata pinned by digest, verify, `--check`, `--detach`), with tests in `scripts/tests/test_byos_install.py`. The control plane's `/byos/v1/*` registration API it calls does not exist yet;
     - `saas_core/models/saas_server.py` (`runtime = docker_compose`, owner, encrypted per-server SSH key);
     - the registration and progress API in `saas_website`;
     - `frontend/veltnex` (Servers page, install command).

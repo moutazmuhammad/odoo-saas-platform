@@ -805,7 +805,7 @@ flowchart TB
 - **Kept:** a one-time token command, an OS and resource preflight, registration and progress, safe re-runs, the apt-lock wait, swap, inotify limits for Odoo 19 and later, and UFW with only 80 and 443 inbound.
 - **Different:**
     - **owner decision (2026-10-11):** the customer provides a **fresh, empty server dedicated to Veltnex**. So, as at oec.sh, the firewall is reset (UFW to SSH, 80 and 443), CSF is disabled, a **platform SSH key goes into `root`**, and Netdata is installed;
-    - **safeguards:** a fresh-server preflight that refuses non-empty servers and needs the customer's confirmation; **one key per server** (never one platform-wide key), encrypted, restricted with `from=` to the control plane's IPs, every command audited, removed on detach; Netdata's memory limited by server size and read only from the platform's IPs;
+    - **safeguards:** a fresh-server preflight that refuses non-empty servers and needs the customer's confirmation; **one key per server** (never one platform-wide key), encrypted, restricted with `from=` to the control plane's IPs, every command audited, removed on detach; Netdata's memory limited by server size, listening on localhost only and read over SSH;
     - **residual risk, accepted by the owner:** a full control-plane compromise reaches every BYOS server as root, so control-plane hardening is part of BYOS security.
 
 **Implementation order (owner):**

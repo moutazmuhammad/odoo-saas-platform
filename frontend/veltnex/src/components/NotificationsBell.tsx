@@ -13,7 +13,7 @@ interface Note {
 }
 
 function link(i: ApiInstance) {
-  return i.is_hosting ? `/my/instances/${i.id}/environments` : `/my/instances/${i.id}`;
+  return `/my/instances/${i.id}/environments`;
 }
 
 /** Lightweight notifications derived from live account signals (unpaid

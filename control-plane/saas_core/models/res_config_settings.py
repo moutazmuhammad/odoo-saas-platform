@@ -38,7 +38,7 @@ class ResConfigSettings(models.TransientModel):
     # saas.instance._get_retained_snapshot_fee().
 
     # ========== Website Sections ==========
-    # Toggle visibility of the public Services / Hosting sections.
+    # Toggle visibility of the public Hosting section.
     # These intentionally don't use ``config_parameter=`` — that path
     # routes through Odoo's set_param() which unlinks the row on False,
     # and through a Boolean coercion that reads ``bool('False')`` (True!)
@@ -47,13 +47,6 @@ class ResConfigSettings(models.TransientModel):
     # set_values below, storing the literal strings ``'True'`` and
     # ``'False'``. The templates check ``!= 'False'`` so an unset row
     # (fresh install) defaults to shown.
-    saas_show_services_section = fields.Boolean(
-        string='Show Services Section',
-        default=True,
-        help='Show the "Services" section (catalog and detail pages) on '
-             'the public website. Turn off if you only want to sell '
-             'Hosting at this stage. The data is preserved.',
-    )
     saas_show_hosting_section = fields.Boolean(
         string='Show Hosting Section',
         default=True,
@@ -135,10 +128,6 @@ class ResConfigSettings(models.TransientModel):
         res = super().set_values()
         ICP = self.env['ir.config_parameter'].sudo()
         ICP.set_param(
-            'saas_master.show_services_section',
-            'True' if self.saas_show_services_section else 'False',
-        )
-        ICP.set_param(
             'saas_master.show_hosting_section',
             'True' if self.saas_show_hosting_section else 'False',
         )
@@ -158,9 +147,6 @@ class ResConfigSettings(models.TransientModel):
     def get_values(self):
         res = super().get_values()
         ICP = self.env['ir.config_parameter'].sudo()
-        res['saas_show_services_section'] = ICP.get_param(
-            'saas_master.show_services_section', 'True',
-        ) != 'False'
         res['saas_show_hosting_section'] = ICP.get_param(
             'saas_master.show_hosting_section', 'True',
         ) != 'False'

@@ -139,7 +139,6 @@ class SaasInstance(models.Model):
     @api.onchange('saas_product_id')
     def _onchange_saas_product_id(self):
         if self.saas_product_id:
-            self.odoo_version_id = self.saas_product_id.odoo_version_id
             if self.plan_id and self.plan_id.saas_product_ids and self.saas_product_id not in self.plan_id.saas_product_ids:
                 self.plan_id = False
     docker_server_id = fields.Many2one(
@@ -946,42 +945,33 @@ class SaasInstance(models.Model):
     def create(self, vals_list):
         for vals in vals_list:
             # Block trial if the client has already used their free trial.
-            # Separate trials for services vs hosting.
             # Use SELECT ... FOR UPDATE to prevent race conditions.
             if vals.get('is_trial') and vals.get('partner_id'):
-                # Determine if this is a hosting trial
-                is_hosting_trial = False
-                if vals.get('saas_product_id'):
-                    product = self.env['saas.product'].browse(vals['saas_product_id'])
-                    is_hosting_trial = product.is_hosting
-
-                trial_field = 'saas_hosting_trial_used' if is_hosting_trial else 'saas_trial_used'
                 # Lock + read the trial flag on the COMMERCIAL entity (company),
                 # not the ordering contact — so child contacts can't each get a
-                # fresh trial. (trial_field is a fixed column name, not input.)
+                # fresh trial.
                 partner = self.env['res.partner'].browse(vals['partner_id'])
                 commercial = partner.commercial_partner_id or partner
                 self.env.cr.execute(
-                    "SELECT %s FROM res_partner "
-                    "WHERE id = %%s FOR UPDATE" % trial_field,
+                    "SELECT saas_hosting_trial_used FROM res_partner "
+                    "WHERE id = %s FOR UPDATE",
                     (commercial.id,),
                 )
                 row = self.env.cr.fetchone()
-                trial_type = 'hosting' if is_hosting_trial else 'service'
                 if row and row[0]:
                     raise ValidationError(
-                        _("Client '%s' has already used their free %s trial. "
-                          "Only one trial per type is allowed.")
-                        % (partner.name, trial_type)
+                        _("Client '%s' has already used their free trial. "
+                          "Only one trial is allowed.")
+                        % partner.name
                     )
                 # Once the partner has paid for a server, the trial no
                 # longer applies — the server is paid.
-                if partner._saas_has_paid_instance(hosting=is_hosting_trial):
+                if partner._saas_has_paid_instance():
                     raise ValidationError(
-                        _("Client '%s' already owns a paid %s instance. "
+                        _("Client '%s' already owns a paid project. "
                           "The free trial is no longer available — the "
                           "server is paid.")
-                        % (partner.name, trial_type)
+                        % partner.name
                     )
             subdomain = vals.get('subdomain', '')
             if subdomain and not vals.get('db_user'):
@@ -1016,15 +1006,14 @@ class SaasInstance(models.Model):
         return super().unlink()
 
     def _sync_partner_trial(self):
-        """Mark the trial as used on the COMMERCIAL entity (one per type:
-        service / hosting) so it can't be farmed across child contacts."""
+        """Mark the trial as used on the COMMERCIAL entity so it can't be
+        farmed across child contacts."""
         self.ensure_one()
         trial_days = int(self.env['ir.config_parameter'].sudo().get_param(
             'saas_master.trial_days', '14',
         ))
         end_date = fields.Date.today() + datetime.timedelta(days=trial_days)
-        self.partner_id._saas_mark_trial_used(
-            hosting=self.is_hosting, end_date=end_date)
+        self.partner_id._saas_mark_trial_used(end_date=end_date)
 
     # ========== Computed ==========
     @api.depends('subdomain', 'domain_id.name')
@@ -1068,7 +1057,7 @@ class SaasInstance(models.Model):
             return plan
         engine = self.env['saas.pricing.engine']
         cfg = engine._rate_config('hosting')
-        res = Plan._recommended_resources('hosting', cfg['min_workers'])
+        res = Plan._recommended_resources(cfg['min_workers'])
         # Floor-aware monthly figure for the lowest spec. yearly_price stays 0
         # so the (12×floor) yearly check is skipped — neither value is ever
         # billed for an environment server.
@@ -3628,10 +3617,9 @@ END $$;
         filestore tar) onto this SAME, already-running instance.
 
         Unlike the ssh_docker/restic era, this is no longer restricted
-        to hosting instances: the operator's ``spec.backup`` mechanism
+        to particular instances: the operator's ``spec.backup`` mechanism
         produces the same db.dump + filestore.tar.gz shape for every
-        instance type, so a service instance's single-DB "full
-        instance" backup is restorable the same way.
+        instance.
         """
         self.ensure_one()
         if self.state != 'running':
@@ -6005,17 +5993,12 @@ END $$;
         """Suspend running trial instances whose client trial period has expired.
 
         A partner is considered expired only when their trial end date is
-        set AND in the past AND at least one trial flag is True. The
-        previous predicate broke the OR/AND grouping and would match any
-        partner with a flag regardless of date, mass-suspending paying
-        customers.
+        set AND in the past AND the trial flag is True.
         """
         today = fields.Date.today()
         expired_partners = self.env['res.partner'].search([
             ('saas_trial_end_date', '!=', False),
             ('saas_trial_end_date', '<=', today),
-            '|',
-            ('saas_trial_used', '=', True),
             ('saas_hosting_trial_used', '=', True),
         ])
         if not expired_partners:

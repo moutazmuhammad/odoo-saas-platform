@@ -12,14 +12,12 @@ import { DataTable, type Column } from "@/components/DataTable";
 import { CustomerFilter } from "@/components/CustomerFilter";
 import { useAuth } from "@/context/AuthContext";
 import { useInstances } from "@/context/InstancesContext";
-import { useSections } from "@/lib/useSections";
 import { formatBytes, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { groupProjects, projectStatus } from "@/lib/projects";
 import type { ApiInstance } from "@/lib/api";
 
-const projectLink = (i: ApiInstance) =>
-  i.is_hosting ? `/my/instances/${i.id}/environments` : `/my/instances/${i.id}`;
+const projectLink = (i: ApiInstance) => `/my/instances/${i.id}/environments`;
 
 export default function Instances() {
   const { instances, loading, error } = useInstances();
@@ -45,9 +43,6 @@ export default function Instances() {
   const categoryProjects = isStaff ? projects : category === "my" ? ownedProjects : sharedProjects;
   const customerProjects = categoryProjects.filter((i) => !isStaff || !customerId || String(i.customer?.id) === customerId);
   const navigate = useNavigate();
-  const sections = useSections();
-  // Send "Create instance" to whichever offering is live.
-  const createTo = sections.hosting ? "/hosting" : "/services";
   const [query, setQuery] = React.useState("");
   const [onlyActive, setOnlyActive] = React.useState(false);
 
@@ -78,7 +73,6 @@ export default function Instances() {
       ),
     },
     ...(isStaff ? [{ key: "customer", header: i18nText("Customer"), sortValue: (i: ApiInstance) => i.customer?.name || "", render: (i: ApiInstance) => i.customer?.name || "—" }] : []),
-    { key: "type", header: i18nText("Type"), hideBelow: "sm", sortValue: (i) => (i.is_hosting ? 0 : 1), className: "text-muted", render: (i) => (i.is_hosting ? i18nText("Hosting") : i18nText("Service")) },
     { key: "region", header: i18nText("Region"), hideBelow: "md", className: "text-muted", render: (i) => i.region || "—" },
     { key: "size", header: i18nText("Size"), hideBelow: "lg", className: "text-muted", render: (i) => i18nText("{0} workers · {1}", [i.workers, formatBytes(i.storage_gb)]) },
     { key: "status", header: i18nText("Status"), sortValue: (i) => projectStatus(i), render: (i) => <ProjectStatusBadge project={i} /> },
@@ -92,7 +86,7 @@ export default function Instances() {
         title={i18nText("Projects")}
         subtitle={isStaff ? i18nText("Manage and monitor projects across all customers.") : i18nText("Manage your own projects and projects shared with you.")}
         actions={canCreate &&
-          <Button onClick={() => navigate(createTo)}>
+          <Button onClick={() => navigate("/hosting")}>
             <Plus className="size-4" />{i18nText("Create project")}</Button>
         }
       />
@@ -151,7 +145,7 @@ export default function Instances() {
                 ? i18nText("Try a different search term or filter.")
                 : !isStaff && category === "shared" ? i18nText("Projects shared by other owners will appear here.") : canCreate ? i18nText("Create your first project to deploy an Odoo environment.") : i18nText("Ask your customer owner to grant you access to a project.")
             }
-            action={canCreate && (isStaff || category === "my") && !query && !onlyActive && (!isStaff || !customerId) && <Button onClick={() => navigate(createTo)}>{i18nText("Create project")}</Button>}
+            action={canCreate && (isStaff || category === "my") && !query && !onlyActive && (!isStaff || !customerId) && <Button onClick={() => navigate("/hosting")}>{i18nText("Create project")}</Button>}
           />
         }
         columns={columns}

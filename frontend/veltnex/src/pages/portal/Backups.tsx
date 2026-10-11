@@ -94,15 +94,11 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
     }
   };
 
-  // Snapshots shown here: hosting takes FULL-INSTANCE snapshots (its
-  // per-database/on-demand backups live on the Databases page); managed
-  // services take per-DB snapshots and have no Databases page, so this is
-  // their only backup view. Default to the hosting filter while the
-  // instance is still loading to avoid a flicker.
-  const isManagedService = !!instance && !instance.is_hosting;
-  // On-demand snapshots have their own page (Snapshots.tsx).
+  // Snapshots shown here are FULL-INSTANCE snapshots; per-database
+  // backups live on the Databases page and on-demand snapshots have their
+  // own page (Snapshots.tsx).
   const snapshots = backups
-    ? backups.filter((b) => (isManagedService ? !b.is_full_instance : b.is_full_instance) && b.source !== "snapshot")
+    ? backups.filter((b) => b.is_full_instance && b.source !== "snapshot")
     : null;
 
   // Poll while a snapshot is in progress.
@@ -118,9 +114,7 @@ export default function Backups({ embedId }: { embedId?: number } = {}) {
         <h1 className="text-2xl font-bold tracking-tight">{i18nText("Backups")}<HelpHint anchor="snapshots" className="ms-1.5" />
         </h1>
         <p className="mt-1 text-sm text-muted">
-          {isManagedService
-            ? i18nText("Automatic daily backups of your service. Restore any backup with one click.")
-            : i18nText("Automatic daily backups of your whole server, kept for the last 7 days. Restore any of them onto this server. For a copy you keep as long as you like, take a snapshot. To export your data, download a backup of your database from the Databases page.")}
+          {i18nText("Automatic daily backups of your whole server, kept for the last 7 days. Restore any of them onto this server. For a copy you keep as long as you like, take a snapshot. To export your data, download a backup of your database from the Databases page.")}
         </p>
       </div>
 

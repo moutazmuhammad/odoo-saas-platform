@@ -15,11 +15,6 @@
                          Layout notes
                          - Sections are ordered from the most-used (what the
                            customer picks & pays) down to operational/infra knobs.
-                         - "Hosting / Services" pairs always show Hosting in the
-                           FIRST column and Services in the SECOND, with a header
-                           row once per card instead of a hint on every line.
-                         - Every dual card reuses the column grid: label = col-4,
-                           Hosting = col-2, Services = col-2.
                          ============================================================ -->
 
                     <!-- ==================== 1. Website ==================== -->
@@ -28,11 +23,6 @@
                                  string="Show Hosting Section"
                                  help="When off, the Hosting nav link, footer link, home-page card and /hosting routes are hidden. Data is preserved.">
                             <field name="saas_show_hosting_section"/>
-                        </setting>
-                        <setting id="saas_show_services_section_setting"
-                                 string="Show Services Section"
-                                 help="When off, the Services nav link, footer link, home-page card and /services routes are hidden. Data is preserved.">
-                            <field name="saas_show_services_section"/>
                         </setting>
                     </block>
 

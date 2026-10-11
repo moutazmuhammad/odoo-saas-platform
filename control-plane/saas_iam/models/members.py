@@ -388,7 +388,7 @@ class IamPasswordGate(models.AbstractModel):
                    '/saas/api/v1/iam/password/change', '/saas/api/v1/iam/verification/finish',
                    '/saas/api/v1/iam/phone/setup', '/saas/api/v1/iam/phone/send', '/saas/api/v1/iam/phone/verify'}
         pending = bool(request.env.uid and request.env.user.sudo()._onboarding_pending())
-        if pending and (path == '/my' or path.startswith('/my/') or path in ('/hosting/order', '/services/order', '/services/custom-order')) and path not in ('/my/change-password', '/my/verify-profile'):
+        if pending and (path == '/my' or path.startswith('/my/') or path == '/hosting/order') and path not in ('/my/change-password', '/my/verify-profile'):
             return request.redirect('/my/change-password')
         if pending and path.startswith('/saas/api/v1/') and path not in allowed:
             password_pending = request.env.user.sudo().iam_initial_password

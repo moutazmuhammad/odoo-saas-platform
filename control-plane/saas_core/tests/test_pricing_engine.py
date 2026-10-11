@@ -30,22 +30,12 @@ class TestPricingEngine(TransactionCase):
             'saas_master.hosting_min_storage': '5',
             'saas_master.hosting_max_storage': '200',
             'saas_master.hosting_yearly_discount_pct': '20',
-            'saas_master.worker_price': '15.0',
-            'saas_master.storage_price_per_gb': '0.5',
-            'saas_master.custom_plan_min_workers': '2',
-            'saas_master.custom_plan_max_workers': '8',
-            'saas_master.custom_plan_min_storage': '5',
-            'saas_master.custom_plan_max_storage': '200',
-            'saas_master.custom_plan_yearly_discount_pct': '20',
             # Floor rates explicitly 0 -> S1 no-op.
             'saas_master.hosting_worker_floor': '0',
             'saas_master.hosting_storage_floor': '0',
-            'saas_master.worker_floor': '0',
-            'saas_master.storage_floor': '0',
             # Minimum monthly charge explicitly 0 -> P1 no-op (keeps the
             # legacy-formula grid deterministic).
             'saas_master.hosting_minimum_monthly': '0',
-            'saas_master.minimum_monthly': '0',
         })
 
     def _set(self, mapping):
@@ -53,12 +43,10 @@ class TestPricingEngine(TransactionCase):
             self.icp.set_param(k, v)
 
     def _rates(self, kind):
-        if kind == 'hosting':
-            return 10.0, 0.3, 20
-        return 15.0, 0.5, 20
+        return 10.0, 0.3, 20
 
     def _grid(self):
-        for kind in ('hosting', 'services'):
+        for kind in ('hosting',):
             for workers in (2, 4, 8):
                 for storage in (5, 50, 200):
                     for billing in ('monthly', 'yearly'):

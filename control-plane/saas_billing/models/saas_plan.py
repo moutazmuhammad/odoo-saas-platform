@@ -10,7 +10,7 @@ class SaasPlan(models.Model):
     this addon adds the commercial shape (price/yearly_price/
     discount_amount/manual_price/the auto-price formula) via _inherit.
     saas_product_ids stays in saas_core (it drives both resource sizing
-    via _onchange_workers_resources AND this addon's _kind()/pricing —
+    via _onchange_workers_resources AND this addon's pricing —
     splitting it further would add cross-boundary decorator entanglement
     for no benefit, the same reasoning as saas.product
     staying entirely in core).
@@ -132,7 +132,7 @@ class SaasPlan(models.Model):
                 rec.is_profitable = True
                 rec.minimum_profitable_price = 0.0
                 continue
-            cfg = engine._rate_config(rec._kind())
+            cfg = engine._rate_config('hosting')
             workers = rec.workers or 0
             storage = int(rec.storage_limit or 0)
             compute_cost = workers * cfg['worker_floor']
@@ -174,10 +174,7 @@ class SaasPlan(models.Model):
         for rec in self:
             if rec.is_trial_plan or not rec.workers:
                 continue
-            kind = 'hosting' if any(
-                p.is_hosting for p in rec.saas_product_ids
-            ) else 'services'
-            cfg = engine._rate_config(kind)
+            cfg = engine._rate_config('hosting')
             floor = engine._cost_floor(cfg, rec.workers, int(rec.storage_limit or 0))
             if floor <= 0:
                 continue
@@ -208,7 +205,7 @@ class SaasPlan(models.Model):
         configurator and the invoice all agree."""
         self.ensure_one()
         engine = self.env['saas.pricing.engine']
-        cfg = engine._rate_config(self._kind())
+        cfg = engine._rate_config('hosting')
         storage = int(self.storage_limit or 0)
         linear = (self.workers * cfg['worker_price']) + (
             storage * cfg['storage_price_per_gb'])

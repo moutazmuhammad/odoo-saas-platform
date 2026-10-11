@@ -15,9 +15,9 @@
             </xpath>
             <xpath expr="//group[@name='sale']" position="after">
                 <group name="saas_trial" string="SaaS Trial">
-                    <field name="saas_trial_used"/>
+                    <field name="saas_hosting_trial_used"/>
                     <field name="saas_trial_end_date"
-                           invisible="not saas_trial_used"/>
+                           invisible="not saas_hosting_trial_used"/>
                 </group>
             </xpath>
         </field>

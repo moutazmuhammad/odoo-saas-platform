@@ -14,9 +14,9 @@ class SaasPlan(models.Model):
         'saas_plan_product_rel',
         'plan_id',
         'product_id',
-        string='Services',
-        help='Services this plan is available for. '
-             'Leave empty to make the plan available for all services.',
+        string='Products',
+        help='Products this plan is available for. '
+             'Leave empty to make the plan available for all products.',
     )
     is_trial_plan = fields.Boolean(
         string='Trial Plan',
@@ -104,7 +104,7 @@ class SaasPlan(models.Model):
 
     # ========== Worker-driven resource sizing ==========
     @api.model
-    def _recommended_resources(self, kind, workers):
+    def _recommended_resources(self, workers):
         """Recommended resource allocation for ``workers`` (the platform's
         equivalent of Odoo's deployment sizing guidance): CPU and RAM.
         Driven by the per-worker Settings so the operator tunes ONE place
@@ -116,12 +116,11 @@ class SaasPlan(models.Model):
         odd worker count.
         """
         icp = self.env['ir.config_parameter'].sudo()
-        prefix = 'hosting' if kind == 'hosting' else 'custom_plan'
         try:
             cpu_per = float(icp.get_param(
-                'saas_master.%s_cpu_per_worker' % prefix, '0.5') or 0.5)
+                'saas_master.hosting_cpu_per_worker', '0.5') or 0.5)
             ram_per = int(icp.get_param(
-                'saas_master.%s_ram_per_worker' % prefix, '512') or 512)
+                'saas_master.hosting_ram_per_worker', '512') or 512)
         except (TypeError, ValueError):
             cpu_per, ram_per = 0.5, 512
         workers = max(int(workers or 0), 0)
@@ -235,7 +234,7 @@ class SaasPlan(models.Model):
         for rec in self:
             if rec.is_trial_plan or not rec.workers:
                 continue
-            vals = rec._recommended_resources(rec._kind(), rec.workers)
+            vals = rec._recommended_resources(rec.workers)
             rec.cpu_limit = vals['cpu_limit']
             rec.ram_limit = vals['ram_limit']
 
@@ -248,13 +247,6 @@ class SaasPlan(models.Model):
                 rec.yearly_price = 0.0
 
     # ========== Automatic resource-based pricing (named tiers) ==========
-    def _kind(self):
-        """'hosting' or 'services' — selects the rate set for this plan."""
-        self.ensure_one()
-        return 'hosting' if any(
-            p.is_hosting for p in self.saas_product_ids
-        ) else 'services'
-
     # _check_trial_plan_zero, _check_price_floor, _auto_price_vals,
     # _onchange_auto_price, _onchange_manual_price, _sync_auto_price,
     # _check_yearly_not_above_monthly_annual, _compute_yearly_discount_pct,

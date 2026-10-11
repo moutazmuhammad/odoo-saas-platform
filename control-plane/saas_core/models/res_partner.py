@@ -7,11 +7,6 @@ from odoo.addons.phone_validation.tools.phone_validation import phone_format
 class ResPartner(models.Model):
     _inherit = 'res.partner'
 
-    saas_trial_used = fields.Boolean(
-        string='Service Trial Used',
-        default=False,
-        help='Whether this client has already used their free service trial.',
-    )
     saas_hosting_trial_used = fields.Boolean(
         string='Hosting Trial Used',
         default=False,
@@ -124,28 +119,25 @@ class ResPartner(models.Model):
         self.ensure_one()
         return self.commercial_partner_id or self
 
-    def _saas_trial_used(self, hosting=False):
+    def _saas_trial_used(self):
         """True if this commercial entity has already consumed its free trial
-        of the given type (checked across all its contacts)."""
+        (checked across all its contacts)."""
         self.ensure_one()
-        commercial = self._saas_commercial()
-        return bool(commercial.saas_hosting_trial_used if hosting
-                    else commercial.saas_trial_used)
+        return bool(self._saas_commercial().saas_hosting_trial_used)
 
-    def _saas_mark_trial_used(self, hosting=False, end_date=None):
+    def _saas_mark_trial_used(self, end_date=None):
         """Record the free trial as consumed on the commercial entity."""
         self.ensure_one()
         commercial = self._saas_commercial()
-        flag = 'saas_hosting_trial_used' if hosting else 'saas_trial_used'
-        if not commercial[flag]:
-            vals = {flag: True}
+        if not commercial.saas_hosting_trial_used:
+            vals = {'saas_hosting_trial_used': True}
             if end_date:
                 vals['saas_trial_end_date'] = end_date
             commercial.write(vals)
 
-    def _saas_has_paid_instance(self, hosting=False):
+    def _saas_has_paid_instance(self):
         """True if this commercial entity already owns a paid (non-trial,
-        non-cancelled) instance of the given type — across ALL its contacts.
+        non-cancelled) project — across ALL its contacts.
         Once they pay for a server, the free trial no longer applies.
 
         ``draft`` and ``pending_payment`` are INCOMPLETE orders — nothing has
@@ -158,7 +150,6 @@ class ResPartner(models.Model):
         return bool(self.env['saas.instance'].sudo().search_count([
             ('partner_id', 'child_of', self._saas_commercial().id),
             ('is_trial', '=', False),
-            ('is_hosting', '=', bool(hosting)),
             ('state', 'not in', ('cancelled', 'cancelled_by_client',
                                  'draft', 'pending_payment')),
         ], limit=1))

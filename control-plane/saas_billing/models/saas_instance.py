@@ -701,8 +701,7 @@ class SaasInstance(models.Model):
         page where the customer pays.
         """
         self.ensure_one()
-        # Snapshots are available to BOTH hosting and managed-services
-        # instances (the one app-level add-on a service gets); only trials
+        # Snapshots are available to every paid project; only trials
         # are excluded.
         if self.is_trial:
             raise UserError(_(
@@ -897,9 +896,7 @@ class SaasInstance(models.Model):
         ``period`` defaults to the instance's own billing period. Price is
         storage-aware + lock-aware via ``_get_daily_backup_price``.
 
-        Snapshots apply to BOTH hosting and services subscribers (the only
-        app-level feature a managed services instance gets); the gate is the
-        subscription flag, not the product type."""
+        The gate is the subscription flag."""
         self.ensure_one()
         if not self.daily_backup_enabled:
             return None
@@ -2143,7 +2140,7 @@ class SaasInstance(models.Model):
         resume them once it's paid. Idempotent — safe to call from the
         renewal cron and from the payment hook."""
         self.ensure_one()
-        # Applies to any instance with the add-on (hosting or services).
+        # Applies to any instance with the add-on.
         if not self.daily_backup_enabled:
             return
         cutoff = fields.Date.today() - relativedelta(

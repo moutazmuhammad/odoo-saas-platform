@@ -30,7 +30,7 @@
             <list string="SaaS Plans">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
-                <field name="saas_product_ids" string="Services" widget="many2many_tags"/>
+                <field name="saas_product_ids" string="Products" widget="many2many_tags"/>
                 <field name="is_trial_plan"/>
                 <field name="is_custom"/>
                 <field name="is_public_tier" string="Public"/>
@@ -59,7 +59,7 @@
                     </div>
                     <group>
                         <group string="General" name="saas_plan_general_group">
-                            <field name="saas_product_ids" string="Services" widget="many2many_tags"/>
+                            <field name="saas_product_ids" string="Products" widget="many2many_tags"/>
                             <field name="sequence"/>
                             <field name="is_trial_plan"/>
                             <field name="is_custom" readonly="1"/>
@@ -102,7 +102,7 @@
                 Create your first SaaS plan
             </p>
             <p>Plans define pricing, resource limits, and features for instances.
-               A plan can be shared across multiple services.</p>
+               A plan can be shared across multiple products.</p>
         </field>
     </record>
 

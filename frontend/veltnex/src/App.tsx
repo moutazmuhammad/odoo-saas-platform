@@ -1,7 +1,6 @@
 import { i18nText } from "@/i18n";
-import { Routes, Route, Navigate, useParams, useSearchParams } from "react-router-dom";
+import { Routes, Route, Navigate, useSearchParams } from "react-router-dom";
 import * as React from "react";
-import { useInstances } from "./context/InstancesContext";
 import { useAuth } from "./context/AuthContext";
 import { Spinner } from "./components/Spinner";
 import { PublicLayout } from "./components/layout/PublicLayout";
@@ -10,8 +9,6 @@ import { ProtectedRoute } from "./components/layout/ProtectedRoute";
 import { useSections } from "./lib/useSections";
 
 import Home from "./pages/Home";
-import Services from "./pages/Services";
-import ServiceDetail from "./pages/ServiceDetail";
 import Hosting from "./pages/Hosting";
 const Docs = React.lazy(() => import("./pages/Docs"));
 const DocArticle = React.lazy(() => import("./pages/DocArticle"));
@@ -23,7 +20,6 @@ import NotFound from "./pages/NotFound";
 
 import Dashboard from "./pages/portal/Dashboard";
 import Instances from "./pages/portal/Instances";
-import InstanceDetail from "./pages/portal/InstanceDetail";
 import InstanceLayout from "./components/layout/InstanceLayout";
 import Databases from "./pages/portal/Databases";
 import Environments from "./pages/portal/Environments";
@@ -48,30 +44,12 @@ function RequireSection({
   section,
   children,
 }: {
-  section: "services" | "hosting";
+  section: "hosting";
   children: React.ReactNode;
 }) {
   const sections = useSections();
   if (!sections[section]) return <Navigate to="/" replace />;
   return <>{children}</>;
-}
-
-// The instance landing page. Hosting projects open straight into the
-// Environments workspace (the section tools live there as in-place tabs);
-// managed Services keep the classic Overview.
-function InstanceHome() {
-  const { id = "" } = useParams();
-  const { getInstance, loading } = useInstances();
-  const inst = getInstance(Number(id));
-  if (!inst && loading) {
-    return (
-      <div className="mt-20 flex justify-center">
-        <Spinner size="lg" label={i18nText("Loading…")} />
-      </div>
-    );
-  }
-  if (inst?.is_hosting) return <Navigate to="environments" replace />;
-  return <InstanceDetail />;
 }
 
 // A signed-in customer's home is their dashboard, not the marketing page.
@@ -93,11 +71,7 @@ export default function App() {
       {/* Public */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<HomeOrDashboard />} />
-        <Route path="/services" element={<RequireSection section="services"><Services /></RequireSection>} />
-        {/* Generic sign-up — not section-gated, so it works hosting-only. */}
         <Route path="/register" element={<Register />} />
-        <Route path="/services/register" element={<RequireSection section="services"><Register /></RequireSection>} />
-        <Route path="/services/:id" element={<RequireSection section="services"><ServiceDetail /></RequireSection>} />
         <Route path="/hosting" element={<RequireSection section="hosting"><Hosting /></RequireSection>} />
         <Route path="/docs" element={<React.Suspense fallback={<Spinner label={i18nText("Loading…")} />}><Docs /></React.Suspense>} />
         <Route path="/docs/:slug" element={<React.Suspense fallback={<Spinner label={i18nText("Loading…")} />}><DocArticle /></React.Suspense>} />
@@ -121,7 +95,8 @@ export default function App() {
           {/* One cohesive instance page: a persistent header (InstanceLayout)
               with the section content swapping in place below it. */}
           <Route path="instances/:id" element={<InstanceLayout />}>
-            <Route index element={<InstanceHome />} />
+            {/* A project opens straight into its Environments workspace. */}
+            <Route index element={<Navigate to="environments" replace />} />
             <Route path="access" element={<ProjectAccess />} />
             <Route path="metrics" element={<Metrics />} />
             <Route path="environments" element={<Environments />} />

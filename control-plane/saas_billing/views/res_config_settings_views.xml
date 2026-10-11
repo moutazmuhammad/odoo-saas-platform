@@ -17,8 +17,7 @@
                 <!-- ==================== 2. Plan Pricing ====================
                      Everything the public configurator reads to quote a price:
                      base rates, the slider bounds, what each worker gets, and
-                     the yearly discount. Hosting and Services share these
-                     knobs, shown side-by-side. -->
+                     the yearly discount. -->
                 <block title="Plan Pricing" name="saas_plan_pricing_container">
                     <setting id="saas_plan_rates_setting"
                              string="Base rates (per month)"
@@ -28,19 +27,16 @@
                                 <tr class="o_light_label">
                                     <th style="width:48%;"/>
                                     <th class="text-center fw-bold">Hosting</th>
-                                    <th class="text-center fw-bold">Services</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_worker_price" string="Per worker"/></td>
                                     <td><field name="saas_hosting_worker_price"/></td>
-                                    <td><field name="saas_worker_price"/></td>
                                 </tr>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_storage_price_per_gb" string="Per GB storage"/></td>
                                     <td><field name="saas_hosting_storage_price_per_gb"/></td>
-                                    <td><field name="saas_storage_price_per_gb"/></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -53,29 +49,24 @@
                                 <tr class="o_light_label">
                                     <th style="width:48%;"/>
                                     <th class="text-center fw-bold">Hosting</th>
-                                    <th class="text-center fw-bold">Services</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_min_workers" string="Min workers"/></td>
                                     <td><field name="saas_hosting_min_workers"/></td>
-                                    <td><field name="saas_custom_plan_min_workers"/></td>
                                 </tr>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_max_workers" string="Max workers"/></td>
                                     <td><field name="saas_hosting_max_workers"/></td>
-                                    <td><field name="saas_custom_plan_max_workers"/></td>
                                 </tr>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_min_storage" string="Min storage (GB)"/></td>
                                     <td><field name="saas_hosting_min_storage"/></td>
-                                    <td><field name="saas_custom_plan_min_storage"/></td>
                                 </tr>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_max_storage" string="Max storage (GB)"/></td>
                                     <td><field name="saas_hosting_max_storage"/></td>
-                                    <td><field name="saas_custom_plan_max_storage"/></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -88,25 +79,21 @@
                                 <tr class="o_light_label">
                                     <th style="width:48%;"/>
                                     <th class="text-center fw-bold">Hosting</th>
-                                    <th class="text-center fw-bold">Services</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_cpu_per_worker" string="CPU / worker (vCPU)"/></td>
                                     <td><field name="saas_hosting_cpu_per_worker"/></td>
-                                    <td><field name="saas_custom_plan_cpu_per_worker"/></td>
                                 </tr>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_ram_per_worker" string="RAM / worker (MB)"/></td>
                                     <td><field name="saas_hosting_ram_per_worker"/></td>
-                                    <td><field name="saas_custom_plan_ram_per_worker"/></td>
                                 </tr>
                             </tbody>
                         </table>
                         <div class="text-muted mt-3">
-                            PostgreSQL is part of every package and sized the same way
-                            (hosting and services):
+                            PostgreSQL is part of every package and sized the same way:
                         </div>
                         <div class="row mt-1">
                             <label for="saas_db_cpu_per_worker" string="DB CPU / worker" class="col-6 o_light_label"/>
@@ -127,14 +114,12 @@
                                 <tr class="o_light_label">
                                     <th style="width:48%;"/>
                                     <th class="text-center fw-bold">Hosting</th>
-                                    <th class="text-center fw-bold">Services</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_yearly_discount_pct" string="Discount"/></td>
                                     <td><field name="saas_hosting_yearly_discount_pct"/></td>
-                                    <td><field name="saas_custom_plan_yearly_discount_pct"/></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -149,9 +134,9 @@
                             </div>
                         </div>
                     </setting>
-                    <setting id="saas_services_estimate_setting"
-                             string="Services: sizing recommendation"
-                             help="Display-only. The concurrent-users-per-worker range shown to help a customer pick a Services size (light → heavy usage).">
+                    <setting id="saas_sizing_estimate_setting"
+                             string="Sizing recommendation"
+                             help="Display-only. The concurrent-users-per-worker range shown to help a customer pick a size (light → heavy usage).">
                         <div class="content-group">
                             <div class="mt8">
                                 <label for="saas_custom_plan_users_per_worker_min" string="Users / worker: light → heavy" class="o_light_label" style="display:inline-block;min-width:230px;"/>
@@ -176,14 +161,12 @@
                                 <tr class="o_light_label">
                                     <th style="width:48%;"/>
                                     <th class="text-center fw-bold">Hosting</th>
-                                    <th class="text-center fw-bold">Services</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_minimum_monthly" string="Minimum / month"/></td>
                                     <td><field name="saas_hosting_minimum_monthly"/></td>
-                                    <td><field name="saas_minimum_monthly"/></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -196,19 +179,16 @@
                                 <tr class="o_light_label">
                                     <th style="width:48%;"/>
                                     <th class="text-center fw-bold">Hosting</th>
-                                    <th class="text-center fw-bold">Services</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_worker_floor" string="Floor per worker"/></td>
                                     <td><field name="saas_hosting_worker_floor"/></td>
-                                    <td><field name="saas_worker_floor"/></td>
                                 </tr>
                                 <tr>
                                     <td class="o_light_label align-middle"><label for="saas_hosting_storage_floor" string="Floor per GB"/></td>
                                     <td><field name="saas_hosting_storage_floor"/></td>
-                                    <td><field name="saas_storage_floor"/></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -221,19 +201,16 @@
                                 <tr class="o_light_label">
                                     <th style="width:48%;"/>
                                     <th class="text-center fw-bold">Hosting</th>
-                                    <th class="text-center fw-bold">Services</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
                                     <td class="o_light_label align-middle">Headroom per worker</td>
                                     <td><field name="margin_hosting_worker_pct" readonly="1"/> %</td>
-                                    <td><field name="margin_services_worker_pct" readonly="1"/> %</td>
                                 </tr>
                                 <tr>
                                     <td class="o_light_label align-middle">Headroom per GB</td>
                                     <td><field name="margin_hosting_storage_pct" readonly="1"/> %</td>
-                                    <td><field name="margin_services_storage_pct" readonly="1"/> %</td>
                                 </tr>
                             </tbody>
                         </table>

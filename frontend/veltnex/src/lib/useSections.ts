@@ -3,18 +3,17 @@ import { api } from "./api";
 
 /**
  * Which public sections are enabled (Settings → Website → Show
- * Hosting/Services Section). Backed by /saas/api/v1/meta → sections.
+ * Hosting Section). Backed by /saas/api/v1/meta → sections.
  *
  * Cached module-wide so the nav, home page and route guards share one
- * fetch. Defaults to both-on while loading and on any error, so a slow
+ * fetch. Defaults to on while loading and on any error, so a slow
  * or failed request never hides everything.
  */
 export interface Sections {
-  services: boolean;
   hosting: boolean;
 }
 
-const DEFAULT: Sections = { services: true, hosting: true };
+const DEFAULT: Sections = { hosting: true };
 
 let cache: Sections | null = null;
 let inflight: Promise<Sections> | null = null;
@@ -26,7 +25,6 @@ export function fetchSections(): Promise<Sections> {
       .meta()
       .then((m) => {
         cache = {
-          services: m?.sections?.services !== false,
           hosting: m?.sections?.hosting !== false,
         };
         return cache;

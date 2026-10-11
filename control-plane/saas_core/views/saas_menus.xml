@@ -3,7 +3,7 @@
 
     <!-- SaaS Manager
            Instances
-           Catalog         Services, Odoo Versions (+ plans, tiers, add-ons,
+           Catalog         Products, Odoo Versions (+ plans, tiers, add-ons,
                            support plans from saas_billing)
            Billing         (saas_billing)
            Configuration   Regions, Kubernetes Clusters, Base Domains, Settings -->
@@ -14,7 +14,7 @@
               web_icon="saas_core,static/description/icon.png"
               groups="base.group_user"/>
 
-    <!-- One list; hosting/service/state live in the search filters. -->
+    <!-- One list; state lives in the search filters. -->
     <menuitem id="saas_master_menu_instances"
               name="Instances"
               parent="saas_master_menu_root"
@@ -27,7 +27,7 @@
               sequence="15"/>
 
     <menuitem id="saas_master_menu_services"
-              name="Services"
+              name="Products"
               parent="saas_master_menu_catalog"
               action="saas_product_action"
               sequence="10"/>

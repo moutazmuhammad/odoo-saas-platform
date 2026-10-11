@@ -286,13 +286,15 @@ class TestBillingLifecycleCrons(TransactionCase):
     # ---------------- _cron_check_trial_expiry ----------------
 
     def test_trial_expiry_suspends_and_clears_pending_upgrade(self):
-        self.partner.write({
-            'saas_trial_used': True,
-            'saas_trial_end_date': date.today() - timedelta(days=1),
-        })
+        # Create the trial first: the create gate refuses a second trial
+        # once the flag is set.
         inst = self._inst('trial1', is_trial=True, state='running',
                            pending_plan_id=self.plan.id,
                            pending_billing_period='yearly')
+        self.partner.write({
+            'saas_hosting_trial_used': True,
+            'saas_trial_end_date': date.today() - timedelta(days=1),
+        })
         suspend_calls = []
         with patch.object(type(inst), 'action_suspend',
                            lambda self: suspend_calls.append(self.subdomain)):
@@ -303,11 +305,11 @@ class TestBillingLifecycleCrons(TransactionCase):
         self.assertFalse(inst.pending_billing_period)
 
     def test_trial_expiry_ignores_non_expired_partner(self):
+        self._inst('trial2', is_trial=True, state='running')
         self.partner.write({
-            'saas_trial_used': True,
+            'saas_hosting_trial_used': True,
             'saas_trial_end_date': date.today() + timedelta(days=5),
         })
-        self._inst('trial2', is_trial=True, state='running')
         suspend_calls = []
         with patch.object(type(self.Instance), 'action_suspend',
                            lambda self: suspend_calls.append(self.subdomain)):
@@ -316,7 +318,6 @@ class TestBillingLifecycleCrons(TransactionCase):
 
     def test_trial_expiry_ignores_partner_without_trial_flags(self):
         self.partner.write({
-            'saas_trial_used': False,
             'saas_hosting_trial_used': False,
             'saas_trial_end_date': date.today() - timedelta(days=1),
         })

@@ -1,5 +1,5 @@
 import { i18nText } from "@/i18n";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   Activity,
@@ -10,20 +10,15 @@ import {
   Github,
   Gitlab,
   Layers,
-  LifeBuoy,
   Lock,
-  Server,
   ShieldCheck,
-  Sparkles,
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 import * as React from "react";
 import { Globe } from "@/components/Globe";
 import { Button } from "@/components/ui/button";
-import { ServiceIcon } from "@/components/ServiceIcon";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { api, type ApiService } from "@/lib/api";
 import { useSections } from "@/lib/useSections";
 import { cn } from "@/lib/utils";
 
@@ -77,14 +72,10 @@ function StatusDot({ className }: { className?: string }) {
 // Hero
 // ---------------------------------------------------------------------
 
-function Hero({ hosting, services }: { hosting: boolean; services: boolean }) {
+function Hero({ hosting }: { hosting: boolean }) {
   const navigate = useNavigate();
-  const primaryTo = hosting ? "/hosting" : services ? "/services" : "/register";
-  const primaryLabel = hosting
-    ? i18nText("Start hosting")
-    : services
-      ? i18nText("Browse ready-made apps")
-      : i18nText("Create an account");
+  const primaryTo = hosting ? "/hosting" : "/register";
+  const primaryLabel = hosting ? i18nText("Start hosting") : i18nText("Create an account");
 
   return (
     <section className="relative overflow-hidden">
@@ -106,9 +97,7 @@ function Hero({ hosting, services }: { hosting: boolean; services: boolean }) {
           </h1>
 
           <p className="mx-auto mt-6 max-w-lg text-lg leading-relaxed text-muted lg:mx-0">
-            {hosting
-              ? i18nText("Managed Odoo hosting for any version. Connect your code, go live in minutes, and leave the servers, backups and security to us.")
-              : i18nText("Launch a ready-made Odoo app in minutes and leave the servers, backups and security to us.")}
+            {i18nText("Managed Odoo hosting for any version. Connect your code, go live in minutes, and leave the servers, backups and security to us.")}
           </p>
 
           <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
@@ -116,12 +105,7 @@ function Hero({ hosting, services }: { hosting: boolean; services: boolean }) {
               {primaryLabel}
               <ArrowRight />
             </Button>
-            {hosting && services && (
-              <Button size="lg" variant="outline" onClick={() => navigate("/services")}>
-                {i18nText("Browse ready-made apps")}
-              </Button>
-            )}
-            {!hosting && !services && (
+            {!hosting && (
               <Button size="lg" variant="outline" onClick={() => navigate("/docs")}>
                 {i18nText("Read the docs")}
               </Button>
@@ -219,24 +203,20 @@ function TrustStrip({ hosting }: { hosting: boolean }) {
 // Product showcase — a faithful mock of the Environments console
 // ---------------------------------------------------------------------
 
-function ConsoleShowcase({ hosting }: { hosting: boolean }) {
-  const envs = hosting
-    ? [
-        { name: "production", branch: "main", status: i18nText("Active"), tone: "success" as const, size: "4W · 50GB" },
-        { name: "staging", branch: "staging", status: i18nText("Active"), tone: "success" as const, size: "2W · 20GB" },
-        { name: "dev-invoices", branch: "feat/invoices", status: i18nText("Preparing"), tone: "info" as const, size: "2W · 20GB" },
-      ]
-    : [{ name: "production", branch: "—", status: i18nText("Active"), tone: "success" as const, size: "4W · 50GB" }];
+function ConsoleShowcase() {
+  const envs = [
+    { name: "production", branch: "main", status: i18nText("Active"), tone: "success" as const, size: "4W · 50GB" },
+    { name: "staging", branch: "staging", status: i18nText("Active"), tone: "success" as const, size: "2W · 20GB" },
+    { name: "dev-invoices", branch: "feat/invoices", status: i18nText("Preparing"), tone: "info" as const, size: "2W · 20GB" },
+  ];
 
   return (
     <section className="relative overflow-hidden py-20 lg:py-28">
       <Container>
         <SectionHeading
           eyebrow={i18nText("The console")}
-          title={hosting ? i18nText("One project. Every environment in view.") : i18nText("Everything about your app, in one place.")}
-          subtitle={hosting
-            ? i18nText("Launch, test and ship from one dashboard. Your production, staging and development servers live side by side, so every change goes out with confidence.")
-            : i18nText("Status, performance, backups and your database — all on one screen, no technical setup.")}
+          title={i18nText("One project. Every environment in view.")}
+          subtitle={i18nText("Launch, test and ship from one dashboard. Your production, staging and development servers live side by side, so every change goes out with confidence.")}
         />
 
         <div className="relative mx-auto mt-14 max-w-5xl">
@@ -329,94 +309,6 @@ function ConsoleShowcase({ hosting }: { hosting: boolean }) {
 }
 
 // ---------------------------------------------------------------------
-// Two ways to start
-// ---------------------------------------------------------------------
-
-function Paths() {
-  const navigate = useNavigate();
-  return (
-    <section className="border-y border-border bg-card/30 py-20 lg:py-24">
-      <Container>
-        <SectionHeading
-          wide
-          eyebrow={i18nText("Two ways to start")}
-          title={i18nText("Your code, or a ready-made app")}
-          subtitle={i18nText("Same platform, same reliability. The difference is what's ready on day one.")}
-        />
-        <div className="mt-12 grid gap-6 lg:grid-cols-2">
-          <PathCard
-            icon={Server}
-            title={i18nText("Hosting")}
-            lead={i18nText("You bring the code. We run it.")}
-            points={[
-              i18nText("Any Odoo version, Community or Enterprise"),
-              i18nText("Connect GitHub, GitLab or Bitbucket"),
-              i18nText("Test environments with customer data anonymized"),
-              i18nText("Scale up whenever you need"),
-            ]}
-            cta={i18nText("Explore hosting")}
-            onClick={() => navigate("/hosting")}
-          />
-          <PathCard
-            icon={Layers}
-            title={i18nText("Ready-made apps")}
-            lead={i18nText("Ready code and a ready database, on day one.")}
-            points={[
-              i18nText("Industry apps set up and ready to use"),
-              i18nText("Ships with its database — no blank screen"),
-              i18nText("Customize freely whenever you want"),
-              i18nText("Same reliability and support as hosting"),
-            ]}
-            cta={i18nText("Explore ready-made apps")}
-            onClick={() => navigate("/services")}
-          />
-        </div>
-      </Container>
-    </section>
-  );
-}
-
-function PathCard({
-  icon: Icon,
-  title,
-  lead,
-  points,
-  cta,
-  onClick,
-}: {
-  icon: LucideIcon;
-  title: string;
-  lead: string;
-  points: string[];
-  cta: string;
-  onClick: () => void;
-}) {
-  return (
-    <article className="flex flex-col rounded-xl border border-border bg-card p-8 transition-colors hover:border-primary/40">
-      <span className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        <Icon className="size-5" />
-      </span>
-      <h3 className="mt-6 text-2xl font-semibold text-foreground">{title}</h3>
-      <p className="mt-1 text-sm font-medium text-primary">{lead}</p>
-      <ul className="mt-6 space-y-2.5 text-sm text-foreground">
-        {points.map((p) => (
-          <li key={p} className="flex items-start gap-2.5">
-            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
-            <span>{p}</span>
-          </li>
-        ))}
-      </ul>
-      <div className="mt-8 pt-2">
-        <Button onClick={onClick}>
-          {cta}
-          <ArrowRight />
-        </Button>
-      </div>
-    </article>
-  );
-}
-
-// ---------------------------------------------------------------------
 // Features
 // ---------------------------------------------------------------------
 
@@ -427,10 +319,7 @@ function Features({ hosting }: { hosting: boolean }) {
           { icon: GitBranch, title: i18nText("Git-based deploys"), text: i18nText("Push your code and it goes live automatically, with no downtime for your users.") },
           { icon: Layers, title: i18nText("Safe test environments"), text: i18nText("Staging and development servers start as a copy of production with customer data anonymized, mail and scheduled jobs switched off.") },
         ]
-      : [
-          { icon: Sparkles, title: i18nText("Preconfigured apps"), text: i18nText("Everything in place from the first login, tuned to how your industry works.") },
-          { icon: LifeBuoy, title: i18nText("Experts on call"), text: i18nText("Our Odoo specialists are a message away whenever you need a hand.") },
-        ]),
+      : []),
     { icon: Database, title: i18nText("Your database, ready"), text: i18nText("Set up from the first minute. Back it up, restore it or bring your own in a click.") },
     { icon: BellRing, title: i18nText("Alerts before your customers notice"), text: i18nText("We email you the moment your Odoo stops responding, runs hot, or is about to run out of space — and again when it's back.") },
     { icon: Activity, title: i18nText("Always in the picture"), text: i18nText("See how your Odoo is doing at a glance, and dig into the details whenever you need to.") },
@@ -467,20 +356,13 @@ function Features({ hosting }: { hosting: boolean }) {
 // How it works
 // ---------------------------------------------------------------------
 
-function HowItWorks({ hosting }: { hosting: boolean }) {
-  const steps = hosting
-    ? [
-        { n: "01", title: i18nText("Sign up"), text: i18nText("Takes a minute. No credit card to start.") },
-        { n: "02", title: i18nText("Choose your setup"), text: i18nText("Odoo version, size and region.") },
-        { n: "03", title: i18nText("Connect your code"), text: i18nText("It deploys automatically on every push.") },
-        { n: "04", title: i18nText("Go live"), text: i18nText("Your Odoo is online, with its database ready.") },
-      ]
-    : [
-        { n: "01", title: i18nText("Sign up"), text: i18nText("Takes a minute. No credit card to start.") },
-        { n: "02", title: i18nText("Choose an app"), text: i18nText("Pick the app and plan that fit your team.") },
-        { n: "03", title: i18nText("Launch"), text: i18nText("Everything is set up for you.") },
-        { n: "04", title: i18nText("Work"), text: i18nText("Sign in and get going. We keep it running smoothly.") },
-      ];
+function HowItWorks() {
+  const steps = [
+    { n: "01", title: i18nText("Sign up"), text: i18nText("Takes a minute. No credit card to start.") },
+    { n: "02", title: i18nText("Choose your setup"), text: i18nText("Odoo version, size and region.") },
+    { n: "03", title: i18nText("Connect your code"), text: i18nText("It deploys automatically on every push.") },
+    { n: "04", title: i18nText("Go live"), text: i18nText("Your Odoo is online, with its database ready.") },
+  ];
 
   return (
     <section className="border-y border-border bg-card/30 py-20 lg:py-24">
@@ -532,53 +414,10 @@ function Versions() {
 }
 
 // ---------------------------------------------------------------------
-// Ready-made catalog (dynamic)
-// ---------------------------------------------------------------------
-
-function Catalog({ services }: { services: ApiService[] }) {
-  const navigate = useNavigate();
-  if (!services.length) return null;
-  return (
-    <section className="border-t border-border bg-card/30 py-20 lg:py-24">
-      <Container>
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-          <SectionHeading
-            align="start"
-            eyebrow={i18nText("Ready-made apps")}
-            title={i18nText("Pick an app. It ships with its database.")}
-          />
-          <Button variant="outline" onClick={() => navigate("/services")}>
-            {i18nText("Browse all apps")}
-            <ArrowRight />
-          </Button>
-        </div>
-        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {services.slice(0, 6).map((s) => (
-            <Link
-              key={s.id}
-              to={`/services/${s.id}`}
-              className="group rounded-xl border border-border bg-background p-6 transition-colors hover:border-primary/40"
-            >
-              <ServiceIcon icon={s.icon} className="size-9 text-primary" />
-              <h3 className="mt-4 text-base font-semibold text-foreground">{s.name}</h3>
-              {s.description && <p className="mt-1.5 line-clamp-2 text-sm text-muted">{s.description}</p>}
-              <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary">
-                {i18nText("View app")}
-                <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-              </span>
-            </Link>
-          ))}
-        </div>
-      </Container>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------
 // Final CTA
 // ---------------------------------------------------------------------
 
-function FinalCta({ hosting, services }: { hosting: boolean; services: boolean }) {
+function FinalCta({ hosting }: { hosting: boolean }) {
   const navigate = useNavigate();
   const stats = [
     { value: "99.9%", label: i18nText("Uptime target") },
@@ -604,12 +443,7 @@ function FinalCta({ hosting, services }: { hosting: boolean; services: boolean }
               <ArrowRight />
             </Button>
           )}
-          {services && (
-            <Button size="lg" variant={hosting ? "outline" : "default"} onClick={() => navigate("/services")}>
-              {i18nText("Browse ready-made apps")}
-            </Button>
-          )}
-          {!hosting && !services && (
+          {!hosting && (
             <Button size="lg" onClick={() => navigate("/register")}>
               {i18nText("Create an account")}
               <ArrowRight />
@@ -636,16 +470,6 @@ function FinalCta({ hosting, services }: { hosting: boolean; services: boolean }
 
 export default function Home() {
   const sections = useSections();
-  const [services, setServices] = React.useState<ApiService[]>([]);
-
-  React.useEffect(() => {
-    if (!sections.services) return;
-    let active = true;
-    api.services()
-      .then((data) => { if (active) setServices(data); })
-      .catch(() => { if (active) setServices([]); });
-    return () => { active = false; };
-  }, [sections.services]);
 
   React.useEffect(() => {
     document.title = "VELTNEX — " + i18nText("Managed Odoo hosting");
@@ -653,15 +477,13 @@ export default function Home() {
 
   return (
     <div className="animate-fade-in">
-      <Hero hosting={sections.hosting} services={sections.services} />
+      <Hero hosting={sections.hosting} />
       <TrustStrip hosting={sections.hosting} />
-      <ConsoleShowcase hosting={sections.hosting} />
-      {sections.hosting && sections.services && <Paths />}
+      {sections.hosting && <ConsoleShowcase />}
       <Features hosting={sections.hosting} />
-      <HowItWorks hosting={sections.hosting} />
+      {sections.hosting && <HowItWorks />}
       {sections.hosting && <Versions />}
-      {sections.services && <Catalog services={services} />}
-      <FinalCta hosting={sections.hosting} services={sections.services} />
+      <FinalCta hosting={sections.hosting} />
     </div>
   );
 }

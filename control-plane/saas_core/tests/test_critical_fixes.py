@@ -58,14 +58,13 @@ class TestCriticalFixes(TransactionCase):
     def test_b2_paid_instance_blocks_trial_across_contacts(self):
         # c1 owns a PAID hosting instance → c2 (same company) is disqualified.
         self._inst(self.c1, 'cfpaid', trial=False, state='running')
-        self.assertTrue(self.c2._saas_has_paid_instance(hosting=True))
+        self.assertTrue(self.c2._saas_has_paid_instance())
 
     def test_b2_trial_flag_is_company_wide(self):
-        self.c1._saas_mark_trial_used(hosting=True)
+        self.c1._saas_mark_trial_used()
         # Stored on the company, visible from any contact.
         self.assertTrue(self.company.saas_hosting_trial_used)
-        self.assertTrue(self.c2._saas_trial_used(hosting=True))
-        self.assertFalse(self.c2._saas_trial_used(hosting=False))
+        self.assertTrue(self.c2._saas_trial_used())
 
     def test_b2_create_gate_reads_company_flag(self):
         self.company.saas_hosting_trial_used = True

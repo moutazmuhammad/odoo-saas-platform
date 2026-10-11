@@ -59,23 +59,9 @@ class SaasRegistration(http.Controller):
                                otp_sent=False):
         """Build common template context for the registration page."""
         fv = form_values or {}
-        product_id = int(fv.get('product_id') or 0)
-        plan_id = int(fv.get('plan_id') or 0)
-        product = plan = None
-        if product_id:
-            product = request.env['saas.product'].sudo().browse(product_id)
-            if not product.exists():
-                product = None
-        if plan_id:
-            plan = request.env['saas.plan'].sudo().browse(plan_id)
-            if not plan.exists():
-                plan = None
-
         countries = request.env['res.country'].sudo().search([], order='name')
 
         return {
-            'product': product,
-            'plan': plan,
             'is_trial': fv.get('is_trial') == '1',
             'countries': countries,
             'form_values': fv,
@@ -150,22 +136,13 @@ class SaasRegistration(http.Controller):
                 url += '?' + '&'.join(params)
             return url
 
-        # Service flow
-        product_id = int(post.get('product_id') or 0)
-        plan_id = int(post.get('plan_id') or 0)
-        is_trial = post.get('is_trial') == '1'
-        if product_id and plan_id:
-            url = '/services/%d/plans/%d/configure' % (product_id, plan_id)
-            if is_trial:
-                url += '?trial=1'
-            return url
-        return '/services'
+        return '/my'
 
     # ------------------------------------------------------------------
     #  Step 1: Show form / validate & send OTP
     # ------------------------------------------------------------------
 
-    @http.route('/services/register', type='http', auth='public',
+    @http.route('/register', type='http', auth='public',
                 website=True, methods=['GET', 'POST'],
                 sitemap=False)
     def register_form(self, **post):
@@ -221,7 +198,7 @@ class SaasRegistration(http.Controller):
     #  Step 2: Verify OTP, create partner + user, log in
     # ------------------------------------------------------------------
 
-    @http.route('/services/register/verify', type='http', auth='public',
+    @http.route('/register/verify', type='http', auth='public',
                 website=True, methods=['POST'], csrf=True, sitemap=False)
     def register_verify(self, **post):
         phone = (post.get('phone') or '').strip()

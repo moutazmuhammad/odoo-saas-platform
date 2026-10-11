@@ -55,18 +55,18 @@ class TestTrialEligibilityFixes(TransactionCase):
         p = self.env['res.partner'].sudo().create({'name': 'Elig Pending'})
         self._mk(p, 'pending_payment', 'eligpp')
         self.assertFalse(
-            p._saas_has_paid_instance(hosting=True),
+            p._saas_has_paid_instance(),
             "a pending_payment (unpaid) order must not count as paid")
         self._mk(p, 'draft', 'eligdr')
         self.assertFalse(
-            p._saas_has_paid_instance(hosting=True),
+            p._saas_has_paid_instance(),
             "a draft (never-provisioned) order must not count as paid")
 
     def test_running_instance_is_a_paid_instance(self):
         """A genuinely provisioned (running) non-trial instance DOES count."""
         p = self.env['res.partner'].sudo().create({'name': 'Elig Running'})
         self._mk(p, 'running', 'eligrun')
-        self.assertTrue(p._saas_has_paid_instance(hosting=True))
+        self.assertTrue(p._saas_has_paid_instance())
 
     # ---- Bug #3 --------------------------------------------------------
     def test_failed_trial_does_not_block_a_new_trial(self):
@@ -310,9 +310,3 @@ class TestOrderControllerFixes(HttpCase):
             data['project_total'], base['data']['total'] + data['env_total'],
             places=2,
             msg="project_total must be the base hosting quote plus env_total")
-
-    def test_services_calculate_returns_real_pricing(self):
-        res = self._calculate('/saas/api/v1/services/calculate',
-                              workers=2, storage=10, billing='monthly')
-        self.assertTrue(res and res.get('ok'), res)
-        self.assertGreater(res['data']['total'], 0)

@@ -7,8 +7,7 @@ import { cn } from "@/lib/utils";
 import { useInstances } from "@/context/InstancesContext";
 import { groupProjects } from "@/lib/projects";
 
-const projectLink = (p: ApiInstance) =>
-  p.is_hosting ? `/my/instances/${p.id}/environments` : `/my/instances/${p.id}`;
+const projectLink = (p: ApiInstance) => `/my/instances/${p.id}/environments`;
 
 /** Google Cloud-style project picker in the top bar: shows the current
  *  project as a header and groups searchable root projects by ownership. */
@@ -109,7 +108,7 @@ export function ProjectSwitcher({ className }: { className?: string }) {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium text-foreground">{p.name}</span>
                     <span className="block truncate text-xs text-muted">
-                      {p.is_hosting ? i18nText("Hosting") : i18nText("Service")}
+                      {i18nText("Hosting")}
                       {p.region ? ` · ${p.region}` : ""}
                     </span>
                   </span>

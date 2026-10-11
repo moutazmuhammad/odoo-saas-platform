@@ -8,7 +8,7 @@ vi.mock("@/context/AuthContext", () => ({
   useAuth: () => ({ isAuthenticated: false, user: null, logout: vi.fn() }),
 }));
 vi.mock("@/lib/useSections", () => ({
-  useSections: () => ({ hosting: true, services: true }),
+  useSections: () => ({ hosting: true }),
 }));
 
 function renderNav() {
@@ -33,6 +33,7 @@ describe("Public mobile navigation", () => {
     await user.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     const mobile = document.getElementById("public-mobile-menu")!;
+    expect(within(mobile).queryByRole("link", { name: "Services" })).not.toBeInTheDocument();
     await user.click(within(mobile).getByRole("link", { name: "Hosting" }));
     expect(screen.getByText("Hosting content")).toBeInTheDocument();
     expect(trigger).toHaveAttribute("aria-expanded", "false");

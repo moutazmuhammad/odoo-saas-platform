@@ -41,43 +41,28 @@ class SaasPricingEngine(models.AbstractModel):
     # ------------------------------------------------------------------
     # Config loading — same keys/defaults the controllers use today, so
     # the engine output matches the existing inline formulas exactly.
-    # ``kind`` selects the rate set: 'hosting' or 'services'.
+    # ``kind`` names the rate set; 'hosting' is the only one.
     # ------------------------------------------------------------------
-    def _rate_config(self, kind):
+    def _rate_config(self, kind='hosting'):
         icp = self.env['ir.config_parameter'].sudo()
         get = icp.get_param
-        if kind == 'hosting':
-            p = 'saas_master.hosting_'
-            cfg = {
-                'worker_price': float(get('saas_master.hosting_worker_price', '10.0')),
-                'storage_price_per_gb': float(get('saas_master.hosting_storage_price_per_gb', '0.3')),
-                'min_workers': int(get('saas_master.hosting_min_workers', '2')),
-                'max_workers': int(get('saas_master.hosting_max_workers', '8')),
-                'min_storage': int(get('saas_master.hosting_min_storage', '5')),
-                'max_storage': int(get('saas_master.hosting_max_storage', '200')),
-                'yearly_discount_pct': int(get('saas_master.hosting_yearly_discount_pct', '20')),
-                # Cost floor (S3 will surface these in Settings). Default 0
-                # => no-op in S1, so prices are unchanged.
-                'worker_floor': float(get('saas_master.hosting_worker_floor', '0')),
-                'storage_floor': float(get('saas_master.hosting_storage_floor', '0')),
-                # Minimum monthly charge (P1). Floor on the FINAL monthly
-                # total so a tiny config still covers fixed business costs
-                # (payment fees, support, CAC). Default 0 => no-op.
-                'minimum_monthly': float(get('saas_master.hosting_minimum_monthly', '0')),
-            }
-        else:  # 'services' (custom plan builder)
-            cfg = {
-                'worker_price': float(get('saas_master.worker_price', '15.0')),
-                'storage_price_per_gb': float(get('saas_master.storage_price_per_gb', '0.5')),
-                'min_workers': int(get('saas_master.custom_plan_min_workers', '2')),
-                'max_workers': int(get('saas_master.custom_plan_max_workers', '8')),
-                'min_storage': int(get('saas_master.custom_plan_min_storage', '5')),
-                'max_storage': int(get('saas_master.custom_plan_max_storage', '200')),
-                'yearly_discount_pct': int(get('saas_master.custom_plan_yearly_discount_pct', '20')),
-                'worker_floor': float(get('saas_master.worker_floor', '0')),
-                'storage_floor': float(get('saas_master.storage_floor', '0')),
-                'minimum_monthly': float(get('saas_master.minimum_monthly', '0')),
-            }
+        cfg = {
+            'worker_price': float(get('saas_master.hosting_worker_price', '10.0')),
+            'storage_price_per_gb': float(get('saas_master.hosting_storage_price_per_gb', '0.3')),
+            'min_workers': int(get('saas_master.hosting_min_workers', '2')),
+            'max_workers': int(get('saas_master.hosting_max_workers', '8')),
+            'min_storage': int(get('saas_master.hosting_min_storage', '5')),
+            'max_storage': int(get('saas_master.hosting_max_storage', '200')),
+            'yearly_discount_pct': int(get('saas_master.hosting_yearly_discount_pct', '20')),
+            # Cost floor (S3 will surface these in Settings). Default 0
+            # => no-op in S1, so prices are unchanged.
+            'worker_floor': float(get('saas_master.hosting_worker_floor', '0')),
+            'storage_floor': float(get('saas_master.hosting_storage_floor', '0')),
+            # Minimum monthly charge (P1). Floor on the FINAL monthly
+            # total so a tiny config still covers fixed business costs
+            # (payment fees, support, CAC). Default 0 => no-op.
+            'minimum_monthly': float(get('saas_master.hosting_minimum_monthly', '0')),
+        }
         cfg['currency'] = self.env.company.currency_id.name or 'USD'
         return cfg
 
@@ -177,13 +162,7 @@ class SaasPricingEngine(models.AbstractModel):
             ('workers', '=', workers),
             ('storage_limit', '=', float(storage)),
         ])
-        for t in tiers:
-            t_kind = 'hosting' if any(
-                p.is_hosting for p in t.saas_product_ids
-            ) else 'services'
-            if t_kind == kind:
-                return t
-        return self.env['saas.plan'].browse()
+        return tiers[:1]
 
     def _tier_ceiling(self, kind, workers, storage):
         """Price CEILING for a custom config: the cheapest published tier
@@ -204,10 +183,7 @@ class SaasPricingEngine(models.AbstractModel):
         monthly = None
         yearly = None
         for t in tiers:
-            t_kind = 'hosting' if any(
-                p.is_hosting for p in t.saas_product_ids
-            ) else 'services'
-            if t_kind != kind or not t.price:
+            if not t.price:
                 continue
             if monthly is None or t.price < monthly:
                 monthly = t.price
@@ -241,7 +217,7 @@ class SaasPricingEngine(models.AbstractModel):
         """Return one fully-resolved price quote.
 
         Args:
-            kind: 'hosting' or 'services' (selects the rate set).
+            kind: the rate set; always 'hosting'.
             workers, storage: requested config (clamped to plan limits).
             billing: 'monthly' or 'yearly'.
             addon_codes: iterable of add-on codes (S5; ignored in S1).

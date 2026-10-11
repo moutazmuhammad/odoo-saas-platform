@@ -395,10 +395,7 @@ class SaasPortal(CustomerPortal):
             return request.redirect('/my/instances/%s' % instance_id)
 
         from odoo.addons.saas_website.controllers.main import SaasWebsite
-        if instance_sudo.is_hosting:
-            custom_config = SaasWebsite._get_hosting_plan_config(self)
-        else:
-            custom_config = SaasWebsite._get_custom_plan_config(self)
+        custom_config = SaasWebsite._get_hosting_plan_config(self)
 
         values = self._prepare_portal_layout_values()
         values.update({
@@ -435,25 +432,16 @@ class SaasPortal(CustomerPortal):
                     instance_id, url_quote('Please configure your plan.'))
             )
 
-        # Create the custom plan (use hosting config for hosting instances)
+        # Create the custom plan
         from odoo.addons.saas_website.controllers.main import SaasWebsite
-        if instance_sudo.is_hosting:
-            config = SaasWebsite._get_hosting_plan_config(self)
-        else:
-            config = SaasWebsite._get_custom_plan_config(self)
+        config = SaasWebsite._get_hosting_plan_config(self)
         workers = max(config['min_workers'], min(workers, config['max_workers']))
         storage = max(config['min_storage'], min(storage, config['max_storage']))
 
-        if instance_sudo.is_hosting:
-            plan = SaasWebsite._get_or_create_hosting_plan(
-                self, instance_sudo.saas_product_id, workers, storage, config,
-                region=instance_sudo.region_id,
-            )
-        else:
-            plan = SaasWebsite._get_or_create_custom_plan(
-                self, instance_sudo.saas_product_id, workers, storage, config,
-                region=instance_sudo.region_id,
-            )
+        plan = SaasWebsite._get_or_create_hosting_plan(
+            self, instance_sudo.saas_product_id, workers, storage, config,
+            region=instance_sudo.region_id,
+        )
 
         try:
             result = instance_sudo.action_subscribe_from_trial(
@@ -542,8 +530,8 @@ class SaasPortal(CustomerPortal):
                     instance_sudo._proration_credit(old_price)
         if not landing_route:
             if instance_sudo:
-                landing_route = '/my/instances/%s/%s?payment=success' % (
-                    instance_sudo.id, 'environments' if instance_sudo.is_hosting else '')
+                landing_route = '/my/instances/%s/environments?payment=success' % (
+                    instance_sudo.id)
             else:
                 landing_route = '/my/billing?payment=success'
         values = self._prepare_portal_layout_values()
@@ -637,10 +625,7 @@ class SaasPortal(CustomerPortal):
             return request.redirect('/my/instances/%s' % instance_id)
 
         from odoo.addons.saas_website.controllers.main import SaasWebsite
-        if instance_sudo.is_hosting:
-            custom_config = SaasWebsite._get_hosting_plan_config(self)
-        else:
-            custom_config = SaasWebsite._get_custom_plan_config(self)
+        custom_config = SaasWebsite._get_hosting_plan_config(self)
 
         current_plan = instance_sudo.plan_id
         current_workers = current_plan.workers if current_plan else 2
@@ -715,10 +700,7 @@ class SaasPortal(CustomerPortal):
 
         # Clamp to config limits
         from odoo.addons.saas_website.controllers.main import SaasWebsite
-        if instance_sudo.is_hosting:
-            config = SaasWebsite._get_hosting_plan_config(self)
-        else:
-            config = SaasWebsite._get_custom_plan_config(self)
+        config = SaasWebsite._get_hosting_plan_config(self)
         new_workers = max(config['min_workers'], min(new_workers, config['max_workers']))
         new_storage = max(current_storage, min(new_storage, config['max_storage']))
 
@@ -730,18 +712,11 @@ class SaasPortal(CustomerPortal):
             ))
 
         # Find or create the new plan
-        if instance_sudo.is_hosting:
-            new_plan = SaasWebsite._get_or_create_hosting_plan(
-                self, instance_sudo.saas_product_id,
-                new_workers, new_storage, config,
-                region=instance_sudo.region_id,
-            )
-        else:
-            new_plan = SaasWebsite._get_or_create_custom_plan(
-                self, instance_sudo.saas_product_id,
-                new_workers, new_storage, config,
-                region=instance_sudo.region_id,
-            )
+        new_plan = SaasWebsite._get_or_create_hosting_plan(
+            self, instance_sudo.saas_product_id,
+            new_workers, new_storage, config,
+            region=instance_sudo.region_id,
+        )
 
         try:
             if new_workers < current_workers:
@@ -956,8 +931,7 @@ class SaasPortal(CustomerPortal):
         except (AccessError, MissingError):
             return request.redirect('/my/instances')
 
-        # Snapshots are available to hosting AND managed-services instances
-        # (the one app-level add-on a service gets); only trials are excluded.
+        # Snapshots are available to every paid project; only trials are excluded.
         if instance.is_trial:
             return request.redirect(
                 '/my/instances/%d/backups?error=%s'
@@ -1952,13 +1926,10 @@ class SaasPortal(CustomerPortal):
 
         product = instance_sudo.saas_product_id
         if not product or not product.is_published:
-            return request.redirect('/services')
+            return request.redirect('/hosting')
 
         from odoo.addons.saas_website.controllers.main import SaasWebsite
-        if instance_sudo.is_hosting:
-            custom_config = SaasWebsite._get_hosting_plan_config(self)
-        else:
-            custom_config = SaasWebsite._get_custom_plan_config(self)
+        custom_config = SaasWebsite._get_hosting_plan_config(self)
 
         # Minimum resources = what the instance had before cancellation
         old_plan = instance_sudo.plan_id
@@ -2004,10 +1975,7 @@ class SaasPortal(CustomerPortal):
             )
 
         from odoo.addons.saas_website.controllers.main import SaasWebsite
-        if instance_sudo.is_hosting:
-            config = SaasWebsite._get_hosting_plan_config(self)
-        else:
-            config = SaasWebsite._get_custom_plan_config(self)
+        config = SaasWebsite._get_hosting_plan_config(self)
         # Enforce minimum = previous plan resources
         old_plan = instance_sudo.plan_id
         min_workers = old_plan.workers if old_plan else config['min_workers']
@@ -2017,16 +1985,10 @@ class SaasPortal(CustomerPortal):
 
         # Find or create the plan
         product = instance_sudo.saas_product_id
-        if instance_sudo.is_hosting:
-            new_plan = SaasWebsite._get_or_create_hosting_plan(
-                self, product, new_workers, new_storage, config,
-                region=instance_sudo.region_id,
-            )
-        else:
-            new_plan = SaasWebsite._get_or_create_custom_plan(
-                self, product, new_workers, new_storage, config,
-                region=instance_sudo.region_id,
-            )
+        new_plan = SaasWebsite._get_or_create_hosting_plan(
+            self, product, new_workers, new_storage, config,
+            region=instance_sudo.region_id,
+        )
 
         try:
             instance_sudo.action_reactivate(new_plan.id, billing_period)

@@ -13,7 +13,7 @@
                   decoration-muted="state in ('draft', 'stopped')"
                   decoration-info="state == 'provisioning'">
                 <field name="subdomain"/>
-                <field name="saas_product_id" string="Service" optional="show"/>
+                <field name="saas_product_id" string="Product" optional="show"/>
                 <field name="plan_id" optional="show"/>
                 <field name="partner_id"/>
                 <field name="odoo_version_id"/>
@@ -123,7 +123,7 @@
                         <group>
                             <field name="subdomain"/>
                             <field name="domain_id" options="{'no_open': True}"/>
-                            <field name="saas_product_id" string="Service"/>
+                            <field name="saas_product_id" string="Product"/>
                             <field name="plan_id" domain="['|', ('saas_product_ids', '=', False), ('saas_product_ids', 'in', saas_product_id)]"/>
                             <!-- support_plan_id, next_invoice_date and the
                                  pending plan change are added by
@@ -352,9 +352,6 @@
                 <field name="partner_id"/>
                 <field name="plan_id"/>
                 <field name="region_id"/>
-                <filter name="hosting" string="Hosting" domain="[('is_hosting', '=', True)]"/>
-                <filter name="service" string="Services" domain="[('is_hosting', '=', False)]"/>
-                <separator/>
                 <filter name="active_states" string="Active"
                         domain="[('state', 'in', ('pending_provision', 'provisioning', 'running', 'stopped'))]"/>
                 <filter name="needs_attention" string="Needs Attention"

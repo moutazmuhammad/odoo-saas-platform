@@ -1,6 +1,6 @@
 {
     'name': 'SaaS Instance Manager',
-    'version': '18.0.58.4.0',
+    'version': '18.0.59.0.0',
     'category': 'SaaS',
     'summary': 'Provision and manage multi-tenant Odoo instances with Docker containers',
     'description': """
@@ -13,11 +13,8 @@ Key capabilities:
 - **Automatic provisioning** -- generates docker-compose and odoo.conf files,
   creates PostgreSQL users and databases, assigns ports, and initialises the
   Odoo database, all over SSH.
-- **Snapshot-based provisioning** -- deploy instances from pre-built database
-  snapshots stored in cloud buckets (S3, GCS, DigitalOcean Spaces), with
-  automatic repo cloning for the correct codebase.
-- **Product catalog integration** -- services and plans integrate with standard
-  Odoo products for quoting, selling, and invoicing.
+- **Product catalog integration** -- the hosting product and plans integrate
+  with standard Odoo products for quoting, selling, and invoicing.
 - **Infrastructure registry** -- keep track of Docker host servers, PostgreSQL
   servers, SSH keys, and base domains used by the platform.
 """,

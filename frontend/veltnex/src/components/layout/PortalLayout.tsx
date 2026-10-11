@@ -15,8 +15,6 @@ import {
   Menu,
   HelpCircle,
   LayoutDashboard,
-  Activity,
-  Archive,
   Layers,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
@@ -44,26 +42,16 @@ type NavItem = { to: string; label: string; icon: typeof Receipt; end?: boolean;
 
 // GCP-Console-style resource nav: when viewing an instance, the left rail shows
 // every section of THAT instance so the whole project is one click away.
-// For HOSTING projects every section is a tab of the one Environments workspace
-// (it never navigates away — the section swaps in place via ?tab=). Managed
-// Services keep the classic standalone read-only set.
-function instanceSections(id: number, isHosting: boolean): NavItem[] {
-  const base = `/my/instances/${id}`;
-  if (isHosting) {
-    const env = `${base}/environments`;
-    // Metrics / Databases / Shell / SQL / Logs / Snapshots are tabs inside the
-    // Environments workspace itself — so the rail only carries the workspace
-    // entry (Overview) and the project-wide Project settings.
-    return [
-      { to: env, label: i18nText("Overview"), icon: Layers, tab: "overview" },
-      { to: `${env}?tab=code`, label: i18nText("Project settings"), icon: Settings, tab: "code" },
-    ];
-  }
+// Every section is a tab of the one Environments workspace (it never
+// navigates away — the section swaps in place via ?tab=).
+function instanceSections(id: number): NavItem[] {
+  const env = `/my/instances/${id}/environments`;
+  // Metrics / Databases / Shell / SQL / Logs / Snapshots are tabs inside the
+  // Environments workspace itself — so the rail only carries the workspace
+  // entry (Overview) and the project-wide Project settings.
   return [
-    { to: base, label: i18nText("Overview"), icon: LayoutDashboard, end: true },
-    { to: `${base}/metrics`, label: i18nText("Metrics"), icon: Activity },
-    { to: `${base}/backups`, label: i18nText("Backups"), icon: Archive },
-    { to: `${base}/snapshots`, label: i18nText("Snapshots"), icon: Camera },
+    { to: env, label: i18nText("Overview"), icon: Layers, tab: "overview" },
+    { to: `${env}?tab=code`, label: i18nText("Project settings"), icon: Settings, tab: "code" },
   ];
 }
 
@@ -207,7 +195,7 @@ export function PortalLayout() {
               {inst.name}
             </div>
           )}
-          {instanceSections(instId, inst.is_hosting).map((item) => (
+          {instanceSections(instId).map((item) => (
             NavRow({ item, collapsed, active: isActive(item) })
           ))}
           <div className="mx-3 my-2 border-t border-border" />

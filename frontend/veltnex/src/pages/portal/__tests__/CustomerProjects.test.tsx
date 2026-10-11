@@ -10,7 +10,6 @@ import { useAuth } from "@/context/AuthContext";
 
 vi.mock("@/context/AuthContext", () => ({ useAuth: vi.fn() }));
 vi.mock("@/context/InstancesContext", () => ({ useInstances: () => ({ instances: projects, loading: false, error: null }) }));
-vi.mock("@/lib/useSections", () => ({ useSections: () => ({ hosting: true, services: true }) }));
 vi.mock("@/components/PageHeader", () => ({ PageHeader: ({ title, actions }: { title: string; actions?: React.ReactNode }) => <><h1>{title}</h1>{actions}</> }));
 vi.mock("@/lib/api", async (original) => ({
   ...await original<typeof import("@/lib/api")>(),

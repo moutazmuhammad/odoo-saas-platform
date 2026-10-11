@@ -154,8 +154,6 @@
     <template id="cloudodoo_header" name="CloudOdoo Header"
               inherit_id="website.layout" customize_show="False">
         <xpath expr="//header" position="replace">
-            <t t-set="show_services_section"
-               t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_services_section', 'True') != 'False'"/>
             <t t-set="show_hosting_section"
                t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_hosting_section', 'True') != 'False'"/>
             <header id="top" dir="ltr" data-anchor="true">
@@ -248,7 +246,7 @@
                                         <a class="nav-link" href="/login">Sign in</a>
                                     </li>
                                     <li class="nav-item ms-2">
-                                        <a class="btn btn-primary btn-sm" href="/services/register">Get started</a>
+                                        <a class="btn btn-primary btn-sm" href="/register">Get started</a>
                                     </li>
                                 </t>
                             </ul>
@@ -281,8 +279,6 @@
     <template id="cloudodoo_footer" name="CloudOdoo Footer"
               inherit_id="website.layout" customize_show="False">
         <xpath expr="//footer" position="replace">
-            <t t-set="show_services_section"
-               t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_services_section', 'True') != 'False'"/>
             <t t-set="show_hosting_section"
                t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_hosting_section', 'True') != 'False'"/>
             <footer id="bottom" dir="ltr" data-anchor="true" class="co-footer">
@@ -302,7 +298,6 @@
                             <a href="/docs" class="co-footer-link">Docs</a>
                             <a href="/help" class="co-footer-link">Help</a>
                             <a t-if="show_hosting_section" href="/hosting" class="co-footer-link">Hosting</a>
-                            <a t-if="show_services_section" href="/services" class="co-footer-link">Services</a>
                         </nav>
                         <div class="d-flex align-items-center gap-3 ms-sm-auto co-footer-social">
                             <a href="#" aria-label="Twitter">

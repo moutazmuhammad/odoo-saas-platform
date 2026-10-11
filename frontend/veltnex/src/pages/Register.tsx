@@ -56,7 +56,7 @@ export default function Register() {
 
   // Where to go after sign-up. Mirrors the backend's _build_redirect_url
   // (registration.py): continue the funnel the user came from — the
-  // hosting/service configure page — instead of dumping them on the
+  // hosting configure page — instead of dumping them on the
   // dashboard. Plain sign-ups (no funnel params) land on home.
   const postRegisterUrl = React.useCallback(() => {
     if (invitationReturn?.startsWith("/my/access/accept?")) return invitationReturn;
@@ -70,17 +70,12 @@ export default function Register() {
       if (p.get("is_trial") === "1") parts.push("is_trial=1");
       return "/hosting/configure" + (parts.length ? "?" + parts.join("&") : "");
     }
-    const productId = parseInt(p.get("product_id") || "0", 10);
-    const planId = parseInt(p.get("plan_id") || "0", 10);
-    if (productId && planId) {
-      return `/services/${productId}/plans/${planId}/configure${p.get("is_trial") === "1" ? "?trial=1" : ""}`;
-    }
     return "/";
   }, [searchParams, invitationReturn]);
 
   // After sign-up: for the hosting funnel, place the order immediately
   // (no Review page) and go straight to payment, carrying every order
-  // field through the URL. Other funnels use their configure page.
+  // field through the URL.
   const goAfterRegister = React.useCallback(async () => {
     const p = searchParams;
     if (p.get("hosting") === "1") {

@@ -3,14 +3,6 @@
 
 VERSIONS = ('17.0', '18.0', '19.0')
 
-HOSTING_FEATURES = [
-    'Your own Odoo on a dedicated container',
-    'Deploy custom modules from your Git repository',
-    'Free HTTPS on your subdomain',
-    'Daily backups with one-click restore',
-    'Staging and development copies',
-]
-
 # name -> values; sequence follows the order here
 HOSTING_PLANS = [
     ('Hosting Free Trial', {'is_trial_plan': True, 'price': 0.0, 'yearly_price': 0.0,
@@ -41,20 +33,14 @@ def _upsert(env, model, domain, vals):
 
 
 def post_init_hook(env):
-    versions = {
-        v: _upsert(env, 'saas.odoo.version', [('name', '=', v)], {
+    for v in VERSIONS:
+        _upsert(env, 'saas.odoo.version', [('name', '=', v)], {
             'name': v, 'docker_image': 'odoo', 'docker_image_tag': v,
             'nginx_template': 'new', 'is_hosting_version': True})
-        for v in VERSIONS
-    }
 
     product = _upsert(env, 'saas.product', [('is_hosting', '=', True)], {
         'name': 'Odoo Hosting', 'is_hosting': True, 'is_published': True,
-        'subtitle': 'Bring your own code — we run it.',
-        'odoo_version_id': versions['18.0'].id, 'sequence': 1})
-    if not product.feature_line_ids:
-        product.feature_line_ids = [
-            (0, 0, {'name': f, 'sequence': i}) for i, f in enumerate(HOSTING_FEATURES)]
+        'sequence': 1})
 
     currency = env.company.currency_id
     for seq, (name, vals) in enumerate(HOSTING_PLANS, start=1):

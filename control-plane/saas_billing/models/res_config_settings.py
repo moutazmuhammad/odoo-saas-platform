@@ -4,59 +4,7 @@ from odoo import api, fields, models
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
-    # ========== Custom Plan Pricing ==========
-    saas_worker_price = fields.Float(
-        string='Price per Worker',
-        config_parameter='saas_master.worker_price',
-        default=0.0,
-        help='Monthly price per Odoo worker for custom plan configurations. '
-             'Used in the custom plan builder on the pricing page.',
-    )
-    saas_storage_price_per_gb = fields.Float(
-        string='Price per GB (Custom Plan)',
-        config_parameter='saas_master.storage_price_per_gb',
-        default=0.0,
-        help='Monthly price per GB of storage for custom plan configurations. '
-             'Used in the custom plan builder on the pricing page.',
-    )
-    saas_custom_plan_min_workers = fields.Integer(
-        string='Min Workers (Custom)',
-        config_parameter='saas_master.custom_plan_min_workers',
-        default=2,
-        help='Minimum number of workers selectable in the custom plan builder.',
-    )
-    saas_custom_plan_max_workers = fields.Integer(
-        string='Max Workers (Custom)',
-        config_parameter='saas_master.custom_plan_max_workers',
-        default=8,
-        help='Maximum number of workers selectable in the custom plan builder.',
-    )
-    saas_custom_plan_min_storage = fields.Integer(
-        string='Min Storage GB (Custom)',
-        config_parameter='saas_master.custom_plan_min_storage',
-        default=5,
-        help='Minimum storage (GB) selectable in the custom plan builder.',
-    )
-    saas_custom_plan_max_storage = fields.Integer(
-        string='Max Storage GB (Custom)',
-        config_parameter='saas_master.custom_plan_max_storage',
-        default=200,
-        help='Maximum storage (GB) selectable in the custom plan builder.',
-    )
-
-    # --- Resource allocation per worker ---
-    saas_custom_plan_cpu_per_worker = fields.Float(
-        string='CPU per Worker',
-        config_parameter='saas_master.custom_plan_cpu_per_worker',
-        default=0.5,
-        help='vCPU allocated per worker in custom plans (e.g. 0.5 = half a core per worker).',
-    )
-    saas_custom_plan_ram_per_worker = fields.Integer(
-        string='RAM per Worker (MB)',
-        config_parameter='saas_master.custom_plan_ram_per_worker',
-        default=512,
-        help='RAM in MB allocated per worker in custom plans (e.g. 512 = 512MB per worker).',
-    )
+    # ========== Sizing recommendation (display only) ==========
     saas_custom_plan_users_per_worker_min = fields.Integer(
         string='Min Users per Worker',
         config_parameter='saas_master.custom_plan_users_per_worker_min',
@@ -70,12 +18,6 @@ class ResConfigSettings(models.TransientModel):
         default=10,
         help='Maximum concurrent users each worker can handle (heavy usage). '
              'Used in the recommendation display.',
-    )
-    saas_custom_plan_yearly_discount_pct = fields.Integer(
-        string='Yearly Discount %',
-        config_parameter='saas_master.custom_plan_yearly_discount_pct',
-        default=20,
-        help='Percentage discount applied when yearly billing is selected for custom plans.',
     )
 
     # ========== Hosting Plan Builder ==========
@@ -122,7 +64,7 @@ class ResConfigSettings(models.TransientModel):
         default=512,
     )
     # PostgreSQL's share of the package (saas.plan._recommended_db_resources),
-    # same for hosting and services.
+    # same for every package.
     saas_db_cpu_per_worker = fields.Float(
         string='Database: CPU per Worker',
         config_parameter='saas_master.db_cpu_per_worker',
@@ -223,18 +165,6 @@ class ResConfigSettings(models.TransientModel):
         default=0.0,
         help='Minimum monthly cost per GB on hosting custom configs. 0 = no floor.',
     )
-    saas_worker_floor = fields.Float(
-        string='Services: Worker Cost Floor',
-        config_parameter='saas_master.worker_floor',
-        default=0.0,
-        help='Minimum monthly cost per worker on services custom configs. 0 = no floor.',
-    )
-    saas_storage_floor = fields.Float(
-        string='Services: Storage Cost Floor (per GB)',
-        config_parameter='saas_master.storage_floor',
-        default=0.0,
-        help='Minimum monthly cost per GB on services custom configs. 0 = no floor.',
-    )
     saas_hosting_minimum_monthly = fields.Float(
         string='Hosting: Minimum Monthly Charge',
         config_parameter='saas_master.hosting_minimum_monthly',
@@ -244,13 +174,6 @@ class ResConfigSettings(models.TransientModel):
              'business costs (payment fees, support, monitoring, CAC) that '
              'don\'t scale down. The customer just sees this as the price '
              '— no surcharge. 0 = no minimum.',
-    )
-    saas_minimum_monthly = fields.Float(
-        string='Services: Minimum Monthly Charge',
-        config_parameter='saas_master.minimum_monthly',
-        default=0.0,
-        help='Floor on the final monthly total for services custom plans. '
-             '0 = no minimum.',
     )
     saas_storage_block_gb = fields.Integer(
         string='Storage Expansion Block (GB)',
@@ -336,15 +259,9 @@ class ResConfigSettings(models.TransientModel):
         string='Hosting Worker Rate Headroom %', compute='_compute_margin_pcts')
     margin_hosting_storage_pct = fields.Float(
         string='Hosting Storage Rate Headroom %', compute='_compute_margin_pcts')
-    margin_services_worker_pct = fields.Float(
-        string='Services Worker Rate Headroom %', compute='_compute_margin_pcts')
-    margin_services_storage_pct = fields.Float(
-        string='Services Storage Rate Headroom %', compute='_compute_margin_pcts')
 
     @api.depends('saas_hosting_worker_price', 'saas_hosting_worker_floor',
-                 'saas_hosting_storage_price_per_gb', 'saas_hosting_storage_floor',
-                 'saas_worker_price', 'saas_worker_floor',
-                 'saas_storage_price_per_gb', 'saas_storage_floor')
+                 'saas_hosting_storage_price_per_gb', 'saas_hosting_storage_floor')
     def _compute_margin_pcts(self):
         def margin(price, floor):
             return 100.0 * (price - floor) / price if price else 0.0
@@ -353,10 +270,6 @@ class ResConfigSettings(models.TransientModel):
                 rec.saas_hosting_worker_price, rec.saas_hosting_worker_floor)
             rec.margin_hosting_storage_pct = margin(
                 rec.saas_hosting_storage_price_per_gb, rec.saas_hosting_storage_floor)
-            rec.margin_services_worker_pct = margin(
-                rec.saas_worker_price, rec.saas_worker_floor)
-            rec.margin_services_storage_pct = margin(
-                rec.saas_storage_price_per_gb, rec.saas_storage_floor)
 
     def set_values(self):
         res = super().set_values()

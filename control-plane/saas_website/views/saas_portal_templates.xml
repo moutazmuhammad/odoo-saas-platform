@@ -23,28 +23,9 @@
                                 Manage your account, instances, and billing from here.
                             </p>
                         </div>
-                        <!-- The Services section is hidden site-wide when the
-                             operator disables it from Settings → SaaS. Skip
-                             the dropdown entirely in that case — go straight
-                             to /hosting (the only remaining option). -->
-                        <t t-set="_show_services"
-                           t-value="request.env['ir.config_parameter'].sudo().get_param('saas_master.show_services_section', 'True') != 'False'"/>
-                        <t t-if="_show_services">
-                            <div class="dropdown mt-2 mt-md-0">
-                                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                    <i class="fas fa-plus me-1"></i>New Instance
-                                </button>
-                                <ul class="dropdown-menu">
-                                    <li><a class="dropdown-item" href="/services"><i class="fas fa-cubes me-2"></i>Service</a></li>
-                                    <li><a class="dropdown-item" href="/hosting"><i class="fas fa-server me-2"></i>Hosting</a></li>
-                                </ul>
-                            </div>
-                        </t>
-                        <t t-else="">
-                            <a href="/hosting" class="btn btn-primary mt-2 mt-md-0">
-                                <i class="fas fa-plus me-1"></i>New Hosting
-                            </a>
-                        </t>
+                        <a href="/hosting" class="btn btn-primary mt-2 mt-md-0">
+                            <i class="fas fa-plus me-1"></i>New Hosting
+                        </a>
                     </div>
 
                     <!-- Quick action cards -->
@@ -123,26 +104,6 @@
                                             <h6 class="mb-0 fw-semibold">Security</h6>
                                             <p class="mb-0 small" style="color:var(--co-text-muted, #71717A);">
                                                 Password &amp; connection settings
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </a>
-                        </div>
-
-                        <!-- Browse Services card -->
-                        <div class="col-md-6 col-lg-4">
-                            <a href="/services" class="text-decoration-none">
-                                <div class="info-card h-100" style="transition:all 0.2s ease;border-left:3px solid #8B5CF6;">
-                                    <div class="d-flex align-items-center gap-3">
-                                        <div class="d-flex align-items-center justify-content-center rounded"
-                                             style="width:48px;height:48px;background:rgba(139,92,246,0.1);color:#8B5CF6;font-size:1.25rem;flex-shrink:0;">
-                                            <i class="fas fa-th-large"></i>
-                                        </div>
-                                        <div>
-                                            <h6 class="mb-0 fw-semibold">Browse Services</h6>
-                                            <p class="mb-0 small" style="color:var(--co-text-muted, #71717A);">
-                                                Explore available cloud solutions
                                             </p>
                                         </div>
                                     </div>
@@ -399,7 +360,7 @@
 
                     <!-- Hidden config data for JavaScript -->
                     <div id="upgrade-plan-config" style="display:none;"
-                         t-att-data-calc-url="'/saas/hosting-plan/calculate' if instance.is_hosting else '/saas/custom-plan/calculate'"
+                         data-calc-url="/saas/hosting-plan/calculate"
                          t-att-data-region-id="instance.region_id.id"
                          t-att-data-min-workers="custom_config.get('min_workers', 2)"
                          t-att-data-max-workers="custom_config.get('max_workers', 8)"
@@ -449,10 +410,7 @@
                                 <t t-if="instance">
                                 <div class="d-flex align-items-center gap-3 mb-3">
                                     <div class="service-icon" style="width:44px;height:44px;font-size:1.25rem;">
-                                        <t t-if="instance and instance.saas_product_id.icon">
-                                            <i t-att-class="instance.saas_product_id.icon"/>
-                                        </t>
-                                        <t t-else=""><i class="fas fa-cubes"/></t>
+                                        <i class="fas fa-server"/>
                                     </div>
                                     <div>
                                         <h5 class="mb-0" t-esc="instance.saas_product_id.name"/>
@@ -707,10 +665,6 @@
                                     </t>
                                     <span class="mx-2">|</span>
                                     <t t-esc="current_plan.workers"/> Workers
-                                    <t t-if="not instance.is_hosting">
-                                        <span class="mx-1">·</span>
-                                        7 Backups
-                                    </t>
                                 </div>
                             </div>
                             <t t-if="instance.next_invoice_date">
@@ -901,7 +855,7 @@
 
                     <!-- Hidden config data for JavaScript -->
                     <div id="upgrade-plan-config" style="display:none;"
-                         t-att-data-calc-url="'/saas/hosting-plan/calculate' if instance.is_hosting else '/saas/custom-plan/calculate'"
+                         data-calc-url="/saas/hosting-plan/calculate"
                          t-att-data-region-id="instance.region_id.id"
                          t-att-data-min-workers="custom_config.get('min_workers', 2)"
                          t-att-data-max-workers="custom_config.get('max_workers', 8)"
@@ -1100,7 +1054,7 @@
 
                     <!-- Hidden config data for JavaScript -->
                     <div id="upgrade-plan-config" style="display:none;"
-                         t-att-data-calc-url="'/saas/hosting-plan/calculate' if instance.is_hosting else '/saas/custom-plan/calculate'"
+                         data-calc-url="/saas/hosting-plan/calculate"
                          t-att-data-region-id="instance.region_id.id"
                          t-att-data-min-workers="current_workers"
                          t-att-data-max-workers="custom_config.get('max_workers', 8)"

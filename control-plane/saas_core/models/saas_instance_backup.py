@@ -134,8 +134,7 @@ class SaasInstanceBackup(models.Model):
     db_name = fields.Char(
         string='Database', index=True,
         help='PostgreSQL database name this backup is a snapshot of. '
-             'For service instances this equals instance.subdomain. '
-             'Hosting instances can have multiple databases; the cron '
+             'A project can have multiple databases; the cron '
              'creates one backup record per database per day.',
     )
     bucket_path = fields.Char(
@@ -1524,12 +1523,10 @@ class SaasInstanceBackup(models.Model):
                 ONDEMAND_PREFIX, partner_folder, instance.subdomain,
                 db_name, self.name,
             )
-        elif instance.is_hosting:
+        else:
             object_key = '%s/%s/%s/%s.zip' % (
                 partner_folder, instance.subdomain, db_name, self.name,
             )
-        else:
-            object_key = '%s/%s/%s.zip' % (partner_folder, db_name, self.name)
 
         self.bucket_path = object_key
 
@@ -1638,8 +1635,6 @@ class SaasInstanceBackup(models.Model):
     def _cleanup_old_backups(self):
         """Trim old backups.
 
-        - Service instances: keep at most ``DEFAULT_MAX_BACKUPS`` per
-          instance (fixed platform-wide retention).
         - Full-instance (``is_full_instance``) snapshots are no longer
           trimmed here: the operator's own backup CronJob already
           prunes by ``spec.backup.retention``, and
@@ -1658,36 +1653,6 @@ class SaasInstanceBackup(models.Model):
                 backup.unlink()
             except Exception as e:
                 _logger.error("Failed to cleanup stale backup %s: %s", backup.name, e)
-
-        # --- Service instances: keep at most DEFAULT_MAX_BACKUPS per instance.
-        # Ephemeral excluded for the same reason as hosting above.
-        data = self._read_group(
-            [
-                ('state', '=', 'done'),
-                ('ephemeral', '=', False),
-                ('instance_id.is_hosting', '=', False),
-            ],
-            ['instance_id'],
-            ['__count'],
-        )
-        for instance, count in data:
-            # Retention is fixed platform-wide; every Services instance keeps
-            # the last DEFAULT_MAX_BACKUPS copies.
-            max_backups = DEFAULT_MAX_BACKUPS
-            if count <= max_backups:
-                continue
-            backups = self.search([
-                ('instance_id', '=', instance.id),
-                ('state', '=', 'done'),
-            ], order='create_date desc')
-            excess = backups[max_backups:]
-            for backup in excess:
-                try:
-                    if backup.bucket_path:
-                        backup._delete_from_bucket()
-                    backup.unlink()
-                except Exception as e:
-                    _logger.error("Failed to cleanup backup %s: %s", backup.name, e)
 
     def cleanup_excess_for_instance(self, instance):
         """Remove excess backups for a single instance against the fixed

@@ -1,6 +1,6 @@
 {
     'name': 'SaaS Website',
-    'version': '18.0.6.2.0',
+    'version': '18.0.7.0.0',
     'category': 'SaaS',
     'summary': 'Customer-facing website for SaaS plan selection, ordering, and instance management',
     'author': 'SaaS Platform',
@@ -12,7 +12,6 @@
         'data/mail_templates.xml',
         'views/saas_frontend_layout.xml',
         'views/saas_login_templates.xml',
-        'views/saas_services_templates.xml',
         'views/saas_hosting_templates.xml',
         'views/saas_registration_templates.xml',
         'views/saas_invoice_templates.xml',

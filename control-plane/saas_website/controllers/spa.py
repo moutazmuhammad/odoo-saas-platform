@@ -11,13 +11,13 @@ Strategy — "replace the whole site at /":
   by subclassing each controller and re-declaring the same method — the
   most-derived class wins, so the original files stay untouched.
 * We deliberately DO NOT touch the purchase funnel: the configure forms,
-  ``/services/order`` / ``/hosting/order``, ``/checkout``, plan changes,
+  ``/hosting/order``, ``/checkout``, plan changes,
   and ``/my/invoices`` stay on Odoo QWeb so payment/billing keep working.
   The SPA hands off to those with a normal navigation when money is
   involved (see the "reuse Odoo checkout" decision).
 
-So the SPA owns: ``/``, ``/services``, ``/services/<id>``,
-``/services/register``, ``/hosting``, ``/docs``, ``/login``, ``/my`` and
+So the SPA owns: ``/``, ``/register``, ``/hosting``, ``/docs``,
+``/login``, ``/my`` and
 the instance-management + billing-view pages under ``/my``.
 """
 import os
@@ -137,19 +137,6 @@ class SaasHomeSpa(http.Controller):
 
 
 class SaasWebsiteSpa(SaasWebsite):
-    @http.route('/services', type='http', auth='public', website=True, multilang=False, sitemap=True)
-    def services_page(self, **kw):
-        if not self._section_enabled('services'):
-            return request.redirect('/')
-        return spa_shell()
-
-    @http.route('/services/<int:product_id>', type='http', auth='public',
-                website=True, multilang=False, sitemap=True)
-    def service_plans(self, product_id, **kw):
-        if not self._section_enabled('services'):
-            return request.redirect('/')
-        return spa_shell()
-
     @http.route('/hosting', type='http', auth='public', website=True, multilang=False, sitemap=True)
     def hosting_page(self, **kw):
         if not self._section_enabled('hosting'):
@@ -171,11 +158,12 @@ class SaasWebsiteSpa(SaasWebsite):
 
 
 class SaasRegistrationSpa(SaasRegistration):
-    @http.route('/services/register', type='http', auth='public',
+    @http.route('/register', type='http', auth='public',
                 website=True, multilang=False, methods=['GET', 'POST'], sitemap=False)
     def register_form(self, **post):
         # The SPA drives registration through the JSON API
-        # (/saas/api/v1/auth/register/*). A bare GET just loads the app;
+        # (/saas/api/v1/auth/register/*). A bare GET just loads the app
+        # (a signed-in user goes on to the hosting configurator or /my);
         # any legacy POST still falls through to the original handler so
         # nothing regresses for non-SPA callers.
         if request.httprequest.method == 'GET':
@@ -183,16 +171,6 @@ class SaasRegistrationSpa(SaasRegistration):
                 return request.redirect(self._build_redirect_url(post))
             return spa_shell()
         return super().register_form(**post)
-
-    @http.route('/register', type='http', auth='public',
-                website=True, multilang=False, methods=['GET'], sitemap=False)
-    def spa_register(self, **kw):
-        # Generic sign-up entry point — NOT gated by the services
-        # section, so "Create an account" / "Get started" works even when
-        # only hosting is enabled.
-        if not request.env.user._is_public():
-            return request.redirect('/my')
-        return spa_shell()
 
 
 class SaasPortalSpa(SaasPortal):

@@ -93,10 +93,10 @@ class TestProfitabilitySharedAcrossModels(TransactionCase):
 
     def test_plan_profitability_uses_the_real_cost_floor(self):
         icp = self.env['ir.config_parameter'].sudo()
-        icp.set_param('saas_master.worker_floor', '5.0')
-        icp.set_param('saas_master.storage_floor', '0.1')
+        icp.set_param('saas_master.hosting_worker_floor', '5.0')
+        icp.set_param('saas_master.hosting_storage_floor', '0.1')
         product = self.env['saas.product'].sudo().create(
-            {'name': 'ProfitTestService', 'is_hosting': False, 'is_published': True})
+            {'name': 'ProfitTestProduct', 'is_hosting': True, 'is_published': True})
         plan = self.env['saas.plan'].sudo().create({
             'name': 'ProfitTestPlan', 'is_custom': True,
             'workers': 4, 'storage_limit': 20, 'cpu_limit': 2.0, 'ram_limit': '4g',
@@ -114,10 +114,10 @@ class TestProfitabilitySharedAcrossModels(TransactionCase):
 
     def test_plan_cost_not_tracked_when_floor_unconfigured(self):
         icp = self.env['ir.config_parameter'].sudo()
-        icp.set_param('saas_master.worker_floor', '0')
-        icp.set_param('saas_master.storage_floor', '0')
+        icp.set_param('saas_master.hosting_worker_floor', '0')
+        icp.set_param('saas_master.hosting_storage_floor', '0')
         product = self.env['saas.product'].sudo().create(
-            {'name': 'ProfitTestService2', 'is_hosting': False, 'is_published': True})
+            {'name': 'ProfitTestProduct2', 'is_hosting': True, 'is_published': True})
         plan = self.env['saas.plan'].sudo().create({
             'name': 'ProfitTestPlanNoFloor', 'is_custom': True,
             'workers': 4, 'storage_limit': 20, 'cpu_limit': 2.0, 'ram_limit': '4g',
@@ -129,11 +129,11 @@ class TestProfitabilitySharedAcrossModels(TransactionCase):
 
     def test_plan_minimum_profitable_price_reflects_target_margin_setting(self):
         icp = self.env['ir.config_parameter'].sudo()
-        icp.set_param('saas_master.worker_floor', '10.0')
-        icp.set_param('saas_master.storage_floor', '0')
+        icp.set_param('saas_master.hosting_worker_floor', '10.0')
+        icp.set_param('saas_master.hosting_storage_floor', '0')
         icp.set_param('saas_master.target_margin_pct', '40')
         product = self.env['saas.product'].sudo().create(
-            {'name': 'ProfitTestService3', 'is_hosting': False, 'is_published': True})
+            {'name': 'ProfitTestProduct3', 'is_hosting': True, 'is_published': True})
         plan = self.env['saas.plan'].sudo().create({
             'name': 'ProfitTestPlanMinPrice', 'is_custom': True,
             'workers': 4, 'storage_limit': 0, 'cpu_limit': 2.0, 'ram_limit': '4g',
@@ -146,7 +146,7 @@ class TestProfitabilitySharedAcrossModels(TransactionCase):
 
     def test_trial_plan_profitability_is_not_evaluated(self):
         product = self.env['saas.product'].sudo().create(
-            {'name': 'ProfitTestTrialService', 'is_hosting': False, 'is_published': True})
+            {'name': 'ProfitTestTrialProduct', 'is_hosting': True, 'is_published': True})
         plan = self.env['saas.plan'].sudo().create({
             'name': 'ProfitTestTrialPlan', 'is_custom': True, 'is_trial_plan': True,
             'workers': 2, 'storage_limit': 5, 'cpu_limit': 1.0, 'ram_limit': '2g',

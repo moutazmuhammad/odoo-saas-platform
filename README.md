@@ -1,6 +1,6 @@
 # VELTNEX: Odoo SaaS platform
 
-VELTNEX is an Odoo hosting platform. Customers sign up, buy Odoo hosting (or a ready-made service built on Odoo), and get a **project** with a Production environment plus optional Staging and Development environments. Each environment is its own Odoo instance on Kubernetes. Customers deploy their own addons from Git, take and restore backups, invite teammates with per-environment permissions, and pay through invoices and a wallet.
+VELTNEX is an Odoo hosting platform. Customers sign up, buy Odoo hosting, and get a **project** with a Production environment plus optional Staging and Development environments. Each environment is its own Odoo instance on Kubernetes. Customers deploy their own addons from Git, take and restore backups, invite teammates with per-environment permissions, and pay through invoices and a wallet.
 
 This repo holds everything: the control plane (Odoo 18 addons + React SPA), the Kubernetes operator that runs tenants, and the setup guides.
 

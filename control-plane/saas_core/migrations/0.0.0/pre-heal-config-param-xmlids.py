@@ -32,12 +32,7 @@ _logger = logging.getLogger(__name__)
 # Mirrors data/ir_config_parameter.xml exactly.
 _PARAM_SUFFIXES = [
     'default_instance_starting_port', 'trial_days', 'max_instances_per_user',
-    'worker_price', 'storage_price_per_gb',
-    'custom_plan_min_workers', 'custom_plan_max_workers',
-    'custom_plan_min_storage', 'custom_plan_max_storage',
-    'custom_plan_cpu_per_worker', 'custom_plan_ram_per_worker',
     'custom_plan_users_per_worker_min', 'custom_plan_users_per_worker_max',
-    'custom_plan_yearly_discount_pct',
     'hosting_worker_price', 'hosting_storage_price_per_gb',
     'hosting_min_workers', 'hosting_max_workers',
     'hosting_min_storage', 'hosting_max_storage',

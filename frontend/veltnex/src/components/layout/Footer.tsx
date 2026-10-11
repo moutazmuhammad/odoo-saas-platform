@@ -12,7 +12,6 @@ export function Footer() {
     { label: i18nText("Docs"), to: "/docs" },
     { label: i18nText("Help"), to: "/help" },
     sections.hosting && { label: i18nText("Hosting"), to: "/hosting" },
-    sections.services && { label: i18nText("Services"), to: "/services" },
     { label: i18nText("Sign in"), to: "/login" },
   ].filter(Boolean) as { label: string; to: string }[];
 

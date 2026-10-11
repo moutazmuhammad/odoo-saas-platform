@@ -37,24 +37,20 @@ class SaasWebsite(http.Controller):
     # ------------------------------------------------------------------
 
     def _section_enabled(self, name):
-        """Return True if the ``Services`` / ``Hosting`` section is enabled
-        in settings. Default-on so a fresh install behaves like before.
-
-        ``name`` is ``'services'`` or ``'hosting'``.
+        """Return True if the ``Hosting`` section is enabled in settings.
+        Default-on so a fresh install behaves like before.
         """
         key = 'saas_master.show_%s_section' % name
         return request.env['ir.config_parameter'].sudo().get_param(
             key, 'True',
         ) != 'False'
 
-    def _get_trial_info(self, hosting=False):
+    def _get_trial_info(self):
         """Return (trial_available, trial_days) for the current user.
 
-        :param hosting: if True, check hosting trial; otherwise service trial.
-
         A trial is unavailable when (a) trial_days is 0, (b) the partner has
-        already used their trial of this type, or (c) the partner already
-        owns a paid (non-trial) instance of this type — once the customer
+        already used their trial, or (c) the partner already owns a paid
+        (non-trial) project — once the customer
         has paid for a server, the free trial no longer applies.
         """
         trial_days = int(request.env['ir.config_parameter'].sudo().get_param(
@@ -65,521 +61,11 @@ class SaasWebsite(http.Controller):
         if request.env.user._is_public():
             return True, trial_days
         partner = request.env.user.partner_id.sudo()
-        if partner._saas_trial_used(hosting=hosting):
+        if partner._saas_trial_used():
             return False, trial_days
-        if partner._saas_has_paid_instance(hosting=hosting):
+        if partner._saas_has_paid_instance():
             return False, trial_days
         return True, trial_days
-
-    # ==================================================================
-    #  1. Services Catalog  –  /services
-    # ==================================================================
-
-    # /services and /services/<id> are served by the VELTNEX SPA — see
-    # controllers/spa.py. (Ordering still POSTs to /services/order below.)
-
-    # ==================================================================
-    #  3. Configure Instance  –  /services/<id>/plans/<plan_id>/configure
-    # ==================================================================
-
-    @http.route('/services/<int:product_id>/plans/<int:plan_id>/configure',
-                type='http', auth='public', website=True)
-    def service_configure(self, product_id, plan_id, error=None, **kw):
-        if not self._section_enabled('services'):
-            return request.redirect('/')
-        # Public users must register/login first
-        if request.env.user._is_public():
-            is_trial = kw.get('trial') == '1'
-            params = 'product_id=%d&plan_id=%d' % (product_id, plan_id)
-            if is_trial:
-                params += '&is_trial=1'
-            return request.redirect('/services/register?%s' % params)
-
-        product = request.env['saas.product'].sudo().browse(product_id)
-        plan = request.env['saas.plan'].sudo().browse(plan_id)
-        if (not product.exists() or not product.is_published
-                or not plan.exists()
-                or product not in plan.saas_product_ids):
-            return request.redirect('/services')
-
-        is_trial = kw.get('trial') == '1'
-        billing_period = kw.get('billing', 'monthly')
-        if billing_period not in ('monthly', 'yearly'):
-            billing_period = 'monthly'
-        domains = request.env['saas.based.domain'].sudo().search([])
-
-        return request.render('saas_website.service_configure_form', {
-            'product': product,
-            'plan': plan,
-            'domains': domains,
-            'error': error,
-            'is_trial': is_trial,
-            'billing_period': billing_period,
-            'form_values': kw,
-        })
-
-    # ==================================================================
-    #  4. Process Order  –  /services/order
-    # ==================================================================
-
-    @http.route('/services/order', type='http', auth='user', website=True,
-                methods=['POST'], csrf=True)
-    def service_order(self, **post):
-        if not self._section_enabled('services'):
-            return request.redirect('/')
-        product_id = int(post.pop('product_id', 0))
-        plan_id = int(post.pop('plan_id', 0))
-        subdomain = (post.get('subdomain') or '').strip().lower()
-        domain_id = int(post.get('domain_id', 0))
-        billing_period = post.get('billing_period', 'monthly')
-        if billing_period not in ('monthly', 'yearly'):
-            billing_period = 'monthly'
-
-        product = request.env['saas.product'].sudo().browse(product_id)
-        plan = request.env['saas.plan'].sudo().browse(plan_id)
-        if (not product.exists() or not product.is_published
-                or not plan.exists()
-                or product not in plan.saas_product_ids):
-            return request.redirect('/services')
-
-        # --- Trial / paid plan validation ---
-        is_trial = post.get('is_trial') == '1'
-        if is_trial and not plan.is_trial_plan:
-            return self.service_configure(
-                product_id, plan_id,
-                error=_("This plan is not available for free trial."),
-                **post,
-            )
-        if not is_trial and plan.is_trial_plan:
-            return self.service_configure(
-                product_id, plan_id,
-                error=_("This plan is only available as a free trial."),
-                **post,
-            )
-
-        # --- Subdomain validation ---
-        if not subdomain or not SUBDOMAIN_RE.match(subdomain):
-            return self.service_configure(
-                product_id, plan_id,
-                error=_("Invalid subdomain. Use only lowercase letters, digits, "
-                        "and hyphens (max 63 chars, must start/end with alphanumeric)."),
-                **post,
-            )
-
-        # Check uniqueness
-        existing = request.env['saas.instance'].sudo().search([
-            ('subdomain', '=', subdomain),
-            ('domain_id', '=', domain_id),
-            ('state', 'in', _ACTIVE_STATES),
-        ], limit=1)
-        if existing:
-            return self.service_configure(
-                product_id, plan_id,
-                error=_("The subdomain '%s' is already taken. "
-                        "Please choose another.") % subdomain,
-                **post,
-            )
-
-        # --- Validate references ---
-        domain = request.env['saas.based.domain'].sudo().browse(domain_id)
-        version = product.odoo_version_id
-        if not domain.exists() or not version:
-            support_email = request.env['ir.config_parameter'].sudo().get_param(
-                'saas_master.support_email', ''
-            )
-            support_msg = (
-                _(" Please contact us at %s.") % support_email
-                if support_email else _(" Please contact support.")
-            )
-            return self.service_configure(
-                product_id, plan_id,
-                error=_("Please select a valid domain.") if not domain.exists()
-                       else _("No Odoo version configured for this service.") + support_msg,
-                **post,
-            )
-
-        partner = request.env.user.partner_id
-
-        # --- Rate limiting ---
-        max_instances = int(request.env['ir.config_parameter'].sudo().get_param(
-            'saas_master.max_instances_per_user', '5',
-        ))
-        if max_instances > 0:
-            active_count = request.env['saas.instance'].sudo().search_count([
-                ('partner_id', '=', partner.id),
-                ('state', 'in', _QUOTA_STATES),
-            ])
-            if active_count >= max_instances:
-                return self.service_configure(
-                    product_id, plan_id,
-                    error=_("You have reached the maximum number of instances (%d). "
-                            "Please delete or cancel an existing one first.") % max_instances,
-                    **post,
-                )
-
-        # --- Trial: one per client, and not after a paid instance ---
-        if is_trial:
-            partner_sudo = partner.sudo()
-            if partner_sudo._saas_trial_used(hosting=False):
-                return self.service_configure(
-                    product_id, plan_id,
-                    error=_("You have already used your free trial."),
-                    **post,
-                )
-            if partner_sudo._saas_has_paid_instance(hosting=False):
-                return self.service_configure(
-                    product_id, plan_id,
-                    error=_("You already have a paid service instance — "
-                            "the free trial is no longer available."),
-                    **post,
-                )
-
-        # --- Validate infrastructure ---
-        compute_servers = request.env['saas.server'].sudo().search(
-            [('health_state', '!=', 'unreachable')], limit=1,
-        )
-        if not compute_servers:
-            support_email = request.env['ir.config_parameter'].sudo().get_param(
-                'saas_master.support_email', ''
-            )
-            support_msg = (
-                _("Please contact us at %s.") % support_email
-                if support_email else _("Please contact support.")
-            )
-            return self.service_configure(
-                product_id, plan_id,
-                error=_("Service is temporarily unavailable. "
-                        "No infrastructure servers are configured. ") + support_msg,
-                **post,
-            )
-
-        # --- Create instance ---
-        vals = {
-            'subdomain': subdomain,
-            'domain_id': domain.id,
-            'partner_id': partner.id,
-            'saas_product_id': product.id,
-            'plan_id': plan.id,
-            'odoo_version_id': version.id,
-            'billing_period': billing_period,
-        }
-        if is_trial:
-            vals['is_trial'] = True
-
-        try:
-            # Atomic (see hosting_order): a deferred constraint that fires on
-            # flush during action_deploy() — e.g. one-trial-per-client — must
-            # roll the instance INSERT back entirely, else a rejected trial
-            # leaks an orphan draft instance (the caught error still lets the
-            # request commit). cr.savepoint() undoes the INSERT on any failure.
-            with request.env.cr.savepoint():
-                instance = request.env['saas.instance'].sudo().create(vals)
-
-                # Server allocation is handled by _allocate_servers() inside
-                # action_deploy(), which enforces capacity limits
-                # (max_instances, max_cpu_cores, max_ram_gb) and falls back
-                # to overcommit servers only when explicitly allowed from
-                # the backend.  Do NOT pre-assign servers here.
-
-                if is_trial:
-                    # Trial: skip billing, deploy immediately.
-                    # The partner's trial flag (saas_trial_used) is set inside
-                    # _do_deploy() only after the deployment actually succeeds,
-                    # so that a failed deploy does not permanently lock the
-                    # customer out of their trial.
-                    instance.action_deploy()
-                else:
-                    # Paid: billing + auto-deploy flow
-                    instance.action_confirm_and_bill()
-        except (UserError, ValidationError) as e:
-            # savepoint already rolled the INSERT back — no orphan to clean up.
-            return self.service_configure(
-                product_id, plan_id,
-                error=str(e),
-                **post,
-            )
-
-        if is_trial:
-            return request.redirect('/my/instances/%s?access_token=%s' % (
-                instance.id, instance.access_token,
-            ))
-        # Paid: redirect to checkout for immediate payment
-        return request.redirect('/my/instances/%s/checkout' % instance.id)
-
-    # ==================================================================
-    #  5. Custom Plan Builder  –  pricing config & calculation
-    # ==================================================================
-
-    def _get_custom_plan_config(self):
-        """Return custom plan builder configuration from system parameters.
-
-        Per-unit rates are intentionally NOT included: pricing is computed
-        server-side by saas.pricing.engine and only totals are exposed.
-        This dict carries limits / discount / currency only."""
-        ICP = request.env['ir.config_parameter'].sudo()
-        return {
-            'min_workers': int(ICP.get_param('saas_master.custom_plan_min_workers', '2')),
-            'max_workers': int(ICP.get_param('saas_master.custom_plan_max_workers', '8')),
-            'min_storage': int(ICP.get_param('saas_master.custom_plan_min_storage', '5')),
-            'max_storage': int(ICP.get_param('saas_master.custom_plan_max_storage', '200')),
-            'cpu_per_worker': float(ICP.get_param('saas_master.custom_plan_cpu_per_worker', '0.5')),
-            'ram_per_worker': int(ICP.get_param('saas_master.custom_plan_ram_per_worker', '512')),
-            'users_per_worker_min': int(ICP.get_param('saas_master.custom_plan_users_per_worker_min', '6')),
-            'users_per_worker_max': int(ICP.get_param('saas_master.custom_plan_users_per_worker_max', '10')),
-            'yearly_discount_pct': int(ICP.get_param('saas_master.custom_plan_yearly_discount_pct', '20')),
-            'currency': request.env.company.currency_id.name or 'USD',
-        }
-
-    @http.route('/saas/custom-plan/calculate', type='json', auth='public', website=True)
-    def custom_plan_calculate(self, workers=2, storage=5, region=None):
-        """Real-time price calculation for the custom plan builder.
-
-        ``region`` (id, optional) scales the price by that region's
-        multiplier so a change-plan preview matches the region-aware plan
-        that will actually be created/billed."""
-        config = self._get_custom_plan_config()
-        workers = max(config['min_workers'], min(int(workers), config['max_workers']))
-        storage = max(config['min_storage'], min(int(storage), config['max_storage']))
-
-        region_rec = self._resolve_region_id_strict(region)
-        _q = request.env['saas.pricing.engine'].compute(
-            'services', workers, storage, region=region_rec.id or None)
-
-        min_users = workers * config['users_per_worker_min']
-        max_users = workers * config['users_per_worker_max']
-
-        return {
-            'workers': workers,
-            'storage': storage,
-            'monthly_total': _q['monthly'],
-            # Engine yearly: region-scaled AND discounted (infra only). The
-            # client no longer derives yearly from monthly.
-            'yearly_total': _q['yearly'],
-            'min_users': min_users,
-            'max_users': max_users,
-            'currency': config['currency'],
-        }
-
-    @http.route('/services/<int:product_id>/custom/configure',
-                type='http', auth='public', website=True)
-    def service_custom_configure(self, product_id, workers=4, storage=20,
-                                 billing='monthly', error=None, **kw):
-        """Configure instance page for a custom plan."""
-        if not self._section_enabled('services'):
-            return request.redirect('/')
-        if request.env.user._is_public():
-            params = 'product_id=%d&custom=1&workers=%s&storage=%s&billing=%s' % (
-                product_id, workers, storage, billing,
-            )
-            return request.redirect('/services/register?%s' % params)
-
-        product = request.env['saas.product'].sudo().browse(product_id)
-        if not product.exists() or not product.is_published:
-            return request.redirect('/services')
-
-        billing_period = billing if billing in ('monthly', 'yearly') else 'monthly'
-
-        config = self._get_custom_plan_config()
-        workers = max(config['min_workers'], min(int(workers), config['max_workers']))
-        storage = max(config['min_storage'], min(int(storage), config['max_storage']))
-
-        _q = request.env['saas.pricing.engine'].compute('services', workers, storage, billing_period)
-        monthly_total = _q['monthly']
-
-        discount = config['yearly_discount_pct'] / 100.0
-        if billing_period == 'yearly':
-            yearly_total = monthly_total * 12 * (1 - discount)
-            display_total = yearly_total
-            yearly_savings = (monthly_total * 12) - yearly_total
-        else:
-            yearly_total = monthly_total * 12
-            display_total = monthly_total
-            yearly_savings = 0
-
-        domains = request.env['saas.based.domain'].sudo().search([])
-
-        return request.render('saas_website.service_custom_configure_form', {
-            'product': product,
-            'domains': domains,
-            'error': error,
-            'workers': workers,
-            'storage': storage,
-            'monthly_total': monthly_total,
-            'yearly_total': yearly_total,
-            'display_total': display_total,
-            'yearly_savings': yearly_savings,
-            'billing_period': billing_period,
-            'config': config,
-            'form_values': kw,
-        })
-
-    @http.route('/services/custom-order', type='http', auth='user', website=True,
-                methods=['POST'], csrf=True)
-    def service_custom_order(self, **post):
-        """Process a custom plan order."""
-        if not self._section_enabled('services'):
-            return request.redirect('/')
-        product_id = int(post.pop('product_id', 0))
-        workers = int(post.get('workers', 4))
-        storage = int(post.get('storage', 20))
-        subdomain = (post.get('subdomain') or '').strip().lower()
-        domain_id = int(post.get('domain_id', 0))
-        billing_period = post.get('billing_period', 'monthly')
-        if billing_period not in ('monthly', 'yearly'):
-            billing_period = 'monthly'
-
-        product = request.env['saas.product'].sudo().browse(product_id)
-        if not product.exists() or not product.is_published:
-            return request.redirect('/services')
-
-        config = self._get_custom_plan_config()
-        workers = max(config['min_workers'], min(workers, config['max_workers']))
-        storage = max(config['min_storage'], min(storage, config['max_storage']))
-
-        # Subdomain validation
-        if not subdomain or not SUBDOMAIN_RE.match(subdomain):
-            return self.service_custom_configure(
-                product_id, workers=workers, storage=storage,
-                error=_("Invalid subdomain. Use only lowercase letters, digits, "
-                        "and hyphens (max 63 chars, must start/end with alphanumeric)."),
-                **post,
-            )
-
-        existing = request.env['saas.instance'].sudo().search([
-            ('subdomain', '=', subdomain),
-            ('domain_id', '=', domain_id),
-            ('state', 'in', _ACTIVE_STATES),
-        ], limit=1)
-        if existing:
-            return self.service_custom_configure(
-                product_id, workers=workers, storage=storage,
-                error=_("The subdomain '%s' is already taken.") % subdomain,
-                **post,
-            )
-
-        domain = request.env['saas.based.domain'].sudo().browse(domain_id)
-        version = product.odoo_version_id
-        if not domain.exists() or not version:
-            return self.service_custom_configure(
-                product_id, workers=workers, storage=storage,
-                error=_("Please select a valid domain.") if not domain.exists()
-                       else _("No Odoo version configured for this service."),
-                **post,
-            )
-
-        partner = request.env.user.partner_id
-
-        # Rate limiting
-        max_instances = int(request.env['ir.config_parameter'].sudo().get_param(
-            'saas_master.max_instances_per_user', '5',
-        ))
-        if max_instances > 0:
-            active_count = request.env['saas.instance'].sudo().search_count([
-                ('partner_id', '=', partner.id),
-                ('state', 'in', _QUOTA_STATES),
-            ])
-            if active_count >= max_instances:
-                return self.service_custom_configure(
-                    product_id, workers=workers, storage=storage,
-                    error=_("You have reached the maximum number of instances (%d).") % max_instances,
-                    **post,
-                )
-
-        # Validate infrastructure
-        compute_servers = request.env['saas.server'].sudo().search(
-            [('health_state', '!=', 'unreachable')], limit=1,
-        )
-        if not compute_servers:
-            return self.service_custom_configure(
-                product_id, workers=workers, storage=storage,
-                error=_("Service is temporarily unavailable."),
-                **post,
-            )
-
-        # Find or create a matching plan for this custom configuration
-        # We look for a plan that matches exactly, or create a dynamic one
-        plan = self._get_or_create_custom_plan(product, workers, storage, config)
-
-        vals = {
-            'subdomain': subdomain,
-            'domain_id': domain.id,
-            'partner_id': partner.id,
-            'saas_product_id': product.id,
-            'plan_id': plan.id,
-            'odoo_version_id': version.id,
-            'billing_period': billing_period,
-        }
-        try:
-            # Atomic (see hosting_order): a deferred constraint firing on flush
-            # during action_confirm_and_bill() must roll the INSERT back, else
-            # a rejected order leaks an orphan draft instance.
-            with request.env.cr.savepoint():
-                instance = request.env['saas.instance'].sudo().create(vals)
-                instance.action_confirm_and_bill()
-        except (UserError, ValidationError) as e:
-            return self.service_custom_configure(
-                product_id, workers=workers, storage=storage,
-                error=str(e),
-                **post,
-            )
-
-        return request.redirect('/my/instances/%s/checkout' % instance.id)
-
-    def _get_or_create_custom_plan(self, product, workers, storage, config, region=None):
-        """Find or create a plan matching the custom configuration.
-
-        ``region`` (optional) applies the region price multiplier; None =>
-        x1.0 (default region / behaviour-neutral)."""
-        Plan = request.env['saas.plan'].sudo()
-        plan_name = 'Custom (%dW / %dGB)' % (workers, storage)
-
-        # Single source of truth: saas.pricing.engine. Behaviour-neutral.
-        _q = request.env['saas.pricing.engine'].compute(
-            'services', workers, storage, region=region)
-        monthly_price = _q['monthly']
-
-        # Search for existing matching custom plan
-        plan = Plan.search([
-            ('is_custom', '=', True),
-            ('workers', '=', workers),
-            ('storage_limit', '=', float(storage)),
-            ('price', '=', monthly_price),
-            ('saas_product_ids', 'in', product.id),
-        ], limit=1)
-
-        if not plan:
-            # One sizing formula everywhere (admin form onchange, custom
-            # builder, trial) — see saas.plan._recommended_resources.
-            res = Plan._recommended_resources('services', workers)
-            yearly_price = _q['yearly']
-
-            # Backup retention is FIXED platform-wide (no per-plan setting):
-            # every Services instance keeps the last DEFAULT_MAX_BACKUPS
-            # copies, mirroring hosting's fixed HOSTING_MAX_SNAPSHOTS.
-            plan = Plan.create({
-                'name': plan_name,
-                'is_custom': True,
-                'price': monthly_price,
-                'yearly_price': yearly_price,
-                'workers': workers,
-                'storage_limit': float(storage),
-                'cpu_limit': res['cpu_limit'],
-                'ram_limit': res['ram_limit'],
-                'saas_product_ids': [(4, product.id)],
-                'sequence': 999,
-            })
-
-        return plan
-
-    # ==================================================================
-    #  Legacy: keep /plans as redirect to /services
-    # ==================================================================
-
-    @http.route('/plans', type='http', auth='public', website=True, sitemap=False)
-    def plans_page_redirect(self, **kw):
-        if not self._section_enabled('services'):
-            return request.redirect('/')
-        return request.redirect('/services', code=301)
 
     # ==================================================================
     #  Customer Documentation  –  /docs
@@ -627,8 +113,6 @@ class SaasWebsite(http.Controller):
         if not product:
             product = Product.create({
                 'name': 'Cloud Hosting',
-                'subtitle': 'Self-managed Odoo hosting',
-                'icon': 'fa fa-server',
                 'is_hosting': True,
                 'is_published': True,
             })
@@ -710,7 +194,7 @@ class SaasWebsite(http.Controller):
         if not plan:
             # One sizing formula everywhere (admin form onchange, custom
             # builder, trial) — see saas.plan._recommended_resources.
-            res = Plan._recommended_resources('hosting', workers)
+            res = Plan._recommended_resources(workers)
             yearly_price = _q['yearly']
 
             plan = Plan.create({
@@ -740,7 +224,7 @@ class SaasWebsite(http.Controller):
         ], limit=1)
 
         if not plan:
-            res = Plan._recommended_resources('hosting', config['min_workers'])
+            res = Plan._recommended_resources(config['min_workers'])
             plan = Plan.create({
                 'name': 'Hosting Trial',
                 'is_trial_plan': True,
@@ -775,9 +259,6 @@ class SaasWebsite(http.Controller):
                 params += '&support_code=%s' % kw['support_code']
             if kw.get('is_trial') == '1':
                 params += '&is_trial=1'
-            # Use the generic (ungated) sign-up route — /services/register
-            # is gated by the services section, so a hosting-only setup
-            # would bounce the buyer to home.
             return request.redirect('/register?%s' % params)
 
         billing_period = billing if billing in ('monthly', 'yearly') else 'monthly'
@@ -1102,9 +583,9 @@ class SaasWebsite(http.Controller):
         # Hosting trial: one per client, and not after a paid hosting instance
         if is_trial:
             partner_sudo = partner.sudo()
-            if partner_sudo._saas_trial_used(hosting=True):
+            if partner_sudo._saas_trial_used():
                 return request.redirect(err_redirect % ('You+have+already+used+your+free+hosting+trial'))
-            if partner_sudo._saas_has_paid_instance(hosting=True):
+            if partner_sudo._saas_has_paid_instance():
                 return request.redirect(err_redirect % (
                     'You+already+have+a+paid+hosting+instance+-+the+free+trial+is+no+longer+available'
                 ))

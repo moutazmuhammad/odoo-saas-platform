@@ -54,16 +54,6 @@ class TestPricingQuoteHasNoFinancialLeak(HttpCase):
         self.assertTrue(result['ok'])
         _assert_no_leak(self, result)
 
-    def test_services_calculate_has_no_cost_or_floor_data(self):
-        icp = self.env['ir.config_parameter'].sudo()
-        icp.set_param('saas_master.worker_floor', '5.0')
-        icp.set_param('saas_master.storage_floor', '0.2')
-        result = self._json_call(
-            '/saas/api/v1/services/calculate',
-            {'workers': 4, 'storage': 20, 'billing': 'monthly'})
-        self.assertTrue(result['ok'])
-        _assert_no_leak(self, result)
-
 
 @tagged('post_install', '-at_install')
 class TestInstanceDetailHasNoFinancialLeak(_PortalTestBase):

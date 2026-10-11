@@ -10,7 +10,6 @@ Understand the platform, create an account, and launch your first project.
 - [Create an account](create-account.md)
 - [Launch your first hosting project](launch-instance.md)
 - [Use a free trial](free-trial.md)
-- [Subscribe to a ready-made service](managed-services.md)
 
 ## Projects and lifecycle
 

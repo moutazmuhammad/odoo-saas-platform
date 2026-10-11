@@ -1,6 +1,6 @@
 {
     'name': 'SaaS Billing',
-    'version': '18.0.2.3.0',
+    'version': '18.0.3.0.0',
     'category': 'SaaS',
     'summary': 'Pricing, wallet, payments and commercial add-ons for the SaaS platform',
     'description': """

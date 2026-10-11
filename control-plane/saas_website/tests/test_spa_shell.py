@@ -13,8 +13,8 @@ class TestSpaShellRoutes(HttpCase):
     SPA owns client-side routing/auth for these paths, so there's no
     portal.py-style per-route business logic to test. What IS worth
     testing: the handful of routes with real server-side branching
-    (the `_section_enabled` gates, the logged-in-vs-public redirects on
-    `/services/register` and `/register`, and `SaasWebLogin`'s
+    (the `_section_enabled` gate, the logged-in-vs-public redirects on
+    `/register`, and `SaasWebLogin`'s
     redirect-to-/login override), plus `spa_shell()` itself — the
     theme-cookie injection and the "frontend not built" fallback,
     which is genuinely reachable right now since this checkout's
@@ -79,18 +79,11 @@ class TestSpaShellRoutes(HttpCase):
             resp = self.url_open('/')
         self.assertIn('data-theme="dark"', resp.text)
 
-    # ---- Section gating (/services, /hosting) --------------------------
+    # ---- Section gating (/hosting) --------------------------------------
 
-    def test_services_page_enabled_by_default(self):
-        resp = self.url_open('/services')
+    def test_hosting_page_enabled_by_default(self):
+        resp = self.url_open('/hosting')
         self.assertEqual(resp.status_code, 200)
-
-    def test_services_page_redirects_home_when_disabled(self):
-        self.env['ir.config_parameter'].sudo().set_param(
-            'saas_master.show_services_section', 'False')
-        resp = self.url_open('/services', allow_redirects=False)
-        self.assertIn(resp.status_code, (301, 302, 303))
-        self.assertEqual(resp.headers['Location'], '/')
 
     def test_hosting_page_redirects_home_when_disabled(self):
         self.env['ir.config_parameter'].sudo().set_param(
@@ -98,11 +91,11 @@ class TestSpaShellRoutes(HttpCase):
         resp = self.url_open('/hosting', allow_redirects=False)
         self.assertEqual(resp.headers['Location'], '/')
 
-    def test_service_plans_page_redirects_home_when_services_disabled(self):
-        self.env['ir.config_parameter'].sudo().set_param(
-            'saas_master.show_services_section', 'False')
-        resp = self.url_open('/services/1', allow_redirects=False)
-        self.assertEqual(resp.headers['Location'], '/')
+    def test_services_routes_are_gone(self):
+        # The managed Services product was removed; only Hosting is sold.
+        for path in ('/services', '/services/1', '/services/register', '/plans'):
+            resp = self.url_open(path, allow_redirects=False)
+            self.assertEqual(resp.status_code, 404, path)
 
     # ---- Static shell-only routes — breadth, not depth -----------------
 
@@ -114,10 +107,10 @@ class TestSpaShellRoutes(HttpCase):
             self.assertEqual(
                 resp.status_code, 200, "%s did not return 200" % path)
 
-    # ---- /services/register and /register: logged-in vs. public -------
+    # ---- /register: logged-in vs. public -------------------------------
 
     def test_register_form_get_serves_shell_for_public_user(self):
-        resp = self.url_open('/services/register')
+        resp = self.url_open('/register')
         self.assertEqual(resp.status_code, 200)
 
     def test_register_form_get_redirects_logged_in_user(self):
@@ -127,14 +120,10 @@ class TestSpaShellRoutes(HttpCase):
         user.password = 'spauserpass1'
         self.authenticate('spauser@example.com', 'spauserpass1')
         resp = self.url_open(
-            '/services/register?hosting=1&workers=4&storage=10',
+            '/register?hosting=1&workers=4&storage=10',
             allow_redirects=False)
         self.assertIn(resp.status_code, (301, 302, 303))
         self.assertTrue(resp.headers['Location'].startswith('/hosting/configure'))
-
-    def test_spa_register_serves_shell_for_public_user(self):
-        resp = self.url_open('/register')
-        self.assertEqual(resp.status_code, 200)
 
     def test_spa_register_redirects_logged_in_user_to_my(self):
         user = self.env['res.users'].sudo().create({

@@ -13,7 +13,6 @@ import {
   Box,
 } from "lucide-react";
 import { api, type ApiInstance } from "@/lib/api";
-import { useSections } from "@/lib/useSections";
 import { cn } from "@/lib/utils";
 
 interface Cmd {
@@ -29,7 +28,6 @@ interface Cmd {
  *  actions. The fastest path through the app at scale. */
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
-  const sections = useSections();
   const [query, setQuery] = React.useState("");
   const [projects, setProjects] = React.useState<ApiInstance[]>([]);
   const [active, setActive] = React.useState(0);
@@ -65,7 +63,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         label: i18nText("New project"),
         icon: Plus,
         group: "Actions",
-        run: () => go(sections.hosting ? "/hosting" : "/services"),
+        run: () => go("/hosting"),
       },
     ];
     const projectCmds: Cmd[] = projects.map((p) => ({
@@ -74,10 +72,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       hint: p.region || p.domain,
       icon: Box,
       group: "Projects",
-      run: () => go(p.is_hosting ? `/my/instances/${p.id}/environments` : `/my/instances/${p.id}`),
+      run: () => go(`/my/instances/${p.id}/environments`),
     }));
     return [...nav, ...actions, ...projectCmds];
-  }, [projects, sections.hosting, go]);
+  }, [projects, go]);
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();

@@ -17,8 +17,8 @@
           "ar": "التعرّف على VELTNEX"
         },
         "summary": {
-          "en": "Understand hosting, managed services, projects, and environments.",
-          "ar": "تعرّف على الاستضافة والخدمات الجاهزة والمشاريع وبيئات العمل."
+          "en": "Understand hosting, projects, and environments.",
+          "ar": "تعرّف على الاستضافة والمشاريع وبيئات العمل."
         },
         "kind": "guide",
         "reviewed": "2026-10-05",
@@ -33,8 +33,8 @@
               {
                 "type": "paragraph",
                 "text": {
-                  "en": "VELTNEX provides managed Odoo infrastructure and a customer control panel. Hosting subscriptions give you database and developer tools. Ready-made services provide a configured application with a more limited management interface. Available plans, regions, versions, and services depend on the platform catalog.",
-                  "ar": "توفّر VELTNEX بنية استضافة مُدارة لتطبيق Odoo ولوحة تحكم للعميل. تتيح اشتراكات الاستضافة إدارة قواعد البيانات وأدوات التطوير، بينما تقدّم الخدمات الجاهزة تطبيقًا مُعدًّا مسبقًا بواجهة إدارة أبسط. تتحدد الخطط والمناطق والإصدارات والخدمات المتاحة حسب كتالوج المنصة."
+                  "en": "VELTNEX provides managed Odoo hosting and a customer control panel. Each hosting project gives you Production, Staging and Development environments with database and developer tools. Available plans, regions, and versions depend on the platform catalog.",
+                  "ar": "توفّر VELTNEX استضافة مُدارة لتطبيق Odoo ولوحة تحكم للعميل. يمنحك كل مشروع استضافة بيئات Production وStaging وDevelopment مع أدوات إدارة قواعد البيانات والتطوير. تتحدد الخطط والمناطق والإصدارات المتاحة حسب كتالوج المنصة."
                 }
               },
               {
@@ -373,62 +373,6 @@
           "control-plane/saas_core/models/saas_instance.py",
           "control-plane/saas_billing/models/saas_instance.py"
         ]
-      },
-      {
-        "id": "managed-services",
-        "title": {
-          "en": "Subscribe to a ready-made service",
-          "ar": "الاشتراك في خدمة جاهزة"
-        },
-        "summary": {
-          "en": "Understand the managed-service experience and its available tools.",
-          "ar": "تعرّف على تجربة الخدمات الجاهزة والأدوات المتاحة فيها."
-        },
-        "kind": "guide",
-        "reviewed": "2026-10-05",
-        "sections": [
-          {
-            "id": "choose",
-            "title": {
-              "en": "Choose a service",
-              "ar": "اختيار الخدمة"
-            },
-            "blocks": [
-              {
-                "type": "paragraph",
-                "text": {
-                  "en": "Open **Services**, select an available product, review its description, and configure the offered size and billing options. Products and applications are defined by the platform catalog. Complete checkout and wait for the service to be provisioned.",
-                  "ar": "افتح **الخدمات** واختر منتجًا متاحًا، واقرأ وصفه ثم حدّد الموارد وخيارات الفوترة المعروضة. تضبط المنصة المنتجات والتطبيقات في الكتالوج. أكمل الدفع وانتظر تجهيز الخدمة."
-                }
-              }
-            ]
-          },
-          {
-            "id": "tools",
-            "title": {
-              "en": "Management tools",
-              "ar": "أدوات الإدارة"
-            },
-            "blocks": [
-              {
-                "type": "paragraph",
-                "text": {
-                  "en": "A service can expose its overview, power controls, resources, billing, and snapshots. Hosting-only tools such as customer Git repositories, the SQL console, Shell, multi-environment workflows, and the hosting Databases page are not part of the managed-service interface. Use the product description to confirm what is included.",
-                  "ar": "قد تتيح الخدمة عرض الحالة والتحكم بالتشغيل والموارد والفوترة واللقطات. أدوات الاستضافة مثل مستودعات Git الخاصة بالعميل وSQL وShell والعمل بعدة بيئات وصفحة قواعد بيانات الاستضافة ليست ضمن واجهة الخدمات الجاهزة. راجع وصف المنتج لمعرفة ما يشمله الاشتراك."
-                }
-              }
-            ]
-          }
-        ],
-        "related": [
-          "overview",
-          "daily-backups",
-          "invoices"
-        ],
-        "sources": [
-          "frontend/veltnex/src/pages/ServiceDetail.tsx",
-          "control-plane/saas_website/controllers/api.py"
-        ]
       }
     ]
   },
@@ -479,8 +423,8 @@
                     "ar": "افتح **المشاريع**، واختر مشروع استضافة ثم بيئة Production أو Staging أو Development."
                   },
                   {
-                    "en": "Use the environment tabs for Overview, Metrics, Databases, Shell, SQL, Logs, or Snapshots. Tabs depend on your permissions and the product type.",
-                    "ar": "استخدم تبويبات البيئة للملخص والمقاييس وقواعد البيانات وShell وSQL والسجلات واللقطات. تتحدد التبويبات حسب صلاحياتك ونوع المنتج."
+                    "en": "Use the environment tabs for Overview, Metrics, Databases, Shell, SQL, Logs, or Snapshots. Tabs depend on your permissions.",
+                    "ar": "استخدم تبويبات البيئة للملخص والمقاييس وقواعد البيانات وShell وSQL والسجلات واللقطات. تتحدد التبويبات حسب صلاحياتك."
                   },
                   {
                     "en": "Use the top project selector to switch projects. The Projects navigation action is also available from Settings and Team & permissions.",
@@ -832,7 +776,8 @@
           "control-plane/saas_billing/models/saas_instance.py",
           "control-plane/saas_billing/models/account_move.py",
           "control-plane/saas_iam/models/integration.py",
-          "frontend/veltnex/src/pages/portal/InstanceDetail.tsx"
+          "control-plane/saas_website/controllers/portal.py",
+          "frontend/veltnex/src/pages/portal/Environments.tsx"
         ]
       },
       {
@@ -1223,7 +1168,8 @@
         ],
         "sources": [
           "control-plane/saas_billing/models/saas_instance.py",
-          "frontend/veltnex/src/pages/portal/InstanceDetail.tsx"
+          "frontend/veltnex/src/pages/portal/Environments.tsx",
+          "frontend/veltnex/src/components/BillingPanel.tsx"
         ]
       },
       {

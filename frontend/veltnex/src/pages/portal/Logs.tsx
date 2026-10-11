@@ -1,6 +1,6 @@
 import { i18nText } from "@/i18n";
 import * as React from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { Play, Pause, Trash2, ArrowDownToLine, ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AlertBanner } from "@/components/AlertBanner";
@@ -28,7 +28,6 @@ export default function Logs({ embedId }: { embedId?: number } = {}) {
   const id = embedId != null ? String(embedId) : (routeParams.id ?? "");
   const instanceId = Number(id);
   const embedded = embedId != null;
-  const navigate = useNavigate();
 
   const [instance, setInstance] = React.useState<ApiInstance | null>(null);
   const [lines, setLines] = React.useState<Line[]>([]);
@@ -41,14 +40,6 @@ export default function Logs({ embedId }: { embedId?: number } = {}) {
   React.useEffect(() => {
     api.instance(instanceId).then(setInstance).catch(() => {});
   }, [instanceId]);
-
-  // Live logs are a hosting-only (self-managed) feature. Managed services
-  // don't expose logs — bounce back to the instance overview.
-  React.useEffect(() => {
-    if (instance && !instance.is_hosting) {
-      navigate(`/my/instances/${id}`, { replace: true });
-    }
-  }, [instance, id, navigate]);
 
   // Logs only stream while the instance is running. Stopped / suspended /
   // not-yet-running instances have no live container — the server rejects

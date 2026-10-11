@@ -168,15 +168,13 @@ export interface PlanConfigMeta {
 
 export interface TrialInfo {
   days: number;
-  services_available: boolean;
   hosting_available: boolean;
 }
 
 export interface Meta {
   hosting_config: PlanConfigMeta;
-  custom_config: PlanConfigMeta;
   trial: TrialInfo;
-  sections: { services: boolean; hosting: boolean };
+  sections: { hosting: boolean };
   support_email: string;
   countries: { id: number; name: string; code: string }[];
   domains: { id: number; name: string }[];
@@ -185,26 +183,6 @@ export interface Meta {
   daily_backup_price: number;
   /** Daily backups as % of the plan price per month (0 = per GB). */
   daily_backup_pct?: number;
-}
-
-export interface ApiService {
-  id: number;
-  name: string;
-  tagline: string;
-  icon: string;
-  is_hosting: boolean;
-  image_url: string;
-  highlights?: string[];
-  description?: string;
-  trial_plan_id?: number;
-  features?: { title: string; description: string }[];
-  plans?: {
-    id: number;
-    name: string;
-    workers: number;
-    storage_gb: number;
-    is_trial: boolean;
-  }[];
 }
 
 export type InstanceState =
@@ -719,8 +697,6 @@ export const api = {
   tiers: (kind = "hosting", region?: number | null) =>
     rpc<ApiTier[]>("/saas/api/v1/tiers", { kind, region: region ?? undefined }),
   regions: () => rpc<ApiRegion[]>("/saas/api/v1/regions"),
-  services: () => rpc<ApiService[]>("/saas/api/v1/services"),
-  service: (id: number) => rpc<ApiService>(`/saas/api/v1/services/${id}`),
   hostingCalculate: (
     workers: number,
     storage: number,
@@ -728,18 +704,6 @@ export const api = {
     region?: number | null,
   ) =>
     rpc<PriceResult>("/saas/api/v1/hosting/calculate", {
-      workers,
-      storage,
-      billing,
-      region: region ?? undefined,
-    }),
-  servicesCalculate: (
-    workers: number,
-    storage: number,
-    billing: string,
-    region?: number | null,
-  ) =>
-    rpc<PriceResult>("/saas/api/v1/services/calculate", {
       workers,
       storage,
       billing,
@@ -780,8 +744,7 @@ export const api = {
 
   // portal
   dashboard: () => rpc<DashboardData>("/saas/api/v1/dashboard"),
-  instances: (itype?: string) =>
-    rpc<ApiInstance[]>("/saas/api/v1/instances", itype ? { itype } : {}),
+  instances: () => rpc<ApiInstance[]>("/saas/api/v1/instances"),
   instance: (id: number, accessToken?: string) =>
     rpc<ApiInstance>(`/saas/api/v1/instances/${id}`, accessToken ? { access_token: accessToken } : {}),
   instanceStatus: (id: number) => rpc<StatusData>(`/saas/api/v1/instances/${id}/status`),

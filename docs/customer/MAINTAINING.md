@@ -1,6 +1,6 @@
 # Maintaining customer documentation
 
-The canonical editorial source is [docs-catalog.json](../../frontend/veltnex/src/lib/docs-catalog.json). It contains 61 customer articles in 13 categories. Each text has English and editorial Arabic in the same structural node; article IDs, section anchors, related links, code blocks, and tables are shared. Do not translate product names or technical identifiers.
+The canonical editorial source is [docs-catalog.json](../../frontend/veltnex/src/lib/docs-catalog.json). It contains 59 customer articles in 13 categories. Each text has English and editorial Arabic in the same structural node; article IDs, section anchors, related links, code blocks, and tables are shared. Do not translate product names or technical identifiers.
 
 The information architecture follows the familiar overview → task guide → reference → troubleshooting pattern used in [Google Cloud documentation](https://docs.cloud.google.com/docs) and its [IAM overview](https://docs.cloud.google.com/iam/docs/overview). The content describes VELTNEX behavior, not Google Cloud behavior or an Odoo.sh equivalence claim.
 

@@ -26,7 +26,6 @@ class SaasAddon(models.Model):
     active = fields.Boolean(default=True)
     applies_to = fields.Selection(
         [('hosting', 'Hosting only'),
-         ('services', 'Services only'),
          ('both', 'Both')],
         string='Applies To', default='both', required=True,
     )

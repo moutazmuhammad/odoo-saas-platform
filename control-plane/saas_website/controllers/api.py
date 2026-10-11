@@ -15,7 +15,7 @@ redirect/exception that the SPA would have to special-case.
 
 This controller deliberately contains NO business logic: ordering,
 billing, plan changes, and payment all stay on the existing QWeb routes
-(``/services/order``, ``/hosting/order``, ``/my/instances/<id>/checkout``,
+(``/hosting/order``, ``/my/instances/<id>/checkout``,
 …). The SPA hands off to those with a normal navigation when money is
 involved.
 """
@@ -476,8 +476,7 @@ class SaasApi(http.Controller):
         # Free-trial availability (mirrors the old site). _get_trial_info
         # accounts for trial_days > 0 and whether this user already used
         # their trial; for anonymous visitors it reports availability.
-        svc_trial, trial_days = site._get_trial_info()
-        host_trial, _hd = site._get_trial_info(hosting=True)
+        host_trial, trial_days = site._get_trial_info()
         support_plans = request.env['saas.support.plan'].sudo().search(
             [('active', '=', True)], order='sequence, monthly_price, id')
         backup_unit_price = request.env[
@@ -486,14 +485,11 @@ class SaasApi(http.Controller):
         return ok({
             'daily_backup_pct': backup_pct,
             'hosting_config': self._public_plan_config(site._get_hosting_plan_config()),
-            'custom_config': self._public_plan_config(site._get_custom_plan_config()),
             'trial': {
                 'days': trial_days,
-                'services_available': svc_trial,
                 'hosting_available': host_trial,
             },
             'sections': {
-                'services': site._section_enabled('services'),
                 'hosting': site._section_enabled('hosting'),
             },
             'support_email': ICP.get_param('saas_master.support_email', ''),
@@ -510,21 +506,6 @@ class SaasApi(http.Controller):
             ],
             'daily_backup_price': backup_unit_price,
         })
-
-    @http.route('/saas/api/v1/services', type='json', auth='public')
-    def services(self):
-        products = request.env['saas.product'].sudo().search([
-            ('is_published', '=', True),
-            ('is_hosting', '=', False),
-        ], order='sequence, id')
-        return ok([self._serialize_product(p) for p in products])
-
-    @http.route('/saas/api/v1/services/<int:product_id>', type='json', auth='public')
-    def service_detail(self, product_id):
-        product = request.env['saas.product'].sudo().browse(product_id)
-        if not product.exists() or not product.is_published:
-            return err(_("Service not found."), 'not_found')
-        return ok(self._serialize_product(product, detail=True))
 
     @http.route('/saas/api/v1/hosting/calculate', type='json', auth='public')
     def hosting_calculate(self, workers=2, storage=5, billing='monthly',
@@ -604,16 +585,6 @@ class SaasApi(http.Controller):
                        or _("Please review your order."), 'invalid')
         return ok({'redirect_url': loc or '/my/instances'})
 
-    @http.route('/saas/api/v1/services/calculate', type='json', auth='public')
-    def services_calculate(self, workers=2, storage=5, billing='monthly',
-                           region=None):
-        site = SaasWebsite()
-        config = site._get_custom_plan_config()
-        region_rec = self._resolve_region(region)
-        return ok(self._price(
-            config, workers, storage, billing, kind='services',
-            region=region_rec.id or None))
-
     @http.route('/saas/api/v1/tiers', type='json', auth='public')
     def tiers(self, kind='hosting', region=None):
         """Public named tiers for the pricing/configure cards (S8 renders
@@ -633,11 +604,6 @@ class SaasApi(http.Controller):
         default_currency = request.env.company.currency_id.name or 'USD'
         out = []
         for p in plans:
-            p_kind = 'hosting' if any(
-                prod.is_hosting for prod in p.saas_product_ids
-            ) else 'services'
-            if p_kind != kind:
-                continue
             out.append({
                 'id': p.id,
                 'name': p.name,
@@ -725,14 +691,12 @@ class SaasApi(http.Controller):
             return rec
         return Region.browse()
 
-    def _price(self, config, workers, storage, billing, kind='services',
+    def _price(self, config, workers, storage, billing, kind='hosting',
                region=None):
         """Compute one customer-facing total via the single pricing
         engine (`saas.pricing.engine`). ``config`` is accepted for
         backward-compat with callers but no longer used — the engine
-        reads rates itself. ``kind`` selects the rate set ('hosting' vs
-        'services'); it MUST match the caller's product, otherwise the
-        slider quotes a different price than the order/invoice. ``region``
+        reads rates itself. ``region``
         (id, optional) scales the compute+storage portion. Per-resource
         rates stay hidden."""
         quote = request.env['saas.pricing.engine'].compute(
@@ -883,7 +847,7 @@ class SaasApi(http.Controller):
         })
 
     @http.route('/saas/api/v1/instances', type='json', auth='public')
-    def instances(self, itype=None):
+    def instances(self, **_kw):
         partner = self._partner()
         if not partner:
             return err(_("Please sign in."), 'auth_required')
@@ -896,10 +860,6 @@ class SaasApi(http.Controller):
         ]
         if not self._is_staff():
             domain += (request.env['saas.iam']._project_domain() if 'saas.iam' in request.env else [('partner_id', '=', partner.id)])
-        if itype == 'services':
-            domain.append(('is_hosting', '=', False))
-        elif itype == 'hosting':
-            domain.append(('is_hosting', '=', True))
         instances = request.env['saas.instance'].sudo().search(
             domain, order='create_date desc',
         )
@@ -1405,9 +1365,7 @@ class SaasApi(http.Controller):
     def daily_backup_enable(self, instance_id, access_token=None, **kw):
         """Create the daily-backup add-on activation invoice and return
         the checkout URL for the customer to pay. Enabling itself happens
-        once that invoice is paid (account_move hook). Available to both
-        hosting and managed-services instances (snapshots are the one
-        app-level add-on a service gets)."""
+        once that invoice is paid (account_move hook)."""
         try:
             instance = self._instance(instance_id, access_token, write=True, permission='billing.manage')
         except (AccessError, MissingError):
@@ -2570,33 +2528,3 @@ class SaasApi(http.Controller):
             data['tax'] = round(inv.amount_tax, 2)
         return data
 
-    def _serialize_product(self, product, detail=False):
-        data = {
-            'id': product.id,
-            'name': product.name,
-            'tagline': product.subtitle or '',
-            'icon': product.icon or 'fa fa-cube',
-            'is_hosting': product.is_hosting,
-            'image_url': '/web/image/saas.product/%s/image' % product.id if product.image else '',
-        }
-        if detail:
-            data['description'] = product.description or ''
-            data['features'] = [
-                {'title': f.name, 'description': getattr(f, 'description', '') or ''}
-                for f in product.feature_line_ids
-            ]
-            # Trial plan for this service (if configured), for the
-            # "Start free trial" button. Trial plans may be flagged custom,
-            # so we look across all plans here, not just the public ones.
-            trial_plan = product.plan_ids.filtered(lambda p: p.is_trial_plan)[:1]
-            data['trial_plan_id'] = trial_plan.id if trial_plan else 0
-            data['plans'] = [{
-                'id': p.id,
-                'name': p.name,
-                'workers': p.workers,
-                'storage_gb': int(p.storage_limit),
-                'is_trial': p.is_trial_plan,
-            } for p in product.plan_ids.sorted('sequence') if not p.is_custom]
-        else:
-            data['highlights'] = [f.name for f in product.feature_line_ids][:3]
-        return data

@@ -7,16 +7,12 @@ access_saas_odoo_version_user,saas.odoo.version user,model_saas_odoo_version,saa
 access_saas_odoo_version_manager,saas.odoo.version manager,model_saas_odoo_version,saas_core.group_saas_manager,1,1,1,1
 access_saas_server_user,saas.server user,model_saas_server,saas_core.group_saas_user,1,0,0,0
 access_saas_server_manager,saas.server manager,model_saas_server,saas_core.group_saas_manager,1,1,1,1
-access_saas_product_repo_user,saas.product.repo user,model_saas_product_repo,saas_core.group_saas_user,1,0,0,0
-access_saas_product_repo_manager,saas.product.repo manager,model_saas_product_repo,saas_core.group_saas_manager,1,1,1,1
 access_saas_instance_backup_user,saas.instance.backup user,model_saas_instance_backup,saas_core.group_saas_user,1,0,0,0
 access_saas_instance_backup_manager,saas.instance.backup manager,model_saas_instance_backup,saas_core.group_saas_manager,1,1,1,1
 access_saas_plan_user,saas.plan user,model_saas_plan,saas_core.group_saas_user,1,0,0,0
 access_saas_plan_manager,saas.plan manager,model_saas_plan,saas_core.group_saas_manager,1,1,1,1
 access_saas_product_user,saas.product user,model_saas_product,saas_core.group_saas_user,1,0,0,0
 access_saas_product_manager,saas.product manager,model_saas_product,saas_core.group_saas_manager,1,1,1,1
-access_saas_product_feature_user,saas.product.feature user,model_saas_product_feature,saas_core.group_saas_user,1,0,0,0
-access_saas_product_feature_manager,saas.product.feature manager,model_saas_product_feature,saas_core.group_saas_manager,1,1,1,1
 access_saas_instance_repo_user,saas.instance.repo user,model_saas_instance_repo,saas_core.group_saas_user,1,0,0,0
 access_saas_instance_repo_manager,saas.instance.repo manager,model_saas_instance_repo,saas_core.group_saas_manager,1,1,1,1
 access_saas_config_viewer_manager,saas.config.viewer manager,model_saas_config_viewer,saas_core.group_saas_manager,1,1,1,1

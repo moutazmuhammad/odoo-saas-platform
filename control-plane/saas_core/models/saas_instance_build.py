@@ -167,15 +167,10 @@ class SaasInstance(models.Model):
 
     def _build_sources(self):
         """(repo record, directory name) for everything baked into the image:
-        the product's own repos (a Services product ships its modules this
-        way) and this instance's repos."""
+        this instance's repos."""
         self.ensure_one()
-        sources = []
-        for repo in self.saas_product_id.repo_ids.sorted('sequence'):
-            sources.append((repo, 'product-%s' % repo._get_repo_dir_name()))
-        for repo in self.repo_ids.sorted('sequence'):
-            sources.append((repo, repo._get_repo_dir_name()))
-        return sources
+        return [(repo, repo._get_repo_dir_name())
+                for repo in self.repo_ids.sorted('sequence')]
 
     # ------------------------------------------------------------------
     # pipeline steps (saas.job entry points)

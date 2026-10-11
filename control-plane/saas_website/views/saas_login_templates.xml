@@ -79,7 +79,7 @@
                             <t t-out="0"/>
 
                             <div class="co-login-form-footer">
-                                <p>Don't have an account? <a href="/services/register">Sign up</a></p>
+                                <p>Don't have an account? <a href="/register">Sign up</a></p>
                             </div>
                         </div>
                     </div>

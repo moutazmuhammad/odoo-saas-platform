@@ -1,12 +1,12 @@
 # VELTNEX overview
 
-Understand hosting, managed services, projects, and environments.
+Understand hosting, projects, and environments.
 
 Reviewed: 2026-10-05
 
 ## Core concepts
 
-VELTNEX provides managed Odoo infrastructure and a customer control panel. Hosting subscriptions give you database and developer tools. Ready-made services provide a configured application with a more limited management interface. Available plans, regions, versions, and services depend on the platform catalog.
+VELTNEX provides managed Odoo hosting and a customer control panel. Each hosting project gives you Production, Staging and Development environments with database and developer tools. Available plans, regions, and versions depend on the platform catalog.
 
 | Concept | Meaning |
 | --- | --- |

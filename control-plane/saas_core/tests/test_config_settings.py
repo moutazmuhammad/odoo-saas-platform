@@ -21,17 +21,10 @@ class TestResConfigSettings(TransactionCase):
         return self.Settings.get_values()
 
     # ---- falsy-value trap #1: section toggles stored as literal strings ----
-    def test_hide_services_section_survives_reload(self):
-        self._settings(saas_show_services_section=False).set_values()
-        self.assertEqual(
-            self.icp.get_param('saas_master.show_services_section'), 'False')
-        self.assertFalse(self._get()['saas_show_services_section'])
-
-    def test_show_services_section_defaults_true_when_unset(self):
+    def test_show_hosting_section_defaults_true_when_unset(self):
         # Fresh install: no ICP row yet -> get_values must read shown-by-default.
-        self.assertIsNone(
-            self.icp.get_param('saas_master.show_services_section', None))
-        self.assertTrue(self._get()['saas_show_services_section'])
+        self.icp.search([('key', '=', 'saas_master.show_hosting_section')]).unlink()
+        self.assertTrue(self._get()['saas_show_hosting_section'])
 
     def test_hide_hosting_section_survives_reload(self):
         self._settings(saas_show_hosting_section=False).set_values()
@@ -40,11 +33,11 @@ class TestResConfigSettings(TransactionCase):
         self.assertFalse(self._get()['saas_show_hosting_section'])
 
     def test_re_enabling_section_survives_reload(self):
-        self._settings(saas_show_services_section=False).set_values()
-        self._settings(saas_show_services_section=True).set_values()
+        self._settings(saas_show_hosting_section=False).set_values()
+        self._settings(saas_show_hosting_section=True).set_values()
         self.assertEqual(
-            self.icp.get_param('saas_master.show_services_section'), 'True')
-        self.assertTrue(self._get()['saas_show_services_section'])
+            self.icp.get_param('saas_master.show_hosting_section'), 'True')
+        self.assertTrue(self._get()['saas_show_hosting_section'])
 
     # ---- falsy-value trap #2: 0-is-meaningful integers ----
     def test_max_instances_zero_means_unlimited_and_sticks(self):
@@ -83,7 +76,7 @@ class TestResConfigSettings(TransactionCase):
     # ---- set_values() re-derives public-tier plan prices ----
     def test_set_values_resyncs_public_tier_price(self):
         product = self.env['saas.product'].sudo().create(
-            {'name': 'CFG Services Product'})
+            {'name': 'CFG Hosting Product'})
         plan = self.env['saas.plan'].sudo().create({
             'name': 'CFG Public Tier', 'is_public_tier': True,
             'is_trial_plan': False, 'manual_price': False,
@@ -93,8 +86,8 @@ class TestResConfigSettings(TransactionCase):
         })
         before = plan.price
         self._settings(
-            saas_worker_price=before + 100.0,
-            saas_storage_price_per_gb=0.5,
+            saas_hosting_worker_price=before + 100.0,
+            saas_hosting_storage_price_per_gb=0.5,
         ).set_values()
         plan.invalidate_recordset(['price', 'yearly_price'])
         self.assertGreater(plan.price, before)
@@ -109,6 +102,6 @@ class TestResConfigSettings(TransactionCase):
             'ram_limit': '2g', 'price': 999.0, 'yearly_price': 9999.0,
             'saas_product_ids': [(6, 0, [product.id])],
         })
-        self._settings(saas_worker_price=1234.0).set_values()
+        self._settings(saas_hosting_worker_price=1234.0).set_values()
         plan.invalidate_recordset(['price', 'yearly_price'])
         self.assertEqual(plan.price, 999.0)

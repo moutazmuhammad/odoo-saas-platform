@@ -2,7 +2,7 @@
 <odoo>
 
     <!-- ============================================================
-         Registration Page  —  /services/register
+         Registration Page  —  /register
          Two-step: form + OTP verification
          ============================================================ -->
 
@@ -59,7 +59,7 @@
                                             </div>
                                         </t>
 
-                                        <form action="/services/register/verify" method="post" id="otp-form">
+                                        <form action="/register/verify" method="post" id="otp-form">
                                             <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
                                             <!-- Preserve all form data -->
                                             <input type="hidden" name="name" t-att-value="form_values.get('name', '')"/>
@@ -72,8 +72,6 @@
                                             <input type="hidden" name="job_title" t-att-value="form_values.get('job_title', '')"/>
                                             <input type="hidden" name="password" t-att-value="form_values.get('password', '')"/>
                                             <input type="hidden" name="confirm_password" t-att-value="form_values.get('confirm_password', '')"/>
-                                            <input type="hidden" name="product_id" t-att-value="form_values.get('product_id', '')"/>
-                                            <input type="hidden" name="plan_id" t-att-value="form_values.get('plan_id', '')"/>
                                             <input type="hidden" name="is_trial" t-att-value="form_values.get('is_trial', '')"/>
                                             <input type="hidden" name="hosting" t-att-value="form_values.get('hosting', '')"/>
                                             <input type="hidden" name="workers" t-att-value="form_values.get('workers', '')"/>
@@ -105,7 +103,7 @@
                                         </form>
 
                                         <!-- Resend: re-POST the registration form -->
-                                        <form action="/services/register" method="post">
+                                        <form action="/register" method="post">
                                             <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
                                             <input type="hidden" name="name" t-att-value="form_values.get('name', '')"/>
                                             <input type="hidden" name="email" t-att-value="form_values.get('email', '')"/>
@@ -117,8 +115,6 @@
                                             <input type="hidden" name="job_title" t-att-value="form_values.get('job_title', '')"/>
                                             <input type="hidden" name="password" t-att-value="form_values.get('password', '')"/>
                                             <input type="hidden" name="confirm_password" t-att-value="form_values.get('confirm_password', '')"/>
-                                            <input type="hidden" name="product_id" t-att-value="form_values.get('product_id', '')"/>
-                                            <input type="hidden" name="plan_id" t-att-value="form_values.get('plan_id', '')"/>
                                             <input type="hidden" name="is_trial" t-att-value="form_values.get('is_trial', '')"/>
                                             <input type="hidden" name="hosting" t-att-value="form_values.get('hosting', '')"/>
                                             <input type="hidden" name="workers" t-att-value="form_values.get('workers', '')"/>
@@ -159,10 +155,8 @@
                                         </div>
                                     </t>
 
-                                    <form action="/services/register" method="post" id="register-form">
+                                    <form action="/register" method="post" id="register-form">
                                         <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
-                                        <input type="hidden" name="product_id" t-att-value="form_values.get('product_id', '')"/>
-                                        <input type="hidden" name="plan_id" t-att-value="form_values.get('plan_id', '')"/>
                                         <input type="hidden" name="is_trial" t-att-value="form_values.get('is_trial', '')"/>
                                         <input type="hidden" name="hosting" t-att-value="form_values.get('hosting', '')"/>
                                         <input type="hidden" name="workers" t-att-value="form_values.get('workers', '')"/>

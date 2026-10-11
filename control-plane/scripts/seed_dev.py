@@ -70,8 +70,6 @@ print('SEED START')
 icp = E['ir.config_parameter'].sudo()
 icp.set_param('saas_master.hosting_worker_price', '10.0')
 icp.set_param('saas_master.hosting_storage_price_per_gb', '0.3')
-icp.set_param('saas_master.worker_price', '15.0')
-icp.set_param('saas_master.storage_price_per_gb', '0.5')
 icp.set_param('saas_master.snapshot_price_per_gb', '2.0')
 
 # ----------------------------------------------------------------- regions
@@ -120,17 +118,8 @@ print('servers', srv_fra.id, srv_us.id)
 # ----------------------------------------------------------------- products
 prod_hosting = upsert('saas.product', [('is_hosting', '=', True)], {
     'name': 'Odoo Hosting', 'is_hosting': True, 'is_published': True,
-    'subtitle': 'Bring your own code — we run it.',
-    'odoo_version_id': ver18.id, 'sequence': 1})
-prod_pharma = upsert('saas.product', [('name', '=', 'Pharmacy Management')], {
-    'name': 'Pharmacy Management', 'is_hosting': False, 'is_published': True,
-    'subtitle': 'Ready-made pharmacy suite — POS, stock, expiry tracking.',
-    'backup_bucket_path': 'pharmacy/seed/snapshot.zip', 'sequence': 10})
-prod_clinic = upsert('saas.product', [('name', '=', 'Clinic & EMR')], {
-    'name': 'Clinic & EMR', 'is_hosting': False, 'is_published': True,
-    'subtitle': 'Appointments, patient records, billing.',
-    'backup_bucket_path': 'clinic/seed/snapshot.zip', 'sequence': 11})
-print('products', prod_hosting.id, prod_pharma.id, prod_clinic.id)
+    'sequence': 1})
+print('products', prod_hosting.id)
 
 
 def make_plan(name, vals, products):
@@ -162,26 +151,6 @@ plan_h_custom = make_plan('Custom (Enterprise)', {
     'is_custom': True, 'workers': 8, 'storage_limit': 100, 'cpu_limit': 8.0,
     'ram_limit': '8g', 'price': 160.0, 'yearly_price': 1600.0,
     'sequence': 40}, [prod_hosting])
-
-# service plans (pharmacy)
-plan_p_trial = make_plan('Pharmacy Free Trial', {
-    'is_trial_plan': True, 'price': 0.0, 'yearly_price': 0.0,
-    'workers': 1, 'storage_limit': 5, 'cpu_limit': 1.0, 'ram_limit': '1g',
-    'sequence': 1}, [prod_pharma])
-plan_p_pro = make_plan('Pharmacy Professional', {
-    'is_public_tier': True, 'workers': 2, 'storage_limit': 20,
-    'cpu_limit': 2.0, 'ram_limit': '2g', 'price': 99.0, 'yearly_price': 990.0,
-    'sequence': 10}, [prod_pharma])
-plan_p_biz = make_plan('Pharmacy Business', {
-    'is_public_tier': True, 'is_recommended': True, 'workers': 4,
-    'storage_limit': 40, 'cpu_limit': 4.0, 'ram_limit': '4g',
-    'price': 199.0, 'yearly_price': 1990.0, 'sequence': 20}, [prod_pharma])
-
-# service plans (clinic)
-plan_c_pro = make_plan('Clinic Professional', {
-    'is_public_tier': True, 'workers': 2, 'storage_limit': 20,
-    'cpu_limit': 2.0, 'ram_limit': '2g', 'price': 149.0,
-    'yearly_price': 1490.0, 'sequence': 10}, [prod_clinic])
 print('plans created')
 
 # support plans (seeded by module; give the paid ones real prices)
@@ -277,11 +246,6 @@ make_instance('acme-shop', acme, 'provisioning',
 make_instance('globex', globex, 'pending_payment',
               product=prod_hosting, plan=plan_h_pro)
 
-# 4) Globex — pharmacy SERVICE running on a free trial
-make_instance('globex-pharma', globex, 'running',
-              product=prod_pharma, plan=plan_p_trial, is_trial=True,
-              support=sp_free)
-
 # 5) Initech — hosting production, suspended (e.g. non-payment)
 make_instance('initech', initech, 'suspended',
               product=prod_hosting, plan=plan_h_starter, support=sp_free)
@@ -295,10 +259,6 @@ make_instance('umbrella', umbrella, 'stopped', region=region_us,
               server=srv_us, domain=dom_us,
               product=prod_hosting, plan=plan_h_pro, support=sp_ent,
               billing='yearly')
-
-# 8) Umbrella — clinic SERVICE, running (paid)
-make_instance('umbrella-clinic', umbrella, 'running',
-              product=prod_clinic, plan=plan_c_pro, support=sp_pro)
 
 # 9) A failed provision, to exercise the error/retry UI
 make_instance('failed-demo', initech, 'failed',

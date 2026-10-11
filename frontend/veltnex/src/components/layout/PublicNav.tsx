@@ -20,7 +20,6 @@ import { useSections } from "@/lib/useSections";
 import { cn } from "@/lib/utils";
 
 const ALL_LINKS = [
-  { to: "/services", label: i18nText("Services"), section: "services" as const },
   { to: "/hosting", label: i18nText("Hosting"), section: "hosting" as const },
   { to: "/docs", label: i18nText("Docs"), section: null },
 ];

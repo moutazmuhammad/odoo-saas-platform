@@ -4,13 +4,15 @@ Oct 11, 2026 · @Mostafa
 
 ## Summary
 
-A new customer is never blocked by a full cluster: before placing a tenant, the platform checks real node capacity, and if the node pool is at its maximum it raises the maximum through the provider's API, up to a ceiling you set, so the autoscaler can add the node.
+**Goal:** a new customer is provisioned automatically as long as capacity can be added; an existing customer can grow their resources without the system failing just because their current node is small; and cost stays under control, with larger nodes running only when a customer needs them (the Large pool scales from zero and the autoscaler removes nodes that become empty).
 
-- **Live capacity, not typed numbers.** Today each cluster has hand-entered CPU/RAM limits. The platform will read the real nodes, what is already reserved on them, and the autoscaler's current and maximum node count.
-- **Raise the maximum automatically.** When no node can fit the new tenant and the pool is at its maximum, the platform raises it in steps (for example +2) through the provider adapter. Raising the maximum costs nothing by itself; you pay only for nodes the autoscaler actually adds.
-- **Warm spare capacity.** A small, lowest-priority placeholder keeps room for one typical tenant ready, so a new customer starts in seconds instead of waiting 3–5 minutes for a node to boot.
-- **Hard ceiling and alerts.** A per-cluster node ceiling (and the provider's own account limits) caps cost; every raise and every near-limit event posts to Teams.
-- **Any Kubernetes.** The logic is provider-neutral; a small adapter per provider changes the maximum: DOKS first, then Cluster API, Karpenter, EKS, GKE, AKS, and a manual mode for clusters without an API.
+No new customer is blocked while the cluster can still grow, every existing customer always has room to update, and customers run on node pools sized for them; the autoscaler adds nodes on its own, so the platform only has to place tenants correctly and warn you early.
+
+- **Set each pool's maximum once** to the most you are willing to pay for. Raising it automatically would do the same thing as setting it to that ceiling from the start, because the autoscaler only adds a node when a pod is waiting for one.
+- **Real capacity, not typed numbers:** the platform reads the nodes and the autoscaler and stops refusing customers because of hand-entered limits.
+- **Room to update, always:** every node keeps space for an update of the tenants on it.
+- **Two pools by size, Standard and Large:** the platform picks the pool from the customer's plan; a customer who outgrows their node is moved to one that fits.
+- **Four alerts** to Teams: provisioning stuck over 15 minutes, a stuck update, nodes near the maximum, and no pool that fits a customer.
 
 ## How it works today
 
@@ -30,91 +32,99 @@ Two lessons shape the design:
 - **A new tenant** needs room on any node, or a new node. Raising the maximum solves it.
 - **A rollout of an existing tenant** needs room on its own node. A new node never helps it, so every node must keep rollout headroom.
 
-## Design
+## 1. Real capacity instead of typed numbers
 
-A capacity controller in the control plane answers one question before every new tenant, resize or new environment: “is there a node this tenant fits on, or can the pool grow to make one?”, and acts on the answer.
+The platform stops deciding from hand-entered CPU and RAM; it looks at what the cluster really has and at what the autoscaler can still add.
 
-**1. Read live capacity** (every minute, cached, per cluster):
+**What it reads** (every minute per cluster, cached):
 
-- Nodes: allocatable CPU and memory per node, minus the requests already placed on it.
-- Autoscaler: current node count, minimum and maximum per node pool, and whether a scale-up is in progress. Read from the standard `cluster-autoscaler-status` ConfigMap in `kube-system`, which DOKS and every cluster-autoscaler install publish, plus the provider adapter.
-- Pending pods and why they are pending.
+- Each node: allocatable CPU and memory, minus the requests already placed on it, and its pool.
+- Each pool: current, minimum and maximum node count and whether a scale-up is running, from the standard `cluster-autoscaler-status` ConfigMap in `kube-system`. DOKS publishes it, and so does any cluster that runs the Kubernetes cluster autoscaler.
+- Pending pods and the reason they wait.
 
-**2. Fit check for a new tenant.** The whole tenant package (Odoo pods, cron, PostgreSQL) must fit on **one** node, plus **rollout headroom**: room for one more Odoo pod, so a later update never gets stuck. The package sizes already exist (`saas.plan._package()`).
+**How a new customer is placed** (`_allocate_servers`, through a new `saas.capacity` service):
 
-**3. Decide:**
+1. Pick the pool for the plan (section 3).
+2. **A node in that pool has room** for the whole package plus its update room (section 2) → provision now.
+3. **No node has room, but the pool is below its maximum** → provision anyway. The pods wait a few minutes while the autoscaler adds a node, and the customer sees “Preparing”. This is the change: today such a customer is refused into `pending_provision`.
+4. **The pool is at its maximum** → the customer waits in `pending_provision` as today, and you get the “nodes at the maximum” alert so you can raise it.
+5. **No pool has nodes big enough for the package** → the customer is not provisioned and you get the “no node fits” alert.
 
-1. **A node has room** → place the tenant now.
-2. **No node has room, but the pool is below its maximum** → place the tenant; its pods wait a few minutes while the autoscaler adds a node. The customer sees “Preparing”.
-3. **The pool is at its maximum, below your ceiling** → raise the maximum by one step (for example +2 nodes) through the provider adapter, post to Teams, then continue as in step 2.
-4. **At the ceiling, or the provider refuses** (for example the account's Droplet limit) → the tenant waits in `pending_provision` exactly as today, and Teams gets a critical alert with the reason and the action needed.
-5. **The package is larger than one node of this pool** → adding nodes cannot help; the tenant needs a pool with bigger machines. The platform refuses to sell that plan on that cluster and alerts.
+The hand-entered `max_cpu_cores` / `max_ram_gb` stay only as an optional extra cap, empty by default.
 
-**4. Warm spare capacity.** A Deployment of placeholder pods with the lowest priority (a negative `PriorityClass`) reserves room for one typical tenant. When a real tenant arrives, Kubernetes evicts the placeholder at once and the tenant starts immediately; the placeholder goes back to pending, so the autoscaler adds a node in the background. Size and count are a setting per cluster (default: one typical package; zero to switch off).
+## 2. Room to update an existing customer
 
-**5. Rollout headroom per node.** Every node keeps room for one extra Odoo pod of its largest tenant, enforced by the fit check in step 2. This is what fixes the stuck rollouts from 2026-10-10, which a bigger maximum alone would not.
+An update (new code, plan change, platform add-on change) starts a second Odoo pod next to the old one on **the same node**, because the tenant's volume is attached there. A new node cannot help it, so the room must already be on that node.
 
-**6. Shrinking.** The autoscaler removes empty nodes as today. The platform never lowers the maximum below the running node count; a weekly job can lower an unused raised maximum back toward its normal value, which changes nothing about cost (only nodes cost).
+- **Update room per node:** a node only accepts a new tenant if, after placing it, it still has room for one extra Odoo pod of its largest tenant. The fit check in section 1 enforces this.
+- **Limit simultaneous updates:** some changes (a new platform add-on, an operator upgrade) update every tenant at once. The operator will roll at most one tenant per node at a time, and the next only after the previous is ready, so the update room is never needed twice on one node.
+- **If an update still waits for room** (for example after a manual change), the “stuck update” alert fires after 10 minutes with the node and tenant named. The old pod keeps serving meanwhile, so the customer has no downtime.
 
-**Where it lives:** a new `saas.capacity` service in `saas_core`, called from `_allocate_servers` (new tenants), plan changes and environment creation, and from the existing pending-provision cron. The hand-entered `max_cpu_cores` / `max_ram_gb` remain as an optional extra cap.
+## 3. Node pools by size
 
-## Provider adapters
+A few pools by size class, not a pool per customer; the platform places each customer in the class that fits their plan.
 
-Only one small piece is provider-specific: reading a pool's limits and changing its maximum. Everything else uses plain Kubernetes, so moving to another provider means writing one adapter.
+| Pool | Machine (DOKS example) | For | Rule |
+| --- | --- | --- | --- |
+| Standard | `s-2vcpu-4gb` (today's pool) | Small and medium plans | Package + update room fits in about half a node, so two or more tenants share a node |
+| Large | for example `s-4vcpu-8gb` or `g-4vcpu-16gb` | Plans with more workers or RAM | Anything that does not fit the Standard rule |
 
-Each cluster record (`saas.server`) gets a provider type, its credentials (encrypted with the existing helper), the node pool to grow and its ceiling. The adapter interface:
+- **Labels:** each pool's nodes carry a label such as `saas.platform/pool=standard` or `large`. DOKS sets node pool labels at creation; on any other Kubernetes the same label is set on the node group.
+- **Placement:** the operator adds a node affinity for that label to all of the tenant's pods (Odoo, cron, PostgreSQL, Jobs), so the whole tenant lands in its class.
+- **Choosing the class:** a new setting on each pool (size class and machine size) plus the package size from `saas.plan._package()`; the smallest class that fits wins.
+- **Each pool has its own minimum and maximum.** The Large pool can have a minimum of 0, so it costs nothing until the first large customer arrives.
 
-- `pools()` → for each pool: id, machine size, current, minimum and maximum nodes.
-- `set_max(pool, new_max)` → raise the maximum; returns the provider's limit error if any.
-- `limits()` → account limits that cap growth (for example DigitalOcean's Droplet limit).
+## 4. A customer who outgrows their node
 
-| Provider | How the maximum is changed | Notes |
+When a customer resizes and the new package no longer fits their node (or belongs to a larger class), the platform moves them to a node that fits.
+
+1. **Check first:** the target pool has room or can grow (section 1). If not, the resize is refused before payment with a clear message, and you get the “no node fits” alert.
+2. **Tell the customer:** a move needs a short downtime, usually 1–3 minutes, because the volume holding the database can be attached to only one node at a time. The customer picks “now” or a time window, and gets an email before and after.
+3. **Move:** the operator stops the tenant's pods, the volume detaches from the old node and attaches to a node in the target pool (block volumes attach to any node in the same region), and the pods start there with the new size. The platform polls the site until it answers.
+4. **Small resizes that still fit** stay on the same node with today's zero-downtime rolling update.
+
+**Later, zero downtime here too:** once files live in Spaces (Spaces Filestore Backend Plan) and sessions move off the volume, only PostgreSQL holds the volume. A move can then start the new Odoo pods first and limit the downtime to the database restart; a fully online move would need a PostgreSQL replica (CloudNativePG), a larger project kept out of this plan.
+
+## 5. Alerts
+
+All go to the Teams channel through the alert webhook, and each one names the cluster, pool, tenant and the action to take.
+
+| Alert | When | What to do |
 | --- | --- | --- |
-| DigitalOcean DOKS (now) | DigitalOcean API: update the node pool with `auto_scale`, `min_nodes`, `max_nodes` (`PUT /v2/kubernetes/clusters/{cluster}/node_pools/{pool}`, as `doctl kubernetes cluster node-pool update --max-nodes`) | Capped by the account's Droplet limit (25 by default, minus running Droplets); needs a DigitalOcean API token. Send the full pool settings, since an update may replace omitted fields |
-| Cluster API (any self-managed cluster) | Annotation `cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size` on the MachineDeployment | Works on bare metal and most clouds through Cluster API |
-| Karpenter | Raise the NodePool's `spec.limits` (CPU, memory) | Karpenter picks machine sizes itself |
-| AWS EKS managed node groups | `UpdateNodegroupConfig` with a new `maxSize` |  |
-| Google GKE | Node pool autoscaling `maxNodeCount` |  |
-| Azure AKS | Node pool `maxCount` |  |
-| Manual (MicroK8s, no API) | Cannot grow; the platform only alerts with the exact action needed | Today's behaviour, now with a clear alert |
+| Provisioning stuck | A customer has been provisioning or waiting for more than 15 minutes | Check the reason shown (pool at maximum, no node fits, image pull) |
+| Update stuck | An update has waited for room or failed to become ready for more than 10 minutes | Free room on that node, or move the tenant |
+| Nodes near the maximum | A pool reaches 80% of its maximum node count, and again at 100% | Raise the pool's maximum (and the DigitalOcean Droplet limit if needed) |
+| No node fits | A customer's package fits no pool, or a resize needs a class with no room | Add or enlarge a pool, or change the plan |
 
-The DOKS endpoint path and body are confirmed through DigitalOcean's tools (`doctl`, Terraform, Ansible) but must be tested against the live account before Phase 2 ([doctl node-pool update](https://docs.digitalocean.com/reference/doctl/reference/kubernetes/cluster/node-pool/update), [Terraform node pool](https://docs.digitalocean.com/reference/terraform/reference/resources/kubernetes_node_pool/), [DOKS autoscaling](https://docs.digitalocean.com/products/kubernetes/how-to/autoscale/)).
+## 6. One-time settings
 
-## Safety limits, cost and alerts
+- **DOKS Standard pool:** raise the maximum from 2 to your ceiling (for example 6–10 nodes at about $24/month each for `s-2vcpu-4gb`).
+- **DOKS Large pool:** create it with a minimum of 0 and a maximum you choose, with the size-class label.
+- **DigitalOcean account:** the total node count is capped by the Droplet limit (25 by default); ask DigitalOcean to raise it before you need more.
+- **Other Kubernetes later:** the same two pools and labels, with each provider's own node-group minimum and maximum; nothing in the platform is DigitalOcean-specific.
 
-The platform may raise the maximum on its own, but never past limits you set, and you see every change in Teams.
+## 7. Phases, tests and acceptance
 
-- **Node ceiling per cluster** (for example 10): the maximum is never raised above it.
-- **Step size** (for example +2 per raise) and a **cool-down** (one raise per 10 minutes), so a burst of sign-ups cannot run away.
-- **Monthly cost guard:** ceiling × node price is shown next to the setting (an `s-2vcpu-4gb` node costs about $24/month), so the worst case is known up front.
-- **Never shrink below what runs:** the maximum never drops under the current node count.
-- **Alerts to Teams:** every raise (old → new maximum, reason, tenant), reaching 80% of the ceiling, reaching the ceiling, a provider refusal (with the provider's message, for example the Droplet limit), a tenant waiting more than 15 minutes, and a stuck rollout.
-- **Audit log:** every capacity decision and every change to a pool.
-- **Report:** the existing cluster dashboard gains nodes in use, maximum, ceiling, spare room and pending tenants, from the Prometheus data already collected.
+1. **Phase 1 — Capacity reader, placement and alerts.** Sections 1, 2 (update room) and 5. Raise the Standard pool's maximum.
+2. **Phase 2 — Size classes.** Pool labels, node affinity in the operator, class choice in the platform, the Large pool.
+3. **Phase 3 — Moving a customer between pools.** Section 4, with the customer's time window and emails.
+4. **Phase 4 — Limited simultaneous updates** in the operator (one tenant per node at a time).
 
-## Phases, tests and acceptance
+**Tests** (on the DOKS cluster):
 
-1. **Phase 1 — See capacity.** Live capacity reader, fit check with rollout headroom, dashboard and alerts. No automatic changes yet; it already explains every pending tenant.
-2. **Phase 2 — DOKS adapter and automatic raise.** Ceiling, step, cool-down, audit and Teams. Test on the DOKS cluster with a temporary low ceiling.
-3. **Phase 3 — Warm spare capacity.** Placeholder pods with the lowest priority.
-4. **Phase 4 — Other providers.** Cluster API and Karpenter first (they cover most self-managed and AWS setups), then EKS, GKE, AKS as needed.
+- [ ] With the pool full but below its maximum, a new customer is provisioned and becomes ready once the autoscaler adds a node.
+- [ ] With the pool at its maximum, the customer waits and the “nodes at the maximum” alert fires.
+- [ ] After filling a node, an update of a tenant on it still completes with no downtime (update room).
+- [ ] A platform add-on change rolls all tenants one per node at a time, none stuck.
+- [ ] A large plan lands in the Large pool; a small one in Standard.
+- [ ] Resizing across classes moves the tenant with downtime under 3 minutes and its data intact.
+- [ ] A package that fits no pool triggers “no node fits” and is not provisioned.
+- [ ] A provisioning stuck for 15 minutes triggers its alert.
 
-**Tests:**
+**Acceptance:** customers are never refused while a pool can still grow, no update ever waits for room on its node, and each of the four alerts has fired once in a test.
 
-- [ ] A tenant that fits is placed immediately; one that does not triggers exactly one raise.
-- [ ] At the ceiling: no raise, the tenant waits in `pending_provision`, Teams gets a critical alert.
-- [ ] Provider refusal (Droplet limit): reported with the provider's message, nothing half-changed.
-- [ ] Ten sign-ups within a minute: one raise per cool-down, never past the ceiling.
-- [ ] With warm spare capacity on, a new tenant becomes ready without waiting for a new node.
-- [ ] A rollout of an existing tenant never waits for capacity on its node (rollout headroom).
-- [ ] A plan larger than one node is refused on that cluster with a clear message.
-- [ ] The maximum is never lowered below the running node count.
+## 8. Open questions
 
-**Acceptance:** with the pool at its maximum and the ceiling above it, a new customer signs up and reaches a running server with no manual step; Teams shows the raise; the pool's maximum in DigitalOcean matches what the platform reports.
-
-## Open questions
-
-1. **Ceiling for the DOKS cluster:** how many nodes at most (each `s-2vcpu-4gb` about $24/month)? And should we ask DigitalOcean to raise the account's Droplet limit (25 by default) now?
-2. **Step size:** +1 or +2 nodes per raise?
-3. **Warm spare capacity:** keep room for one typical tenant ready (one node's worth of cost while idle), or switch it off and accept a 3–5 minute wait for a new customer when the cluster is full?
-4. **Bigger plans:** should the cluster get a second pool with larger machines for packages that do not fit on an `s-2vcpu-4gb` node, or should such plans be limited to what one node holds?
+1. **Ceilings:** the maximum nodes for the Standard pool and for the Large pool?
+2. **Large pool machine size:** `s-4vcpu-8gb` (general) or a memory-heavy size, depending on your large plans?
+3. **Moving a customer:** is 1–3 minutes of downtime, at a time the customer picks, acceptable until the zero-downtime move is possible?

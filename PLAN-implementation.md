@@ -92,7 +92,7 @@ All approved on 2026-10-11, subject to the launch acceptance criteria.
 - P1.2 submodules;
 - P1.3 Mailpit;
 - P1.5 restic with the consistency model and an off-site copy;
-- P1.7 Odoo 11–20 matrix;
+- P1.7 Odoo 14–20 matrix;
 - P1.9b CloudNativePG for new Production, once P1.9a passes;
 - P1.10 shell hardening;
 - P1.12 Odoo shell;
@@ -122,7 +122,7 @@ All approved on 2026-10-11, subject to the launch acceptance criteria.
 | Earlier plan | What changes here | Why |
 | --- | --- | --- |
 | A · Backup & Restore | Its Phase 0 (disk safety, alert webhook) and Phase 1 (streaming restore with swap) are P0.4. Its Phases 2–4 (integrity, restic) are P1.5, which adds manifest v2 (code identity), a snapshot-consistent file list, uncompressed dumps for restic deduplication, and a second-region copy. Key scope is P0.5. restic repositories stay in the backup bucket, which no customer key reaches. | Consistency model (architecture, concern 4) |
-| B · Spaces Filestore | One bucket per customer becomes two: a Production bucket and a non-production bucket (A2), because Spaces keys are per bucket only (verified). The bucket and keys are created in P1.4. The filestore is P3.1, delivered through the operator's platform-addons ConfigMap (`compute/operator/internal/resources/platformaddons.go`). It keeps web assets and files under 64 KiB in the database, reads through a local cache, retries reads that come back 404 just after a write, and uses a 14-day `trash/` lifecycle. All four adapter generations are built, for Odoo 11–20: 17–19, then 16 and 20, then 14–15, then 11–13. Sessions are P3.2. | Concerns 3 and 5 |
+| B · Spaces Filestore | One bucket per customer becomes two: a Production bucket and a non-production bucket (A2), because Spaces keys are per bucket only (verified). The bucket and keys are created in P1.4. The filestore is P3.1, delivered through the operator's platform-addons ConfigMap (`compute/operator/internal/resources/platformaddons.go`). It keeps web assets and files under 64 KiB in the database, reads through a local cache, retries reads that come back 404 just after a write, and uses a 14-day `trash/` lifecycle. Three adapter generations are built, for Odoo 14–20: 17–19, then 16 and 20, then 14–15. Appendix B's generation for 11–13 (G1) is dropped, because the platform sells 14–20. Sessions are P3.2. | Concerns 3 and 5 |
 | C · Cluster Capacity | Its Phase 1 is P0.12. Pools arrive by phase: Build in P0 (P0.19, security), Shared in P2 (P2.5), Large on demand (P4.3). HA is not a pool. Its Phases 3 and 4 are P3.5 and P3.6. | Concern 7 |
 | D · PostgreSQL | CloudNativePG becomes the engine for every new environment (A1): dedicated 1-instance per Production (P1.9b, after the P1.9a qualification), shared for non-production (P2.2) with 2 instances and no PgBouncer. Sleep windows are dev 1 h, staging 2 h, trials 1 h; Production never sleeps (P2.1). Its cost table is superseded by the corrected model (architecture, concern 6). | Concerns 1, 6 and 7 |
 
@@ -349,7 +349,7 @@ Before launch. "Launch blocker" marks a finding from the review.
 - **Design: two logins per database server.**
     - **`veltnex_admin`:** superuser, kept in a new Secret `odoo-database-admin`. It is used only by the PostgreSQL pod and by platform Jobs that truly need it: creating roles, restore swap, terminating sessions, granting `pg_monitor` to the perf collector. It is never mounted into Odoo, cron or the shell.
     - **`odoo_owner`:** `LOGIN NOSUPERUSER NOCREATEROLE NOREPLICATION NOBYPASSRLS`, with `CREATEDB` only on dedicated servers. It owns every Odoo database and the objects in them, and lives in `odoo-database-credentials`. It is what Odoo, cron, the update Job, the SQL console and the Odoo shell use.
-    - **Extensions:** Odoo's extensions (`unaccent`, `pg_trgm`) are created in `template1` by the admin, so they exist without superuser. They are trusted extensions from PostgreSQL 13. On the PostgreSQL 12 legacy engine, pre-creating them is required.
+    - **Extensions:** Odoo's extensions (`unaccent`, `pg_trgm`) are created in `template1` by the admin, so they exist without superuser. They are trusted extensions from PostgreSQL 13.
     - **Restores:** `pg_restore --no-owner --role=odoo_owner`, so every restored object belongs to the owner. The swap and session termination use the admin.
     - **Database manager:** "create" and "duplicate" (`CREATE DATABASE … TEMPLATE`) work as the owner, because it owns the source database and has `CREATEDB`. "Drop" works on its own databases.
     - **CloudNativePG (P1.9):** its application user is a non-superuser owner, and superuser access is off by default (*assumption*, checked in P1.9a).
@@ -454,12 +454,12 @@ Before launch. "Launch blocker" marks a finding from the review.
     - deduplication over 7 days is at most 1.3× one full backup (*assumption* tested here);
     - a second-region restore works.
 
-**P1.7 Odoo 11–20 support matrix.**
+**P1.7 Odoo 14–20 support matrix.** Decided on 2026-10-11: the platform sells Odoo 14 to 20.
 - **What:**
-    - a matrix of Odoo version, image, Python and PostgreSQL major, using as few majors as possible;
-    - test Odoo 11–12 on PostgreSQL 13. If that fails, they use the Managed StatefulSet with PostgreSQL 12 as a legacy engine;
-    - `supportedOdooVersions` covers 11.0–20.0;
-    - a portal notice on versions Odoo no longer patches.
+    - a matrix of Odoo version, image, Python and PostgreSQL major, using as few majors as possible, starting with Odoo 14, the oldest, on PostgreSQL 13;
+    - `supportedOdooVersions` covers 14.0–20.0 (today 17.0–20.0);
+    - versions 14–16 must be added to the chart and to `saas.odoo.version`;
+    - a portal notice on versions Odoo no longer patches, with an upgrade offer (P1.18).
 - **Where:** `compute/charts/odoo-operator/values.yaml`, `saas_core/models/saas_odoo_version.py`, `kubernetes_driver.py`.
 - **Done when:** one tenant per version deploys, builds an addon, backs up and restores.
 
@@ -819,7 +819,7 @@ Before launch. "Launch blocker" marks a finding from the review.
     - an hour-long simulated Spaces outage causes no pod restarts.
 
 **P3.2 Sessions in a per-environment PostgreSQL database.** Needs A3.
-- **What:** a session store adapter per Odoo generation (werkzeug store for 11–14, vendored store from 15 — *assumption* to confirm in a spike), in a `<env>_sessions` database hidden by `dbfilter`, with a cleanup cron.
+- **What:** a session store adapter per Odoo generation (werkzeug store for 14, vendored store from 15 — *assumption* to confirm in a spike), in a `<env>_sessions` database hidden by `dbfilter`, with a cleanup cron.
 - **Done when (A3 conditions):**
     - **Behaviour:** a user stays logged in across a pod replacement on another node, for each generation. Logout, password change and session expiry behave as in stock Odoo. Two replicas share sessions.
     - **Performance:** at 50 requests per second on a test tenant, the session store adds under 5 ms to p95 request time (*assumed* budget), and its database stays under 1% of the tenant's database time.
@@ -849,7 +849,7 @@ Before launch. "Launch blocker" marks a finding from the review.
     - websocket and long-polling work through any replica.
 
   This is re-verified per Odoo generation.
-- **Done when:** all three checks pass for 11, 14, 16, 18 and 20.
+- **Done when:** all three checks pass for 14, 16, 18 and 20.
 
 ### Gate C · Premium demand
 

@@ -167,11 +167,11 @@ flowchart TB
 - **Cost:** shards save about $1 per tenant a month. That is about 3% of a $35 Production price floor.
 - **Risk:** shards raise the failure domain from one tenant to about 50.
 - **Restore:** shards make PITR a whole-shard operation.
-- **Upgrades:** shards force every tenant in a shard onto one major version, which conflicts with selling Odoo 11–20.
+- **Upgrades:** shards force every tenant in a shard onto one major version, which conflicts with selling Odoo 14–20.
 
 **Recommendation: B.** Every Production environment gets a dedicated CloudNativePG cluster with 1 instance, and its requests come from measurement (A6). Reject C for Production. Revisit D only if a sub-$20 Starter plan is ever priced, and then only for trials converted to a "lite" tier. Existing tenants on the Managed StatefulSet move by dump and restore at a customer-chosen time.
 
-*Assumption:* Odoo 11–12 run on PostgreSQL 13, the CRD minimum and the oldest major current CloudNativePG images ship. If the P1.7 test fails, those versions stay on the Managed StatefulSet with PostgreSQL 12 as a legacy engine.
+*Assumption:* every version sold, Odoo 14–20, runs on PostgreSQL 13 or later. That is the CRD minimum and the oldest major current CloudNativePG images ship. Odoo 14, the oldest, is tested first in P1.7. No PostgreSQL 12 legacy engine is needed.
 
 ### 2. Tenant isolation
 
@@ -263,7 +263,7 @@ Today, while files are still on the volume, the same model applies with "copy th
         - a per-environment `…_sessions` database on the environment's own server (recommended: no new service);
         - Redis per cell with an ACL per tenant (faster, but a new stateful service to run);
         - an `emptyDir`, which logs everyone out on every rollout, so it is rejected.
-    - **Versions:** the session store differs between Odoo generations (werkzeug's store in 11–14, Odoo's vendored copy from 15). That needs an adapter per generation, like the filestore. *Assumption*, to spike in P3.
+    - **Versions:** the session store differs between Odoo generations (werkzeug's store in 14, Odoo's vendored copy from 15). That needs an adapter per generation, like the filestore. *Assumption*, to spike in P3.
     - **Cleanup:** a cron removes expired sessions.
 - **Several replicas:**
     - the Odoo bus uses PostgreSQL `LISTEN/NOTIFY`, so long-polling and websocket requests can land on any replica;
@@ -347,7 +347,7 @@ The saving becomes money only when the autoscaler removes nodes; on a small clus
 
 | Inconsistency in revision 1 | Resolution |
 | --- | --- |
-| Two PostgreSQL engines (Managed StatefulSet and CloudNativePG) with different backup, PITR and HA stories | A1: CloudNativePG for all new environments; Managed only for existing tenants until moved, and as a legacy engine for Odoo 11–12 if PostgreSQL 13 fails |
+| Two PostgreSQL engines (Managed StatefulSet and CloudNativePG) with different backup, PITR and HA stories | A1: CloudNativePG for all new environments; Managed only for existing tenants until they are moved |
 | PgBouncer in session mode in front of the shared cluster | Removed at launch. Session mode multiplexes nothing for Odoo, which holds connections per worker and needs session features (`LISTEN/NOTIFY`). Per-role `CONNECTION LIMIT` and Odoo's `db_maxconn` cap connections. Add a pooler only if a shared cluster nears `max_connections` |
 | Non-production gets HA (2 instances) while Production has none | Intentional and now stated: one shared-cluster failure would stop every non-production environment in the cell, while a Production database failure affects one tenant. Cost about $19 per cell (A9) |
 | "HA add-on" drawn inside the Large pool | HA is pool-independent; it needs at least 2 nodes in the tenant's pool |
@@ -591,7 +591,7 @@ The card opens the full finding: the normalized query, its tables and module, th
 | Medium | One operator replica | `deployment.yaml:45` | P0.15 |
 | Resolved | Platform database backups | owner-managed | Monthly restore drill |
 
-**Odoo 11–20 are sold (decided).** Versions Odoo no longer patches carry a portal notice and an upgrade offer. Per-environment isolation contains a compromise to that customer.
+**Odoo 14–20 are sold (decided; revised from 11–20 on 2026-10-11).** Versions Odoo no longer patches carry a portal notice and an upgrade offer. Per-environment isolation contains a compromise to that customer.
 
 **Failure domains:**
 
@@ -670,7 +670,7 @@ Unchanged from revision 1, plus mail: Odoo.sh catches staging mail and sends Pro
 ```mermaid
 flowchart TD
     P0["P0 · Launch blockers (before launch)<br/>Least-privilege access · private registry, pull-only tenant credentials · tainted Build pool<br/>Restore swap · backup key scope · spread backups · tools per PG major · major-version guard<br/>Wildcard TLS with CAA, delegated DNS-01, CT watch · separate tenant domain + PSL<br/>Real client IP, fail-closed secrets · 2FA · CI gates · alerts · capacity reader<br/>Egress: private ranges denied, mail only via relay · right-sized memory · 60% price floor · vendored CloudNativePG"]
-    P1["P1 · Launch features (before launch)<br/>Custom domains (TXT ownership, separate issuer, takeover rules) · submodules · Mailpit<br/>Production + non-production buckets · restic with manifest v2 and snapshot file list · second-region copy<br/>Mail relay to SES with quotas · CloudNativePG for new Production · non-superuser roles · shell hardening<br/>Odoo 11–20 matrix · tests per push · Odoo shell · SSH gateway · logs incl. pg_slow_queries.log<br/>Uptime % · backups included · promotion with pre-deploy snapshot · version upgrade workflow · persona roles · activity history"]
+    P1["P1 · Launch features (before launch)<br/>Custom domains (TXT ownership, separate issuer, takeover rules) · submodules · Mailpit<br/>Production + non-production buckets · restic with manifest v2 and snapshot file list · second-region copy<br/>Mail relay to SES with quotas · CloudNativePG for new Production · non-superuser roles · shell hardening<br/>Odoo 14–20 matrix · tests per push · Odoo shell · SSH gateway · logs incl. pg_slow_queries.log<br/>Uptime % · backups included · promotion with pre-deploy snapshot · version upgrade workflow · persona roles · activity history"]
     P2["P2 · Cost engine<br/>Shared pool · shared CloudNativePG (2 instances, no pooler) · sleep 1 h / 2 h / 1 h<br/>Archive idle dev · batched control-plane reads · build cache · performance insights v1<br/>Stored logs (7 days) · OpenUpgrade automation"]
     P3["P3 · Stateless Odoo<br/>Spaces filestore with DB-stored assets and local cache · sessions database<br/>Drop node pinning · backups from a platform namespace · moves between pools"]
     P4["P4 · Premium and scale<br/>HA (2 instances + 2 Odoo pods) · PITR setting · Large and dedicated pools<br/>More cells · control plane on 2 servers · performance insights paid tier"]
@@ -684,7 +684,7 @@ flowchart TD
 
 **Decided on 2026-10-11:**
 
-- Odoo 11 to 20 are sold.
+- Odoo 14 to 20 are sold (revised from 11–20).
 - 60% gross margin at launch, 70% or more at scale, never at the cost of security or Production stability.
 - Production never sleeps; dev sleeps after 1 idle hour, staging after 2, trials after 1.
 - The owner backs up the platform database.
@@ -705,7 +705,7 @@ flowchart TD
 **Evidence still needed (each has a test in the plan):**
 
 - read-after-write behaviour of Spaces;
-- Odoo 11–12 on PostgreSQL 13;
+- Odoo 14 on PostgreSQL 13;
 - the relay's sustained throughput against the SES account rate;
 - the restic deduplication ratio with uncompressed dumps;
 - BuildKit not exposing the client credential to `RUN` steps;

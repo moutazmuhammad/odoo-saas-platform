@@ -30,6 +30,7 @@ All decisions, A1–A19, were approved on 2026-10-11. A14–A19 were delegated b
 | A11 | Automatic Production backups included in every plan | **Approved with conditions** | Plan-based retention and recovery features | P1.16 |
 | A12 | Read-only window for the final major-version upgrade, chosen by the customer | **Approved with conditions** | A tested copy, a verified backup, a customer-selected window and a documented recovery procedure | P1.18 |
 | A13 | State an uptime target on the website; SLA only with HA | **Approved with conditions** | A target only, until HA passes failure and recovery tests; a contractual SLA only once the platform consistently meets it | P0.23, P4.1 |
+| A20 | Odoo Enterprise source model and legal gate | **Pending legal review** | (a) bring your own Enterprise source, built per tenant into tenant-only registry repositories, at launch; (b) platform Enterprise images only with a written agreement with Odoo. No Enterprise offering before written legal confirmation | P1.23, P1.24 |
 | A14 | Provider-agnostic cells: any provider meeting the cell contract; launch on DigitalOcean, add providers through the onboarding checklist when a region needs them | **Approved** (delegated by the owner, 2026-10-11) | A cell takes customers only after P0.26 passes | P0.25, P0.26, P2.10 |
 | A15 | Object storage on Azure (no S3 API) | **Approved** (delegated) | An Azure Blob adapter in the filestore module, built only when the first Azure region is needed. restic, CloudNativePG and the registry already support Azure natively. No self-run object store, which would be a stateful service to operate | P2.10 |
 | A16 | Platform DNS provider independent of the clouds | **Approved** (delegated): **Cloudflare DNS**, DNS only, no proxy | Built-in cert-manager solver; API tokens scoped to a single zone; free DNSSEC and CAA; independent of every compute provider | P0.7, P0.26 |
@@ -77,7 +78,7 @@ The remaining open questions were settled on 2026-10-11 (see the end of this fil
 | SQL console | Implemented | `hosting_sql_query` runs through Odoo's own connection (`saas_instance.py:2191`) | Runs as that superuser |
 | Shell | Implemented | `shellContainer` (`deployment.go:225`): no secrets, but the Odoo data dir is mounted read-write | Session files and the data-dir `addons/` folder are writable |
 | Builds | Implemented | `drivers/k8s_builds.py` | Rootless BuildKit with seccomp and AppArmor `Unconfined` (`:288`); runs customer `pip install`; no node selector, so builds share tenant nodes; private ranges blocked on egress (good) |
-| Registry credentials | Partial | `_upsert_pull_secret(namespace, …, registry_username, registry_password)` (`k8s_builds.py:412`) | The same push-capable login is copied into every tenant namespace |
+| Registry credentials | Partial | `_upsert_pull_secret(namespace, …, registry_username, registry_password)` (`k8s_builds.py:412`) | The same push-capable login is copied into every tenant namespace, so any tenant's credential could pull every tenant's image. That is unacceptable for Enterprise code (P1.24) |
 | Image registry | Partial | Docker Hub `moutazmuhammad/*` | Free Docker Hub repositories are public |
 | Filestore on Spaces | Planned | Appendix B | Files on block storage keep Odoo stateful |
 | Environments | Implemented | `_create_env_child`, `_NEUTRALIZE_SQL`, `_PII_MASK_SQL` | PII masking covers database rows, not attachments; no sleep; no mail catcher |
@@ -614,6 +615,54 @@ The card opens the full finding: the normalized query, its tables and module, th
 
 **Cost:** the CronJob costs a few CPU-minutes per cell every 15 minutes. Storage is a few GB in the control-plane database. Level 3 emails are rare and go through the mail relay. Basic insights are included in every Production plan; the 90-day history and the plan and index-hint views are the paid tier (A10).
 
+## Odoo Enterprise
+
+**The rule:** Odoo Enterprise code is under a commercial licence, separate from Community's. One customer's subscription gives that customer rights; it gives no other customer of the platform access to the code. Veltnex therefore never stores Enterprise code where another customer could reach it, and never redistributes it unless Odoo agrees in writing.
+
+**Legal gate (launch blocker for offering Enterprise; Community is unaffected).** Nothing about Enterprise is offered until a legal review confirms, in writing:
+
+- the customer's right to have their subscription hosted by Veltnex;
+- what rights Veltnex itself needs (for example a hosting or partner arrangement with Odoo);
+- how staging and dev copies of a registered database are treated under the subscription.
+
+Until then, the "Enterprise" option is hidden.
+
+**Source model (A20):**
+
+| Option | How the Enterprise code arrives | Legal exposure | Status |
+| --- | --- | --- | --- |
+| a. Bring your own (recommended for launch) | The customer adds the Enterprise repository they are entitled to, or their own copy, as a repository or submodule of their project. The build fetches it with the customer's own credentials into that tenant's image only | Veltnex hosts the customer's own copy for that customer, like their custom addons | After the legal gate |
+| b. Platform Enterprise images | Veltnex keeps one Enterprise image per Odoo version and serves it to entitled customers | Redistribution by Veltnex; needs a written agreement with Odoo | Only after such an agreement exists |
+
+**The flow when a customer chooses Enterprise** (option a):
+
+1. **Subscription check:**
+    - **At order:** the customer enters their Odoo subscription code and accepts terms stating they hold a valid subscription for the users they run.
+    - **No verified pre-check:** no public API to validate a code before a database exists was found (*assumption*). The real check is Odoo's own registration in step 5, monitored in step 6.
+2. **Version:** the customer picks an Odoo version from 14 to 20. The Enterprise branch they provide must match it, and the build refuses a mismatch by reading the manifests' version prefix.
+3. **Image:**
+    - built per tenant from the customer's own sources (P1.11 pipeline) into a registry repository that **only that tenant can pull**: per-tenant registry access (P1.24);
+    - no Enterprise code is cached in shared build layers;
+    - the image is never offered for download;
+    - the shell shows the customer only their own environment.
+4. **Database, Secrets and Deployment:** created as for any environment. The non-superuser role, Production bucket and backups are unchanged, and `web_enterprise` is installed.
+5. **Registration:**
+    - the platform writes the customer's subscription code to the database as Odoo's own registration expects;
+    - Odoo's built-in registration with Odoo's servers then runs, or the customer enters the code in Odoo's UI themselves;
+    - this is the normal activation path; nothing is patched or skipped.
+6. **Monitoring, without bypass:**
+    - **Daily read:** a read-only check reads Odoo's own subscription status from the database (expiration date and reason) and the number of active users.
+    - **Portal:** shows the status. The customer gets an alert 30 and 7 days before expiry, and when the status turns invalid.
+    - **No interference:** the platform never edits, extends or blocks those values; Odoo's own behaviour applies.
+    - **Terms:** forbid tampering. Staff are alerted to a database whose status was changed outside Odoo's registration.
+
+**Staging and dev copies of an Enterprise database:**
+
+- a copy gets a new database UUID;
+- it is neutralized, as today;
+- it is never registered as a second Production database;
+- whether such copies need anything more under the subscription is part of the legal gate.
+
 ## Key architecture decisions
 
 | # | Decision | Rejected alternatives | Why it wins |
@@ -798,7 +847,7 @@ flowchart TD
     - HA is sold after Gate C, when it has passed failure and recovery tests;
     - dedicated pools are on request.
 4. **Second backup location:** set per region by its residency policy. For the DigitalOcean fra1 cell it is ams3, which is inside the EU.
-5. **Enterprise:** Community by default. Customers may bring their own Odoo Enterprise subscription and addons through their repository. Before this is advertised, Odoo's Enterprise terms for third-party hosting are checked; that check is a P1.7 task.
+5. **Enterprise:** Community by default. Enterprise follows the "Odoo Enterprise" section: a legal gate first, then bring-your-own source built into tenant-only images (A20, P1.23, P1.24).
 6. **Safe two-copy restore** (Appendix A, open question 3): restores go into a new database volume, or a new CloudNativePG cluster, and Odoo switches over after verification. The old volume is deleted after 24 hours. Volumes never have to grow for a restore, and the extra cost is a few hours of a second volume. Managed StatefulSet tenants that have not moved yet use drop-then-load, only after a fresh verified backup.
 7. **SES region:** per cell, the nearest SES region the region policy allows; for fra1 it is eu-central-1. Leaving the SES sandbox is an owner action on the AWS account.
 

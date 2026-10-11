@@ -55,6 +55,7 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
 | A16 Platform DNS provider: Cloudflare | P0.7, P0.26 |
 | A17 Data residency | P0.25, P1.21 |
 | A18 Provisioning modules: OpenTofu | P2.11 |
+| A20 Enterprise source model and legal gate (pending legal) | P1.23, P1.24 |
 | A19 Region, provider and pricing model | P1.22, P0.18 |
 
 ## Launch blockers and launch acceptance criteria
@@ -94,6 +95,8 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
 | P1.4 | Production and non-production buckets | Approved isolation boundary (A2) |
 | P1.1 | Custom domains with ownership proof and the "ownership lost" procedure | Approved (A5); takeover safety |
 | P1.8 | Mail relay with quotas and abuse pausing | Approved (A7); no AWS credentials in tenants |
+| P1.24 | Per-tenant registry access | One credential can pull every tenant's image today; required before Enterprise |
+| P1.23 | Odoo Enterprise behind a legal gate | Blocks only the Enterprise offering; Community launches without it |
 
 **Launch features, also required at launch** (the platform's required capabilities):
 
@@ -523,13 +526,48 @@ Before launch. "Launch blocker" marks a finding from the review.
     - the project's staging lands in the same offering;
     - a provider change runs as a scheduled move.
 
+**P1.23 Odoo Enterprise (bring your own), behind a legal gate.** Needs A20. Launch blocker for offering Enterprise only; Community launches without it.
+- **Legal gate first:** a written legal confirmation of:
+    - the customer's right to have their subscription hosted by Veltnex;
+    - any rights Veltnex needs from Odoo;
+    - the treatment of staging and dev copies.
+
+  Until it exists the Enterprise option stays hidden (a feature flag, off).
+- **What:**
+    1. **Order:** the customer enters their subscription code, picks a version from 14 to 20, accepts the subscription terms, and connects the Enterprise repository they are entitled to (or their copy) as a repository or submodule.
+    2. **Build:** it fetches that source with the customer's credentials, refuses a version mismatch (manifest version prefix), and builds into the tenant's own registry repository (P1.24). The P2.6 build cache is per tenant for repositories that contain Enterprise code.
+    3. **Provisioning:** as for any environment, plus `web_enterprise`.
+    4. **Registration:** the platform writes the subscription code to the database as Odoo's registration expects, and Odoo's own registration runs. No patching, no skipped checks.
+    5. **Monitoring:** a daily read-only check of Odoo's subscription status (expiration date and reason) and active users, shown in the portal. It alerts at 30 and 7 days before expiry and on an invalid status. Staff are alerted to status changes made outside Odoo's registration.
+    6. **Copies:** staging and dev copies get a new database UUID, are neutralized and are never registered as Production.
+- **Where:** `saas_core/models/saas_product.py` and `saas_instance.py` (edition, subscription code stored encrypted), `drivers/k8s_builds.py` and `templates/build/` (per-tenant cache and version check), `_NEUTRALIZE_SQL` (new UUID for copies), the perf collector or a small read-only Job for the status read, `frontend/veltnex` (Enterprise option, status card), terms of service.
+- **Done when:**
+    - the legal confirmation is filed;
+    - with the flag on in the test cluster, an Enterprise 17 project builds from a test entitlement, registers through Odoo's own flow, and shows its status;
+    - a second tenant cannot pull the first tenant's image (P1.24);
+    - a staging copy has a different UUID and stays neutralized;
+    - no code path writes Odoo's expiration values.
+
+**P1.24 Per-tenant registry access.** Needed by P1.23; it also closes the cross-tenant pull exposure for every customer.
+- **What:**
+    - a registry with token authentication and per-repository permissions, for example Harbor with a robot account per tenant project, or a token server in front of the existing registry;
+    - each tenant namespace holds a pull credential for its own repository only;
+    - the Build pool gets a push credential per build, limited to that tenant's repository.
+
+  This replaces P0.3's single read-only pull credential when it ships.
+- **Where:** registry deployment per cell, `drivers/k8s_builds.py` (`_upsert_pull_secret`, build push credentials), `saas_core/models/saas_server.py`.
+- **Done when:**
+    - tenant A's pull credential is refused for tenant B's repository;
+    - a build's push credential cannot push to another tenant's repository;
+    - existing tenants roll to their own credentials with zero failed requests.
+
 **P1.7 Odoo 14–20 support matrix.** Decided on 2026-10-11: the platform sells Odoo 14 to 20.
 - **What:**
     - a matrix of Odoo version, image, Python and PostgreSQL major, using as few majors as possible, starting with Odoo 14, the oldest, on PostgreSQL 13;
     - `supportedOdooVersions` covers 14.0–20.0 (today 17.0–20.0);
     - versions 14–16 must be added to the chart and to `saas.odoo.version`;
     - a portal notice on versions Odoo no longer patches, with an upgrade offer (P1.18);
-    - Enterprise: customers may bring their own subscription and addons through their repository. Before it is advertised, check Odoo's Enterprise terms for third-party hosting.
+    - Enterprise: see P1.23 (legal gate, bring your own source, tenant-only images).
 - **Where:** `compute/charts/odoo-operator/values.yaml`, `saas_core/models/saas_odoo_version.py`, `kubernetes_driver.py`.
 - **Done when:** one tenant per version deploys, builds an addon, backs up and restores.
 
@@ -994,9 +1032,13 @@ All decisions are recorded in [ARCHITECTURE-TARGET.md](ARCHITECTURE-TARGET.md#de
 | Safe two-copy restore | Restore into a new volume or cluster, switch, delete the old one after 24 h | P0.4 |
 | SES region | Nearest allowed per cell; eu-central-1 for fra1 | P1.8 |
 | Add-ons at launch | None; PITR with P4.2, HA after Gate C | P4.1, P4.2 |
-| Enterprise | Bring your own subscription; check Odoo's terms first | P1.7 |
+| Enterprise | Legal gate, then bring your own source into tenant-only images (A20 pending legal) | P1.23, P1.24 |
 
-**Needs the owner:** register the tenant domain (P0.20, P0.7) and take the SES account out of the sandbox (P1.8).
+**Needs the owner:**
+
+- register the tenant domain (P0.20, P0.7);
+- take the SES account out of the sandbox (P1.8);
+- obtain the Enterprise legal review (A20, P1.23).
 
 --- | --- |
 | Archive window | P2.3 |

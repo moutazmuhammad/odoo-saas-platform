@@ -1,349 +1,651 @@
 # Veltnex Architecture Review and Target Design
 
-Oct 11, 2026 · @Mostafa · Doc: https://claude.ai/code/artifact/2e71a7cf-e77c-4e5f-bd39-a0854eee94ad
+Oct 11, 2026 · @Mostafa · Revision 2 · Doc (revision 1 only): https://claude.ai/code/artifact/2e71a7cf-e77c-4e5f-bd39-a0854eee94ad
 
-This is the architecture review and the target design. The step-by-step work lives in [PLAN-implementation.md](PLAN-implementation.md), which also holds the four earlier plans (backup and restore, Spaces filestore, cluster capacity, PostgreSQL) as appendices.
+This is the architecture review and the target design. The work items are in [PLAN-implementation.md](PLAN-implementation.md). That file also keeps the four earlier plans (backup and restore, Spaces filestore, cluster capacity, PostgreSQL) unchanged as Appendices A–D.
+
+Revision 2 answers eight review concerns, adds AWS SES for outgoing mail, and hardens the wildcard certificate and the custom-domain path. Every claim below is marked as one of:
+
+- **Verified:** checked in the repository, on the live DOKS cluster (read-only Prometheus and kubectl reads on 2026-10-11), or in a provider document that was opened and is linked.
+- **Assumption:** reasonable but not yet proven; each one has a test in the plan.
+
+Nothing here is implemented, and nothing should be until you approve the decisions in the next section.
+
+## Decisions awaiting your approval
+
+| # | Decision | Recommendation | Main alternative | Affects |
+| --- | --- | --- | --- | --- |
+| A1 | PostgreSQL engine for new environments | CloudNativePG everywhere: a dedicated 1-instance cluster per Production environment, and shared clusters for non-production. HA is set by raising the instance count to 2. | Keep the operator's Managed StatefulSet for Production | Concerns 1, 4, 7 |
+| A2 | Object-storage isolation boundary | Two buckets per customer: one for Production and one for all non-production environments, each with its own key | A bucket per environment | Concern 3 |
+| A3 | Session storage for stateless Odoo | A small per-environment PostgreSQL sessions database | Redis per cell, with an ACL per tenant | Concern 5 |
+| A4 | Tenant domain | Move tenant apps to their own registrable domain, separate from the portal, and add it to the Public Suffix List | Keep `*.eagle-tech.info` next to the portal | Concerns 2, 8 |
+| A5 | Custom-domain ownership | A DNS TXT record proves ownership at claim time and stays in place; it is re-checked daily and before every renewal | Ownership checked only at claim time | Concern 8 |
+| A6 | Memory requests | Size requests from measured usage; this raises the cost per tenant and the price floor | Keep requests at 25% of limits | Concern 6 |
+| A7 | Outgoing mail through AWS SES | A platform mail relay per cell holds the only SES credential. Tenants get revocable relay credentials with rate limits, quotas and sender-domain checks; abuse pauses sending automatically. No direct SMTP egress from tenants; staging and dev never reach SES | An IAM user per customer (puts AWS credentials in tenant namespaces), or one shared SES credential in every tenant | Mail |
+| A8 | Production attachments in staging and dev copies | Staging gets them; dev gets them only when asked | Always copy them | Concern 3 |
+| A10 | Performance insights per customer | Basic insights (three alert levels on the dashboard, a short email only for Level 3 that affects users, 14 days of history) in every Production plan; 90-day history plus plan and index-hint views as a paid tier | All features free, or all paid | Performance monitoring |
+| A9 | Shared non-production cluster size | 2 instances per cell, about $19 a month per cell | 1 instance plus restore from WAL | Concern 7 |
+
+Still open from revision 1: archive window, whether trials share the cluster, add-ons at launch, second backup region, and Enterprise hosting (see the end of this file).
 
 ## Summary
 
-**Keep the core model (Kubernetes, the Go operator, and one namespace per environment), and split the fleet into two tiers.** Production gets dedicated, always-on resources. Development, staging and trials share resources and sleep when idle. Odoo itself becomes stateless on top of Spaces. Most of the margin comes from that split. Most of the risk sits in a short list of security and recovery gaps to close before launch.
+**Keep Kubernetes, the Go operator and one namespace per environment.** Production stays dedicated and always on. Staging, dev and trials share and sleep. Revision 2 changes six things:
 
-1. **Production:** one Odoo pod and one dedicated PostgreSQL per environment, as today. Each is sized by the plan and placed in a Standard or Large node pool. Paid add-ons: High Availability (HA, a standby database plus a second Odoo pod) and point-in-time recovery (PITR).
-2. **Development, staging and trials:** databases live in one shared CloudNativePG cluster per PostgreSQL major version. Odoo sleeps after inactivity and wakes on the next visit. Long-idle environments are archived to Spaces instead of being deleted.
-3. **Files:** the filestore moves to a Spaces bucket per customer. Sessions move to the database. Odoo then needs no volume, so pods can move between nodes, drain cleanly and run as two replicas.
-4. **Scale unit:** one DOKS cluster per region (a "cell") with pools for Standard, Large, shared and builds. Open a second cell when a cell reaches the triggers in the scalability section, not before.
-5. **Control plane:** keep Odoo 18 as the control plane, but stop polling every tenant. Read cluster state in batches per cluster and keep the platform database backups you already run outside the repository.
-
-**Fix before launch:**
-
-- Customer images must go to a private registry.
-- Every tenant namespace holds a copy of the one shared backup key.
-- Plan prices are not yet held to the 60% gross-margin floor.
-- The control plane holds cluster-admin rights.
-- Restore drops the database before loading the new one.
-- CI does not gate deployments.
-- There are no custom domains or mail catcher, which customers will expect from day one.
+1. **One PostgreSQL engine:** CloudNativePG for every new environment (A1). Production keeps a dedicated database. Shared Production shards save about $1 per tenant a month and multiply the blast radius, so they are rejected.
+2. **The isolation boundary is the bucket, not the folder.** Spaces keys are per bucket only, so Production files get their own bucket and key (A2).
+3. **A corrected cost model.** The old formula charged the node twice. The new one prices each tenant by the larger of its CPU and memory share, after system overhead and packing. For a 2-worker Production environment it gives about $14 a month, so the 60% price floor is about $35.
+4. **One unit of consistency for backups and restores:** a database snapshot, plus exactly the files it references, plus the code that wrote it.
+5. **Tenant safety at the edge:**
+    - tenant apps on their own registrable domain;
+    - the wildcard certificate locked down;
+    - custom domains on a separate issuance path with TXT ownership proof and takeover rules;
+    - exact host routing only.
+6. **Builds are a launch security item, not a cost item.** They run customer code with seccomp and AppArmor turned off, so they move to their own tainted node pool before launch.
 
 ## Current state assessment
 
-**The platform is further along than most at this stage.** Provisioning, Git builds with an update gate, staging copies with neutralization and PII masking, billing, IAM and shells all exist in code. The weak points are statefulness (Odoo and PostgreSQL pinned to one block volume), security shortcuts, and control-plane loops that grow with tenant count. Every row below was checked in the repository on 2026-10-11. "Planned" means a PLAN file exists and no code does.
+**Verified on 2026-10-11** in the repository and on the live cluster unless marked otherwise.
 
 | Area | Status | Evidence | Main limitation |
 | --- | --- | --- | --- |
-| Tenant runtime | Implemented | operator `resources/deployment.go`, `tenancy.go` | One Odoo pod plus a cron sidecar, and a PostgreSQL StatefulSet, all on one RWO volume, so the tenant is pinned to one node (`deployment.go:282`) |
-| Zero-downtime updates | Implemented | MaxSurge 1, update gate `controller/update.go` | The surge pod must fit on the same node; no pre-update backup; a node drain or upgrade still means 1–3 minutes down |
-| Pod hardening | Implemented | restricted Pod Security, non-root, read-only root, seccomp (`deployment.go:129`) | Good baseline |
-| Network isolation | Partial | `networkpolicy.go` | Egress 443 is open to any destination, including in-cluster; no SMTP egress; all ports open inside a namespace |
-| PostgreSQL | Implemented, dedicated per environment | `resources/database.go`; CNPG mode `cnpg.go` is single-instance | No HA, no PITR, no pooler; changing the major version deletes the pod with no guard (`controller/database.go:256`) |
-| Filestore on Spaces | Planned | PLAN-implementation.md Appendix B; no `saas_object_storage` in code | Files live on block storage, which keeps Odoo stateful |
-| Builds | Implemented | `saas_core/drivers/k8s_builds.py`, BuildKit Job, signed webhooks | No cache (slow, CPU-heavy), no submodules, no test runs; builds share tenant nodes |
-| Image registry | Partial | Docker Hub `moutazmuhammad/*`; per-cluster registry setting | Docs warn that free Docker Hub repos are public, so customer code could leak |
-| Environments | Implemented | `_create_env_child`, `_NEUTRALIZE_SQL`, `_PII_MASK_SQL` in `saas_instance.py` | Each dev or staging environment runs a full always-on stack; no sleep; no mail catcher |
-| Backups | Implemented (full dumps) | backup-tool `run-backup.sh`, CronJob, 7 kept | One shared S3 key is copied into every tenant namespace (`saas_instance.py:3787`); unbounded `/tmp`; the client is PostgreSQL 16 only while the CRD allows 17 |
-| Restore | Partial | `run-restore.sh:125`, `saas_instance.py:3400` | Drops the database before loading the new one; a failed restore leaves no database |
-| Incremental backups, integrity checks | Planned | PLAN-implementation.md Appendix A | — |
-| PITR / HA | Missing | CRD forces 1 replica; CNPG 1 instance | Nothing to sell to customers who need them |
-| Sleep / scale-to-zero | Missing | only manual `suspended` (`controller/suspension.go`) | Idle dev and staging cost the same as busy ones |
-| Capacity and autoscaling | Partial | typed caps `_has_capacity_for` (`saas_server.py:441`); DOKS pool 0–2 | Pending pods for about 27 minutes on 2026-10-10; nothing reads the autoscaler (Appendix C) |
-| Control-plane jobs | Partial | durable `saas.job` queue plus `run_in_background` threads | Two crash-recovery models; stop, suspend and cancel use threads |
-| Control-plane scaling | Partial | `_cron_reconcile`, `_cron_verify_webhooks`, `_cron_sync_scheduled_backups` | Unbounded loops over all tenants with per-tenant API calls; a new Kubernetes client per call |
-| Storage-limit enforcement | Partial | the only TODO in code, `_cron_check_storage_limits` (`saas_instance.py:5802`) | It reads stale or zero usage |
-| Secrets at rest | Partial | `EncryptedChar` (Fernet) | Without a key it falls back to plaintext; backup S3 keys and webhook secrets are plain |
-| Control plane to cluster access | Implemented, over-privileged | 03b §7: ServiceAccount bound to cluster-admin | A stolen kubeconfig gives every cluster |
-| Platform database backup | Owner-managed | `scripts/deploy/saas-deploy.sh` dumps locally before deploys | Backed up by the owner outside the repository (confirmed 2026-10-11) |
-| Monitoring and alerts | Partial | Prometheus, no Alertmanager, no rules; `saas_alert._notify` posts to one webhook, unset on the live server | Problems surface through customers |
-| Logs | Partial | live tail of the web container (`container_logs.py`) | No stored or searchable logs |
-| Custom domains | Missing | only `subdomain.base_domain` | Expected by every production customer |
-| 2FA | Missing | no `auth_totp` dependency | Staff accounts can open shells on clusters |
-| CI/CD gates | Partial | `.github/workflows/cd.yml` "temporary fast deployment mode" | Tests and scans do not block deployments |
-| Odoo versions | Partial | chart `supportedOdooVersions` 17.0–20.0 | Decided: sell 11–20, so the chart, images, PostgreSQL matrix and all four filestore adapters must cover 11–20 |
+| Tenant runtime | Implemented | operator `resources/deployment.go`, `tenancy.go` | One Odoo pod plus a cron sidecar and a PostgreSQL StatefulSet on one RWO volume, pinned to one node (`deployment.go:282`) |
+| Zero-downtime updates | Implemented | MaxSurge 1, update gate `controller/update.go` | The surge pod must fit on the same node; a node drain still means 1–3 minutes down |
+| Pod hardening | Implemented | restricted Pod Security, non-root, read-only root, seccomp `RuntimeDefault`, no service-account token (`tenancy.go:36`) | Good baseline |
+| Network isolation | Partial | `networkpolicy.go` | Ingress only from the gateway, which is good. Egress 443 reaches any address, including in-cluster; no SMTP egress |
+| PostgreSQL | Implemented, dedicated | `resources/database.go`; CloudNativePG mode `cnpg.go` single-instance | The tenant login is the image's `POSTGRES_USER`, a superuser (`database.go:92`); no HA, PITR or major-version guard |
+| SQL console | Implemented | `hosting_sql_query` runs through Odoo's own connection (`saas_instance.py:2191`) | Runs as that superuser |
+| Shell | Implemented | `shellContainer` (`deployment.go:225`): no secrets, but the Odoo data dir is mounted read-write | Session files and the data-dir `addons/` folder are writable |
+| Builds | Implemented | `drivers/k8s_builds.py` | Rootless BuildKit with seccomp and AppArmor `Unconfined` (`:288`); runs customer `pip install`; no node selector, so builds share tenant nodes; private ranges blocked on egress (good) |
+| Registry credentials | Partial | `_upsert_pull_secret(namespace, …, registry_username, registry_password)` (`k8s_builds.py:412`) | The same push-capable login is copied into every tenant namespace |
+| Image registry | Partial | Docker Hub `moutazmuhammad/*` | Free Docker Hub repositories are public |
+| Filestore on Spaces | Planned | Appendix B | Files on block storage keep Odoo stateful |
+| Environments | Implemented | `_create_env_child`, `_NEUTRALIZE_SQL`, `_PII_MASK_SQL` | PII masking covers database rows, not attachments; no sleep; no mail catcher |
+| Backups | Implemented (full dumps) | `run-backup.sh`: `pg_dump` per database, then a tar of the filestore, then a manifest | The manifest records no image, commit, module or PostgreSQL version. One shared S3 key sits in every tenant namespace. PostgreSQL 16 client only. Every backup starts at 02:00 |
+| Restore | Partial | `run-restore.sh:125`, `saas_instance.py:3400` | Drops the database before loading |
+| Memory requests | Partial | `_package()` requests are 25% of limits; a 2-worker plan requests 448 MiB | Measured one-day average working sets were 0.46–1.4 GiB per environment, so memory can be overcommitted |
+| Tenant domain | Partial | live CR host `ee.node.eagle-tech.info`; portal `main.eagle-tech.info` | Tenants and the portal share the registrable domain `eagle-tech.info` |
+| TLS | Implemented | per-host certificate through the cluster issuer (`kubernetes_driver.py:525`) | Let's Encrypt allows 50 new certificates per registered domain per 7 days ([source](https://letsencrypt.org/docs/rate-limits/)) |
+| Custom domains | Missing | only `subdomain.base_domain` | — |
+| Outgoing mail | Missing as a platform service | — | Customers configure their own SMTP, which the network policy blocks today |
+| Control plane to cluster | Over-privileged | bootstrap binds `cluster-admin` (`bootstrap.py:215`) | — |
+| Control-plane scaling | Partial | `_cron_reconcile`, `_cron_verify_webhooks`, `_cron_sync_scheduled_backups` | Per-tenant API calls in unbounded loops |
+| Platform database backup | Owner-managed | confirmed 2026-10-11 | Backed up outside the repository |
+| Monitoring and alerts | Partial | Prometheus, no Alertmanager; alert webhook unset | — |
+| CI/CD gates | Partial | `cd.yml` "temporary fast deployment mode" | — |
 
 ## Recommended target architecture
 
-**One design: a regional cell (one DOKS cluster) that runs four classes of environment on four node pools.** Production is dedicated and always on. Everything else shares and sleeps. The class decides where an environment's Odoo pod, database, files and backups live, and how it is priced.
+**A regional cell (one DOKS cluster) runs four classes of environment.** Production is dedicated and always on; everything else shares and sleeps.
 
-| Class | Odoo | Database | Files | When idle | Backups | Priced by |
+| Class | Odoo | Database (A1) | Files (A2) | Idle | Backups | Priced by |
 | --- | --- | --- | --- | --- | --- | --- |
-| Production | 1 pod, guaranteed requests, Standard pool; never sleeps | Dedicated PostgreSQL pod and volume, tuned per plan | Customer Spaces bucket | Always on | restic daily, 7 daily + 4 weekly + 6 monthly | Workers + storage |
-| Production Large | 1 pod, Large pool | Dedicated, larger | Customer bucket | Always on | Same | Workers + storage, Large rate |
-| Production HA (add-on) | 2 pods on different nodes | CloudNativePG, 2 instances, WAL archiving | Customer bucket | Always on | restic + PITR 7 days | Base plan + HA fee |
-| Staging | 1 small pod, Shared pool | Database on the shared CloudNativePG cluster | Customer bucket, own prefix | Sleeps after 2 idle hours, wakes on visit | Manual snapshots | Slot fee; "always awake" costs extra |
-| Development | Same as staging | Shared cluster | Customer bucket, own prefix | Sleeps after 1 idle hour; archived to Spaces after long inactivity | None (rebuilt from Production) | Slot fee |
-| Trial | Same as staging | Shared cluster | Customer bucket | Sleeps after 1 idle hour; deleted on expiry unless converted | None | Free, capped |
+| Production | 1 pod in a Production pool; never sleeps | Dedicated CloudNativePG, 1 instance | Customer's Production bucket | Always on | Daily snapshot set (DB + referenced files + code) with restic, 7/4/6; second-region copy | Workers + storage |
+| Production HA (add-on) | 2 pods on different nodes | Same cluster raised to 2 instances; WAL archiving | Production bucket | Always on | Same + PITR 7 days | Base + HA fee |
+| Staging | 1 small pod in the Shared pool | A database on the cell's shared CloudNativePG cluster | Customer's non-production bucket, own prefix | Sleeps after 2 idle hours | Manual snapshots | Slot fee; awake option |
+| Development | Same | Same | Non-production bucket, own prefix | Sleeps after 1 idle hour; archived after long idle | None | Slot fee |
+| Trial | Same | Same | Its own bucket pair (it is a customer) | Sleeps after 1 idle hour | None | Free, capped |
 
-**Why this design:**
+**Node pools by phase.** Revision 1 placed Shared and Build pools at launch, before the phases that build them; this table corrects that.
 
-- **Cost** sits in the numerous, mostly idle environments (dev, staging, trials). Sharing their database and putting their Odoo to sleep removes most of the waste. Production is already paid for by its plan.
-- **Reliability** comes from isolating Production. No Production database, node or volume is shared with non-production work. HA and PITR are sold to the customers who need them instead of being paid for by everyone.
-- **Operations** stay small: one operator, one cluster per region, CloudNativePG as the only new component, and no service mesh, Redis or message bus. The control plane stays Odoo.
-- **Scale** comes from adding cells, not from growing one cluster without limit. Each cell is the blast radius of a failure or an upgrade.
+| Pool | Holds | Taint | Arrives |
+| --- | --- | --- | --- |
+| Standard | Production (and everything else until P2) | none | Today (pool `node`) |
+| Build | BuildKit Jobs only | `saas.platform/pool=build:NoSchedule` | P0, as a security fix |
+| Shared | Staging, dev, trials, shared database clusters, Mailpit | `saas.platform/pool=shared:NoSchedule` | P2 |
+| Large | Production above the Standard node size | `saas.platform/pool=large:NoSchedule` | When the first large customer arrives (P3–P4) |
 
-**Stateless Odoo is the enabler.** Once files are in Spaces and sessions in the database, the Odoo pod needs no volume. Then:
-
-- an Odoo rollout can use any node;
-- a node drain no longer means downtime for Odoo;
-- a sleeping environment wakes on any free node;
-- HA is simply two replicas.
-
-Only the dedicated Production database stays pinned to its volume.
+HA is not a pool. An HA tenant runs in its normal Production pool with pod anti-affinity, so that pool needs at least 2 nodes.
 
 ## Architecture diagram
 
 ```mermaid
 flowchart TB
-    CUST["Customers + Git<br/>Portal and Odoo URLs<br/>Push webhooks, 4 Git hosts"]
-    CP["Control plane (Odoo 18)<br/>saas_core, billing, website, IAM<br/>saas-jobs worker, batched cluster reads"]
-    PDB["Platform database<br/>Owner-managed backups<br/>Monthly restore drill"]
-    CUST --> CP --> PDB
-    subgraph CELL["Regional cell: one DOKS cluster per region (fra1 first)"]
-        PS["Platform services<br/>Traefik + wildcard TLS · odoo-operator (2 replicas) · CloudNativePG operator · wake activator<br/>Prometheus + Alertmanager · Mailpit mail catcher · private registry"]
-        STD["Standard pool<br/>Production<br/>1 Odoo pod per env<br/>Dedicated PostgreSQL pod + volume<br/>Always on"]
-        LG["Large pool<br/>Large Production<br/>HA add-on: 2 Odoo pods + 2 DB nodes<br/>PITR: WAL to Spaces<br/>Dedicated on demand"]
-        SH["Shared pool<br/>Staging, dev, trials<br/>Odoo sleeps when idle<br/>Shared CloudNativePG per PG major<br/>+ PgBouncer"]
-        BD["Build pool (min 0)<br/>BuildKit Jobs<br/>Layer cache<br/>Scales to zero"]
-        BD -- "pushes images" --> PS
+    CUST["Customers<br/>Portal (portal domain) · Odoo (tenant domain, A4) · custom domains"]
+    GIT["Git providers<br/>signed push webhooks"]
+    CP["Control plane (Odoo 18)<br/>saas_core, billing, website, IAM · saas-jobs worker<br/>batched cluster reads · least-privilege kubeconfig"]
+    PDB["Platform database<br/>owner-managed backups"]
+    SES["AWS SES<br/>one credential, held only by the relay"]
+    GIT --> CP --> PDB
+    subgraph CELL["Regional cell: one DOKS cluster (fra1 first)"]
+        EDGE["Edge<br/>Traefik · exact host routes only · default 404<br/>wildcard cert (tenant domain, DNS-01) · custom-domain certs (HTTP-01, separate ACME account)"]
+        PS["Platform services<br/>odoo-operator (2 replicas) · CloudNativePG operator · wake activator<br/>Prometheus + Alertmanager · Mailpit · private registry"]
+        MR["Mail relay (platform namespace)<br/>per-environment SMTP auth · sender-domain check<br/>rate limit · quota · abuse pause"]
+        STD["Standard pool<br/>Production: 1 Odoo pod<br/>dedicated CloudNativePG (1 instance; 2 with HA)<br/>never sleeps"]
+        SH["Shared pool (P2)<br/>Staging, dev, trials: Odoo sleeps 1–2 h idle<br/>shared CloudNativePG per PG major (2 instances)"]
+        BD["Build pool (P0, tainted, min 0)<br/>BuildKit Jobs · layer cache<br/>push-only credential"]
+        BD --> PS
     end
-    CUST -- "HTTPS" --> CELL
-    CP -- "Kubernetes API, least privilege" --> CELL
-    SP["Spaces, same region<br/>Bucket per customer: filestore, one prefix per environment<br/>restic backups 7/4/6 · WAL archives · registry storage<br/>Cold archive for idle dev and cancelled projects"]
-    SR["Second region<br/>Nightly copy of Production backups"]
+    CUST -- "HTTPS" --> EDGE
+    CP -- "Kubernetes API" --> CELL
+    STD -- "SMTP, in-cluster" --> MR
+    MR -- "HTTPS 443 (SES API)" --> SES
+    SP["Spaces (same region)<br/>per customer: Production bucket + non-production bucket<br/>backup bucket (restic, WAL) · registry storage · cold archive"]
+    SR["Second region<br/>nightly copy of Production backups"]
     CELL -- "files, backups, WAL" --> SP --> SR
-    style SH stroke-width:3px
 ```
 
-The control plane talks to each cell only through the Kubernetes API. Customers reach Odoo through Traefik. Every byte of customer data that must survive a node or a cell (files, backups, WAL) lands in Spaces, and Production backups are copied to a second region. Only the Shared pool sleeps, and it holds no Production workload.
+## Review of the eight concerns
+
+### 1. Dedicated PostgreSQL per Production versus shards
+
+**Evidence:**
+
+- **Verified (Prometheus, one-day averages on the live cluster):**
+    - an idle tenant PostgreSQL used 58–193 MiB of memory, against 230–1,280 MiB for Odoo plus cron in the same tenant;
+    - the highest 5-minute CPU rate of any tenant database over the day was 0.165 cores; the average across tenants was 0.019.
+- **Verified (code):**
+    - a 2-worker plan reserves 125m CPU and 128 MiB for the database (`saas_plan._recommended_db_resources`, `_package()`);
+    - the Odoo login is a superuser in its own database server (`database.go:92`).
+- **Verified (node, DigitalOcean pricing):** an `s-2vcpu-4gb` node has 1,900m CPU and 3,003 MiB allocatable, of which DaemonSets reserve 412m and 412 MiB. The node costs about $24 a month (repo docs).
+
+**Options:**
+
+| Option | Cost per Production DB per month (assumed sizes) | Isolation and noisy neighbours | Failure domain | Operations |
+| --- | --- | --- | --- | --- |
+| A. Dedicated Managed StatefulSet (today) | About $2: 150 MiB request, memory-bound on the corrected model, plus a 1–2 GiB volume | Full; one tenant per server | One tenant | Custom code for backup, PITR and HA, none of which exist |
+| B. Dedicated CloudNativePG, 1 instance (recommended) | About $2.10: A plus the instance manager, assumed at about 30 MiB | Full | One tenant | One engine for every class; PITR and HA become settings; base backups and WAL handled by the engine |
+| C. Production shards (one CloudNativePG cluster with 2 instances for about 50 tenants) | About $1: 2 instances × 2 GiB, plus 25% packing loss, divided by 50 | Shared buffers, CPU and IO; one heavy report slows 50 customers; superuser impossible, so extensions and the SQL console are restricted | 50 tenants per failure; PITR restores the whole shard | Shard placement, rebalancing, per-shard major upgrades |
+| D. Hybrid: dedicated for paid plans, shards for a micro "Starter" plan | Mix | Mixed | Mixed | Both systems |
+
+**Trade-offs:**
+
+- **Cost:** shards save about $1 per tenant a month. That is about 3% of a $35 Production price floor.
+- **Risk:** shards raise the failure domain from one tenant to about 50.
+- **Restore:** shards make PITR a whole-shard operation.
+- **Upgrades:** shards force every tenant in a shard onto one major version, which conflicts with selling Odoo 11–20.
+
+**Recommendation: B.** Every Production environment gets a dedicated CloudNativePG cluster with 1 instance, and its requests come from measurement (A6). Reject C for Production. Revisit D only if a sub-$20 Starter plan is ever priced, and then only for trials converted to a "lite" tier. Existing tenants on the Managed StatefulSet move by dump and restore at a customer-chosen time.
+
+*Assumption:* Odoo 11–12 run on PostgreSQL 13, the CRD minimum and the oldest major current CloudNativePG images ship. If the P1.7 test fails, those versions stay on the Managed StatefulSet with PostgreSQL 12 as a legacy engine.
+
+### 2. Tenant isolation
+
+**Verified** in code unless marked.
+
+| Vector | Today | Risk | Target |
+| --- | --- | --- | --- |
+| Customer Python addons in Odoo | Non-root, read-only root, seccomp `RuntimeDefault`, no service-account token. The code can read `odoo.conf`: its own database password, which is a superuser login, and `admin_passwd` | Contained to the tenant's own database server. A superuser can run `COPY … TO PROGRAM` inside its own PostgreSQL container | New environments get a non-superuser database owner: `CREATEDB` only on a dedicated server, never on a shared one. `COPY PROGRAM` needs superuser, so it goes away |
+| Builds (`pip install`, `setup.py`) | seccomp and AppArmor `Unconfined`, any node, private ranges blocked on egress | A kernel escape from a build lands on a node running other tenants | Tainted Build pool (P0). The push credential lives only in `odoo-builds`. BuildKit does not mount the client's `config.json` into `RUN` steps (*assumption* from BuildKit's design; test in P0) |
+| Registry credentials | The same push-capable login is in every tenant namespace | Anyone reading one tenant Secret could overwrite any tenant's image | A read-only pull credential in tenant namespaces; push only from the Build pool. Per-repository tokens need a token-auth registry, which comes later |
+| Shell | No secrets, but the data dir is read-write: session files and the data-dir `addons/` folder, which Odoo adds to its addons path | A shell user can hijack other users' sessions of the same customer, or plant a module that runs in Odoo. This is privilege escalation inside one customer, not across customers | The shell gets the code and a read-only filestore only. Sessions move to the database (A3). Shell access requires a full-developer role with 2FA |
+| Kubernetes API | No token mounted (`automountServiceAccountToken: false`) | Low | Keep. The control plane's own access becomes least-privilege (P0.1) |
+| Network | Ingress only from gateway pods on 8069, 8072 and 8089 (cross-tenant blocked). Egress 443 to any address | In-cluster services on 443, such as the API server, are reachable without credentials | Deny private ranges on all egress, reusing the builds' `_BLOCKED_CIDRS`. Outgoing mail goes only to the in-cluster relay; direct SMTP to the internet stays closed, so no tenant can send around the quotas. IMAP and POP3 over TLS (993, 995) are allowed for Odoo's incoming mail servers. No inbound mail port is opened |
+| Database credentials | One random password per tenant, held in Secrets and `odoo.conf` | Fine per tenant | Non-superuser roles. On shared clusters: per-login connection limit, `statement_timeout`, `temp_file_limit`, and `REVOKE CONNECT … FROM PUBLIC` |
+| Object-storage credentials | None in Odoo pods today. The backup key sits in tenant namespaces (P0.5) | See concern 3 | The Production key only in Production namespaces; the non-production key only in non-production ones |
+| Cookies | Tenant hosts and the portal share `eagle-tech.info` | Customer code on a tenant host can set cookies for the parent domain, which the portal then receives (cookie tossing or session fixation) | A4: tenants on their own registrable domain, listed on the Public Suffix List |
+
+### 3. Bucket per customer with one key across environments
+
+**Verified** in DigitalOcean's [key guide](https://docs.digitalocean.com/products/spaces/how-to/manage-access/) and [API reference](https://docs.digitalocean.com/reference/api/reference/spaces-keys/):
+
+- a limited key grants Read or Read/Write/Delete per bucket;
+- grants are per bucket only, with no prefix or folder scoping;
+- keys can be created with `POST /v2/spaces/keys`; the guide still says Control Panel only, but the API reference documents the endpoint.
+
+The account limits are 100 buckets and 200 keys, raised through support ([limits](https://docs.digitalocean.com/products/spaces/details/limits/)).
+
+**Conclusion (verified):** with one bucket and one key per customer, any staging or dev code, which is customer code under test, can read, overwrite and delete Production files. A folder per environment does not help.
+
+**Options:**
+
+| Option | Buckets per customer | Isolation | Cost and limits |
+| --- | --- | --- | --- |
+| One bucket per customer (revision 1) | 1 | None between environments | Fewest buckets |
+| Production plus non-production bucket (recommended) | 2 | Production fully isolated; staging and dev share a bucket | The 100-bucket limit allows 50 customers, so ask support for an increase early |
+| Bucket per environment | 3–5 | Full | Limits reached at 20–30 customers; more pool recycling |
+| Storage gateway issuing prefix-scoped access | 1 | Full | An always-on service, rejected earlier |
+
+**Recommendation (A2):**
+
+- **Buckets and keys:** each customer gets a Production bucket and a non-production bucket. The Production key is placed only in the Production namespace, and the non-production key only in staging and dev namespaces.
+- **Copying files to staging:** copying Production to staging is a server-side copy by a platform Job with a platform key. Neither environment's key ever touches the other bucket.
+- **Backups** stay in the platform backup bucket, which no customer key can reach.
+
+**Remaining exposure:** dev code can read staging's copied files, which are real Production attachments. Database PII masking does not cover attachments (verified: `_PII_MASK_SQL` only updates rows).
+
+**A8:** staging copies include attachments, and dev copies include them only when the customer chooses. Otherwise dev gets the database without files, and missing files show as broken links.
+
+### 4. Consistency model for backups, PITR and full restore
+
+**Verified:**
+
+- `run-backup.sh` dumps the main database, then each extra database (each with its own snapshot), and only then tars the filestore;
+- the manifest has no image, commit, module, Odoo or PostgreSQL version.
+
+**Assumptions** from Odoo's attachment design:
+
+- filestore files are content-addressed, written once and never modified;
+- Odoo deletes unreferenced files later in its garbage collection, which can run between the dump and the tar.
+
+**Defined model:** a restore point is one database snapshot, plus exactly the files that snapshot references, plus the code identity that wrote it.
+
+| Operation | How consistency is reached |
+| --- | --- |
+| Daily logical backup | Open a transaction, export its snapshot, and in that same snapshot list `ir_attachment.store_fname`. Run `pg_dump --snapshot=<id>`, then copy exactly the listed files. Files are immutable, so copying them later is correct. Garbage-collected files go to `trash/` (Spaces lifecycle, 14 days) instead of being deleted, so a file referenced by the snapshot still exists while the copy runs. Missing files are counted in the manifest. |
+| PITR (HA or PITR add-on) | CloudNativePG base backup plus WAL to the backup bucket. Restoring to time T rebuilds the database at T. Every file referenced at T exists, live or in `trash/`, if trash retention (14 days) exceeds the PITR window (7 days); the restore job moves needed objects back from `trash/`. |
+| Several databases in one environment | Each has its own snapshot. Odoo databases are independent, so this is acceptable and documented. |
+| Full environment restore | Manifest v2 records database names, PostgreSQL major, Odoo version, image digest, build id and commit, module fingerprint, plan, and the referenced-file count. Restore offers two modes: "exact", which uses the recorded image, or "current code", which runs the update gate after loading. |
+| Verification | After every restore: `/web/health`, an admin login, and zero missing referenced files. A monthly drill restores a random Production backup into a scratch environment. |
+| restic efficiency | Pipe an uncompressed `pg_dump -Fc -Z0` into `restic backup --stdin`, so restic's chunking deduplicates day to day and its own compression applies. *Assumption:* to be measured in P1.5 against the 1.3× target. |
+
+Today, while files are still on the volume, the same model applies with "copy the listed files from the volume". Garbage collection is paused during the backup window instead of using `trash/`.
+
+### 5. Stateless Odoo
+
+**Verified** in DigitalOcean's [limits page](https://docs.digitalocean.com/products/spaces/details/limits/): 800 operations a second per new bucket, 5 GB single PUT, multipart up to 5 TB, a 4 KiB minimum billable object size, and versioning enabled only through the API.
+
+**Not documented:** read-after-write consistency. It is an *assumption*, though content-addressed keys mean objects are never overwritten.
+
+**Design and checks:**
+
+- **Files:**
+    - files go through the Appendix B module;
+    - web asset bundles and files under 64 KiB stay in the database, to avoid one Spaces request per asset and the 4 KiB billing minimum (*assumed* threshold);
+    - each pod has a read-through cache on an `emptyDir` of 1–2 GiB;
+    - a read that returns 404 within 5 seconds of the write is retried with backoff.
+- **Sessions (A3):**
+    - **Options:**
+        - a per-environment `…_sessions` database on the environment's own server (recommended: no new service);
+        - Redis per cell with an ACL per tenant (faster, but a new stateful service to run);
+        - an `emptyDir`, which logs everyone out on every rollout, so it is rejected.
+    - **Versions:** the session store differs between Odoo generations (werkzeug's store in 11–14, Odoo's vendored copy from 15). That needs an adapter per generation, like the filestore. *Assumption*, to spike in P3.
+    - **Cleanup:** a cron removes expired sessions.
+- **Several replicas:**
+    - the Odoo bus uses PostgreSQL `LISTEN/NOTIFY`, so long-polling and websocket requests can land on any replica;
+    - cron jobs are taken with `SELECT … FOR UPDATE SKIP LOCKED`, so cron containers in two replicas never run the same job twice;
+    - both points are from Odoo's source design and are re-verified per version in P3;
+    - the database manager stays restricted to the platform.
+- **Failure handling:**
+    - Spaces errors on upload return a user-facing error;
+    - reads fall back to the cache;
+    - the readiness and liveness probes never call Spaces, so a Spaces outage cannot cause a restart storm;
+    - objects orphaned by rolled-back transactions are cleaned by a monthly bucket-against-database reconcile.
+- **Acceptance (P3):**
+    - a node drain with zero failed requests;
+    - sessions survive a pod replacement;
+    - two replicas with the bus working across them;
+    - one hour of a simulated Spaces outage with no pod restarts.
+
+### 6. Corrected cost model
+
+**What was wrong:** revision 1 priced CPU at the full node price per CPU and RAM at the full node price per GiB, then added both. That charges each node twice.
+
+**Corrected model.** Verified inputs:
+
+- node price about $24;
+- allocatable 1,900m CPU and 3,003 MiB;
+- DaemonSets 412m and 412 MiB per node, leaving 1,488m and 2,591 MiB usable;
+- cell services: 320m and 650 MiB of requests (CoreDNS, monitoring, operator, toolbox, cert-manager, Traefik).
+
+```latex
+\text{compute} = \frac{P_{node} \cdot \max\left(\frac{CPU_{req}}{CPU_{usable}}, \frac{RAM_{req}}{RAM_{usable}}\right)}{u_{pack}}
+```
+
+```latex
+\text{cost} = \text{compute} + \text{DB volume} + \text{Spaces GiB} \cdot 0.02 + \text{backup GiB} \cdot 0.02 \cdot c + \frac{\text{cell and platform overhead}}{N_{tenants}} + \text{mail}
+```
+
+Here `u_pack` is the packing efficiency, *assumed* at 0.75; it covers rollout headroom, autoscaler buffer and fragmentation. `c` is 2 when backups are copied to a second region.
+
+**Realistic utilization (verified):**
+
+- tenants averaged 0.037 cores of CPU against 437m requested, so CPU requests are about 12 times actual use;
+- memory working sets matched or exceeded requests;
+- so memory, not CPU, is the binding resource.
+
+A6 sets requests to measured values. Per environment that means CPU about 150m and memory about the p95 working set. This is assumed at 950 MiB for a 2-worker Production environment, from the observed range.
+
+**Worked example: a 2-worker Production environment in a cell of 50 Production tenants (assumptions marked).**
+
+| Line | Today's requests | Right-sized requests (A6) |
+| --- | --- | --- |
+| Requests | 437m / 448 MiB, so CPU binds at 29.4% | 150m / 950 MiB, so memory binds at 36.7% |
+| Compute, ÷ 0.75 | $9.40 | $11.73 |
+| Database volume (2 GiB) | inside the 10 GiB shared volume, $1.00 | $0.20 |
+| Files (5 GiB, Spaces) | inside the volume | $0.10 |
+| Backups (8 GiB after dedup, ×2 regions) | 7 full copies, about $1.00 | $0.32 |
+| Overhead ÷ 50 | $1.44 | $1.44 |
+| **Monthly cost** | **about $12.8 (with eviction risk)** | **about $13.8** |
+| Price at 60% margin (÷ 0.40) | $32 | **$34.5** |
+| Price at 70% margin (÷ 0.30) | $43 | **$46** |
+
+The overhead line is about $72 a month in total, all *assumed* or from published prices:
+
+- load balancer, $12 ([DOKS pricing](https://www.digitalocean.com/pricing/kubernetes));
+- cell services, about 0.25 of a node, $6;
+- Spaces subscription, $5;
+- the control-plane VM, assumed $48;
+- Prometheus volume, $1.
+
+**Non-production with sleep** (*assumed*: awake 15% of the month, 400 MiB requested):
+
+- compute about $0.75;
+- share of the 2-instance shared database cluster, about $19 per cell split over 50 environments, about $0.40;
+- files and overhead, about $0.30;
+- total about $1.5 a month, against about $8 always on.
+
+The saving becomes money only when the autoscaler removes nodes; on a small cluster it shows first as room for more tenants. The figures in Appendix D ($5.30 and $1.10) are superseded by this model.
+
+**Mail:** SES is billed per message (pass-through; see the SES item in the plan). It is priced as an included quota per plan plus usage.
+
+### 7. Inconsistencies resolved
+
+| Inconsistency in revision 1 | Resolution |
+| --- | --- |
+| Two PostgreSQL engines (Managed StatefulSet and CloudNativePG) with different backup, PITR and HA stories | A1: CloudNativePG for all new environments; Managed only for existing tenants until moved, and as a legacy engine for Odoo 11–12 if PostgreSQL 13 fails |
+| PgBouncer in session mode in front of the shared cluster | Removed at launch. Session mode multiplexes nothing for Odoo, which holds connections per worker and needs session features (`LISTEN/NOTIFY`). Per-role `CONNECTION LIMIT` and Odoo's `db_maxconn` cap connections. Add a pooler only if a shared cluster nears `max_connections` |
+| Non-production gets HA (2 instances) while Production has none | Intentional and now stated: one shared-cluster failure would stop every non-production environment in the cell, while a Production database failure affects one tenant. Cost about $19 per cell (A9) |
+| "HA add-on" drawn inside the Large pool | HA is pool-independent; it needs at least 2 nodes in the tenant's pool |
+| Launch said "Standard, Shared and Build pools and a shared cluster", but those were P2 items | The pool table above: Build moves to P0 (security), Shared and the shared cluster arrive in P2, Large on demand |
+| The CloudNativePG operator is assumed present but not vendored | Vendor its chart in `compute/charts/vendor/` (repository rule) in P0, so new Production environments can use it |
+| PITR is "add-on, CloudNativePG mode only" | With A1, PITR is a setting on any new Production environment |
+| HA in P4 depends on stateless Odoo (P3) | Kept in that order: HA needs two Odoo replicas, and those need no RWO volume |
+
+### 8. Custom domains, TLS and tenant-safe routing (launch plan)
+
+The wildcard covers only the platform's own tenant domain, such as `*.main.eagle-tech.info` today, and not a customer domain such as `erp.customer.com`. The two follow separate paths.
+
+**Wildcard protections:**
+
+- **Separate domain (A4):** tenant apps get their own registrable domain, separate from the portal, which removes cookie tossing into the portal. Submit it to the Public Suffix List's private section, so browsers isolate cookies between tenants too.
+- **Locked-down key:** the wildcard key lives only in Traefik's namespace. The control plane's least-privilege role (P0.1) cannot read Secrets there or in `cert-manager`.
+- **Narrow DNS credential:** `_acme-challenge.<tenant-domain>` is a CNAME into a dedicated challenge zone. That zone sits in a separate DigitalOcean team whose token can change nothing else, so a leaked cert-manager token cannot repoint tenant traffic.
+- **Issuance controls:** CAA records allow only Let's Encrypt and only the platform's ACME account (`accounturi`), for both `issue` and `issuewild`. Certificate Transparency is watched, with an alert on any certificate for the tenant domain that the platform did not order.
+- **Renewal:** renewal starts 30 days before expiry (cert-manager), with an expiry alert at 14 days.
+- **Subdomain reuse:** a cancelled tenant's subdomain is quarantined for 90 days (*assumed*), so old links and bookmarks never reach a new customer.
+
+**Custom domains (separate path):**
+
+- **Claim:** the customer adds `erp.customer.com` to a Production environment and gets two records to create:
+    - a CNAME to their environment's host, or an A record for an apex domain;
+    - a TXT record `_veltnex-challenge.erp.customer.com` holding a random token bound to that customer and that environment.
+- **Ownership proof:**
+    - the TXT token proves control of the customer's DNS zone;
+    - the CNAME or A record proves routing;
+    - both are required before any certificate is ordered;
+    - an HTTP check alone is not enough, because a dangling CNAME left by an old owner would let anyone who claims the name pass it.
+- **Issuance:** a separate ClusterIssuer with its own ACME account, using HTTP-01 per host. It is ordered only after both checks pass, which avoids Let's Encrypt's failed-validation limits.
+- **Ongoing ownership (A5):** the TXT record stays in place. It is re-checked daily and before every renewal. If it is missing for 7 days, the host is disabled, its renewal stops and the customer is told. The daily check alone never proves ownership; it only detects loss of it.
+- **Release and reuse:** removing a domain, or cancelling, takes the host out of routing at once. The record of the release is kept:
+    - the same customer can re-add the domain with their existing token;
+    - any other customer must prove a new TXT token, so a claim is never transferred automatically.
+- **Routing safety:**
+    - Traefik routes exact hosts only, with no tenant as a catch-all; unknown hosts get the default 404;
+    - a host is unique across the platform, enforced by a database constraint and checked again by the operator before it writes an Ingress;
+    - platform domains and the portal domain are on a blocklist;
+    - wildcard customer domains are not supported at launch.
+- **Primary domain:** the control plane sets `web.base.url` and `web.base.url.freeze` in the Production database. The default address keeps working.
+
+**Mail with AWS SES (decided 2026-10-11; design pending A7).** Nothing in the cluster receives SMTP from the internet. The only change is outbound mail toward SES.
+
+- **No AWS credentials in tenant namespaces:**
+    - one SES credential exists, in a Secret in the relay's platform namespace (`veltnex-mail`);
+    - tenants never hold AWS credentials, IAM users or SES keys;
+    - the relay sends to SES over its HTTPS API (443), so it needs no SMTP egress either.
+- **The relay:** a small in-cluster SMTP relay with 2 replicas.
+    - **Authentication:** each Production environment gets its own relay username and password. The platform issues them, stores them encrypted and can revoke them. They are worthless outside the cluster.
+    - **Injection:** the control plane writes them into the Production database as the outgoing mail server.
+    - **Neutralization:** staging and dev are neutralized to Mailpit and have no relay credential at all.
+- **Usage isolated per customer:**
+    - **Sender domains:** the relay accepts only `From` domains verified for that customer. These are the customer's own domain (SES DKIM records shown in the portal next to the custom-domain records) or a platform mail subdomain for customers without one.
+    - **Tagging:** every message is tagged with the tenant id in an SES message tag.
+- **No unlimited sending:**
+    - per-environment rate limits (messages per minute and recipients per message) are enforced in the relay;
+    - a daily and monthly quota per plan is enforced by the control plane from SES send events, and it disables the relay credential when exceeded; overage is billed only if the plan allows it;
+    - a global limiter keeps the whole cell under the SES account's sending rate.
+- **Spam and abuse:**
+    - SES bounce and complaint events, through SNS to the control plane, pause a customer above set rates; *assumed* starting points are 5% bounces or 0.1% complaints;
+    - new customers start with a low quota that rises with clean history;
+    - message size and recipient caps apply;
+    - every send is logged per tenant for support and billing.
+- **Customers' own SMTP:** direct SMTP egress is closed by default, so nobody can bypass the quotas from platform IPs. A customer who must use their own provider gets a staff-approved egress exception for that host only.
+- **Prerequisites:** take the SES account out of the sandbox, and choose the SES region (*assumed* eu-central-1).
+
+## Performance monitoring per customer
+
+**Goal:** find each customer's slow and expensive queries, show what they cost in database time and user-facing latency, and notify the customer only when it is worth their attention. The platform never changes a customer database by itself; it tells the customer, or their developer, what to fix. It is built at the lowest cost: no new always-on service, and reuse of what already runs.
+
+**What is measured, at the lowest cost:**
+
+| Signal | Why it matters | Source (cost) |
+| --- | --- | --- |
+| Query duration (mean, max) | Finds slow queries | `pg_stat_statements` (already in Production tuning plans; a few % CPU, *assumed*) |
+| Total execution time | Finds queries that consume most database time | `pg_stat_statements.total_exec_time` as a share of the tenant total |
+| Call count | Tells a rare slow query from an average one repeated thousands of times (N+1) | `pg_stat_statements.calls` |
+| Rows read against rows returned | Hints at a missing or unused index | Blocks read per call against rows per call (`pg_stat_statements`); `seq_scan` and `seq_tup_read` against `idx_scan` (`pg_stat_user_tables`). Plans are on demand with `EXPLAIN (GENERIC_PLAN)` on PostgreSQL 16+, not `auto_explain` logging, so no log pipeline is needed |
+| Lock waits | Finds queries blocked by other transactions | A custom query in the CloudNativePG metrics exporter: the longest current lock wait and the count of waits over 5 s, scraped by Prometheus every 30 s; plus `pg_stat_database.deadlocks` |
+| Database CPU and connections | Ties slow queries to pressure | Container CPU against the limit (cAdvisor, already scraped); connections against `max_connections` (exporter) |
+| Odoo request latency | What users actually feel | p50 and p95 per environment from Traefik's request-duration histogram, already in Prometheus at no extra cost. Per-endpoint detail is deferred, because it needs a log pipeline |
+
+**One shared Veltnex service, not a stack per tenant.** Collection is a single CronJob per cell. Analysis, the Advisor and notifications run once in the control plane for all customers. No tenant gets its own exporter, Prometheus, dashboard server or agent.
+
+**How it runs (lowest cost):**
+
+- **Collector:** a CronJob in a platform namespace, not an always-on service. It runs every 15 minutes and reads each Production database with a read-only `pg_monitor` role that lives only in the platform namespace. Tenant network policies admit it on 5432 from that namespace only.
+- **What it keeps:** the deltas of `pg_stat_statements`, of which it keeps only:
+    - the top 10 fingerprints by total time;
+    - anything above the environment's thresholds.
+
+  Query text is normalized (constants become `$1`), so no customer values leave the database. On shared clusters, rows are filtered by database.
+- **Storage:** in the control-plane database. There are two tables:
+    - `saas.perf.finding`: one row per environment and query fingerprint, updated in place;
+    - `saas.perf.sample`: hourly points, kept 14 days for basic insights and 90 for the paid tier.
+
+  At 1,000 environments that is about 240,000 small rows a day (*assumed* sizing). Prometheus keeps only per-environment series; query ids never become labels.
+- **Attribution:** a fingerprint's tables map to Odoo models (`ir_model`) and to the modules that define them (`ir_model_data`). A finding says "from your module X" or "from core module Y".
+- **Database settings:**
+    - `pg_stat_statements`, `track_io_timing`, and `log_lock_waits` with `deadlock_timeout` at 1 s;
+    - new environments get them at creation;
+    - existing tenants get them at their next customer-chosen maintenance window, because a preload library needs a restart.
+
+**Performance Advisor.** A finding never says only "Slow query detected". Every finding answers six questions on the dashboard:
+
+| Question | How the Advisor answers it |
+| --- | --- |
+| What is the problem? | A plain sentence plus the normalized query, its tables, the Odoo model and module behind it ("from your module X" or "from core module Y"), and the class: slow, heavy, repeated (N+1), possible missing index, lock contention, or database pressure |
+| How often does it happen? | Calls per hour, the hours of the day it runs, and how long the pattern has existed (first seen, last seen) |
+| Does it really affect performance? | Its share of the database's time; whether the database was CPU-, connection- or lock-bound when it ran; and the environment's p95 latency over the same windows. Each finding is labelled "affecting users", "using capacity" or "minor" |
+| What are the likely causes? | Rule-based by class: a sequential scan on a large table (missing index); many calls with few rows each (N+1 from a loop in custom code); waits behind a long transaction (cron or import); high temporary-file use (sort or join over memory); growth in table size. The generic plan is shown where PostgreSQL 16+ allows |
+| What should be done? | Concrete steps for the class, such as: add `index=True` to the field used in the filter; batch with `read_group` or prefetch; split the cron's transaction; move to a larger plan. Each step links to a short guide |
+| Did it get better after the change? | The Advisor marks the deploy (build id) or the time the customer clicks "I changed something". It compares the fingerprint's mean duration, calls and share of database time over the 24–48 hours before and after, and shows Improved, No change or Worse with the numbers. A finding that improves enough closes as "Resolved by your change" |
+
+**When the customer is notified.** Never an email per slow query, which would cause notification fatigue and cost without benefit. There are three levels:
+
+| Level | Trigger (default; adjustable) | Where it shows |
+| --- | --- | --- |
+| 1 · Recurring slow query | A query above 2 s that keeps recurring (above the threshold in 2 consecutive hourly windows), or one that exceeds the environment's performance budget | Dashboard only, with similar findings grouped by fingerprint |
+| 2 · High cumulative consumption | A short query repeated tens of thousands of times that takes a large share of database time (default: over 20% for 3 hours) | Dashboard, with an in-portal badge; the finding explains the impact (share of database time, calls per hour, effect on latency), not just the single run time |
+| 3 · Noticeable degradation | Sustained rise for 15 minutes in p95 latency, database pressure (CPU above 80% of the limit, connections above 85%) or lock waits (over 30 s) | Portal banner, plus one short email only when it is marked "affecting users" (p95 latency also above budget). The email carries no recommendations, only a link to the dashboard |
+
+**Anti-fatigue rules:**
+
+- **Recommendations stay on the dashboard.** It is clearer and cheaper; no recommendation or digest is ever emailed.
+- **One finding per fingerprint:** one open finding per fingerprint. It is highlighted again only if it gets at least 50% worse, or after a 7-day cooldown.
+- **Auto-resolve:** a finding resolves itself after 24 hours below its threshold.
+- **Email cap:** at most 1 Level 3 email per environment every 6 hours.
+- **Acknowledge or snooze:** customers can acknowledge or snooze a finding.
+
+**Adjustable thresholds:**
+
+- **Starting defaults:** the numbers above are starting defaults, not limits suitable for every application.
+- **Profiles:** each environment gets defaults from its database size class and a workload profile:
+    - *Standard* (interactive ERP);
+    - *Reporting-heavy*, with relaxed duration thresholds;
+    - *Batch and imports*, with relaxed lock thresholds inside declared batch windows.
+- **Overrides:** customers can override the performance budget, thresholds and quiet hours per environment in the portal.
+- **Tuning:** defaults are tuned from the data collected in the first months.
+
+**The dashboard finding card** (the approved layout; metrics are illustrative, not tenant data). The same header, without the recommended actions, is the short Level 3 email:
+
+```text
+Veltnex Performance Alert
+Production · Database Performance
+Needs attention
+
+A database query is consuming excessive resources
+We detected a query pattern that is contributing significantly to your database execution time.
+
+Average duration     2.8 sec
+Calls per hour       18,400
+
+Recommended actions
+- Review the query's execution plan.
+- Check whether appropriate indexes exist.
+- Investigate repeated queries and possible N+1 patterns.
+- Review custom Odoo modules that may be generating unnecessary database calls.
+```
+
+The card opens the full finding: the normalized query, its tables and module, the trend, the generic plan where available, and the before-and-after check.
+
+**Cost:** the CronJob costs a few CPU-minutes per cell every 15 minutes. Storage is a few GB in the control-plane database. Level 3 emails are rare and go through the mail relay. Basic insights are included in every Production plan; the 90-day history and the plan and index-hint views are the paid tier (A10).
 
 ## Key architecture decisions
 
-**Twelve decisions shape the design. Four of them are expensive to reverse:** D2, D4, D10 and D11. They decide where data lives and how the fleet is cut, so they should be settled before more code is written. The rest can change later at little cost.
-
 | # | Decision | Rejected alternatives | Why it wins |
 | --- | --- | --- | --- |
-| D1 | Tenancy unit: one namespace per environment on shared clusters (keep) | One cluster per customer; one shared Odoo serving many databases | Every customer has their own code and addons, so a shared Odoo is impossible. A cluster per customer multiplies fixed cost and upgrades. |
-| D2 | Production database: a dedicated PostgreSQL pod per environment (keep, tune) | One central PostgreSQL for all customers; a managed database per tenant | A central database makes one tenant's heavy report everyone's outage, exposes database names to the SQL console, and ties every customer to one major version. A managed database per tenant has a monthly price floor far above a small plan's database cost. |
-| D3 | Non-production databases: one shared CloudNativePG cluster per PostgreSQL major, per cell | Dedicated pods (today); databases inside the Production pod | Staging and dev tolerate a short slowdown. Sharing turns about 50 idle database pods into one cluster. Per-login limits stop a heavy query from hurting the others. |
-| D4 | Files: a Spaces bucket per customer, through one server-wide module for every Odoo version | Block volume (today); RWX file storage (NFS or Longhorn); one shared bucket | It makes Odoo stateless, is cheaper per GB than block storage, and limits a leaked key to one customer. RWX adds an always-on storage service and slow small-file input/output. |
-| D5 | Sessions in PostgreSQL | Redis; sticky sessions on a volume | No new service; sessions survive pod moves and work with two replicas. |
-| D6 | Sleep idle non-production Odoo, wake on request; archive long-idle dev environments | Always on (today); delete dev environments after about 3 days, as Odoo.sh does | Most of the saving, and the customer keeps their data. A 20–30 second wake is acceptable outside Production. |
-| D7 | HA as a paid add-on only | HA for everyone; never | It doubles database cost. Most small customers accept restore from backup; those who don't will pay. |
-| D8 | PITR as an add-on (CloudNativePG WAL archiving to Spaces); restic daily for everyone | PITR for all; dumps only | WAL archiving is cheap per tenant but needs CloudNativePG mode. It is valuable to sell and unnecessary for dev. |
-| D9 | Builds on a dedicated build pool (min 0) with layer cache and a private registry backed by Spaces | No cache on tenant nodes (today); external CI | Builds stop stealing rollout headroom from tenants. The cache cuts build minutes. A private registry closes the code-leak risk. |
-| D10 | Scale by cells: one DOKS cluster per region, with a new cell at the triggers | One ever-growing cluster; a cluster per customer | It limits the blast radius of failures and upgrades and keeps each cluster in a well-tested size range. |
-| D11 | The control plane stays Odoo; read cluster state in batches and react to operator status; platform database backups stay owner-managed | Rewriting it as Go services | The bottleneck is per-tenant polling, not Odoo. A rewrite costs months and buys nothing customers see. |
-| D12 | Four node pools, Standard, Large, Shared and Build, with labels and taints | One pool (today) | Dev noise cannot reach Production nodes. Large customers fit without fragmenting small nodes. Builds scale to zero. |
-
-| # | Cost | Scalability | Operational complexity | Trade-off or risk |
-| --- | --- | --- | --- | --- |
-| D1 | Neutral | Thousands of namespaces per cluster is normal | Unchanged | Per-namespace objects grow etcd; watched as a cell trigger |
-| D2 | About one small pod and one volume per Production environment | Linear, no shared hot spot | Unchanged; adds tuning presets | Small customers carry a database pod each, already covered by the plan price |
-| D3 | Largest database saving for non-production | One shared cluster serves hundreds of databases; shard at the triggers | New: CloudNativePG operator, vendored chart | A shared-cluster outage stops all dev and staging in the cell (never Production) |
-| D4 | Cheaper files; lower block storage spend | Removes node pinning, the main scheduling constraint | New module across 4 Odoo generations; bucket pool to run | Bucket and key account limits; the module is customer-visible code |
-| D5 | None | Needed for 2 replicas | Small module | Session table growth; needs a cleanup cron |
-| D6 | Largest compute saving | Wake storms after an outage are possible; rate-limit wakes | New component: a small activator and idle detection | A slow first request after sleep |
-| D7 | Revenue rather than cost | Two pods and two database nodes per HA customer | CloudNativePG failover to operate | Customers without HA keep 1–3 minutes of downtime on node failure |
-| D8 | Spaces storage for WAL | Per-tenant WAL streams | Restore drills needed | Only for CloudNativePG-mode tenants |
-| D9 | Build nodes only while building | Concurrent builds limited by pool max | Registry garbage collection to run | Cache layers can carry stale dependencies; key the cache on requirements |
-| D10 | One more control plane fee and load balancer per cell | Near-linear | Upgrades per cell, staged | Cross-cell moves need a backup and restore |
-| D11 | None | Control plane load becomes per-cluster, not per-tenant | Refactor of crons | None material |
-| D12 | Small, from better packing | Each pool autoscaled independently | Pool ceilings set by hand (decided) | More pools to watch |
+| D1 | One namespace per environment on shared clusters | Cluster per customer; one Odoo for many databases | Custom code per customer rules out a shared Odoo; a cluster each multiplies fixed cost |
+| D2 | Dedicated CloudNativePG (1 instance) per Production environment (A1) | Production shards; the Managed StatefulSet; managed databases | About $2 per tenant a month buys a one-tenant failure domain, per-tenant versions and PITR and HA as settings (concern 1) |
+| D3 | Shared CloudNativePG per PostgreSQL major for non-production, 2 instances, no PgBouncer at launch | Dedicated pods; a pooler in session mode | The saving is in idle non-production environments, and a pooler adds a hop with no gain (concern 7) |
+| D4 | Production bucket and non-production bucket per customer, through one server-wide module | One bucket per customer; a bucket per environment; volumes | Keys are per bucket only (verified, concern 3) |
+| D5 | Sessions in a per-environment PostgreSQL database (A3) | Redis; `emptyDir` | No new service; survives pod moves and replicas |
+| D6 | Sleep non-production (dev 1 h, staging 2 h, trials 1 h); Production never | Always on; deleting dev environments after about 3 days as Odoo.sh does | Largest saving; the customer keeps their data |
+| D7 | HA as a paid add-on | HA for all | It doubles the database and Odoo pods |
+| D8 | PITR as a paid setting on CloudNativePG Production | PITR for all | WAL storage and restore drills cost money |
+| D9 | Builds on a tainted Build pool from P0, with a push-only credential there and pull-only in tenants | Builds on tenant nodes | Unconfined sandboxes must not share nodes with tenants (concern 2) |
+| D10 | Scale by cells | One giant cluster | Blast radius and upgrade risk |
+| D11 | The control plane stays Odoo, with batched reads; platform database backups owner-managed | Rewrite | The bottleneck is per-tenant polling |
+| D12 | Pools by phase: Standard now, Build in P0, Shared in P2, Large on demand | All pools at launch | Pay for a pool only when it has a job |
+| D13 | Tenant apps on their own registrable domain, on the Public Suffix List (A4) | Subdomains of the portal domain | Cookie isolation between tenants and from the portal |
+| D14 | Wildcard for platform hosts; custom domains on a separate issuance path with TXT ownership | HTTP-01 per platform host; HTTP-only verification for custom domains | Rate limits, and takeover safety (concern 8) |
+| D16 | Per-customer performance insights: a CronJob collector reading `pg_stat_statements`, the exporter's lock metrics and Traefik latency, with findings stored in the control-plane database (A10) | A per-tenant monitoring stack; an always-on perf service; `auto_explain` with a log pipeline; query ids as Prometheus labels | Lowest cost; no new always-on service; recommendations on the dashboard, not by email, avoiding notification fatigue |
+| D15 | Mail through AWS SES behind a platform relay that holds the only credential (A7) | An IAM user per customer; one shared SES credential in tenants; customers' own SMTP only | No AWS credentials in tenants; quotas, rate limits and abuse pauses per customer |
 
 ## Scalability analysis
 
-**The first limits Veltnex will hit are not Kubernetes.** In order they are:
+**The first limits are not Kubernetes:**
 
-- **TLS certificates:** each environment gets its own Let's Encrypt certificate, and Let's Encrypt allows 50 new certificates per registered domain per 7 days ([source](https://letsencrypt.org/docs/rate-limits/)). That caps new environments on one base domain at about 50 a week.
-- **Control-plane polling:** loops that call the cluster once per tenant.
-- **Backups:** every tenant's backup starts at 02:00.
-- **Pool ceilings:** the DOKS pool maximum is 2 nodes, and the Droplet limit is 25.
+- Let's Encrypt's limit on the tenant domain (fixed by P0.7);
+- control-plane polling per tenant (P2.4);
+- every backup starting at 02:00 (P0.16);
+- pool ceilings (P0.12);
+- Spaces account limits, which now matter twice as much: 100 buckets is 50 customers with A2, so request an increase before launch.
 
-All four are cheap to fix and should be fixed before launch, not at scale.
-
-Thresholds marked *assumed* are starting values to confirm with real measurements.
-
-| Bottleneck | Evidence | Trigger | Response |
-| --- | --- | --- | --- |
-| Let's Encrypt limit on the base domain | per-tenant certificate via the issuer (`kubernetes_driver.py:525`) | about 50 new environments a week | One wildcard certificate per base domain via DNS-01; HTTP-01 only for custom domains |
-| Backup start times | `set_scheduled_backup` default `0 2 * * *`, never overridden | about 20 tenants per node starting together (*assumed*) | Spread start minutes by a hash of the tenant id across a 4-hour window; cap concurrent backup Jobs per node |
-| Reconcile and webhook crons | `_cron_reconcile`, `_cron_verify_webhooks`, `_cron_sync_scheduled_backups` iterate all tenants | about 300 tenants, when a cycle passes its interval (*assumed*) | One list of OdooInstances and pods per cluster per cycle; operator status drives state; verify webhooks only on change or daily in batches |
-| Health observation | 50 tenants a minute, 30-second budget (`saas_instance_health.py:166`) | more than 100 tenants: background state older than the 120-second freshness rule | Read readiness and 5xx rate from Prometheus (kube-state-metrics, Traefik metrics) in one query per cluster; keep the HTTP probe only for Production, sampled |
-| Kubernetes client per call | `_compute_driver()` parses the kubeconfig each time (`saas_instance.py:1591`) | any loop above | Cache one API client per cluster per worker |
-| Node pool ceilings | pool `node` max 2; Droplet limit 25 (Appendix C) | requests above 80% of the pool, or autoscaler "max size reached" | Capacity reader and alerts (Appendix C); raise ceilings by hand; Standard and Large pools |
-| Shared non-production database | (new) | per shared cluster: 70% of connections, sustained CPU above 60%, about 200 databases, or 70% disk (*assumed*) | Open the next shared cluster in the cell; new environments go there |
-| Operator | single replica, leader election off (`deployment.yaml:45`) | about 1,000 OdooInstances, or reconcile queue latency above 30 seconds (*assumed*) | Enable leader election with 2 replicas; tune concurrent reconciles; restrict the Secret informer to labelled objects |
-| Cell size | (new) | about 1,500 environments or 60 nodes per cell, or a region needs a separate failure domain (*assumed*) | Open a new cell (cluster); new customers go there; nothing moves |
-| Spaces | bucket and key account limits unknown (Appendix B, open items) | about 70% of either limit | Request a limit increase; recycle buckets through the pool |
-| Registry | each build pushes a full image | 70% of registry storage | Garbage-collect images older than the last 5 builds per environment |
+| Bottleneck | Trigger | Response |
+| --- | --- | --- |
+| Spaces buckets and keys (2 per customer) | 70% of 100 buckets or 200 keys | Ask support for an increase before launch; recycle buckets through the pool |
+| Shared non-production cluster | 70% of connections, sustained CPU above 60%, about 200 databases, or 70% disk (*assumed*) | Open the next shared cluster in the cell |
+| Dedicated Production databases | None shared; each scales with its plan | Larger plan or the Large pool |
+| CloudNativePG operator | About 1,000 clusters per cell (*assumed*) | Watch reconcile latency; tune concurrency; open a new cell |
+| Operator | Reconcile latency above 30 s | 2 replicas with leader election; narrower informers |
+| Cell | About 1,500 environments or 60 nodes (*assumed*) | New cell |
+| Control-plane crons | A cycle overruns its interval | Batched reads per cluster |
 
 **How it grows:**
 
-1. **Launch (up to about 100 environments):** one cell in fra1; Standard, Shared and Build pools; one shared non-production cluster. The fixes above go in first.
-2. **Growth (100 to 1,000):** add the Large pool. Pool ceilings rise as alerts fire. A second shared cluster opens when its triggers fire. Watch the control-plane job queue length.
-3. **Scale (1,000 and beyond):** a second cell per region, or new regions as cells. Allocation already picks a cluster per region (`_allocate_servers`), so a cell is just another `saas.server`. Move the control plane to two application servers in front of the managed database.
-
-## Cost optimization strategy
-
-**The biggest saving is in non-production: sleep plus a shared database cuts a dev environment from about $5.30 to about $1.10 a month.** This is the rough estimate from the PostgreSQL plan (Appendix D), on `s-2vcpu-4gb` nodes at about $24 a month. Production cost is already covered by plan prices through the existing cost floor in `saas_pricing.py`, so the work there is packing and pricing, not cutting.
-
-Every environment's monthly cost is the same formula. `_package()` already computes its inputs, so one function can serve both pricing and the margin cron:
-
-```latex
-\text{cost} = \text{CPU}_{req} \cdot r_{cpu} + \text{RAM}_{req} \cdot r_{ram} + \text{GiB}_{block} \cdot 0.10 + \text{GiB}_{spaces} \cdot 0.02 + \text{backup GiB} \cdot 0.02 + \text{share of cell overhead}
-```
-
-Here `r_cpu` and `r_ram` are the node price divided by allocatable CPU and RAM, and the storage rates are dollars per GiB-month from the repository's DigitalOcean notes. Cell overhead covers the load balancer, Prometheus, the operator, the shared database cluster and the registry.
-
-| Cost driver | Today | Lever | Saving | Effect on customers |
-| --- | --- | --- | --- | --- |
-| Idle dev, staging and trial compute | Always-on pod per environment | Sleep after inactivity; Shared pool may overcommit limits | Largest | 20–30 second wake outside Production |
-| Non-production databases | One pod and volume each | Shared cluster per PostgreSQL major | Large | None while within limits |
-| Block storage | One volume per tenant holds database and files; it can never shrink | Files to Spaces; volumes for the database only | Medium; grows with file-heavy customers | Downloads stream through Odoo |
-| Long-idle dev environments | Kept running | Archive to Spaces after long inactivity; restore on demand in about a minute | Medium | One-click restore |
-| Backups | Full dump every day, 7 kept, per tenant | restic incremental with deduplication | Medium, grows with retention | None |
-| Builds | No cache, on tenant nodes | Build pool with min 0; layer cache | Build minutes and rollout headroom | Faster builds |
-| Node packing | One pool; rollout headroom per node | Standard and Large pools; requests at 25% of limits (already) | Small to medium | None |
-| Snapshots | Billed per GB-month (already) | Keep | Revenue | — |
-| Engineering time | Custom backup, health and polling code | Reuse CloudNativePG, Prometheus and restic instead of building more | Largest over a year | Fewer incidents |
-
-**Pricing principles:**
-
-1. **Price on guaranteed resources, not limits.** Workers set requests through `_package()`. Price each worker at or above its request cost times the target margin. Target 60% gross margin at launch, so price is at least 2.5 × cost, rising to 70% or more at scale (at least 3.3 × cost). Set the cost floor in `saas_pricing.py` to 60% and alert when any plan or add-on falls below it. Margin is never bought by cutting Production isolation, backups or security.
-2. **Non-production is a cheap slot, because it sleeps.** "Always awake" staging is a paid option at near-Production cost.
-3. **Storage is included up to the plan, then billed by real usage.** This needs the Kubernetes-native usage measurement that is missing today (`_cron_check_storage_limits`).
-4. **Resource-heavy extras are always priced, never bundled:**
-    - HA at least the cost of a second database and a second Odoo pod, plus margin;
-    - PITR as a fixed fee plus WAL GB;
-    - Large and dedicated pools at node cost plus margin, with a minimum term.
-5. **Trials are an acquisition cost with a ceiling:** shared, sleeping, a fixed duration (14 days is assumed), one per company (already enforced).
-
-| Customer profile | What drives cost | How to price | Loss risk if ignored |
-| --- | --- | --- | --- |
-| Small, light Production | One small pod and database; storage | Entry plan of 1–2 workers with included storage | Low |
-| Many dev and staging environments | Count of environments; wake time | Slot fee per environment; awake option | High today; low with sleep |
-| Heavy database or storage | Database CPU and IOPS; Spaces and backup GiB | Large pool; storage beyond the plan billed on usage | High: database load is not billed today |
-| Needs HA, PITR or dedicated | Second database node and pod; WAL; whole nodes | Add-ons and dedicated pool with a minimum term | High if bundled |
-
-**Measurements needed for a reliable cost model:**
-
-- p95 CPU and RAM per plan, for Odoo and the database separately;
-- active hours per day of dev and staging environments;
-- database and filestore GiB per tenant, and their growth;
-- build minutes per week;
-- backup GiB after deduplication;
-- Spaces requests and egress per customer.
-
-Prometheus already holds the first three for live tenants.
+1. **Launch (P0 and P1):** one cell, the Standard pool and the Build pool. New Production environments run on dedicated CloudNativePG (after A1). Non-production still runs dedicated, always on.
+2. **P2:** the Shared pool, shared clusters, sleep and archiving.
+3. **P3 and P4:** stateless Odoo, the Large pool on demand, HA and PITR, then more cells.
 
 ## Security and reliability review
 
-**Tenant pods are well hardened; the risk is concentrated in a few shared credentials and the control plane.** One leaked secret from the list below reaches every customer at once. Those secrets are the cluster-admin kubeconfig, the one backup key, and a personal Docker Hub account that serves the operator image. Fix them first.
-
-| Severity | Risk | Evidence | Safeguard |
+| Severity | Risk | Evidence (verified) | Safeguard |
 | --- | --- | --- | --- |
-| Critical | The internet-facing control plane holds a cluster-admin token for every cluster | 03b §7; 107 public API routes | A least-privilege ClusterRole: OdooInstances, read nodes and pods, exec only in `odoo-tenant-*`, build Jobs in `odoo-builds`. The kubeconfig is encrypted with a mandatory key. |
-| Resolved | Platform database backups are run by the owner outside the repository | `saas-deploy.sh` local dump only | Keep a monthly restore drill of those backups |
-| Critical | Customer code images could land in a public registry | 04 docs warning; per-cluster registry setting | A private registry per cell, backed by Spaces; refuse public registries in `saas.server` validation |
-| High | One backup key, valid for every customer's backups, sits in each tenant namespace | `saas_instance.py:3787`, `set_scheduled_backup` | Now: a key limited to the backup bucket. Once files are in Spaces, backup Jobs run in a platform namespace, so no platform key enters tenant namespaces; restic password per tenant (Appendix A) |
-| High | The operator image comes from a personal Docker Hub account, and the operator can create workloads cluster-wide | `values.yaml:4`, `clusterrole.yaml` | An organization registry, images pinned by digest, signed builds (SBOM and provenance already exist) |
-| High | Restore drops the database before loading | `saas_instance.py:3400`, `run-restore.sh:125` | Restore into a new name and swap (Appendix A, P1) |
-| High | Backups fail for PostgreSQL 17 tenants | backup image ships `postgresql-client-16`; the CRD allows 17 | Client per major version, or cap the CRD at 16 until shipped |
-| High | A change of PostgreSQL major version breaks the database | `controller/database.go:256` deletes the pod; the old PGDATA won't start | Reject major changes in validation; upgrade only through dump and restore |
-| High | Login and OTP rate limits can be bypassed with a forged header | `api.py:162` trusts the left-most X-Forwarded-For | Trust only the proxy's appended address |
-| High | Secrets fall back to plaintext without a key; backup and webhook secrets are always plain | `crypto.py`, `res_config_settings.py:100`, `saas_instance_repo.py:164` | Refuse to start without a key; encrypt those fields |
-| High | No 2FA for staff who can open cluster shells | no `auth_totp` | TOTP required for staff and for customer owners |
-| High | CI does not gate deployments | `cd.yml` "temporary fast deployment mode" | Re-enable tests, typecheck and scans as required checks |
-| High | Alerts reach only the log | `saas_master.alert_webhook` unset on the live server | Teams webhook, Alertmanager rules for nodes, pods, backups and certificates |
-| Medium | Tenant egress on 443 reaches any address, including in-cluster; SMTP egress is blocked, so customer mail over SMTP fails | `networkpolicy.go` | Deny cluster and VPC ranges on 443; allow 465 and 587 to the internet |
-| Medium | A shell user can write the data_dir `addons/` folder, which Odoo loads (inferred, not tested) | `deployment.go:232` | Mount the shell's data_dir read-only except the filestore; moot once files move to Spaces |
-| Medium | Cancel waits 2 minutes for the final backup, then deletes anyway | `finalize.go:211` | Block deletion until the final backup succeeds or staff confirm |
-| Medium | One operator replica with leader election off | `deployment.yaml:45` | 2 replicas with leader election |
+| Critical | The control plane holds cluster-admin | `bootstrap.py:215` | P0.1 least privilege |
+| Critical | Customer code images may be public | 04 docs; per-cluster registry | P0.3 private registry |
+| High | Builds run customer code unconfined on tenant nodes | `k8s_builds.py:288`, no node selector | P0.19 tainted Build pool |
+| High | A push-capable registry login sits in every tenant namespace | `k8s_builds.py:412` | P0.3 pull-only in tenants |
+| High | Tenants and portal share a registrable domain | live CR host and portal host | P0.20 (A4) |
+| High | Staging and dev keys could reach Production files under one bucket per customer | DigitalOcean keys are per bucket | P1.4 (A2) |
+| High | One backup key in every tenant namespace | `saas_instance.py:3787` | P0.5 |
+| High | Restore drops the database first | `run-restore.sh:125` | P0.4 |
+| High | PostgreSQL 17 backups fail; major changes break the database | backup Dockerfile; `database.go:256` | P0.17, P0.6 |
+| High | Rate limits can be bypassed with a forged header; secrets fall back to plaintext | `api.py:162`, `crypto.py` | P0.8 |
+| High | No 2FA; CI does not gate; alerts reach only the log | — | P0.9–P0.11 |
+| High | Memory requests are below working sets, so evictions are possible under pressure | `_package()` against Prometheus | P0.21 (A6) |
+| Medium | The tenant database login is a superuser; the SQL console uses it | `database.go:92`, `saas_instance.py:2191` | P1.9 non-superuser roles for new environments |
+| Medium | Shell can write sessions and the data-dir addons | `deployment.go:225` | P1.10 |
+| Medium | Egress 443 reaches in-cluster addresses; tenants have no outgoing mail path | `networkpolicy.go` | P0.13 and P1.8 |
+| Medium | Backups do not record code identity, and garbage collection can race the file copy | `run-backup.sh` | P1.5 manifest v2 and snapshot file list |
+| Medium | Cancel deletes after a 2-minute wait for the final backup | `finalize.go:211` | P0.14 |
+| Medium | One operator replica | `deployment.yaml:45` | P0.15 |
+| Resolved | Platform database backups | owner-managed | Monthly restore drill |
 
-**Odoo 11–20 are sold (decided).** Odoo publishes security fixes only for its most recent major versions, so older ones get none upstream. Each environment's own namespace, non-root pod and network policy already contain a compromise to that customer. Add three things: a support matrix of Odoo version, PostgreSQL major and image; a portal notice on unsupported versions; and an upgrade path sold as a service. Odoo 11–12 must be tested on PostgreSQL 13, the CRD minimum, before they are offered.
+**Odoo 11–20 are sold (decided).** Versions Odoo no longer patches carry a portal notice and an upgrade offer. Per-environment isolation contains a compromise to that customer.
 
-**Failure domains.** Recovery times are internal targets, not customer SLAs. MAINTAINING.md says the docs must not promise those.
+**Failure domains:**
 
-| Failure | Today | Target |
-| --- | --- | --- |
-| Odoo pod or node | 1–3 minutes while the volume re-attaches | Production Odoo reschedules on any node (stateless); HA tenants fail over |
-| Production database volume | Restore from the nightly dump, so up to 24 hours of data lost | Same for base plans; PITR tenants lose under 5 minutes |
-| Shared non-production database cluster | (new) | CloudNativePG standby takes over; Production unaffected |
-| Whole cell | Restore each tenant from Spaces into another cluster | Same, scripted; files already in Spaces, so only databases restore |
-| Spaces region | Backups and files are in one fra1 bucket | Nightly copy of backups to a second region for Production |
-| Control plane | Tenants keep running; no provisioning or billing | Owner-managed database backups; application server rebuilt by bootstrap in under an hour |
-| Let's Encrypt or DNS | Renewals fail silently | Certificate expiry alert at 14 days |
+| Failure | Target |
+| --- | --- |
+| Odoo pod or node | Before P3: 1–3 minutes. After P3: rescheduled on any node; HA tenants fail over |
+| Production database | Base plans: restore from the nightly snapshot set, losing up to 24 hours. PITR tenants: under 5 minutes lost |
+| Shared non-production cluster | CloudNativePG standby takes over; Production unaffected |
+| Cell | Scripted restore of each tenant into another cell from Spaces |
+| Spaces region | Production backups copied nightly to the second region |
+| SES or relay | Mail stays queued in Odoo and is retried; Production keeps working |
+| Let's Encrypt or DNS | Existing certificates last up to 30 days past the first failed renewal; alert at 14 days |
 
 ## Odoo.sh competitive gap analysis
 
-**Veltnex already matches Odoo.sh on the core loop:** Git push, build, staging from neutralized Production, then promotion. It also beats Odoo.sh on persistence and choice. Four gaps would lose deals at launch: custom domains, Git submodules, a mail catcher, and backups kept in more than one location. Odoo.sh facts below come from its [branches documentation](https://www.odoo.com/documentation/18.0/administration/odoo_sh/getting_started/branches.html) and [pricing page](https://www.odoo.sh/pricing), read on 2026-10-11.
+Unchanged from revision 1, plus mail: Odoo.sh catches staging mail and sends Production mail itself. Veltnex matches that with Mailpit and SES. Sources: [branches](https://www.odoo.com/documentation/18.0/administration/odoo_sh/getting_started/branches.html) and [pricing](https://www.odoo.sh/pricing), read on 2026-10-11.
 
 | Capability | Odoo.sh | Veltnex today | Verdict |
 | --- | --- | --- | --- |
-| Custom domains with TLS | Yes | Missing; only `subdomain.base_domain` | Essential before launch |
-| Git submodules (OCA and shared addons) | Yes | Missing; `fetch.sh` is shallow and deletes `.git` | Essential before launch |
-| Mail catcher for staging and dev | Yes: outgoing mail intercepted | Missing; mail is only disabled | Essential before launch; one Mailpit per cell |
-| Production backups | 7 daily, 4 weekly, 3 monthly; "3 backups servers in different locations" | 7 daily dumps in one fra1 bucket | Essential: 7/4/6 restic plus a second-region copy (Appendix A) |
-| Logs | Stored log files per build | Live tail only | Launch: live tail plus the previous container log. Growth: stored logs on Spaces |
-| Staging from neutralized Production | Neutralized: crons, mail, IAP, payments | Same, plus PII masking | Advantage: keep |
-| Dev builds | Fresh database with demo data per commit; tests run; kept about 3 days | Production copy; no tests; always on | Add a "fresh demo database" option. Tests per commit: Growth |
-| Environment lifetime | Dev about 3 days; staging deleted after one month | Kept until deleted | Advantage, made affordable by sleep and archive |
-| Git providers | GitHub | GitHub, GitLab, Gitea, Bitbucket; merge is GitHub-only | Advantage; extend merge to GitLab |
-| Shell, SQL, database manager | Web shell and tools | Shell, SQL console, database manager | Parity |
-| Monitoring for the customer | Yes | Usage dashboard from Prometheus | Parity |
-| Dedicated resources | "Dedicated" for more than 16 workers or 512 GB | Planned Large pool | Growth |
-| HA and point-in-time recovery | Not offered on the pricing page | Missing | Premium add-ons: a differentiator |
-| Enterprise licence | Hosting price excludes the Enterprise licence | Runs Community images | Pricing advantage for Community customers; Enterprise support is a business decision |
-| Regions | Several | fra1 only | Growth: new cells |
-| Major version upgrades | Odoo upgrade service for Enterprise | Module upgrades only | Later |
+| Custom domains with TLS | Yes | Missing | Launch (P1.1) |
+| Git submodules | Yes | Missing | Launch (P1.2) |
+| Mail catcher | Yes | Missing | Launch (P1.3) |
+| Outgoing mail service | Yes | Missing | Launch (P1.8, SES) |
+| Backups in several locations | 7 daily, 4 weekly, 3 monthly; 3 locations | 7 dumps, one bucket | Launch (P1.5) |
+| Logs | Stored | Live tail | Launch: previous-container log; stored logs later |
+| Staging from neutralized Production | Yes | Yes, plus PII masking | Advantage |
+| Dev builds with tests | Yes; kept about 3 days | Production copy; kept | Tests later; persistence is an advantage |
+| Git providers | GitHub | 4 providers | Advantage |
+| HA and PITR | Not on the pricing page | Missing | Premium add-ons |
+| Enterprise licence | Excluded from hosting price | Community images | Business decision |
 
 ## Prioritized roadmap
 
-**Launch waits only for P0 and P1. Everything after that is paid for by growth or by premium customers.** The four earlier root plans are folded into these phases and kept in full as appendices of [PLAN-implementation.md](PLAN-implementation.md):
-
-- backup and restore (Appendix A): P0, P1;
-- Spaces filestore (Appendix B): P1 for the bucket and key, P3 for the filestore itself;
-- cluster capacity (Appendix C): P0, P2, P3;
-- PostgreSQL (Appendix D): P2, P3, P4.
-
-Detailed fix plans for each launch blocker (P0.1, P0.5–P0.7, P0.13, P0.16–P0.18) and for custom domains on Production (P1.1) are in the implementation plan.
-
 ```mermaid
 flowchart TD
-    P0["P0 · Launch blockers: security and recovery (before launch)<br/>Least-privilege cluster access · Private registry, images by digest<br/>Pricing floor at 60% gross margin · Restore into new name, then swap<br/>pg client per major, block major upgrades · Spread backup times, bounded /tmp<br/>Wildcard TLS via DNS-01 · Real client IP, fail-closed secrets<br/>2FA for staff and owners · CI gates and Teams alerts on<br/>Capacity reader, ceilings, alerts · SMTP egress, deny in-cluster 443"]
-    P1["P1 · Launch features (before launch)<br/>Custom domains with TLS · Git submodules<br/>Mailpit for staging and dev · Customer bucket + scoped key<br/>restic 7/4/6 + second-region copy · Backup integrity checks + report<br/>Previous-container logs · Odoo 11–20 support matrix"]
-    P2["P2 · Cost engine (first 100 environments)<br/>Sleep and wake for non-production · Shared CloudNativePG per PG major<br/>Archive idle dev to Spaces · Batched reads, cached API clients<br/>Standard, Large, Shared, Build pools · Build layer cache"]
-    P3["P3 · Stateless Odoo (growth)<br/>Spaces filestore, 17–19 first · Sessions in PostgreSQL<br/>Drop node pinning for Odoo · Production DB tuning presets<br/>Customer moves between pools · Limited simultaneous updates"]
-    P4["P4 · Premium and scale (on demand)<br/>HA add-on (CNPG, 2 instances) · PITR add-on (WAL to Spaces)<br/>Dedicated pools, minimum term · Tests per commit, stored logs<br/>Second cell or region · Control plane on 2 app servers"]
+    P0["P0 · Launch blockers (before launch)<br/>Least-privilege access · private registry, pull-only tenant credentials · tainted Build pool<br/>Restore swap · backup key scope · spread backups · tools per PG major · major-version guard<br/>Wildcard TLS with CAA, delegated DNS-01, CT watch · separate tenant domain + PSL<br/>Real client IP, fail-closed secrets · 2FA · CI gates · alerts · capacity reader<br/>Egress: private ranges denied, mail only via relay · right-sized memory · 60% price floor · vendored CloudNativePG"]
+    P1["P1 · Launch features (before launch)<br/>Custom domains (TXT ownership, separate issuer, takeover rules) · submodules · Mailpit<br/>Production + non-production buckets · restic with manifest v2 and snapshot file list · second-region copy<br/>Mail relay to SES with quotas · CloudNativePG for new Production · non-superuser roles · shell hardening<br/>Odoo 11–20 matrix · previous-container logs"]
+    P2["P2 · Cost engine<br/>Shared pool · shared CloudNativePG (2 instances, no pooler) · sleep 1 h / 2 h / 1 h<br/>Archive idle dev · batched control-plane reads · build cache · performance insights v1"]
+    P3["P3 · Stateless Odoo<br/>Spaces filestore with DB-stored assets and local cache · sessions database<br/>Drop node pinning · backups from a platform namespace · moves between pools"]
+    P4["P4 · Premium and scale<br/>HA (2 instances + 2 Odoo pods) · PITR setting · Large and dedicated pools<br/>Tests per commit · stored logs · more cells · control plane on 2 servers · performance insights paid tier"]
     P0 --> P1
-    P1 -- "Gate A · launch: P0 and P1 done, restore drill passed" --> P2
-    P2 -- "Gate B · growth: idle saving measured, shared cluster stable" --> P3
-    P3 -- "Gate C · premium: first customers ask for HA or PITR" --> P4
+    P1 -- "Gate A · launch" --> P2
+    P2 -- "Gate B · growth" --> P3
+    P3 -- "Gate C · premium demand" --> P4
 ```
 
 ## Open questions and assumptions
 
 **Decided on 2026-10-11:**
 
-1. **Odoo versions:** 11 to 20 are sold. The chart, images, PostgreSQL matrix and all four filestore adapters must cover them.
-2. **Gross margin:** 60% at launch, aiming for 70% or more at scale, never at the expense of security or Production stability.
-3. **Sleep:** Production never sleeps. Development sleeps after 1 idle hour, Staging after 2, Trials after 1.
-4. **Platform database backups:** run by the owner, outside the repository.
+- Odoo 11 to 20 are sold.
+- 60% gross margin at launch, 70% or more at scale, never at the cost of security or Production stability.
+- Production never sleeps; dev sleeps after 1 idle hour, staging after 2, trials after 1.
+- The owner backs up the platform database.
+- Customers can connect custom domains such as `erp.customer.com` to Production.
+- Outgoing mail goes through AWS SES.
+
+**Awaiting approval:** A1–A9 (top of this file).
 
 **Still open:**
 
-1. **Archiving:** how many idle days before a dev environment is archived to Spaces? *Assumed: 14 days.*
-2. **Trials:** do they share the non-production cluster? How long do they last? *Assumed: yes, 14 days.*
-3. **Paid add-ons:** sell HA, PITR and dedicated pools at launch, or after the first customers ask?
-4. **Second region:** which region receives off-site backup copies? *Assumed: ams3, close to fra1.*
-5. **Enterprise:** offer Enterprise hosting (customer brings their licence) or Community only?
+1. **Archiving:** how many idle days before a dev environment is archived? *Assumed: 14.*
+2. **Trials:** do they share the non-production cluster, and how long do they last? *Assumed: yes, 14 days.*
+3. **Paid add-ons:** sell HA, PITR and dedicated pools at launch, or on demand?
+4. **Second region** for backup copies. *Assumed: ams3.*
+5. **Enterprise:** Enterprise hosting or Community only?
+6. **New tenant domain name** (A4).
 
-**Evidence needed:**
+**Evidence still needed (each has a test in the plan):**
 
-- Which registry do live clusters push customer images to, and is it private?
-- What are the DigitalOcean account limits on Spaces buckets, Spaces keys, Droplets and load balancers?
-- Which PostgreSQL major does each Odoo version from 11 to 20 run on in our images? Odoo 11–12 must be tested on PostgreSQL 13, the CRD minimum.
-- What are the real p95 usage figures and active hours listed under the measurements in the cost section?
-
-**Assumptions used throughout:**
-
-- DigitalOcean prices are the ones recorded in the repository's docs and plans.
-- A 20–30 second wake is acceptable outside Production.
-- No customer SLA is published (MAINTAINING.md).
+- read-after-write behaviour of Spaces;
+- Odoo 11–12 on PostgreSQL 13;
+- the relay's sustained throughput against the SES account rate;
+- the restic deduplication ratio with uncompressed dumps;
+- BuildKit not exposing the client credential to `RUN` steps;
+- the real p95 memory per plan, which sets A6's numbers;
+- which registry live clusters push to.

@@ -1,24 +1,27 @@
 # Veltnex Implementation Plan
 
-Oct 11, 2026 · @Mostafa · Target design: [ARCHITECTURE-TARGET.md](ARCHITECTURE-TARGET.md)
+Oct 11, 2026 · @Mostafa · Revision 2 · Target design: [ARCHITECTURE-TARGET.md](ARCHITECTURE-TARGET.md)
 
-This plan turns the target architecture into ordered, shippable items. It replaces the four separate root plans. Their full text is kept, unchanged, in Appendices A–D, and each item below points to the appendix section that holds its detail. Where this plan differs from an appendix, the difference is listed in "Changes to the earlier plans" and this plan wins. Inside the appendices, a mention of an old file name means its appendix: `PLAN-backup-restore.md` is A, `PLAN-spaces-filestore.md` is B, `PLAN-cluster-capacity.md` is C, and `PLAN-postgresql-architecture.md` is D.
+This plan turns the target architecture into ordered, shippable items. The four earlier root plans are kept unchanged as Appendices A–D. Each item points to the appendix section that holds its detail. Where this plan differs from an appendix, "Changes to the earlier plans" lists the difference, and this plan wins.
 
-Status: plan only. Nothing here is built or deployed.
+Inside the appendices, an old file name means its appendix: `PLAN-backup-restore.md` is A, `PLAN-spaces-filestore.md` is B, `PLAN-cluster-capacity.md` is C, and `PLAN-postgresql-architecture.md` is D.
+
+**Status: plan only. Do not start implementation until the owner approves decisions A1–A10 in ARCHITECTURE-TARGET.md.** Items that depend on an unapproved decision name it in a "Needs" line.
 
 ## How to use this plan
 
-- **Order:** phases run in order. Items inside a phase are independent unless a "needs" line says otherwise. A gate must pass before the next phase starts.
-- **Each item** gives:
+- **Order:** phases run in order. Items in a phase are independent unless a "Needs" line says otherwise. A gate must pass before the next phase starts.
+- **Each item gives:**
     - **What:** the change;
     - **Where:** the files or components it touches (paths from the repository root);
     - **Done when:** the acceptance check.
-- **Working rules (unchanged):**
-    - Every customer-facing flow is a rolling update with zero downtime. Verify it live with an HTTP poll. The only exception is a cross-pool move (1–3 minutes, at a customer-chosen time).
+- **Working rules:**
+    - Every customer-facing flow is a rolling update with zero downtime, verified live with an HTTP poll. The only exception is a cross-pool move (1–3 minutes, at a customer-chosen time).
     - Odoo tests run on the SaaS server against a throwaway database. Runtime behaviour is verified on the DOKS test cluster.
     - When tests pass, commit and push to main. Deploying is done by hand, not by this plan.
     - Store-computed fields across addons get an upgrade-with-data test, not only a fresh install.
-- **IDs** (P0.1, P1.3, …) are stable. Reference them in commits and PRs.
+    - "Verified" and "assumption" have the same meaning as in the architecture. Every assumption an item relies on has a test in its "Done when".
+- **IDs** are stable. Reference them in commits and PRs.
 
 ```mermaid
 flowchart LR
@@ -28,470 +31,574 @@ flowchart LR
     P3 -- "Gate C: premium demand" --> P4["P4 Premium and scale"]
 ```
 
+## Approvals that gate items
+
+| Decision (architecture) | Items that wait for it |
+| --- | --- |
+| A1 CloudNativePG everywhere | P0.22, P1.9, P2.2, P3.3, P4.1, P4.2 |
+| A2 Production and non-production buckets | P1.4, P3.1, P3.4 |
+| A3 Sessions database | P3.2 |
+| A4 Separate tenant domain | P0.20, P0.7 (domain choice) |
+| A5 Permanent TXT ownership | P1.1 |
+| A6 Memory requests from measurement | P0.21, P0.18 (price floor uses it) |
+| A7 Mail relay to SES | P1.8, P0.13 (mail egress) |
+| A8 Attachments in staging and dev copies | P1.4 |
+| A9 Shared cluster with 2 instances | P2.2 |
+| A10 Performance insights split | P2.7, P4.7 |
+
 ## Changes to the earlier plans
 
 | Earlier plan | What changes here | Why |
 | --- | --- | --- |
-| A · Backup & Restore | Its Phase 0 (disk safety, alert webhook) and Phase 1 (streaming restore with swap) move into P0. Its Phases 2–4 (integrity checks, restic) move into P1. Added: a backup client per PostgreSQL major, start times spread by tenant, and a nightly second-region copy for Production. The shared backup key is narrowed to the backup bucket now (P0.5). After files move to Spaces, backup Jobs run in a platform namespace (P3.4). restic repositories stay in the backup bucket, not the customer bucket, so a customer key can never delete backups. | Restore safety and key scope are launch blockers; Odoo.sh keeps backups in 3 locations. |
-| B · Spaces Filestore | The customer bucket and scoped key are created at provisioning from P1.4, before the filestore uses them, so every new customer already has one. The filestore itself is P3.1. The module ships through the operator's existing platform-addons ConfigMap (`compute/operator/internal/resources/platformaddons.go`), so stock images still work. Sessions in PostgreSQL join the same module (P3.2). All four generations are built, because Odoo 11–20 are sold (P1.7): 17–19 first, then 16 and 20, then 14–15, then 11–13. | Statelessness needs sessions too; the platform-addons path already delivers server-wide modules without custom images. |
-| C · Cluster Capacity | Its Phase 1 (capacity reader, placement, alerts) is P0.12. Its Phase 2 (size classes) grows from Standard and Large to four pools (Standard, Large, Shared, Build) with labels and taints (P2.5). Its Phases 3 and 4 (moves, limited simultaneous updates) are P3.5 and P3.6. Decisions recorded on 2026-10-11 stand. | Non-production and builds must not take Production headroom. |
-| D · PostgreSQL | Sleep (its P1) and the shared CloudNativePG cluster (its P2) are both P2. Production tuning (its P3) is P3.3. HA and PITR (its P4) are P4.1 and P4.2. Added: archive of long-idle dev environments (P2.3), and idle detection from Traefik metrics in Prometheus, so nothing new has to collect traffic. | Same design; the order follows the business case. |
+| A · Backup & Restore | Its Phase 0 (disk safety, alert webhook) and Phase 1 (streaming restore with swap) are P0.4. Its Phases 2–4 (integrity, restic) are P1.5, which adds manifest v2 (code identity), a snapshot-consistent file list, uncompressed dumps for restic deduplication, and a second-region copy. Key scope is P0.5. restic repositories stay in the backup bucket, which no customer key reaches. | Consistency model (architecture, concern 4) |
+| B · Spaces Filestore | One bucket per customer becomes two: a Production bucket and a non-production bucket (A2), because Spaces keys are per bucket only (verified). The bucket and keys are created in P1.4. The filestore is P3.1, delivered through the operator's platform-addons ConfigMap (`compute/operator/internal/resources/platformaddons.go`). It keeps web assets and files under 64 KiB in the database, reads through a local cache, retries reads that come back 404 just after a write, and uses a 14-day `trash/` lifecycle. All four adapter generations are built, for Odoo 11–20: 17–19, then 16 and 20, then 14–15, then 11–13. Sessions are P3.2. | Concerns 3 and 5 |
+| C · Cluster Capacity | Its Phase 1 is P0.12. Pools arrive by phase: Build in P0 (P0.19, security), Shared in P2 (P2.5), Large on demand (P4.3). HA is not a pool. Its Phases 3 and 4 are P3.5 and P3.6. | Concern 7 |
+| D · PostgreSQL | CloudNativePG becomes the engine for every new environment (A1): dedicated 1-instance per Production (P1.9), shared for non-production (P2.2) with 2 instances and no PgBouncer. Sleep windows are dev 1 h, staging 2 h, trials 1 h; Production never sleeps (P2.1). Its cost table is superseded by the corrected model (architecture, concern 6). | Concerns 1, 6 and 7 |
 
-## P0 · Launch blockers: security and recovery
+## P0 · Launch blockers
 
-Before launch. These close the risks in the security review rated Critical or High.
+Before launch. "Launch blocker" marks a finding from the review.
 
 **P0.1 Least-privilege cluster access for the control plane.** Launch blocker.
-- **Today:** bootstrap binds the control plane's ServiceAccount to `cluster-admin` (`scripts/bootstrap/bootstrap.py:215`). The control plane is internet-facing (107 public API routes), so a compromise of it means every cluster.
-- **What the control plane actually calls** (grep of `saas_core`):
+- **Today (verified):** bootstrap binds the control plane's ServiceAccount to `cluster-admin` (`scripts/bootstrap/bootstrap.py:215`).
+- **Calls the control plane makes** (grep of `saas_core`):
     - OdooInstance get, create, patch and delete;
     - namespaces read and list;
     - deployments listed across all namespaces;
-    - in tenant namespaces: pods (list, read, create, delete, exec, log), secrets (create, read, patch, replace), jobs, a cron job read, a deployment patch for restarts, config maps, network policies, a service-account read and a lease read;
+    - in tenant namespaces: pods (list, read, create, delete, exec, log), secrets, jobs, a cron job read, a deployment patch, config maps, network policies, a service-account read and a lease read;
     - the Prometheus service proxy;
-    - Jobs and pods in `odoo-builds` and the toolbox namespace;
+    - `odoo-builds` and the toolbox namespace;
     - one config map in `kube-system`.
-- **Design:** RBAC cannot grant "every namespace named `odoo-tenant-*`", so the grant is split three ways.
-    1. **ClusterRole `veltnex-control-plane`:**
-        - OdooInstances: get, list, watch, create, patch, delete;
-        - namespaces: get, list;
-        - nodes: get, list (for P0.12);
-        - deployments: list;
-        - nothing else cluster-wide.
-    2. **Namespaced Roles in fixed namespaces:**
-        - `odoo-builds`: jobs, pods, pods/log, secrets, config maps, network policies;
-        - the toolbox namespace: pods and pods/exec;
-        - `monitoring`: get `services/proxy` on the Prometheus service only (`resourceNames`);
-        - `kube-system`: get on the `cluster-autoscaler-status` config map only.
-    3. **Per-tenant RoleBinding created by the operator:** in every tenant namespace, bound to a ClusterRole `veltnex-tenant-access` that lists the tenant verbs above. The operator already creates every per-namespace object, so the binding appears and disappears with the namespace.
+- **Design.** RBAC cannot match namespace prefixes, so the grant is split three ways:
+    1. **ClusterRole `veltnex-control-plane`:** OdooInstances CRUD; namespaces, nodes and deployments read only.
+    2. **Roles in fixed namespaces:**
+        - `odoo-builds`;
+        - the toolbox namespace;
+        - `monitoring`: `services/proxy` on the Prometheus service only;
+        - `kube-system`: get on `cluster-autoscaler-status` only.
+
+       No role can read Secrets in the ingress, `cert-manager` or `veltnex-mail` namespaces.
+    3. **Per-tenant RoleBinding:** a binding to ClusterRole `veltnex-tenant-access`, created by the operator in every tenant namespace.
 - **Steps:**
-    1. Add the ClusterRoles, Roles and ServiceAccount to the operator chart (`compute/charts/odoo-operator/templates/controlplane-rbac.yaml`).
-    2. Add the RoleBinding to the operator's tenancy reconcile (`compute/operator/internal/resources/tenancy.go`). The operator's own ClusterRole needs `bind` on `veltnex-tenant-access` only.
-    3. Move namespace creation for `odoo-builds` and the toolbox namespace into bootstrap, so the control plane never needs `create namespace`.
-    4. Bootstrap issues the new kubeconfig (`bootstrap.py`, `register_cluster.py`), and the docs drop cluster-admin (`setup/03a`, `03b` §7, `09`).
-    5. On the test cluster, upload the new kubeconfig to the `saas.server` and run the full UI walk-through. Log every 403 from the driver; each one is a missing verb to add or a call to remove.
-    6. Repeat per cluster. Remove the cluster-admin binding only after a clean week.
-- **Rollout and rollback:** no tenant is touched; switching kubeconfig is instant. Rollback means re-uploading the old kubeconfig while its binding still exists.
+    1. The chart template is `compute/charts/odoo-operator/templates/controlplane-rbac.yaml`.
+    2. The operator adds the binding in `resources/tenancy.go`.
+    3. Bootstrap creates the fixed namespaces and issues the kubeconfig (`bootstrap.py`, `register_cluster.py`).
+    4. Run a week on the test cluster, logging every 403. Then remove `cluster-admin`.
 - **Done when:**
-    - `kubectl auth can-i --list --as=<sa>` shows no cluster-wide write except OdooInstances;
-    - `can-i delete nodes` and `can-i get secrets -n kube-system` are both "no";
-    - the walk-through passes: deploy, shell, logs, build, backup, restore, metrics, delete.
+    - `kubectl auth can-i --list` shows no cluster-wide write except OdooInstances;
+    - the full UI walk-through passes.
 
-**P0.2 Platform database recovery.** Closed on 2026-10-11: the owner runs the platform database backups outside the repository. Keep one item: a short restore-drill runbook in `setup/02-SAAS-SERVER-SETUP.md`, practised monthly.
+**P0.2 Platform database recovery.** Closed on 2026-10-11: the owner backs it up outside the repository. A restore-drill runbook goes in `setup/02-SAAS-SERVER-SETUP.md`.
 
-**P0.3 Private registry and pinned platform images.**
+**P0.3 Private registry and credential split.** Launch blocker.
 - **What:**
-    - A private registry per cell, backed by Spaces, for customer images.
-    - `saas.server` validation refuses a public registry.
-    - Operator and backup-tool images move from the personal Docker Hub account to an organization registry and are pinned by digest.
-    - Tenant pull secrets are copied by the operator (already done for `odoo-platform-pull`).
-- **Where:** `control-plane/saas_core/models/saas_server.py` (registry fields), `compute/charts/odoo-operator/values.yaml` (`image`), `compute/operator/internal/resources/backup.go` (default backup image), `setup/04-IMAGES-AND-REGISTRY.md`, `.github/workflows/cd.yml`.
-- **Done when:** an anonymous pull of a customer image fails, a build and update still roll with zero downtime, and the chart references images by digest.
+    - **Registry:** a private registry per cell, backed by Spaces. `saas.server` validation refuses a public registry.
+    - **Platform images:** operator and backup-tool images move to an organization registry, pinned by digest.
+    - **Pull credential:** tenant namespaces get a **read-only** pull credential. Today the push-capable login is copied there (verified: `k8s_builds.py:412`).
+    - **Push credential:** it lives only in `odoo-builds`.
+- **Where:** `control-plane/saas_core/models/saas_server.py`, `drivers/k8s_builds.py` (`_upsert_pull_secret`), `compute/charts/odoo-operator/values.yaml`, `compute/operator/internal/resources/backup.go`, `setup/04-IMAGES-AND-REGISTRY.md`, `.github/workflows/cd.yml`.
+- **Done when:**
+    - an anonymous pull fails;
+    - the tenant pull Secret cannot push;
+    - a build and update roll with zero downtime.
 
-**P0.4 Restore safety.** Appendix A, Phase 0 and Workstream A (A1–A5).
+**P0.4 Restore safety.** Appendix A, Phase 0 and Workstream A.
 - **What:**
-    - Size-limited `/tmp` for backup and restore Jobs, with ephemeral-storage requests.
-    - Range-read zip restore, `pg_restore` from stdin, and restore into `<db>__restoring` then swap.
-    - A free-space check first, falling back to today's path only when there is no room, as decided.
+    - bounded `/tmp`;
+    - streaming restore into `<db>__restoring`, then a swap;
+    - a free-space check first.
 - **Where:** `compute/operator/internal/resources/backup.go:73`, `restore.go:94`, `compute/tools/backup-tool/run-restore.sh`, `control-plane/saas_core/models/saas_instance.py` (`_do_restore_backup`, `_do_copy_dbs`).
-- **Done when:** the acceptance checks in Appendix A for disk safety, large streaming restore, safe failure and bad upload all pass.
+- **Done when:** Appendix A's checks for disk safety, large restore, safe failure and bad upload pass.
 
 **P0.5 Backup key scope.** Launch blocker.
-- **Today:**
-    - One S3 key from settings (`ir.config_parameter`, plain text, `res_config_settings.py:100`) is copied into a Secret in every tenant namespace (`saas_instance.py:3787`, `set_scheduled_backup`).
-    - Anyone who can read one tenant's Secret can list, read and delete every customer's backups.
-- **Steps**, each shippable on its own:
-    1. **Narrow the key:** create a Spaces key granted only on the backup bucket, not account-wide. Save it in settings. `_cron_sync_scheduled_backups` rewrites each tenant Secret within 30 minutes. Revoke the old key once every backup has run once with the new one.
-    2. **Encrypt it:** move the access and secret key to encrypted fields (`EncryptedChar`, which fails closed after P0.8).
-    3. **Survive deletion:** turn on versioning for the backup bucket, with a lifecycle rule that expires old versions after 30 days. A leaked key can then delete nothing for good. Verify that Spaces supports noncurrent-version expiry before relying on it; if not, add a nightly copy to the second-region bucket (P1.5) under a different key.
-    4. **Make reading useless:** use a per-tenant restic repository password (Appendix A, Workstream B, in P1.5), so the bucket key alone cannot read any backup.
-    5. **Remove it from tenant namespaces:** in P3.4, backup Jobs move to a platform namespace once Odoo is stateless.
-- **Residual risk until P3.4:** a staff member, or an operator bug that reads tenant Secrets, still holds a working key. Steps 3 and 4 limit what that key can do.
-- **Rollout and rollback:** a key change is a Secret update with no pod restart; the next backup uses it. Rollback means restoring the old key before it is revoked.
+- **Steps:**
+    1. Create a key granted only on the backup bucket and roll it through `_cron_sync_scheduled_backups`. Revoke the old key.
+    2. Encrypt the keys in settings (`res_config_settings.py:100`).
+    3. Turn on bucket versioning, with old versions expiring after 30 days. *Assumption:* Spaces supports expiring old versions. If it does not, rely on the second-region copy (P1.5).
+    4. Add per-tenant restic passwords (P1.5).
+    5. Move backup Jobs to a platform namespace (P3.4).
 - **Done when:**
     - the old key is revoked and every tenant's next backup succeeds;
-    - the new key cannot list any other bucket;
-    - a deleted backup object is restored from its previous version.
+    - the new key cannot list other buckets;
+    - a deleted backup object is recovered.
 
 **P0.6 Guard PostgreSQL major-version changes.** Launch blocker.
-- **Today:** the CRD allows 13–17 (`odooinstance_types.go:54`). A changed `spec.database.version` changes the image, and `syncDatabasePod` deletes the pod (`controller/database.go:256`). The new major then refuses the old data directory, so the tenant is down with no automatic way back.
-- **Design, two layers:**
-    1. **API server:** a CEL transition rule on `spec.database`, `self.version == oldSelf.version`, with the message "PostgreSQL major version cannot change in place; restore into a new environment". This blocks every writer (control plane, kubectl, Helm) without a webhook. The CRD already uses CEL for `replicas`.
-    2. **Operator, defence in depth:** record the running major in `status.database.runningMajor` from the StatefulSet's image. If the spec ever disagrees, keep the old image and set a `DatabaseMajorChangeRejected` condition.
-- **The upgrade path customers get instead:** "Upgrade PostgreSQL" creates a new environment on the new major from the latest backup (streaming restore, P0.4). The customer tests it and then switches. An in-place dump and reload at a customer-chosen time can come later, like pool moves.
-- **Control plane:** the version field is read-only after creation in the UI and the API.
-- **Where:** `compute/operator/api/v1alpha1/odooinstance_types.go`, `compute/operator/internal/controller/database.go`, `validate.go`, the CRD in `compute/charts/odoo-operator/crds`, `control-plane/saas_core/drivers/kubernetes_driver.py`.
+- **What:**
+    - a CEL transition rule on `spec.database` (`self.version == oldSelf.version`);
+    - the operator records `status.database.runningMajor` and keeps the old image on any mismatch, as defence in depth;
+    - upgrades happen only by restoring into a new environment.
+- **Where:** `compute/operator/api/v1alpha1/odooinstance_types.go`, `controller/database.go:256`, `validate.go`, `compute/charts/odoo-operator/crds`, `kubernetes_driver.py`.
 - **Done when:**
-    - `kubectl patch` from 16 to 17 on a live CR is refused by the API server and the database keeps serving;
-    - an envtest covers both layers;
-    - a same-major image change still applies.
+    - a patch from 16 to 17 is refused by the API server and the database keeps serving;
+    - an envtest covers both layers.
 
-**P0.7 Wildcard TLS for base domains.** Launch blocker.
-- **Today:**
-    - Every environment gets its own Let's Encrypt certificate through the cluster issuer (`kubernetes_driver.py:525`; operator `tls.go`, `route.go`), using HTTP-01.
-    - Let's Encrypt allows 50 new certificates per registered domain per 7 days, so the base domain caps new environments at about 50 a week.
-    - A failed or rate-limited issuance leaves a new environment without TLS.
-- **Design:**
-    - **The certificate:** one certificate `*.<base-domain>` per base domain, issued with DNS-01. Use cert-manager's DigitalOcean DNS solver if the zone is on DigitalOcean DNS, otherwise the DNS provider's cert-manager webhook. The DNS token is a Secret in the `cert-manager` namespace, scoped to DNS records only.
-    - **Serving it:** the certificate lives in Traefik's namespace and is listed in Traefik's default `TLSStore`. Ingresses for base-domain hosts carry no per-tenant certificate, and Traefik serves the wildcard by SNI.
-    - **CRD:** add `spec.domain.tls.mode: PerHost | Shared` (default `Shared` for base-domain hosts). In `Shared` mode the operator creates no Certificate and sets the router TLS annotation.
-    - **Custom domains** (P1.1) keep HTTP-01 per host. Those certificates count against the customer's domain, not ours.
+**P0.7 Wildcard TLS for the tenant domain, with protections.** Launch blocker. Needs A4 for the domain name.
+- **What:** one `*.<tenant-domain>` certificate through DNS-01, held in Traefik's default `TLSStore`, with `spec.domain.tls.mode: Shared` for platform hosts. It is protected by:
+    - **Delegated challenge:** `_acme-challenge.<tenant-domain>` is a CNAME into a challenge zone in a separate DigitalOcean team, so cert-manager's token can change nothing else.
+    - **CAA records:** they allow only Let's Encrypt and only the platform's ACME account (`accounturi`), for `issue` and `issuewild`.
+    - **Certificate Transparency watch:** an alert on any certificate for the tenant domain that the platform did not order.
+    - **Key location:** the key lives only in Traefik's namespace (P0.1 denies reading it).
+    - **Separate ACME accounts** for the wildcard and for custom domains (P1.1).
+    - **Renewal:** at 30 days left, with an expiry alert at 14 days (P0.11).
+    - **Subdomain quarantine:** a cancelled tenant's subdomain is quarantined for 90 days (*assumed*).
 - **Steps:**
-    1. Vendored cert-manager: add the DNS-01 ClusterIssuer and the token Secret (`scripts/bootstrap/doks.sh`, `setup/03b`).
-    2. Create the wildcard Certificate and the Traefik `TLSStore` (chart values in `compute/charts/vendor/traefik`).
-    3. Operator: add `Shared` mode in `tls.go` and `route.go`, plus tests in `route_test.go`.
-    4. Control plane: new environments use `Shared` (`kubernetes_driver.py`).
-    5. Existing tenants: switch them to `Shared` in batches of 10. Traefik already holds the wildcard, so the switch is a plain Ingress update. After a day, delete the old per-tenant Certificates and Secrets.
-    6. Update the bootstrap readiness check (`bootstrap-check.<domain>`) to expect the wildcard.
-- **Rollout and rollback:** an HTTP poll on a switched tenant shows no TLS error and no failed request. Rollback means setting `PerHost` again; the old Secret is kept for a day for that reason.
+    1. ClusterIssuer and token (`scripts/bootstrap/doks.sh`).
+    2. Certificate and `TLSStore` (`compute/charts/vendor/traefik` values).
+    3. Operator `tls.go` and `route.go` with tests.
+    4. Control plane sets `Shared` for new environments.
+    5. Switch existing tenants in batches of 10, then delete their old Certificates after a day.
+    6. Update the bootstrap readiness check.
 - **Done when:**
-    - 60 environments are created in one day on one base domain, all with valid TLS;
-    - Let's Encrypt shows one order per base domain;
-    - P0.11's certificate-expiry alert covers the wildcard.
+    - 60 environments are created in one day with valid TLS and one Let's Encrypt order;
+    - a certificate requested for the tenant domain from another ACME account is refused (CAA);
+    - the CT watch raises an alert on a test certificate issued from the Let's Encrypt staging environment.
 
 **P0.8 Request hardening.**
-- **What:** take the client IP from the proxy-appended address only. Make secret encryption fail closed: refuse to start without a key. Encrypt `webhook_secret`.
-- **Where:** `control-plane/saas_website/controllers/api.py:162`, `control-plane/saas_website/controllers/main.py:1246`, `control-plane/saas_core/crypto.py`, `control-plane/saas_core/fields.py`, `control-plane/saas_core/models/saas_instance_repo.py:164`.
-- **Done when:** a forged `X-Forwarded-For` no longer resets the login rate limit (unit test), and a server started without a key exits with a clear error.
+- **What:**
+    - take the client IP from the proxy-appended address only;
+    - secret encryption fails closed;
+    - encrypt `webhook_secret`.
+- **Where:** `control-plane/saas_website/controllers/api.py:162`, `main.py:1246`, `control-plane/saas_core/crypto.py`, `fields.py`, `models/saas_instance_repo.py:164`.
+- **Done when:**
+    - a forged header does not reset rate limits;
+    - a server started without a key exits.
 
 **P0.9 Two-factor authentication.**
-- **What:** TOTP for staff (required) and for customer owners (required for anyone who can open a shell or the SQL console).
-- **Where:** `control-plane/saas_core/__manifest__.py` (depend on `auth_totp`), `control-plane/saas_iam`, `control-plane/saas_website/controllers/api.py` (login flow), `frontend/veltnex` (enrolment and prompt).
-- **Done when:** a staff user without TOTP cannot open a pod or cluster shell, and the SPA login works with TOTP.
+- **What:** TOTP, required for staff and for any customer role that can open a shell or the SQL console.
+- **Where:** `saas_core/__manifest__.py` (`auth_totp`), `saas_iam`, `saas_website/controllers/api.py`, `frontend/veltnex`.
+- **Done when:** a user without TOTP cannot open a shell.
 
 **P0.10 CI gates.**
-- **What:** end the "temporary fast deployment mode". Tests, typecheck, lint and scans become required checks before `cd.yml` deploys.
-- **Where:** `.github/workflows/ci.yml`, `.github/workflows/cd.yml`, `setup/06-CICD.md`.
-- **Done when:** a failing test blocks the deploy job.
+- **What:** tests, typecheck, lint and scans become required before `cd.yml` deploys.
+- **Done when:** a failing test blocks the deploy.
 
 **P0.11 Alerts that reach people.**
 - **What:**
-    - Set the Teams webhook.
-    - Add a Teams message format to `saas.alert`.
-    - Enable Alertmanager with rules for node not ready, pods pending over 5 minutes, PVC above 85%, backup older than 27 hours, certificate expiry under 14 days, and operator down.
-- **Where:** `control-plane/saas_core/models/saas_alert.py`, `compute/charts/monitoring/prometheus-values.yaml`.
-- **Done when:** each rule fires once on the test cluster and arrives in Teams.
+    - the Teams webhook and a Teams message format in `saas_alert.py`;
+    - Alertmanager rules for nodes not ready, pods pending over 5 minutes, PVCs above 85%, backups older than 27 hours, certificates expiring within 14 days, the operator down, the mail relay down, and SES bounce or complaint rates.
+- **Done when:** each rule fires once on the test cluster.
 
-**P0.12 Capacity reader, ceilings and alerts.** Appendix C, sections 1, 2, 5 and 6 (its Phase 1).
+**P0.12 Capacity reader, ceilings and alerts.** Appendix C, Phase 1.
+- **Done when:** Appendix C's Phase 1 checks pass.
+
+**P0.13 Tenant egress policy.** Launch blocker. Needs A7.
 - **What:**
-    - A `saas.capacity` reader from nodes and `cluster-autoscaler-status`.
-    - Per-node rollout headroom in placement.
-    - The four Teams alerts.
-    - Raise the DOKS pool maximum and the Droplet limit by hand.
-- **Where:** `control-plane/saas_core/models/saas_server.py` (`_has_capacity_for`), `control-plane/saas_core/models/saas_instance.py` (`_allocate_servers`, `_cron_retry_pending_provision`).
-- **Done when:** the Appendix C Phase 1 acceptance checks pass.
-
-**P0.13 Tenant network policy: mail allowed, cluster blocked.** Launch blocker.
-- **Today:** tenant egress allows DNS, PostgreSQL inside the namespace, and TCP 443 to any address (`networkpolicy.go`). This causes two problems:
-    - outgoing mail over SMTP (465, 587) and Odoo's incoming mail servers (IMAP 993, POP3 995) are blocked;
-    - 443 reaches in-cluster addresses as well as the internet.
-- **Design:**
-    - Egress to the internet is allowed on 443, 465, 587, 993 and 995 through an `ipBlock` of `0.0.0.0/0` with `except` set to the pod, service and VPC ranges.
-    - The ports come from an operator value, `tenantEgress.ports`, so operations can add one (for example 2525 or LDAP 636) without a release.
-    - The ranges come from `tenantEgress.privateCIDRs`, filled by bootstrap from the cluster's settings (`doctl kubernetes cluster get`).
-    - Port 25 stays closed: DigitalOcean blocks it on Droplets, and customers should use submission ports.
-    - Inside a namespace, ingress narrows to Odoo to PostgreSQL on 5432, plus the existing gateway and ACME paths.
-- **Where:** `compute/operator/internal/resources/networkpolicy.go`, `compute/operator/internal/controller/network.go`, `compute/charts/odoo-operator/values.yaml` and `values.schema.json`, `scripts/bootstrap/doks.sh`.
-- **Rollout and rollback:** a NetworkPolicy change applies live with no pod restart. Rollback means the previous chart values.
+    - **No inbound mail:** no SMTP port is opened for inbound traffic anywhere.
+    - **Egress allowed:**
+        - DNS;
+        - 443 to the internet, with `except` for the pod, service and VPC ranges (reuse `_BLOCKED_CIDRS` from `k8s_builds.py`);
+        - 993 and 995 to the internet, for Odoo's incoming mail servers;
+        - SMTP only to the in-cluster mail relay (P1.8).
+    - **Direct SMTP:** direct SMTP to the internet stays closed, so quotas cannot be bypassed. A per-tenant exception to one named host is staff-approved.
+    - **Inside the namespace:** only Odoo to PostgreSQL on 5432, plus the gateway, ACME and perf-collector paths.
+    - **Configurable:** ports and ranges come from operator values (`tenantEgress.*`).
+- **Where:** `compute/operator/internal/resources/networkpolicy.go`, `controller/network.go`, `compute/charts/odoo-operator/values.yaml`, `scripts/bootstrap/doks.sh`.
 - **Done when:**
-    - a tenant sends mail through an external SMTP server on 587;
-    - an incoming mail server on IMAP 993 fetches;
-    - `curl https://kubernetes.default` and a connection to another tenant's pod IP both fail;
+    - `curl https://kubernetes.default` from a tenant fails;
+    - SMTP to an internet host fails;
+    - SMTP to the relay works;
+    - IMAP 993 to an internet host works;
     - the UI walk-through passes.
 
 **P0.14 Safe cancel.**
-- **What:** deletion waits for the final backup to succeed. After a timeout it stops and alerts staff instead of deleting.
-- **Where:** `compute/operator/internal/controller/finalize.go:211`.
-- **Done when:** a cancel with the bucket unreachable keeps the namespace and raises an alert.
+- **What:** deletion waits for the final backup to succeed; after a timeout it stops and alerts staff.
+- **Where:** `controller/finalize.go:211`.
 
 **P0.15 Operator availability.**
-- **What:** 2 replicas with leader election. Fix the ServiceMonitor TLS setting.
-- **Where:** `compute/charts/odoo-operator/templates/deployment.yaml:45`, `values.yaml`.
-- **Done when:** deleting the leader pod hands over within 30 seconds with no reconcile lost.
+- **What:** 2 replicas with leader election (`templates/deployment.yaml:45`).
 
 **P0.16 Spread backup start times.** Launch blocker.
-- **Today:** `set_scheduled_backup` defaults to `0 2 * * *`, and `_sync_scheduled_backup` never passes a schedule (`kubernetes_driver.py:701`, `saas_instance.py:3787`). Every tenant's backup starts at 02:00, all competing for node disk, network and the bucket at once.
-- **Design:**
-    - A deterministic minute per tenant, `offset = crc32(subdomain) % 240`, with the schedule `M H * * *`, where `H = 1 + offset // 60` and `M = offset % 60`. That spreads backups across 01:00–04:59, and the same tenant always gets the same time.
-    - CronJob `timeZone: UTC` is set explicitly.
-    - A customer-chosen backup window can come later; the hash stays the default.
-- **Steps:** compute the schedule in `_sync_scheduled_backup` and pass it to `set_scheduled_backup`. `_cron_sync_scheduled_backups` re-patches every tenant, so existing tenants move within 30 minutes with no restart.
-- **Done when:** 20 test tenants show 20 different start minutes, and all of the next night's backups succeed.
+- **What:** a schedule from `offset = crc32(subdomain) % 240`, giving `M H * * *` across 01:00–04:59 UTC, passed from `_sync_scheduled_backup` to `set_scheduled_backup`. Existing tenants converge within 30 minutes.
+- **Done when:** 20 tenants show 20 different minutes.
 
 **P0.17 Backup tools for every PostgreSQL major.** Launch blocker.
-- **Today:**
-    - The backup-tool image installs only `postgresql-client-16` (`compute/tools/backup-tool/Dockerfile:27`), while the CRD allows 13–17. pg_dump 16 refuses a 17 server, so backups of a PostgreSQL 17 tenant fail.
-    - The control plane does not set `spec.database.version` today, so live tenants run the default 16 and the failure is latent. It becomes real with the Odoo 11–20 matrix (P1.7).
-    - On-demand dumps and downloads run `pg_dump` inside the Odoo container with the Odoo image's own client (`saas_instance_backup.py:73`, `exec_stream_out`). That client may not match the server either.
-- **Design:**
-    - The backup-tool image installs `postgresql-client-13` to `-17` from the PGDG repository its base image already carries.
-    - The scripts take `PG_MAJOR` from the operator, which sets it from `spec.database.version`, and use `/usr/lib/postgresql/$PG_MAJOR/bin`.
-    - The scripts check `server_version_num` first and stop with a clear message on a mismatch.
-    - On-demand dumps and restores run in the PostgreSQL container, whose tools always match its server, instead of the Odoo container.
-- **Where:** `compute/tools/backup-tool/Dockerfile`, `run-backup.sh`, `run-restore.sh`, `test_backup_restore.py`, `compute/operator/internal/resources/backup.go` and `restore.go` (env), `control-plane/saas_core/models/saas_instance_backup.py`, `kubernetes_driver.py` (container choice in `exec_stream_out`).
-- **Until it ships:** the control plane offers only majors the backup image supports.
-- **Done when:** the shell test matrix passes for 13–17, and on the test cluster a PostgreSQL 17 tenant backs up, downloads a dump and restores.
-
-**P0.18 Pricing floor at 60% gross margin.**
 - **What:**
-    - Price at least 2.5 × the package cost for 60% gross margin. The target at scale is 70% or more, which means at least 3.3 × cost.
-    - The cost comes from the formula in the architecture's cost section.
-    - Add-ons (HA, PITR, extra storage, awake staging, dedicated pools) follow the same floor.
-    - The margin cron alerts when any live plan or add-on falls below 60%.
-    - Margin never comes from cutting Production isolation, backups or security.
-- **Where:** `control-plane/saas_billing/models/saas_pricing.py` (cost floor), the margin cron in `saas_billing`, `control-plane/saas_core/models/saas_plan.py` (`_package()` cost inputs).
-- **Done when:** a plan priced below the floor cannot be published, and the margin report lists every plan with its cost and margin.
+    - the backup-tool image ships `postgresql-client-13` to `-17`, selected by `PG_MAJOR`, with a server-version check;
+    - on-demand dumps and restores run in the PostgreSQL container instead of the Odoo container;
+    - until this ships, the control plane offers only supported majors.
+- **Where:** `compute/tools/backup-tool/*`, `resources/backup.go`, `restore.go`, `saas_instance_backup.py:73`, `kubernetes_driver.py` (`exec_stream_out`).
+- **Done when:** the 13–17 test matrix passes, and a PostgreSQL 17 tenant backs up and restores.
+
+**P0.18 Pricing floor from the corrected cost model.** Needs A6.
+- **What:**
+    - implement the cost function from the architecture: the node price times the larger of the CPU and memory share, divided by packing, plus storage, backups, overhead and mail;
+    - prices are at least cost ÷ 0.40 (60% margin), with a target of cost ÷ 0.30 (70%) at scale;
+    - add-ons follow the same floor;
+    - the margin cron alerts below 60%;
+    - margin never comes from cutting isolation, backups or security.
+- **Where:** `control-plane/saas_billing/models/saas_pricing.py`, the margin cron in `saas_billing`, `saas_core/models/saas_plan.py` (`_package()`, plus a `_cost()` that uses it).
+- **Done when:**
+    - a plan below the floor cannot be published;
+    - the margin report shows cost lines that match the worked example within 10%.
+
+**P0.19 Tainted Build pool.** Launch blocker (security).
+- **What:** a DOKS pool `build` with min 0 and taint `saas.platform/pool=build:NoSchedule`. Build Jobs get the toleration and node affinity; nothing else tolerates it. This is needed because customer `pip install` runs with seccomp and AppArmor `Unconfined` (verified, `k8s_builds.py:288`).
+- **Also check:** BuildKit does not mount the client's `config.json` into `RUN` steps.
+- **Where:** `control-plane/saas_core/drivers/k8s_builds.py`, `setup/03b-DOKS-CLUSTER-SETUP.md`.
+- **Done when:**
+    - a build scales the pool from 0 and back;
+    - no tenant pod lands on it;
+    - a `RUN cat /home/user/.docker/config.json` test step finds nothing.
+
+**P0.20 Separate tenant domain.** Launch blocker. Needs A4.
+- **What:**
+    - register a new registrable domain for tenant apps, separate from the portal's;
+    - move base domains to it, with old hosts redirected for a transition period;
+    - submit it to the Public Suffix List's private section.
+- **Where:** `saas.based.domain` records, `scripts/bootstrap/*`, docs.
+- **Done when:**
+    - a cookie set by a tenant page for the parent domain is not sent to the portal (browser test);
+    - the PSL pull request is filed.
+
+**P0.21 Memory requests from measurement.** Needs A6.
+- **What:** set per-plan Odoo, cron and database requests from measured p95 working sets (Prometheus). Memory requests are roughly the p95 working set; CPU requests drop toward measured use. Existing tenants are resized by a rolling update.
+- **Where:** `saas_core/models/saas_plan.py` (`_package()`, `_REQUEST_RATIO`, per-worker settings).
+- **Done when:**
+    - no tenant's working set exceeds its memory request for more than 10% of a week;
+    - no evictions in that week.
+
+**P0.22 Vendor the CloudNativePG operator.** Needs A1.
+- **What:** vendor the chart in `compute/charts/vendor/cloudnative-pg` (repository rule) and install it in each cell. Nothing uses it until P1.9.
+- **Done when:** the operator runs in the test cluster and survives a node drain.
 
 ## P1 · Launch features
 
-Before launch. These are the Odoo.sh gaps that would lose deals.
-
-**P1.1 Custom domains for Production.**
-- **What the customer gets:** they connect their own domain, for example `erp.customer.com`, to their Production environment instead of the Veltnex default domain. Staging and dev keep the default domain.
+**P1.1 Custom domains for Production.** Needs A5.
 - **Flow:**
-    1. In the portal, the customer adds `erp.customer.com` to Production. Several domains are allowed (a cap such as 5 is assumed), and one is marked primary.
-    2. The portal shows the DNS record to create:
-        - for a subdomain: a CNAME to `<sub>.<base-domain>`;
-        - for an apex domain: an A record to the cell's load balancer IP, with a warning that the IP can change, so a `www` subdomain or the provider's CNAME flattening is better.
-    3. **Verification:** the platform checks that the name resolves to the cell's load balancer. It then fetches a one-time token over HTTP at `/.well-known/veltnex/<token>`, which the platform serves for that host until verified.
-    4. **Activation:**
-        - the control plane adds the host to the CR;
-        - the operator adds an Ingress rule and a Certificate for the host (HTTP-01, cert-manager);
-        - the state moves to Active.
-    5. **Primary domain:** the control plane sets `web.base.url` (and `web.base.url.freeze`) in the Production database, so links and emails use the customer's domain. The default domain keeps working; redirecting it to the primary is a per-project option.
-- **Safety:**
-    - A host is unique across all tenants (database constraint), so one customer cannot claim another's domain.
-    - DNS is re-checked daily. If the domain stops pointing to Veltnex for 7 days, the host is disabled and the customer is told, which prevents stale routing and takeover.
-    - Certificates for custom domains count against the customer's registered domain, not ours.
-- **Removal:** the host leaves the Ingress and its Certificate is deleted. If it was primary, `web.base.url` returns to the default domain.
+    1. The customer adds `erp.customer.com` in the portal (cap of 5 per environment, *assumed*).
+    2. The portal shows two records:
+        - a CNAME to the environment host (or an A record for an apex, with a warning);
+        - a TXT `_veltnex-challenge.erp.customer.com` with a random token bound to the customer and the environment.
+    3. **Verification:** the token proves ownership, and the CNAME or A record proves routing. Both are required. HTTP checks are not used as ownership proof.
+    4. **Issuance:** a separate ClusterIssuer with its own ACME account issues an HTTP-01 certificate for that host only, after both checks pass.
+    5. **Primary domain:** the control plane sets `web.base.url` and `web.base.url.freeze`.
+- **Ongoing:**
+    - the TXT record stays in place and is re-checked daily and before each renewal;
+    - if it is missing for 7 days, the host is disabled, its renewal stops and the customer is told.
+- **Release and reuse:**
+    - removing a domain, or cancelling, takes the host out of routing at once and keeps a release record;
+    - the same customer may re-add it with their token;
+    - any other customer needs a new token proven through TXT.
+- **Routing safety:**
+    - exact-host rules only, with a default 404;
+    - a host is unique platform-wide, through a database constraint plus an operator check before it writes an Ingress;
+    - a blocklist of platform and portal domains;
+    - no wildcard customer domains.
 - **Where:**
-    - new model `saas.instance.domain` in `control-plane/saas_core/models/` (host, state, primary, verification token, last check);
+    - new model `saas.instance.domain` (host, state, primary, token, last checks);
     - `kubernetes_driver.py`;
     - CRD `spec.domain.extraHosts` (`odooinstance_types.go:174`);
-    - operator `route.go`, `tls.go` and `networkpolicy.go` (the ACME path on 8089 already exists);
-    - `control-plane/saas_website/controllers/api.py` (add, verify, set primary, remove);
-    - `frontend/veltnex` (domain settings page, Arabic strings in `ar.json`).
-- **Rollout:** adding or removing a host updates the Ingress only; Odoo is not restarted.
+    - operator `route.go`, `tls.go`, `networkpolicy.go`;
+    - a ClusterIssuer in bootstrap;
+    - `saas_website/controllers/api.py`;
+    - `frontend/veltnex` (domain page, Arabic in `ar.json`).
 - **Done when:**
-    - a domain added in the UI serves Odoo with a valid certificate within 5 minutes;
-    - an HTTP poll on the default domain shows zero failed requests during add and remove;
-    - links in an emailed invitation use the primary domain;
-    - a second tenant cannot add a host that is already taken;
-    - a domain whose DNS is removed is disabled after the grace period.
+    - a verified domain serves TLS within 5 minutes;
+    - an HTTP poll on the default host has zero failures during add and remove;
+    - invitation emails use the primary domain;
+    - a second customer cannot claim a released domain without a new TXT token;
+    - a domain whose TXT is removed is disabled after 7 days.
 
 **P1.2 Git submodules.**
-- **What:** fetch submodules recursively, with the same credentials for the same host, and record each submodule's commit in the build. Deploy keys per submodule are out of scope.
-- **Where:** `control-plane/saas_core/templates/build/fetch.sh`, `inspect.py` (addons paths inside submodules), `control-plane/saas_core/models/saas_instance_build.py`.
-- **Done when:** a repository with an OCA submodule builds, and its modules install on staging.
+- **What:** recursive fetch with the same host's credentials; record each submodule's commit.
+- **Where:** `saas_core/templates/build/fetch.sh`, `inspect.py`, `models/saas_instance_build.py`.
+- **Done when:** a repository with an OCA submodule builds and installs on staging.
 
-**P1.3 Mail catcher.**
-- **What:** one Mailpit per cell in the Shared pool. Neutralization points staging and dev outgoing mail at it instead of only disabling mail. The customer reads their environment's mail from the portal, filtered by environment.
-- **Where:** `control-plane/saas_core/models/saas_instance.py` (`_NEUTRALIZE_SQL` near line 3449), a vendored Mailpit chart in `compute/charts/vendor/`, `frontend/veltnex` (mail tab).
-- **Done when:** a password-reset mail sent from staging appears in that environment's mail tab and never leaves the cluster.
+**P1.3 Mailpit.**
+- **What:** one Mailpit per cell. It runs on the Standard pool until P2, then on the Shared pool. Neutralization points staging and dev mail at it. The portal shows each environment's mail.
+- **Where:** `_NEUTRALIZE_SQL` (`saas_instance.py:3449`), `compute/charts/vendor/mailpit`, `frontend/veltnex`.
+- **Done when:** a staging password-reset mail appears in that environment's tab and never reaches the relay.
 
-**P1.4 Customer bucket and scoped key at provisioning.** Appendix B, "Storage design".
-- **What:** at first provisioning of a customer, take a bucket from the pool and create a key granted only on it. Store both encrypted. Nothing uses them yet except the restic repository password scheme in P1.5.
-- **Where:** new `control-plane/saas_core/models/saas_storage_bucket.py`, `saas_instance.py` (deploy path), DigitalOcean API client.
-- **Done when:** a new customer gets a bucket and key, and a second customer's key cannot list the first bucket.
-
-**P1.5 restic backups, integrity checks and an off-site copy.** Appendix A, Workstreams B and C, Phases 2–4.
+**P1.4 Production and non-production buckets.** Needs A2 and A8.
 - **What:**
-    - backup-tool 0.2.0 with restic;
-    - `spec.backup.engine`;
-    - retention 7 daily + 4 weekly + 6 monthly;
-    - daily `restic check`, rotating data reads and a monthly drill;
-    - a staff report, with alerts to Teams.
+    - at first provisioning, a customer gets two buckets from the pool, plus two keys (`POST /v2/spaces/keys`, `readwrite` on one bucket each), stored encrypted;
+    - the Production key goes only to Production namespaces, and the non-production key only to staging and dev;
+    - Production-to-staging file copies are a server-side copy by a platform Job in a platform namespace, using a platform key;
+    - dev copies include attachments only on request (A8);
+    - ask DigitalOcean support for higher bucket and key limits before launch (100 buckets and 200 keys per account, verified).
+- **Where:** new `saas_core/models/saas_storage_bucket.py`, `saas_instance.py` (deploy and copy paths).
+- **Done when:**
+    - a staging pod's key cannot list the Production bucket;
+    - a copied staging environment opens its attachments.
 
-  Added here: a nightly copy of each Production repository to a second-region bucket.
-- **Where:** as listed in Appendix A, plus a copy Job in `compute/operator/internal/resources/backup.go`.
-- **Done when:** all Appendix A acceptance checks pass, and a test restore from the second-region copy works.
+**P1.5 restic backups, consistency and an off-site copy.** Appendix A, Workstreams B and C.
+- **What:** everything in Appendix A, plus:
+    - **Snapshot-consistent file list:** in one transaction, export the snapshot and list `ir_attachment.store_fname`; run `pg_dump --snapshot`; copy exactly the listed files. Garbage collection is paused for the backup window while files are on volumes.
+    - **Manifest v2:** databases, PostgreSQL major, Odoo version, image digest, build id and commit, module fingerprint, plan, and referenced and missing file counts.
+    - **Dumps for deduplication:** uncompressed `pg_dump -Fc -Z0` piped to `restic backup --stdin`.
+    - **Second region:** a nightly copy of Production repositories.
+    - **Restore modes:** "exact image" or "current code" (the update gate runs after loading).
+    - **Post-restore check:** health, login, and zero missing referenced files.
+- **Done when:**
+    - Appendix A's checks pass;
+    - missing files in a manifest are 0 on 20 test tenants;
+    - deduplication over 7 days is at most 1.3× one full backup (*assumption* tested here);
+    - a second-region restore works.
 
 **P1.6 Previous-container logs.**
-- **What:** the log viewer can show the previous container's log after a crash or restart, plus a download of the last 24 hours that the kubelet still holds.
-- **Where:** `control-plane/saas_core/controllers/container_logs.py`, `kubernetes_driver.py` (`open_log_stream`, add `previous`), `frontend/veltnex`.
-- **Done when:** after a forced crash, the customer sees the crash trace in the portal.
+- **What:** the portal shows the previous container's log after a crash.
+- **Where:** `controllers/container_logs.py`, `kubernetes_driver.py`.
 
-**P1.7 Odoo 11–20 support matrix.** Decided on 2026-10-11: versions 11 to 20 are sold.
+**P1.7 Odoo 11–20 support matrix.**
 - **What:**
-    - **Matrix:** a support matrix of Odoo version, image, Python and PostgreSQL major. Map versions onto as few PostgreSQL majors as possible, because each major means another shared non-production cluster per cell (P2.2). Odoo 11–12 must be tested on PostgreSQL 13, the CRD minimum, before they are offered. If they fail there, they run on a dedicated database only.
-    - **Chart:** `supportedOdooVersions` covers 11.0–20.0.
-    - **Filestore adapters:** all four generations of Appendix B, built in this order: 17–19, then 16 and 20, then 14–15, then 11–13.
-    - **Portal notice:** versions Odoo no longer patches carry a notice and an upgrade offer.
-- **Where:** `compute/charts/odoo-operator/values.yaml`, `control-plane/saas_core/models/saas_odoo_version.py` (PostgreSQL major per version), `kubernetes_driver.py` (set `spec.database.version` from it), `setup/04-IMAGES-AND-REGISTRY.md`.
-- **Done when:** one tenant per version from 11 to 20 deploys, builds a custom addon, backs up and restores on the test cluster.
+    - a matrix of Odoo version, image, Python and PostgreSQL major, using as few majors as possible;
+    - test Odoo 11–12 on PostgreSQL 13. If that fails, they use the Managed StatefulSet with PostgreSQL 12 as a legacy engine;
+    - `supportedOdooVersions` covers 11.0–20.0;
+    - a portal notice on versions Odoo no longer patches.
+- **Where:** `compute/charts/odoo-operator/values.yaml`, `saas_core/models/saas_odoo_version.py`, `kubernetes_driver.py`.
+- **Done when:** one tenant per version deploys, builds an addon, backs up and restores.
+
+**P1.8 Mail relay to AWS SES.** Needs A7.
+- **What:**
+    - **The relay:**
+        - a 2-replica SMTP relay in namespace `veltnex-mail`, reachable only from tenant namespaces;
+        - it holds the only SES credential and sends to SES over HTTPS (443), so it needs no SMTP egress;
+        - no AWS credential exists in any tenant namespace.
+    - **Per-environment credentials:**
+        - each Production environment gets relay credentials that are platform-issued, encrypted and revocable;
+        - they are written into its database as the outgoing mail server;
+        - staging and dev have none (Mailpit).
+    - **Relay checks:**
+        - `From` must be a verified domain of that customer (SES DKIM records shown in the portal) or the platform mail subdomain;
+        - rate limits per minute and recipient caps;
+        - message size caps;
+        - an SES message tag with the tenant id;
+        - a global limiter under the SES account's rate.
+    - **Quotas:**
+        - daily and monthly quota per plan, enforced by the control plane from SES send events by disabling the relay credential;
+        - new customers start low and rise with clean history.
+    - **Abuse:** SES bounce and complaint events, through SNS to the control plane, pause the customer above set rates (*assumed* 5% and 0.1%), with a staff alert.
+    - **Prerequisites:** SES out of the sandbox; region chosen (*assumed* eu-central-1).
+- **Where:**
+    - new relay image in `compute/tools/mail-relay` (or a vendored chart, if an off-the-shelf relay meets the checks);
+    - `saas_core` models for mail identities, quotas and events;
+    - a control-plane webhook for SNS;
+    - `_NEUTRALIZE_SQL`;
+    - `frontend/veltnex`;
+    - P0.13 egress.
+- **Done when:**
+    - a Production tenant sends through the relay;
+    - a forged `From` is refused;
+    - a tenant over quota is paused within 15 minutes;
+    - a simulated complaint spike pauses the tenant;
+    - no tenant namespace contains an AWS credential;
+    - relay throughput meets the SES account rate (*assumption* tested here).
+
+**P1.9 CloudNativePG for new Production, with non-superuser roles.** Needs A1.
+- **What:**
+    - new Production environments get a dedicated CloudNativePG cluster with 1 instance;
+    - Odoo connects as the database owner without superuser; `CREATEDB` is allowed only on dedicated clusters;
+    - the SQL console runs as that role;
+    - existing Managed tenants move by dump and restore at a customer-chosen time.
+- **Where:** CRD `spec.database.mode`, `controller/database.go`, `resources/cnpg.go`, `kubernetes_driver.py`, `saas_instance.py` (`hosting_sql_query`).
+- **Done when:**
+    - a new Production environment passes the UI walk-through;
+    - `COPY … TO PROGRAM` from the SQL console is refused;
+    - a migrated tenant has zero data difference.
+
+**P1.10 Shell hardening.**
+- **What:**
+    - the shell container gets the code and a read-only filestore, with no sessions and no data-dir `addons/`;
+    - the Odoo container mounts the data-dir `addons/` read-only;
+    - shell requires the full-developer IAM role and 2FA (P0.9).
+- **Where:** `resources/deployment.go:225`, `saas_iam/roles.py`.
+- **Done when:** a shell user cannot write `/var/lib/odoo/sessions` or `/var/lib/odoo/addons`.
 
 ### Gate A · Launch
 
-- [ ] All P0 and P1 items done.
-- [ ] Restore drill passed for a Production tenant and for the platform database.
-- [ ] Full UI walk-through as a new customer passes, including a custom domain, a staging copy with mail caught, a build with a submodule, and a restore.
+- [ ] Decisions A1–A10 approved, and P0 and P1 done.
+- [ ] Restore drill passed for a Production tenant and the platform database.
+- [ ] Full UI walk-through as a new customer, including:
+    - a custom domain with TXT proof;
+    - a staging copy with mail caught;
+    - Production mail through the relay;
+    - a build with a submodule;
+    - a restore.
 
 ## P2 · Cost engine
 
-For the first 100 environments. These cut the cost of non-production.
-
-**P2.1 Sleep and wake for non-production.** Appendix D, "Sleep when idle".
-- **What:**
-    - **Idle windows (decided 2026-10-11):** Production never sleeps; Development sleeps after 1 idle hour, Staging after 2, Trials after 1.
-    - **Idle detection:** no requests within the window, read from Traefik's per-service request counter in Prometheus with one query per cluster.
-    - **Sleep:** scale Odoo to 0, keeping the database and volumes.
-    - **Wake:** a small activator in `odoo-system` serves a "Waking up your server…" page for sleeping hosts (Traefik fallback route), patches the CR, and redirects once ready. Wakes are rate-limited per cell.
-    - **Opt-out:** "Always awake" is a per-environment option, billed.
-- **Where:**
-    - CRD (`spec.sleep` or a reuse of `suspended` with a reason; add a `Sleeping` phase);
-    - `compute/operator/internal/controller/suspension.go`;
-    - a new activator in `compute/operator/cmd/` (same binary, separate Deployment);
-    - `route.go`;
-    - `control-plane/saas_core/models/saas_instance.py` (idle cron);
-    - `saas_billing` (awake option);
-    - `frontend/veltnex` (status "Sleeping").
+**P2.1 Sleep and wake.**
+- **Windows (decided):** Production never sleeps; dev after 1 idle hour, staging after 2, trials after 1.
+- **Idle detection:** from Traefik's per-service request counter, with one Prometheus query per cluster.
+- **Wake:** an activator in `odoo-system` (the operator binary, separate Deployment) serves "Waking up your server…", patches the CR and redirects when ready. Wakes are rate-limited per cell.
+- **Awake option:** a billed "always awake" option.
+- **Where:** CRD (a `Sleeping` phase), `controller/suspension.go`, `compute/operator/cmd/`, `route.go`, `saas_instance.py`, `saas_billing`, `frontend/veltnex`.
 - **Done when:**
-    - a dev environment sleeps after the idle window;
-    - the first visit wakes it in under 30 seconds;
-    - Production never sleeps (test);
-    - the cost report shows the drop.
+    - windows are respected per class;
+    - a wake takes under 30 s;
+    - Production never sleeps (test).
 
-**P2.2 Shared CloudNativePG cluster for non-production.** Appendix D, "Development and Staging".
+**P2.2 Shared CloudNativePG for non-production.** Needs A1 and A9.
 - **What:**
-    - Vendor the CloudNativePG chart in `compute/charts/vendor/`.
-    - Run one cluster per PostgreSQL major per cell: 2 instances, PgBouncer in session mode, WAL archiving to Spaces.
-    - Each environment gets a database and a login named by server id, with `REVOKE CONNECT … FROM PUBLIC` and per-login limits on connections, `statement_timeout`, `idle_in_transaction_session_timeout`, `work_mem` and `temp_file_limit`.
-    - The Production copy streams `pg_dump` into it, then neutralizes and masks PII as today.
-- **Where:**
-    - CRD `spec.database.mode` (add `Shared` with a cluster reference);
-    - `compute/operator/internal/controller/database.go`;
-    - `resources/cnpg.go`;
-    - `control-plane/saas_core/models/saas_instance.py` (`_create_env_child`, `_do_copy_dbs`, `hosting_sql_query` scoped to its own login);
-    - `saas_plan.py` (`_package()` without a database pod for shared environments).
+    - **Cluster:** one cluster per PostgreSQL major per cell, with 2 instances on the Shared pool, WAL archiving to the backup bucket and **no PgBouncer**.
+    - **Login per environment:** each environment gets a database and a login that is not superuser and has no `CREATEDB`, with:
+        - `REVOKE CONNECT … FROM PUBLIC`;
+        - a `CONNECTION LIMIT` matching Odoo's `db_maxconn` × workers;
+        - `statement_timeout`, `idle_in_transaction_session_timeout`, `work_mem` and `temp_file_limit`.
+    - **Database operations:** create, duplicate and drop run through the control plane, never through Odoo's database manager.
+    - **Production copy:** streams `pg_dump` into it, then neutralizes and masks.
+- **Where:** CRD (`Shared` mode), `controller/database.go`, `resources/cnpg.go`, `saas_instance.py` (`_create_env_child`, `_do_copy_dbs`, `hosting_sql_query`), `saas_plan.py`.
 - **Done when:**
-    - a new staging environment is ready in under 2 minutes with a neutralized copy;
-    - one environment running a heavy query cannot push others past their timeouts (load test);
-    - failover of the shared primary keeps dev environments working.
+    - a staging environment is ready in under 2 minutes;
+    - a heavy query cannot push others past their timeouts;
+    - a primary failover keeps dev environments working;
+    - a tenant cannot list or connect to another tenant's database.
 
 **P2.3 Archive long-idle dev environments.**
-- **What:** after M idle days (open question 4), dump the database and files to the customer's archive prefix and drop them from the shared cluster. Restore on demand from the portal in about a minute.
-- **Where:** `control-plane/saas_core/models/saas_instance.py` (new state or flag `archived`), `saas_instance_backup.py`, `frontend/veltnex`.
-- **Done when:** an archived environment restores with its data intact, and its database no longer appears on the shared cluster.
+- **What:** after the archive window (open question; *assumed* 14 days), dump the environment to the non-production bucket's archive prefix and drop it. Restore it on demand.
 
 **P2.4 Control-plane scaling.**
 - **What:**
-    - Cache one Kubernetes client per cluster per worker.
-    - `_cron_reconcile` lists OdooInstances and pods once per cluster.
-    - Health reads readiness and 5xx rate from Prometheus.
-    - `_cron_verify_webhooks` and `_cron_sync_scheduled_backups` run on change, or in daily batches.
-    - Stop, suspend, cancel and env activation move from `run_in_background` to the `saas.job` queue.
-- **Where:** `control-plane/saas_core/models/saas_instance.py` (`_compute_driver` near line 1591, `_cron_reconcile` near 5769, `_cron_verify_webhooks` near 4307), `saas_instance_health.py:166`, `saas_instance_backup.py:1057`, `saas_job.py`.
-- **Done when:** with 500 simulated instances on the test cluster (CRs with suspended workloads), every cron cycle finishes within its interval, and no call is made per tenant.
+    - cache API clients;
+    - one list per cluster per cycle;
+    - health from Prometheus;
+    - webhook and backup-sync loops on change;
+    - stop, suspend, cancel and env activation through `saas.job`.
+- **Where:** `saas_instance.py` (around lines 1591, 4307, 5769), `saas_instance_health.py:166`, `saas_instance_backup.py:1057`, `saas_job.py`.
+- **Done when:** with 500 simulated instances, every cycle finishes within its interval.
 
-**P2.5 Four node pools.** Appendix C, section 3 (extended).
-- **What:**
-    - Pools Standard, Large, Shared and Build, labelled `saas.platform/pool`.
-    - Shared and Build are tainted.
-    - The operator sets node affinity and tolerations from the environment class.
-    - Build Jobs tolerate only the Build pool, which has min 0.
-    - Pool ceilings are set by hand (decided).
-- **Where:** `compute/operator/internal/resources/deployment.go`, `database.go`, `control-plane/saas_core/drivers/k8s_builds.py`, `setup/03b-DOKS-CLUSTER-SETUP.md`.
-- **Done when:** a dev environment never lands on a Standard node, a build scales the Build pool from 0 and back, and Production rollouts still have headroom.
+**P2.5 Shared pool.**
+- **What:** a DOKS pool `shared` tainted `saas.platform/pool=shared:NoSchedule`. Non-production Odoo pods, shared clusters and Mailpit tolerate it; Production never does.
+- **Where:** `resources/deployment.go`, `resources/cnpg.go`.
+- **Done when:** a dev environment never lands on the Standard pool, and Production never lands on the Shared pool.
 
 **P2.6 Build cache.**
-- **What:** a BuildKit layer cache in the registry, keyed on the Odoo base image and the merged `requirements.txt`. Keep `--no-cache` as a "clean build" button.
-- **Where:** `control-plane/saas_core/templates/build/build.sh`, `Dockerfile.jinja`, `k8s_builds.py`.
-- **Done when:** a second build with an unchanged `requirements.txt` takes less than half the first build's time.
+- **What:** a BuildKit registry cache keyed on the base image and the merged `requirements.txt`, plus a "clean build" button.
+- **Done when:** an unchanged-requirements rebuild takes at most half the time.
+
+**P2.7 Performance insights and Advisor (shared service).** Needs A10.
+- **One service:** one shared Veltnex service, with no monitoring stack per tenant.
+- **Collection:**
+    - a CronJob per cell every 15 minutes, with a `pg_monitor` role held only in the platform namespace;
+    - it reads `pg_stat_statements` deltas (the top 10 by total time plus anything over thresholds) and table scan statistics;
+    - lock waits and deadlocks come from a custom query in the CloudNativePG exporter (Prometheus, 30 s);
+    - latency comes from Traefik histograms that already exist;
+    - generic plans come on demand with `EXPLAIN (GENERIC_PLAN)` on PostgreSQL 16+.
+- **Storage:** `saas.perf.finding` (one row per environment and fingerprint) and `saas.perf.sample` (hourly; 14 days, or 90 for the paid tier) in the control-plane database.
+- **Advisor:** each finding states:
+    - the problem (query, tables, model, module and class);
+    - its frequency;
+    - its real impact (share of database time, pressure at the time, p95 latency): "affecting users", "using capacity" or "minor";
+    - the likely causes (rules per class);
+    - concrete next steps;
+    - whether it got better after the customer's change (before and after comparison around a build id or "I changed something").
+- **Notification levels (recommendations live on the dashboard only, never by email):**
+    - **Level 1, recurring slow query:** dashboard only, grouped by fingerprint.
+    - **Level 2, high cumulative consumption:** dashboard with an in-portal badge and the impact explained.
+    - **Level 3, sustained degradation** in latency, pressure or lock waits: a portal banner, plus one short email when it is affecting users. The email links to the dashboard and carries no recommendations.
+- **Anti-fatigue:** one open finding per fingerprint; highlight again only if 50% worse or after 7 days; auto-resolve after 24 hours below threshold; at most 1 Level 3 email per environment every 6 hours; acknowledge or snooze.
+- **Thresholds:** adjustable defaults per database size class and workload profile (Standard, Reporting-heavy, Batch and imports with declared windows), with per-environment overrides in the portal. Defaults are tuned from the first months of data.
+- **Dashboard card:** the approved "Veltnex Performance Alert" layout (architecture). The Level 3 email reuses its header only, sent through the mail relay.
+- **Database settings:**
+    - `pg_stat_statements`, `track_io_timing`, and `log_lock_waits` with `deadlock_timeout` at 1 s;
+    - new environments get them at creation;
+    - existing ones at a customer-chosen maintenance window.
+- **Where:** a new collector Job in `compute/tools/perf-collector`; `saas_core` models, rules and crons; `saas_website` API; `frontend/veltnex` "Performance" page and finding cards; one short Level 3 email template (English and Arabic).
+- **Done when:**
+    - on the test cluster, an injected N+1 loop in a test addon produces a Level 2 dashboard finding naming the module;
+    - a missing-index query produces a Level 1 finding with an index suggestion that, once applied, is marked Improved;
+    - a lock held for 60 s while latency is above budget produces a Level 3 banner and exactly one email;
+    - collector overhead stays under 2% of database CPU (*assumption* tested here).
 
 ### Gate B · Growth
 
-- [ ] Measured idle saving per non-production environment, compared with the estimate in the architecture.
-- [ ] The shared cluster has run 30 days with no Production impact and no customer-visible incident.
-- [ ] The measurements listed in the architecture's cost section are being collected.
+- [ ] Measured idle saving per non-production environment compared with the model.
+- [ ] Shared clusters ran 30 days with no Production impact.
+- [ ] Cost model inputs collected from Prometheus for every plan.
 
 ## P3 · Stateless Odoo
 
-Growth. These remove node pinning.
-
-**P3.1 Spaces filestore.** Appendix B in full (its Phases 1–4).
-- **What:** the server-wide module, delivered through the operator's platform addons, using the customer bucket and key from P1.4. New tenants only (decided). Downloads stream through Odoo.
-- **Where:** as listed in Appendix B, with `compute/operator/internal/resources/platformaddons/` as the delivery path.
-- **Done when:** all Appendix B acceptance checks pass.
-
-**P3.2 Sessions in PostgreSQL.**
-- **What:** the same module stores sessions in the tenant database, with a cleanup cron.
-- **Where:** `platformaddons/saas_object_storage` (or a sibling module).
-- **Done when:** a logged-in user stays logged in across a pod replacement on another node.
-
-**P3.3 Production database tuning presets.** Appendix D, "Production" items 1–2.
+**P3.1 Spaces filestore.** Appendix B, with the changes above. Needs A2.
 - **What:**
-    - `shared_buffers`, `effective_cache_size`, `work_mem` and `max_connections` derived from the package;
-    - `pg_stat_statements` on;
-    - autovacuum tuned for Odoo's large tables.
-- **Where:** `compute/operator/internal/resources/database.go` (tuning from memory limit already exists; extend it), `saas_plan.py` (`_package()`).
-- **Done when:** the presets apply with an in-place restart, and the slow query view in the portal reads from `pg_stat_statements`.
+    - the server-wide module through platform addons;
+    - assets and files under 64 KiB kept in the database (*assumed* threshold);
+    - a read-through `emptyDir` cache of 1–2 GiB;
+    - a retry with backoff for a 404 within 5 s of a write (*assumption*: read-after-write is not documented by DigitalOcean);
+    - garbage collection moves files to `trash/` with a 14-day lifecycle;
+    - a monthly bucket-against-database reconcile.
+- **Done when:**
+    - Appendix B's checks pass;
+    - a write-then-read test over 10,000 objects shows no stale reads after the retry;
+    - an hour-long simulated Spaces outage causes no pod restarts.
+
+**P3.2 Sessions in a per-environment PostgreSQL database.** Needs A3.
+- **What:** a session store adapter per Odoo generation (werkzeug store for 11–14, vendored store from 15 — *assumption* to confirm in a spike), in a `<env>_sessions` database hidden by `dbfilter`, with a cleanup cron.
+- **Done when:** a user stays logged in across a pod replacement on another node, for each generation.
+
+**P3.3 Production database tuning presets.** Needs A1.
+- **What:** CloudNativePG parameters from the package (`shared_buffers`, `effective_cache_size`, `work_mem`, `max_connections`, autovacuum for Odoo's large tables), plus the P2.7 settings.
 
 **P3.4 Odoo without a volume.**
-- **What:** for tenants on the Spaces filestore:
-    - drop the filestore PVC from the Odoo pod;
-    - remove the required pod affinity to the volume node;
-    - run backup Jobs in a platform namespace that reaches the tenant database through its Service, so tenant namespaces hold no platform key.
-- **Where:** `compute/operator/internal/resources/deployment.go:282`, `pvc.go`, `backup.go`, `networkpolicy.go`.
-- **Done when:** draining the Odoo pod's node causes zero failed requests in an HTTP poll, and the tenant namespace has no backup Secret.
+- **What:**
+    - no filestore PVC in the Odoo pod;
+    - no pod affinity to the volume's node;
+    - backup Jobs run in a platform namespace and reach the tenant database through its Service, so no platform key is in tenant namespaces.
+- **Where:** `resources/deployment.go:282`, `pvc.go`, `backup.go`, `networkpolicy.go`.
+- **Done when:**
+    - a node drain gives zero failed requests;
+    - the tenant namespace holds no backup Secret.
 
-**P3.5 Customer moves between pools.** Appendix C, section 4 (its Phase 3).
-- **Done when:** the Appendix C Phase 3 acceptance checks pass.
+**P3.5 Moves between pools.** Appendix C, its Phase 3.
 
 **P3.6 Limited simultaneous updates.** Appendix C, its Phase 4.
-- **Done when:** the Appendix C Phase 4 acceptance checks pass.
+
+**P3.7 Multi-replica validation.**
+- **What:** with 2 Odoo replicas on a test tenant, check that:
+    - the bus delivers across replicas (`LISTEN/NOTIFY`);
+    - crons never run twice (`FOR UPDATE SKIP LOCKED`);
+    - websocket and long-polling work through any replica.
+
+  This is re-verified per Odoo generation.
+- **Done when:** all three checks pass for 11, 14, 16, 18 and 20.
 
 ### Gate C · Premium demand
 
-- [ ] At least one paying customer asks for HA or PITR, or a sales decision to offer them at a price.
+- [ ] At least one paying customer asks for HA or PITR, or the business decides to offer them.
 
 ## P4 · Premium and scale
 
-On demand.
-
-**P4.1 HA add-on.**
+**P4.1 HA add-on.** Needs A1.
 - **What:**
-    - CloudNativePG mode with 2 instances on different nodes for the tenant database;
-    - Odoo with 2 replicas;
-    - a PodDisruptionBudget of 1;
-    - pod anti-affinity.
+    - the tenant's CloudNativePG cluster goes to 2 instances;
+    - Odoo runs 2 replicas with anti-affinity and a PodDisruptionBudget of 1;
+    - the tenant's pool needs at least 2 nodes;
+    - lift `replicas: 1` only for HA tenants (CEL rule near `odooinstance_types.go:447`);
+    - the price follows the floor.
+- **Done when:** killing the primary database and one Odoo pod fails no request beyond the failover window.
 
-  Lift the `replicas: 1` rule only for HA tenants.
-- **Where:** `compute/operator/api/v1alpha1/odooinstance_types.go` (CEL rule near line 447), `controller/workload.go`, `resources/cnpg.go`, `control-plane/saas_core/models/saas_plan.py` (`_package()`), `saas_billing` (add-on price).
-- **Done when:** killing the primary database node and one Odoo pod produces no failed request in an HTTP poll beyond the failover window.
+**P4.2 PITR setting.** Needs A1.
+- **What:**
+    - WAL archiving and base backups to the backup bucket, 7 days;
+    - "restore to time" creates a new environment;
+    - files come back from `trash/` when needed.
+- **Done when:** data before the chosen minute exists and data after it does not, and every file referenced at that minute opens.
 
-**P4.2 PITR add-on.**
-- **What:** CloudNativePG WAL archiving to the customer's bucket, with 7 days of recovery, and a "restore to time" action that creates a new environment.
-- **Where:** `resources/cnpg.go` (backup and WAL config), `control-plane/saas_core/models/saas_instance_backup.py`, `frontend/veltnex`.
-- **Done when:** a restore to a chosen minute shows data written before that minute and not after.
-
-**P4.3 Dedicated pools.**
-- **What:** a tainted pool per dedicated customer, with node cost plus margin and a minimum term.
-- **Where:** `saas_server.py` (pool records), the operator's tolerations from P2.5, and `saas_billing`.
+**P4.3 Large and dedicated pools.**
+- **What:** tainted pools on demand, at node cost plus margin, with a minimum term.
 
 **P4.4 Tests per commit and stored logs.**
-- **What:**
-    - **Tests:** optional test runs on dev branches, using a fresh database with demo data in the shared cluster, results shown on the build.
-    - **Logs:** stored logs on Spaces with 7-day retention.
 
 **P4.5 Second cell or region.**
-- **What:** bootstrap a new DOKS cluster and register it as a `saas.server`. Allocation already picks clusters per region.
-- **Where:** `scripts/bootstrap/doks.sh`, `register_cluster.py`.
-- **Done when:** a new customer in the new region is provisioned end to end with no change to existing customers.
+- **What:** bootstrap a cluster and register it as a `saas.server`.
 
 **P4.6 Control plane on two application servers.**
-- **What:** two Odoo application servers and one `saas-jobs` worker in front of the platform database (a managed PostgreSQL becomes worth it at this point), with sticky sessions at the proxy.
-- **Where:** `setup/02-SAAS-SERVER-SETUP.md`, `scripts/deploy/saas-deploy.sh`.
+- **What:** two application servers in front of the platform database; a managed PostgreSQL becomes worth it at this point.
+
+**P4.7 Performance insights paid tier.** Needs A10.
+- **What:** 90-day history, plan and index-hint views, and trend reports.
 
 ## Open questions
 
-See [ARCHITECTURE-TARGET.md](ARCHITECTURE-TARGET.md#open-questions-and-assumptions). These block specific items:
+The approvals are A1–A10 in [ARCHITECTURE-TARGET.md](ARCHITECTURE-TARGET.md#decisions-awaiting-your-approval). These remain:
 
 | Question | Blocks |
 | --- | --- |
 | Archive window | P2.3 |
 | Whether trials share the cluster | P2.2 |
 | Second region for backup copies | P1.5 |
-| Where the space for the safe two-copy restore comes from (Appendix A, open question 3) | P0.4, safe swap on full disks |
+| New tenant domain name | P0.20, P0.7 |
+| Where the space for the safe two-copy restore comes from (Appendix A, open question 3) | P0.4 safe swap on full disks |
+| SES region and sandbox exit | P1.8 |
 
 ---
 

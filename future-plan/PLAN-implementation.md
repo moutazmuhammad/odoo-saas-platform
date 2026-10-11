@@ -57,7 +57,7 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
 | A18 Provisioning modules: OpenTofu | P2.11 |
 | A19 Region, provider and pricing model | P1.22 (deferred), P0.18 |
 | A20 Enterprise source model and legal gate (pending legal) | P1.23 |
-| A21 BYOS on a Docker Compose driver with the mTLS agent, behind one interface | P1.36, P1.32, P1.37, P1.38 |
+| A21 BYOS on a Docker Compose driver behind one interface; SSH with a per-server root key (owner), fresh-server rules | P1.36, P1.32, P1.37, P1.38 |
 | A22 Pricing: managed by resources, BYOS by subscription, Enterprise licence separate; marketing (no backups on Free; no annual discount on subscriptions) | P1.33, P1.34, P1.35 |
 
 ## Launch scope (revision 3)
@@ -101,7 +101,7 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
     - P1.29 on-call, status page and control-plane observability;
     - P1.30 automated end-to-end walk-through.
 - **Honesty and pricing:** P0.23 uptime target; P0.18 cost model (the internal cost floor behind A22); P1.31 usage metering; P1.33 freemium pricing; P1.34 marketing site.
-- **Two hosting types under one control plane:** P1.36 one infrastructure interface; P1.32 BYOS on the `DockerComposeDriver` with the Veltnex agent, home of the Free plan; P1.37 capability matrix; P1.38 conformance test across runtimes.
+- **Two hosting types under one control plane:** P1.36 one infrastructure interface; P1.32 BYOS on the `DockerComposeDriver` over SSH with a per-server key, home of the Free plan; P1.37 capability matrix; P1.38 conformance test across runtimes.
 - **Parity features:**
     - P1.1 custom domains (A5 procedure);
     - P1.2 submodules;
@@ -861,9 +861,9 @@ Before launch. "Launch blocker" marks a finding from the review.
     1. **Command:** `curl -sfL https://<portal>/byos/install.sh | sudo VELTNEX_TOKEN=… bash`, with a one-time token valid 30 minutes.
     2. **Preflight:** OS, resources and ports, refusing before any change.
     3. **Registration:** progress milestones, and safe re-runs.
-    4. **System setup:** apt-lock wait, swap, inotify limits, unattended security upgrades, UFW with 80 and 443 inbound only, and SSH left untouched.
-    5. **Agent:** it installs the **Veltnex agent**, which gets a per-server client certificate from the control plane's CA and connects outbound over mTLS.
-    6. **Runtime:** the agent installs Docker and Traefik through its signed operations.
+    4. **System setup:** apt-lock wait, swap, inotify limits, unattended security upgrades, and a UFW reset to SSH, 80 and 443, with CSF disabled. This is allowed because the server is fresh and dedicated.
+    5. **Access:** it installs the per-server platform key in `root` with the `from=` restriction, after the fresh-server preflight and the customer's confirmation.
+    6. **Runtime:** it installs Docker CE, Traefik, Netdata (tuned) and fail2ban.
 - **The install script is written by Veltnex (clean-room), not copied from oec.sh.** The owner shared oec.sh's Quick Connect script as a reference. It has no published licence and is served by their API, so their code is not reused, even modified. Only the techniques are.
     - **Techniques kept:**
         - root and OS preflight with support tiers (Ubuntu LTS and Debian stable first), failing before any change;
@@ -877,21 +877,37 @@ Before launch. "Launch blocker" marks a finding from the review.
         - Docker CE from Docker's signed repository, with `daemon.json` log rotation;
         - a repair step for a broken CA bundle;
         - recording the SSH port before touching the firewall.
+    - **Kept from oec.sh's approach, by owner decision (2026-10-11), because the customer provides a fresh, empty server dedicated to Veltnex:**
+        - **`ufw --force reset`,** then only SSH (on its detected port), 80 and 443 are allowed;
+        - **CSF and other firewalls are disabled** when present;
+        - **a platform SSH key in `root`** (push-mode management, like oec.sh and the old `SshDockerDriver`);
+        - **Netdata** for server monitoring, privileged.
+    - **Safeguards that make those acceptable:**
+        - **Fresh-server preflight:** the script refuses to continue if the server is not empty: running containers, a service already on 80 or 443, a web or database server installed, or an earlier non-Veltnex setup. It shows that the firewall will be reset and CSF disabled, and needs the customer's explicit confirmation flag.
+        - **Root key, mitigated:**
+            - **one key pair per server** (ed25519), never one platform-wide key;
+            - private keys encrypted in the control plane (fail-closed secrets, P0.8);
+            - `from="<control-plane egress IPs>"` in `authorized_keys`;
+            - UFW allows SSH as before for the customer;
+            - **every command the platform runs is logged** in the audit log with server and user;
+            - keys are rotated yearly and removed on detach.
+        - **Residual risk, accepted by the owner:** a full control-plane compromise still reaches every BYOS server as root. The control plane's own hardening (P0.1, P0.8, P0.9, P1.27) is therefore part of BYOS's security.
+        - **Netdata, tuned:**
+            - its memory limit is set from server size (*assumed* 256 MiB on 4 GB servers, 512 MiB on 8 GB and up), not a fixed 2 GB;
+            - short retention;
+            - its PostgreSQL collector off (oec.sh's lesson);
+            - the control plane reads it through Traefik at a private path allowed only from the platform's IPs, so there is no central streaming parent to pay for.
     - **Done differently:**
-        - **Firewall:** **no `ufw --force reset`.** Rules are only added (80 and 443) and the customer's existing rules are kept. CSF or any other firewall is never disabled without the customer's consent; the script stops and explains instead.
-        - **No platform SSH key** in any account.
-        - **No Netdata:** it runs with `SYS_ADMIN`, `pid=host`, the Docker socket and 2 GB of memory, and streams to a fixed IP. Monitoring goes through the agent with lightweight collectors.
         - **Pinned images:** images and binaries are pinned by version and digest, not `stable` or `v3.6`.
-        - **Verified script:** the script itself is signed, and its checksum is shown in the portal before running.
+        - **Verified script:** the script itself is signed, and its checksum is shown in the portal.
         - **Traefik:** per-customer ACME e-mail, and the dashboard off.
-        - **No webhook secret in a config file:** the agent's mTLS certificate replaces the shared HMAC secret.
-        - **fail2ban:** optional, offered rather than imposed.
-        - **No `eval` in maintenance scripts:** cleanup (old images and build cache) runs as a signed agent operation, never with `eval`, and never prunes volumes.
-- **The agent:**
-    - runs as user `veltnex-agent` in the `docker` group, which is effectively root on that host, hence the controls below;
-    - executes only an allowlist of operations signed by the control plane (deploy, update, backup, restore, logs, shell session, health, usage), never arbitrary shell;
-    - the customer sees its audit log and can pause it;
-    - its certificate is revoked on detach.
+        - **Signed webhooks:** webhook payloads from the server are signed with a per-server secret, not a shared one.
+        - **fail2ban:** installed, as in oec.sh.
+        - **No `eval` in maintenance scripts:** cleanup (old images and build cache) is run by the platform over SSH as fixed commands, never with `eval`, and never prunes volumes.
+- **The connector:** SSH from the control plane with the per-server key (owner decision; it is the push model of the old `SshDockerDriver`).
+    - Operations are fixed command templates in the driver (deploy, update, backup, restore, logs, shell session, health, usage), never free text built from customer input.
+    - Each run is logged.
+    - **The mTLS agent stays a later option** for customers whose network forbids inbound SSH.
 - **Runtime:**
     - one Docker Compose project per environment: Odoo, cron, and PostgreSQL with the limited role (P0.24), on a project network;
     - Traefik with per-host HTTP-01 on customer domains, or a separate BYOS domain;
@@ -899,22 +915,22 @@ Before launch. "Launch blocker" marks a finding from the review.
     - blue-green updates through Traefik (start new, health-check, switch, stop old), reusing the old `SshDockerDriver` "shadow" approach;
     - the update gate (`-u`) runs before the switch.
 - **Backups:** **none on Free** (upgrade needed, with a warning the customer acknowledges). Daily to the customer's own S3 from Starter. Veltnex off-site restic, with the P1.5 consistency model, from Pro.
-- **Monitoring:** health, resources and `pg_slow_queries.log` through the agent; the performance collector runs on the server.
+- **Monitoring:** health and resources through Netdata (read through Traefik from the platform's IPs only), `pg_slow_queries.log` and the performance collector on the server, with results fetched over SSH.
 - **Treated as untrusted:** the server gets only its own credentials. Data it reports is trusted only for that customer.
 - **Billing:** by subscription (P1.33). Sleep is off. There is no infrastructure SLA.
-- **Detach:** the agent and its certificate are removed, and data stays on the server.
+- **Detach:** the platform key, Netdata's platform route and the platform's scheduled jobs are removed, and data stays on the server.
 - **Where:**
     - `control-plane/saas_core/drivers/docker_compose_driver.py` (new; start from `git show cb9038d^:control-plane/saas_core/drivers/ssh_docker_driver.py`);
-    - a new `compute/tools/veltnex-agent` (Go: mTLS client, signed-operation allowlist, Compose runner);
     - `scripts/byos/install.sh` (generated per token);
-    - `saas_core/models/saas_server.py` (`runtime = docker_compose`, owner, agent certificate);
+    - `saas_core/models/saas_server.py` (`runtime = docker_compose`, owner, encrypted per-server SSH key);
     - the registration and progress API in `saas_website`;
     - `frontend/veltnex` (Servers page, install command).
 - **Done when:**
     - a fresh Ubuntu 24.04 VM registers within 10 minutes;
     - a Production environment deploys from Git with tests, gets TLS on the customer's domain, updates through blue-green with no failed requests in an HTTP poll at normal load, backs up and restores;
-    - an unsigned or non-allowlisted command is refused by the agent;
-    - there is no platform SSH key and no open management port;
+    - the preflight refuses a server that is not empty;
+    - the platform key works only from the control plane's IPs, and every platform command appears in the audit log;
+    - removing the server removes its key;
     - detaching leaves the Odoo data intact.
 
 **P1.33 Pricing: managed by resources, BYOS by subscription.** Launch blocker. Needs A22.

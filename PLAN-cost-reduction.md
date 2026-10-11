@@ -15,9 +15,9 @@ Status: plan only. Nothing is built or deployed. Implementation starts when the 
 - **Billing intelligence:** usage metering (P1.31), so every customer is billed and priced from measured consumption.
 - **One control plane, two hosting types (owner, 2026-10-11):**
     - **Managed hosting:** Kubernetes and the existing operator, priced by resources.
-    - **Bring Your Own Server:** Docker Compose and Traefik on the customer's server, with a Veltnex agent over mTLS, priced by subscription.
+    - **Bring Your Own Server:** Docker Compose, Traefik and Netdata on a fresh server dedicated to Veltnex, managed over SSH with a per-server root key (owner decision, with safeguards), priced by subscription.
 
-  Both sit behind one infrastructure interface (P1.36, P1.32), and the portal shows each type's capabilities (P1.37). The install script is a clean-room Veltnex script; oec.sh's code is not copied.
+  Both sit behind one infrastructure interface (P1.36, P1.32), and the portal shows each type's capabilities (P1.37). The install script is a clean-room Veltnex script that keeps oec.sh's approach (firewall reset, CSF disabled, root key, Netdata) for fresh dedicated servers; oec.sh's code is not copied.
 - **Pricing on the oec.sh model (P1.33).** US dollars per month, excluding server cost:
     - Free $0: 1 server, 2 projects;
     - Starter $19: up to 2 servers;
@@ -86,7 +86,7 @@ The other launch work (Tier L in the full plan) also stays:
 | E8 | **Reuse the deleted `SshDockerDriver`** (commit `cb9038d`, 294 lines, Compose with shadow deploys) as the starting point of the `DockerComposeDriver` | **About 1–2** | Old code must be reviewed against today's security rules | P1.32 |
 | E7 | **Build the registry once**, with per-tenant access in P0.3, instead of a single pull credential that is replaced later | **About 1** | None | P0.3 (P1.24 merged) |
 
-**Added by the owner's architecture (one control plane, two runtimes):** the one infrastructure interface (P1.36), the Docker Compose driver with the agent (P1.32), the capability matrix (P1.37) and the conformance test (P1.38). Together they are *assumed* at 6–9 engineer-weeks: a second runtime costs more than a k3s cell would, and buys a lighter, more familiar BYOS for customers.
+**Added by the owner's architecture (one control plane, two runtimes):** the one infrastructure interface (P1.36), the Docker Compose driver over SSH (P1.32), the capability matrix (P1.37) and the conformance test (P1.38). Together they are *assumed* at 5–8 engineer-weeks (no agent to build, because SSH is reused): a second runtime costs more than a k3s cell would, and buys a lighter, more familiar BYOS for customers.
 
 **Not cut, by owner decision:**
 

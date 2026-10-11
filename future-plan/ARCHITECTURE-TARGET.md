@@ -37,7 +37,7 @@ All decisions, A1–A19, were approved on 2026-10-11. A14–A19 were delegated b
 | A18 | Infrastructure as code: a provisioning module per provider | **Approved** (delegated): **OpenTofu** | Open-source and Terraform-compatible, with providers for all seven clouds | P2.11 |
 | A19 | Customer chooses region, then provider; a separate price per provider in each region (owner requirement) | **Approved** (delegated) | Region → offerings (provider in region) → cells; a price per plan per offering, never below that offering's floor; a project stays in one region and offering | P1.22, P0.18 |
 | A20 | Odoo Enterprise source model and legal gate | **Pending legal review** | (a) bring your own Enterprise source, built per tenant into tenant-only registry repositories, at launch; (b) platform Enterprise images only with a written agreement with Odoo. No Enterprise offering before written legal confirmation | P1.23, P1.24 |
-| A21 | Bring Your Own Server on a `DockerComposeDriver` (Docker Compose + Traefik) behind one infrastructure interface, managed through a Veltnex agent with mTLS and signed operations, with no platform SSH key | **Approved direction** (owner, 2026-10-11) | Capabilities shown per hosting type; the conformance test runs the same Odoo and addons on both runtimes | P1.36, P1.32, P1.37, P1.38 |
+| A21 | Bring Your Own Server on a `DockerComposeDriver` (Docker Compose + Traefik) behind one infrastructure interface. On a **fresh dedicated server**: firewall reset, CSF disabled, a **per-server** platform SSH key in root, and Netdata (owner, 2026-10-11) | **Approved direction** | Fresh-server preflight with customer confirmation; `from=`-restricted per-server keys; commands audited; Netdata sized to the server; capabilities shown per hosting type; conformance test across runtimes | P1.36, P1.32, P1.37, P1.38 |
 | A22 | Pricing and marketing: BYOS by subscription (Free $0, Starter $19, Pro $39, Agency $199 per month in USD, excluding servers; no annual discount; no backups on Free); managed hosting by resources with the 60% floor; Odoo Enterprise licences separate from hosting | **New** (owner requirement; design proposed) | Claims backed by published calculations; no invented social proof | P1.33, P1.34, P1.32 |
 
 **Launch blockers.** The full list, with each acceptance check, is in the plan's "Launch blockers and launch acceptance criteria". The owner added these on 2026-10-11:
@@ -724,7 +724,7 @@ flowchart TB
     CP["Veltnex Control Plane (Odoo 18)<br/>Billing · Customers · IAM · Deployments · Monitoring · Backups<br/>desired state + reconciliation + saas.job queue"]
     IAL["Infrastructure abstraction layer (one interface)<br/>Provision · Deploy · Update · Backup · Restore · Monitor · Destroy · Exec/Logs/Shell"]
     K8S["KubernetesDriver: Managed Hosting<br/>Veltnex infrastructure (DigitalOcean, Hetzner, …)<br/>Kubernetes + the existing Go operator<br/>shared / dedicated nodes · managed backups"]
-    DOCK["DockerComposeDriver: Bring Your Own Server<br/>customer VPS or dedicated server<br/>Docker Compose + Traefik<br/>Veltnex agent (mTLS) · optional backups"]
+    DOCK["DockerComposeDriver: Bring Your Own Server<br/>fresh dedicated customer server<br/>Docker Compose + Traefik + Netdata<br/>SSH, per-server key · backups from Starter"]
     CP --> IAL
     IAL --> K8S
     IAL --> DOCK
@@ -741,7 +741,7 @@ flowchart TB
 | Decision | Choice |
 | --- | --- |
 | Infrastructure driver | One interface for Kubernetes and Docker. The operations: provision, deploy, update (with an update gate), backup, restore, monitor, destroy, exec, logs, shell, health, usage. Each driver also declares a **capability set** |
-| Remote execution | A **Veltnex agent with mTLS** on BYOS servers (recommended over SSH): it connects outbound, so no inbound management port is needed; it has its own certificate per server, revocable; it runs only a fixed set of operations signed by the control plane, never arbitrary shell; customers can see its audit log and pause it. A limited SSH user is a fallback only. **Never a platform key in root** |
+| Remote execution | **SSH with a per-server root key** (owner decision, 2026-10-11, for fresh dedicated servers), the push model of the old `SshDockerDriver`. Fixed command templates only, `from=`-restricted keys, every command audited. A Veltnex agent with mTLS stays a later option for servers that cannot accept inbound SSH |
 | Secrets | Central encryption in the control plane (fail-closed, P0.8). A server receives only the credentials it needs: its own registry pull, its own backup target, its own mail credentials. Never a shared credential |
 | State | Desired state, reconciliation, and the `saas.job` queue (all exist today). Drivers report actual state, and the control plane reconciles |
 | Billing | **Managed: by resources** (the existing worker and storage pricing, with the 60% floor). **BYOS: by service and subscription** (Free, Starter, Pro, Agency) |
@@ -755,7 +755,7 @@ flowchart TB
 | Backups | Veltnex off-site restic, included per plan | None on Free; daily to the customer's own S3 from Starter; Veltnex off-site restic from Pro |
 | Builds and tests | Build pool (P0.19) | On the customer's server (`docker build`), tests in a throwaway PostgreSQL container |
 | Routing and TLS | Traefik in the cell; wildcard for the tenant domain; per-host certificates for custom domains | Traefik on the server with per-host HTTP-01 (customer domains, or a separate BYOS domain) |
-| Isolation | Namespaces, NetworkPolicy, Pod Security | One customer per server; Docker networks per project; the agent's operation allowlist |
+| Isolation | Namespaces, NetworkPolicy, Pod Security | One customer per server; Docker networks per project; fixed command templates over SSH with a per-server key |
 
 **Capabilities are not identical, and the customer sees which apply.** The portal and docs show a capability matrix per hosting type:
 
@@ -766,7 +766,7 @@ flowchart TB
 | Point-in-time recovery | Paid add-on (P4.2) | Not offered |
 | Sleep | Non-production sleeps (dev 1 h, staging 2 h, trials 1 h) | Off; it saves Veltnex nothing |
 | Staging from Production, Mailpit, Git, tests, Odoo shell, logs, custom domains, performance Advisor | Yes | Yes |
-| SSH | Web shell and Odoo shell (SSH gateway deferred) | The customer's own SSH plus the web shell and Odoo shell |
+| SSH | Web shell and Odoo shell (SSH gateway deferred) | The customer's own SSH (their server) plus the web shell and Odoo shell |
 | Backups | Included per plan | Customer S3 in every plan; Veltnex off-site from Pro |
 | Infrastructure SLA | Uptime target (P0.23) | None; the server is the customer's |
 
@@ -776,17 +776,16 @@ flowchart TB
 
 - **Kept:** a one-time token command, an OS and resource preflight, registration and progress, safe re-runs, the apt-lock wait, swap, inotify limits for Odoo 19 and later, and UFW with only 80 and 443 inbound.
 - **Different:**
-    - no platform SSH key and no inbound management port;
-    - the agent gets a per-server client certificate from the control plane's CA;
-    - it installs Docker and Traefik through the same signed operations it uses later;
-    - SSH stays exactly as the customer had it.
+    - **owner decision (2026-10-11):** the customer provides a **fresh, empty server dedicated to Veltnex**. So, as at oec.sh, the firewall is reset (UFW to SSH, 80 and 443), CSF is disabled, a **platform SSH key goes into `root`**, and Netdata is installed;
+    - **safeguards:** a fresh-server preflight that refuses non-empty servers and needs the customer's confirmation; **one key per server** (never one platform-wide key), encrypted, restricted with `from=` to the control plane's IPs, every command audited, removed on detach; Netdata's memory limited by server size and read only from the platform's IPs;
+    - **residual risk, accepted by the owner:** a full control-plane compromise reaches every BYOS server as root, so control-plane hardening is part of BYOS security.
 
 **Implementation order (owner):**
 
 1. Keep the existing Kubernetes operator; no rewrite.
 2. Build a separate `DockerComposeDriver` for BYOS, reusing the deleted `SshDockerDriver` where it helps.
 3. Extract deployment, backup, restore and monitoring into the one interface.
-4. Build secure server onboarding (agent, mTLS, signed operations) rather than copying oec.sh's script.
+4. Build secure server onboarding: a clean-room script with a fresh-server preflight and per-server keys, not oec.sh's code.
 5. Run the same Odoo version and the same custom addons on both runtimes; only the execution differs. This is a conformance test in CI.
 
 This replaces revision 3's "single-node k3s on BYOS" design. It also refines the earlier k8s-only rule: Kubernetes stays the only runtime for **managed hosting**, and Docker Compose is the BYOS runtime behind the same interface.

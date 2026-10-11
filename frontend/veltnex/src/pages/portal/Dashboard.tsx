@@ -11,6 +11,11 @@ import {
   AlertTriangle,
   Server,
   Ban,
+  Activity,
+  GitBranch,
+  Archive,
+  CalendarClock,
+  ExternalLink,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,13 +26,29 @@ import { EmptyState } from "@/components/EmptyState";
 import { AlertBanner } from "@/components/AlertBanner";
 import { CustomerFilter } from "@/components/CustomerFilter";
 import { useAuth } from "@/context/AuthContext";
-import { useSections } from "@/lib/useSections";
-import { api, ApiError, type DashboardData, type ApiInstance } from "@/lib/api";
+import { api, ApiError, type DashboardData, type DashboardEnvStatus, type DashboardSummary } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { projectStatus } from "@/lib/projects";
 
+const CREATE_TO = "/hosting";
+
 function money(n: number, c = "USD") {
   return new Intl.NumberFormat(getLocale(), { style: "currency", currency: c }).format(n);
+}
+
+function formatDate(iso: string) {
+  return new Intl.DateTimeFormat(getLocale(), { dateStyle: "medium" }).format(new Date(iso));
+}
+
+// "3 hours ago" style; falls back to a date for anything older than a week.
+function timeAgo(iso: string | null) {
+  if (!iso) return "—";
+  const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
+  const rtf = new Intl.RelativeTimeFormat(getLocale(), { numeric: "auto" });
+  if (seconds < 3600) return rtf.format(-Math.max(1, Math.round(seconds / 60)), "minute");
+  if (seconds < 86400) return rtf.format(-Math.round(seconds / 3600), "hour");
+  if (seconds < 7 * 86400) return rtf.format(-Math.round(seconds / 86400), "day");
+  return formatDate(iso);
 }
 
 interface ActionItem {
@@ -41,8 +62,169 @@ interface ActionItem {
   cancelName?: string;
 }
 
-function projectLink(i: ApiInstance) {
-  return i.is_hosting ? `/my/instances/${i.id}/environments` : `/my/instances/${i.id}`;
+const projectLink = (id: number) => `/my/instances/${id}/environments`;
+
+const ENV_STATUS: { key: DashboardEnvStatus; label: string; dot: string }[] = [
+  { key: "online", label: i18nText("Online"), dot: "bg-success" },
+  { key: "starting", label: i18nText("Starting"), dot: "bg-primary" },
+  { key: "stopped", label: i18nText("Stopped"), dot: "bg-muted" },
+  { key: "attention", label: i18nText("Needs attention"), dot: "bg-danger" },
+  { key: "unknown", label: i18nText("Not checked recently"), dot: "bg-border" },
+];
+
+const ENV_LABEL: Record<string, string> = {
+  production: i18nText("Production"),
+  staging: i18nText("Staging"),
+  development: i18nText("Development"),
+};
+
+function SectionCard({
+  icon: Icon,
+  title,
+  action,
+  children,
+}: {
+  icon: typeof Server;
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="flex flex-col">
+      <div className="flex items-center justify-between gap-3 border-b border-border p-4 px-5">
+        <h2 className="flex items-center gap-2 font-semibold">
+          <Icon className="size-4 text-muted" />
+          {title}
+        </h2>
+        {action}
+      </div>
+      <div className="flex-1 p-4 px-5">{children}</div>
+    </Card>
+  );
+}
+
+export function EnvironmentsCard({ summary }: { summary: DashboardSummary }) {
+  const envs = summary.environments;
+  const counts = Object.fromEntries(ENV_STATUS.map((s) => [s.key, envs.filter((e) => e.status === s.key).length]));
+  const attention = envs.filter((e) => e.status === "attention").slice(0, 4);
+  return (
+    <SectionCard icon={Activity} title={i18nText("Environments")}>
+      {envs.length === 0 ? (
+        <p className="text-sm text-muted">{i18nText("No environments yet.")}</p>
+      ) : (
+        <>
+          <ul className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" aria-label={i18nText("Environment status")}>
+            {ENV_STATUS.filter((s) => counts[s.key] > 0 || s.key === "online").map((s) => (
+              <li key={s.key} className="flex items-center gap-2">
+                <span className={cn("size-2 rounded-full", s.dot)} />
+                <span className="text-muted">{s.label}</span>
+                <span className="ms-auto font-semibold tabular-nums">{counts[s.key]}</span>
+              </li>
+            ))}
+          </ul>
+          {attention.length > 0 && (
+            <ul className="mt-4 space-y-2 border-t border-border pt-3">
+              {attention.map((e) => (
+                <li key={e.id} className="flex items-start justify-between gap-3 text-sm">
+                  <span className="min-w-0">
+                    <span className="font-medium">{e.project_name}</span>
+                    <span className="text-muted"> · {ENV_LABEL[e.environment] ?? e.environment}</span>
+                    {e.message && <span className="block truncate text-xs text-muted">{e.message}</span>}
+                  </span>
+                  <Link to={projectLink(e.project_id)} className="shrink-0 text-xs text-primary hover:underline">
+                    {i18nText("View")}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </SectionCard>
+  );
+}
+
+const BUILD_STYLE = {
+  success: { label: i18nText("Deployed"), cls: "text-success" },
+  failed: { label: i18nText("Failed"), cls: "text-danger" },
+  running: { label: i18nText("Building"), cls: "text-primary" },
+} as const;
+
+export function BuildsCard({ summary }: { summary: DashboardSummary }) {
+  const builds = summary.builds.slice(0, 5);
+  return (
+    <SectionCard icon={GitBranch} title={i18nText("Recent builds")}>
+      {builds.length === 0 ? (
+        <p className="text-sm text-muted">{i18nText("No builds yet. Connect a Git repository to deploy on every push.")}</p>
+      ) : (
+        <ul className="space-y-2.5">
+          {builds.map((b) => {
+            const style = BUILD_STYLE[b.state] ?? BUILD_STYLE.running;
+            return (
+              <li key={b.id} className="flex items-start justify-between gap-3 text-sm">
+                <span className="min-w-0">
+                  <Link to={`${projectLink(b.project_id)}?tab=code`} className="font-medium hover:underline">
+                    {b.project_name}
+                  </Link>
+                  <span className="text-muted"> · {ENV_LABEL[b.environment] ?? b.environment}</span>
+                  <span className="block truncate text-xs text-muted">
+                    {[b.branch, b.commit].filter(Boolean).join(" @ ") || "—"} · {timeAgo(b.started_at)}
+                  </span>
+                </span>
+                <span className={cn("shrink-0 text-xs font-medium", style.cls)}>{style.label}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+export function BackupsCard({ summary }: { summary: DashboardSummary }) {
+  const rows = summary.backups;
+  const problems = rows.filter((r) => r.status !== "ok");
+  return (
+    <SectionCard icon={Archive} title={i18nText("Production backups")}>
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted">{i18nText("No Production environments yet.")}</p>
+      ) : problems.length === 0 ? (
+        <p className="flex items-center gap-2 text-sm">
+          <CheckCircle2 className="size-4 text-success" />
+          {i18nText("All Production environments were backed up in the last day.")}
+        </p>
+      ) : (
+        <ul className="space-y-2.5">
+          {problems.slice(0, 5).map((r) => (
+            <li key={r.env_id} className="flex items-start justify-between gap-3 text-sm">
+              <span className="min-w-0">
+                <span className="font-medium">{r.project_name}</span>
+                <span className={cn("block text-xs", r.status === "none" ? "text-warning" : "text-danger")}>
+                  {r.status === "none"
+                    ? i18nText("No automatic backups")
+                    : i18nText("Last backup {0}", [timeAgo(r.last_backup_at)])}
+                </span>
+              </span>
+              <Link to={`/my/instances/${r.project_id}/backups`} className="shrink-0 text-xs text-primary hover:underline">
+                {r.status === "none" ? i18nText("Enable") : i18nText("View")}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+// Keep only the rows that belong to the projects in view (staff customer filter).
+function scopeSummary(summary: DashboardSummary | undefined, projectIds: Set<number>): DashboardSummary {
+  const keep = <T extends { project_id: number }>(rows: T[] | undefined) => (rows ?? []).filter((r) => projectIds.has(r.project_id));
+  return {
+    environments: keep(summary?.environments),
+    builds: keep(summary?.builds),
+    backups: keep(summary?.backups),
+    renewals: keep(summary?.renewals),
+  };
 }
 
 export default function Dashboard() {
@@ -57,8 +239,6 @@ export default function Dashboard() {
     setSearchParams(next, { replace: true });
   };
   const navigate = useNavigate();
-  const sections = useSections();
-  const createTo = sections.hosting ? "/hosting" : "/services";
   const [data, setData] = React.useState<DashboardData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   // Awaiting-payment order pending abandon-confirmation, + in-flight flag.
@@ -102,12 +282,18 @@ export default function Dashboard() {
     () => (data?.instances ?? []).filter((i) => !isStaff || !customerId || String(i.customer?.id) === customerId),
     [data, isStaff, customerId],
   );
+  const summary = React.useMemo(
+    () => scopeSummary(data?.summary, new Set(customerProjects.map((i) => i.id))),
+    [data, customerProjects],
+  );
   const total = customerProjects.length;
   const active = customerProjects.filter((i) => projectStatus(i) === "active").length;
   const wallet = data?.wallet?.total ?? data?.stats.wallet_balance ?? 0;
+  const nextRenewal = summary.renewals[0];
   // The projects grid excludes awaiting-payment orders (they're surfaced in
   // "Needs your attention" instead) so the customer's project list stays clean.
   const visibleProjects = customerProjects.filter((i) => i.state !== "pending_payment");
+  const projectsTo = isStaff && customerId ? `/my/instances?customer=${encodeURIComponent(customerId)}` : "/my/instances";
 
   const actions: ActionItem[] = React.useMemo(() => {
     if (!data) return [];
@@ -124,14 +310,18 @@ export default function Dashboard() {
     }
     for (const i of customerProjects) {
       if (i.state === "suspended")
-        items.push({ id: `s-${i.id}`, text: `${i.name} is suspended`, cta: i18nText("Resolve"), to: projectLink(i) });
+        items.push({ id: `s-${i.id}`, text: i18nText("{0} is suspended", [i.name]), cta: i18nText("Resolve"), to: projectLink(i.id) });
       else if (i.state === "failed")
-        items.push({ id: `f-${i.id}`, text: i18nText("{0} failed to deploy", [i.name]), cta: i18nText("View"), to: projectLink(i) });
+        items.push({ id: `f-${i.id}`, text: i18nText("{0} failed to deploy", [i.name]), cta: i18nText("View"), to: projectLink(i.id) });
       else if (i.state === "pending_payment")
         items.push({ id: `p-${i.id}`, text: i18nText("{0} is awaiting payment", [i.name]), cta: i18nText("Checkout"), to: `/my/instances/${i.id}/checkout`, cancelId: i.id, cancelName: i.name });
     }
+    for (const b of summary.builds) {
+      if (b.state === "failed" && !items.some((x) => x.id === `b-${b.project_id}`))
+        items.push({ id: `b-${b.project_id}`, text: i18nText("A build of {0} failed", [b.project_name]), cta: i18nText("View"), to: `${projectLink(b.project_id)}?tab=code` });
+    }
     return items.slice(0, 6);
-  }, [data, customerProjects]);
+  }, [data, customerProjects, summary]);
 
   return (
     <div className="animate-fade-in">
@@ -141,8 +331,12 @@ export default function Dashboard() {
           </h1>
           <p className="mt-1 text-sm text-muted">{i18nText("Everything across your account at a glance.")}</p>
         </div>
-        <Button onClick={() => navigate(createTo)}>
-          <Plus className="size-4" />{i18nText("New project")}</Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" onClick={() => window.location.assign("/?site=1")}>
+            <ExternalLink className="size-4" />{i18nText("Website")}</Button>
+          <Button onClick={() => navigate(CREATE_TO)}>
+            <Plus className="size-4" />{i18nText("New project")}</Button>
+        </div>
       </div>
 
       {error && <AlertBanner className="mt-6" variant="danger" title={i18nText("Couldn't load dashboard")} description={error} />}
@@ -189,12 +383,12 @@ export default function Dashboard() {
             </Card>
           )}
 
-          {/* Fleet + wallet */}
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {/* Key numbers */}
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
             <Card className="p-5">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-muted">{i18nText("Active projects")}</p>
-                <Link to={isStaff && customerId ? `/my/instances?customer=${encodeURIComponent(customerId)}` : "/my/instances"} className="text-xs text-primary hover:underline">{i18nText("View projects")}</Link>
+                <Link to={projectsTo} className="text-xs text-primary hover:underline">{i18nText("View projects")}</Link>
               </div>
               <p className="mt-2 text-2xl font-bold tracking-tight">
                 {active}
@@ -220,6 +414,19 @@ export default function Dashboard() {
               </div>
               <Button variant="secondary" onClick={() => navigate("/my/billing")}>
                 <Wallet className="size-4" />{i18nText("Top up")}</Button>
+            </Card>
+
+            <Card className="p-5">
+              <p className="flex items-center gap-2 text-sm font-medium text-muted">
+                <CalendarClock className="size-4" />{i18nText("Next renewal")}</p>
+              {nextRenewal ? (
+                <>
+                  <p className="mt-2 text-2xl font-bold tracking-tight">{formatDate(nextRenewal.date)}</p>
+                  <p className="truncate text-xs text-muted">{nextRenewal.project_name}</p>
+                </>
+              ) : (
+                <p className="mt-2 text-sm text-muted">{i18nText("No upcoming renewals.")}</p>
+              )}
             </Card>
           </div>
 
@@ -256,10 +463,17 @@ export default function Dashboard() {
             </Card>
           )}
 
+          {/* Health, delivery and safety at a glance */}
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            <EnvironmentsCard summary={summary} />
+            <BuildsCard summary={summary} />
+            <BackupsCard summary={summary} />
+          </div>
+
           {/* Projects */}
           <div className="mt-8 flex items-center justify-between">
             <h2 className="font-semibold">{isStaff ? i18nText("Customer projects") : i18nText("Your projects")}</h2>
-            <Link to={isStaff && customerId ? `/my/instances?customer=${encodeURIComponent(customerId)}` : "/my/instances"} className="inline-flex items-center gap-1 text-sm text-primary hover:underline">{i18nText("View all ")}<ArrowRight className="size-3.5" />
+            <Link to={projectsTo} className="inline-flex items-center gap-1 text-sm text-primary hover:underline">{i18nText("View all ")}<ArrowRight className="size-3.5" />
             </Link>
           </div>
           {visibleProjects.length === 0 ? (
@@ -268,13 +482,13 @@ export default function Dashboard() {
                 icon={Server}
                 title={customerId ? i18nText("No matching projects") : i18nText("No projects yet")}
                 description={customerId ? i18nText("This customer has no active projects.") : i18nText("Create your first project to deploy an Odoo environment.")}
-                action={<Button onClick={() => navigate(createTo)}>{i18nText("Create project")}</Button>}
+                action={<Button onClick={() => navigate(CREATE_TO)}>{i18nText("Create project")}</Button>}
               />
             </Card>
           ) : (
             <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {visibleProjects.slice(0, 6).map((i) => (
-                <Link key={i.id} to={projectLink(i)}>
+                <Link key={i.id} to={projectLink(i.id)}>
                   <Card className="group p-5 transition-all hover:-translate-y-0.5 hover:border-primary/40">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -284,12 +498,11 @@ export default function Dashboard() {
                       </div>
                       <ProjectStatusBadge project={i} />
                     </div>
-                    <p className="mt-4 text-xs text-muted">{i.is_hosting ? i18nText("Hosting project") : i18nText("Managed service")}</p>
                   </Card>
                 </Link>
               ))}
               <button
-                onClick={() => navigate(createTo)}
+                onClick={() => navigate(CREATE_TO)}
                 className="flex min-h-28 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted transition-colors hover:border-primary/40 hover:text-foreground"
               >
                 <Plus className="me-2 size-4" />{i18nText("New project")}</button>

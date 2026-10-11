@@ -22,7 +22,7 @@ export default function PasswordSetup() {
   const [error, setError] = React.useState("");
   const returnPath = location.state?.from;
   React.useEffect(() => {
-    if (!user?.must_change_password && !user?.must_verify_phone) navigate(typeof returnPath === "string" && returnPath.startsWith("/my/") && !["/my/change-password", "/my/verify-profile"].includes(returnPath) ? returnPath : "/my/instances", { replace: true });
+    if (!user?.must_change_password && !user?.must_verify_phone) navigate(typeof returnPath === "string" && returnPath.startsWith("/my/") && !["/my/change-password", "/my/verify-profile"].includes(returnPath) ? returnPath : "/my/dashboard", { replace: true });
   }, [user?.must_change_password, user?.must_verify_phone, navigate, returnPath]);
   const save = async () => {
     setBusy(true); setError("");

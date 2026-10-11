@@ -1,7 +1,8 @@
 import { i18nText } from "@/i18n";
-import { Routes, Route, Navigate, useParams } from "react-router-dom";
+import { Routes, Route, Navigate, useParams, useSearchParams } from "react-router-dom";
 import * as React from "react";
 import { useInstances } from "./context/InstancesContext";
+import { useAuth } from "./context/AuthContext";
 import { Spinner } from "./components/Spinner";
 import { PublicLayout } from "./components/layout/PublicLayout";
 import { PortalLayout } from "./components/layout/PortalLayout";
@@ -20,6 +21,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import Register from "./pages/Register";
 import NotFound from "./pages/NotFound";
 
+import Dashboard from "./pages/portal/Dashboard";
 import Instances from "./pages/portal/Instances";
 import InstanceDetail from "./pages/portal/InstanceDetail";
 import InstanceLayout from "./components/layout/InstanceLayout";
@@ -72,12 +74,21 @@ function InstanceHome() {
   return <InstanceDetail />;
 }
 
+// A signed-in customer's home is their dashboard, not the marketing page.
+// "/?site=1" (the portal's "Website" link) still shows the public site.
+export function HomeOrDashboard() {
+  const { user } = useAuth();
+  const [params] = useSearchParams();
+  if (user && !params.has("site")) return <Navigate to="/my/dashboard" replace />;
+  return <Home />;
+}
+
 export default function App() {
   return (
     <Routes>
       {/* Public */}
       <Route element={<PublicLayout />}>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<HomeOrDashboard />} />
         <Route path="/services" element={<RequireSection section="services"><Services /></RequireSection>} />
         {/* Generic sign-up — not section-gated, so it works hosting-only. */}
         <Route path="/register" element={<Register />} />
@@ -98,9 +109,10 @@ export default function App() {
         <Route path="/my/change-password" element={<PasswordSetup />} />
         <Route path="/my/verify-profile" element={<PasswordSetup />} />
         <Route path="/my" element={<PortalLayout />}>
-          {/* Overview merged into Projects — the projects list is the home. */}
-          <Route index element={<Navigate to="/my/instances" replace />} />
-          <Route path="home" element={<Navigate to="/my/instances" replace />} />
+          {/* The summary dashboard is the signed-in customer's home. */}
+          <Route index element={<Navigate to="/my/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="home" element={<Navigate to="/my/dashboard" replace />} />
           <Route path="instances" element={<Instances />} />
           {/* One cohesive instance page: a persistent header (InstanceLayout)
               with the section content swapping in place below it. */}

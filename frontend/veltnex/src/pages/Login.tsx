@@ -54,7 +54,7 @@ export default function Login() {
         navigate("/my/change-password", { replace: true, state: { from: fromState || safeRedirect } });
       } else if (fromState) navigate(fromState, { replace: true });
       else if (safeRedirect) window.location.assign(safeRedirect);
-      else navigate("/", { replace: true });
+      else navigate("/my/dashboard", { replace: true });
     } catch (err) {
       setError(
         err instanceof ApiError

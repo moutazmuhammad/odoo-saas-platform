@@ -757,6 +757,96 @@ class SaasApi(http.Controller):
     #  Portal: instances
     # ==================================================================
 
+    # Runtime observations folded into the five buckets the dashboard shows.
+    _DASHBOARD_ENV_STATUS = {
+        'online': 'online',
+        'stopped': 'stopped', 'suspended': 'stopped',
+        'starting': 'starting', 'stopping': 'starting',
+        'unavailable': 'attention', 'unreachable': 'attention',
+    }
+    # Environments the dashboard reports on: paid for and not cancelled.
+    _DASHBOARD_LIVE_STATES = ('paid', 'pending_provision', 'provisioning', 'running', 'stopped', 'suspended')
+    # A daily backup older than this is reported as late.
+    _DASHBOARD_BACKUP_LATE_HOURS = 26
+
+    def _dashboard_summary(self, projects):
+        """The roll-up behind the customer's home dashboard.
+
+        Read from stored state only (runtime observations, builds, backups,
+        billing dates) - never a live cluster call - so it stays fast however
+        many projects the account has. Every section is independent: one
+        failing never empties the others or the dashboard itself.
+        """
+        envs = (projects | projects.mapped('child_env_ids')).filtered(
+            lambda e: e.state in self._DASHBOARD_LIVE_STATES)
+        project_of = {e.id: (e.parent_id or e) for e in envs}
+        summary = {'environments': [], 'builds': [], 'backups': [], 'renewals': []}
+
+        def ref(env):
+            project = project_of.get(env.id, env)
+            return {'project_id': project.id, 'project_name': project.name,
+                    'environment': env.environment or 'production'}
+
+        try:
+            for env in envs:
+                runtime = env._runtime_status_dict()
+                status = self._DASHBOARD_ENV_STATUS.get(runtime.get('runtime_state') or '', 'unknown')
+                if env.state in ('paid', 'pending_provision', 'provisioning'):
+                    status = 'starting'
+                message = runtime.get('runtime_message') or ''
+                summary['environments'].append(dict(ref(env), id=env.id, name=env.name,
+                                                    status=status, message=message))
+        except Exception:
+            _logger.exception("Dashboard: environment summary failed")
+
+        try:
+            builds = request.env['saas.build'].sudo().search(
+                [('instance_id', 'in', envs.ids)], order='date_start desc, id desc', limit=8)
+            for b in builds:
+                summary['builds'].append(dict(
+                    ref(b.instance_id), id=b.id, state=b.state, stage=b.stage or '',
+                    source=b.source or '', branch=b.branch or '', commit=b.commit_short or '',
+                    started_at=fields.Datetime.to_string(b.date_start).replace(' ', 'T') + 'Z'
+                    if b.date_start else None))
+        except Exception:
+            _logger.exception("Dashboard: build summary failed")
+
+        try:
+            prod = envs.filtered(lambda e: (e.environment or 'production') == 'production')
+            last = {}
+            if prod:
+                done = request.env['saas.instance.backup'].sudo().search(
+                    [('instance_id', 'in', prod.ids), ('state', '=', 'done')], order='create_date desc')
+                for bk in done:
+                    last.setdefault(bk.instance_id.id, bk.create_date)
+            now = fields.Datetime.now()
+            for env in prod:
+                daily = bool(getattr(env, 'daily_backup_enabled', False))
+                at = last.get(env.id)
+                if not daily:
+                    status = 'none'
+                elif not at or (now - at).total_seconds() > self._DASHBOARD_BACKUP_LATE_HOURS * 3600:
+                    status = 'late'
+                else:
+                    status = 'ok'
+                summary['backups'].append(dict(
+                    ref(env), env_id=env.id, daily_enabled=daily, status=status,
+                    last_backup_at=fields.Datetime.to_string(at).replace(' ', 'T') + 'Z' if at else None))
+        except Exception:
+            _logger.exception("Dashboard: backup summary failed")
+
+        try:
+            if 'next_invoice_date' in projects._fields:
+                for project in projects.filtered(lambda p: p.next_invoice_date
+                                                 and p.state in self._DASHBOARD_LIVE_STATES):
+                    summary['renewals'].append({
+                        'project_id': project.id, 'project_name': project.name,
+                        'date': fields.Date.to_string(project.next_invoice_date)})
+                summary['renewals'].sort(key=lambda r: r['date'])
+        except Exception:
+            _logger.exception("Dashboard: renewal summary failed")
+        return summary
+
     @http.route('/saas/api/v1/dashboard', type='json', auth='public')
     def dashboard(self):
         partner = self._partner()
@@ -789,6 +879,7 @@ class SaasApi(http.Controller):
                 'outstanding': round(sum(i.amount_residual for i in open_invoices), 2),
                 'wallet_balance': wallet_inline['total'],
             },
+            'summary': self._dashboard_summary(instances),
         })
 
     @http.route('/saas/api/v1/instances', type='json', auth='public')

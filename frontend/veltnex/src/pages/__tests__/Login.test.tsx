@@ -16,6 +16,7 @@ function renderLogin(route = "/login") {
     <Route path="/login" element={<Login />} />
     <Route path="/my/change-password" element={<h1>Required account setup</h1>} />
     <Route path="/" element={<h1>Public home</h1>} />
+    <Route path="/my/dashboard" element={<h1>Customer dashboard</h1>} />
   </Routes>, { route });
 }
 
@@ -43,14 +44,14 @@ describe("Immediate first-login onboarding", () => {
     await user.click(screen.getByRole("button", { name: /Sign in/i }));
     expect(await screen.findByRole("heading", { name: "Required account setup" })).toBeInTheDocument();
   });
-  it("keeps the normal landing page for accounts with completed onboarding", async () => {
+  it("lands accounts with completed onboarding on their dashboard", async () => {
     auth.login.mockResolvedValue({ must_change_password: false, must_verify_phone: false });
     const user = userEvent.setup();
     renderLogin();
     await user.type(screen.getByLabelText("Email or username"), "owner@example.com");
     await user.type(screen.getByLabelText("Password"), "OwnPassword123!");
     await user.click(screen.getByRole("button", { name: /Sign in/i }));
-    expect(await screen.findByRole("heading", { name: "Public home" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Customer dashboard" })).toBeInTheDocument();
   });
   it("resumes required setup when a signed-in teammate opens a public page", async () => {
     auth.user = { must_change_password: false, must_verify_phone: true };

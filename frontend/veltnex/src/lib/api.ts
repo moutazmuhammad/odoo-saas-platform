@@ -504,6 +504,34 @@ export interface ApiInstance extends RuntimeHealth {
   wallet?: WalletInline;
 }
 
+export type DashboardEnvStatus = "online" | "stopped" | "starting" | "attention" | "unknown";
+
+interface DashboardRef {
+  project_id: number;
+  project_name: string;
+  environment: "production" | "staging" | "development";
+}
+
+export interface DashboardSummary {
+  environments: (DashboardRef & { id: number; name: string; status: DashboardEnvStatus; message: string })[];
+  builds: (DashboardRef & {
+    id: number;
+    state: "running" | "success" | "failed";
+    stage: string;
+    source: string;
+    branch: string;
+    commit: string;
+    started_at: string | null;
+  })[];
+  backups: (DashboardRef & {
+    env_id: number;
+    daily_enabled: boolean;
+    status: "ok" | "late" | "none";
+    last_backup_at: string | null;
+  })[];
+  renewals: { project_id: number; project_name: string; date: string }[];
+}
+
 export interface DashboardData {
   instances: ApiInstance[];
   recent_invoices: ApiInvoice[];
@@ -516,6 +544,7 @@ export interface DashboardData {
     outstanding: number;
     wallet_balance?: number;
   };
+  summary?: DashboardSummary;
 }
 
 export interface StatusData extends RuntimeHealth {

@@ -5,6 +5,7 @@ import {
   Menu,
   X,
   Server,
+  LayoutDashboard,
   Settings,
   LogOut,
   LayoutGrid,
@@ -30,6 +31,7 @@ type MenuItem = { label: string; icon: LucideIcon; to: string; external: boolean
 // experience is the same across every page. "Profile" is an Odoo portal
 // page, so it uses a full navigation; the rest are SPA routes.
 const MENU: MenuItem[] = [
+  { label: i18nText("Dashboard"), icon: LayoutDashboard, to: "/my/dashboard", external: false },
   { label: i18nText("Projects"), icon: Server, to: "/my/instances", external: false },
   { label: i18nText("Settings"), icon: Settings, to: "/my/settings", external: false },
 ];

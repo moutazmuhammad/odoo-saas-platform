@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 
 // Keep a direct route to the project list from account pages as well as project pages.
 const NAV = [
+  { to: "/my/dashboard", label: i18nText("Dashboard"), icon: LayoutDashboard },
   { to: "/my/instances", label: i18nText("Projects"), icon: LayoutGrid },
   { to: "/my/access", label: i18nText("Team & permissions"), icon: ShieldCheck },
   { to: "/my/snapshots", label: i18nText("Snapshots"), icon: Camera },

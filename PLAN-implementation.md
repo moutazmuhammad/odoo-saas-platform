@@ -6,7 +6,7 @@ This plan turns the target architecture into ordered, shippable items. The four 
 
 Inside the appendices, an old file name means its appendix: `PLAN-backup-restore.md` is A, `PLAN-spaces-filestore.md` is B, `PLAN-cluster-capacity.md` is C, and `PLAN-postgresql-architecture.md` is D.
 
-**Status: plan only.** Decisions A1–A13 were all approved on 2026-10-11, subject to the launch acceptance criteria below. Implementation starts only when the owner says so, after this document is accepted.
+**Status: plan only.** Decisions A1–A13 were approved on 2026-10-11, subject to the launch acceptance criteria below. A14–A19 (provider independence and region pricing) are pending. Implementation starts only when the owner says so, after this document is accepted.
 
 ## How to use this plan
 
@@ -33,7 +33,7 @@ flowchart LR
 
 ## Decisions and the items they drive
 
-All approved on 2026-10-11, subject to the launch acceptance criteria.
+A1–A13 approved on 2026-10-11, subject to the launch acceptance criteria. A14–A19 (provider independence and region pricing) are pending.
 
 | Decision (architecture) | Items that wait for it |
 | --- | --- |
@@ -50,6 +50,12 @@ All approved on 2026-10-11, subject to the launch acceptance criteria.
 | A11 Production backups included | P1.16 |
 | A12 Read-only window for version upgrades | P1.18 |
 | A13 Uptime promise | P0.23 |
+| A14 Provider-agnostic cells (pending) | P0.25, P0.26, P2.10 |
+| A15 Azure object storage (pending) | P2.10 |
+| A16 Platform DNS provider (pending) | P0.7, P0.26 |
+| A17 Data residency (pending) | P0.25, P1.21 |
+| A18 Provisioning modules (pending) | P2.11 |
+| A19 Region, provider and pricing model (pending) | P1.22, P0.18 |
 
 ## Launch blockers and launch acceptance criteria
 
@@ -78,6 +84,8 @@ All approved on 2026-10-11, subject to the launch acceptance criteria.
 | P0.18 | Price floor at 60% gross margin | Selling below cost |
 | P0.22 | CloudNativePG vendored | Needed by the qualification (P1.9a) |
 | P0.23 | Uptime target, not an SLA | Advertising a promise the platform cannot keep |
+| P0.25 | No provider or single-location assumptions in code | Retrofitting per-cell backups and residency after customers exist is costly |
+| P0.26 | Cell contract checker | Tenant isolation depends on provider settings, such as NetworkPolicy enforcement and metadata blocking |
 | P1.11 | No Production deploy without passing tests | Owner condition |
 | P1.13 | SSH gateway isolated and auditable | Owner condition; the gateway must not widen cluster access |
 | P1.16 | Production backups in every plan | Owner condition (A11) |
@@ -100,7 +108,9 @@ All approved on 2026-10-11, subject to the launch acceptance criteria.
 - P1.15 uptime;
 - P1.17 promotion with a verified pre-deploy snapshot;
 - P1.19 persona roles;
-- P1.20 activity history.
+- P1.20 activity history;
+- P1.21 data residency enforcement;
+- P1.22 region and provider choice, with pricing per provider.
 
 **The owner's acceptance conditions (2026-10-11), and where each is tested:**
 
@@ -122,8 +132,8 @@ All approved on 2026-10-11, subject to the launch acceptance criteria.
 | Earlier plan | What changes here | Why |
 | --- | --- | --- |
 | A · Backup & Restore | Its Phase 0 (disk safety, alert webhook) and Phase 1 (streaming restore with swap) are P0.4. Its Phases 2–4 (integrity, restic) are P1.5, which adds manifest v2 (code identity), a snapshot-consistent file list, uncompressed dumps for restic deduplication, and a second-region copy. Key scope is P0.5. restic repositories stay in the backup bucket, which no customer key reaches. | Consistency model (architecture, concern 4) |
-| B · Spaces Filestore | One bucket per customer becomes two: a Production bucket and a non-production bucket (A2), because Spaces keys are per bucket only (verified). The bucket and keys are created in P1.4. The filestore is P3.1, delivered through the operator's platform-addons ConfigMap (`compute/operator/internal/resources/platformaddons.go`). It keeps web assets and files under 64 KiB in the database, reads through a local cache, retries reads that come back 404 just after a write, and uses a 14-day `trash/` lifecycle. Three adapter generations are built, for Odoo 14–20: 17–19, then 16 and 20, then 14–15. Appendix B's generation for 11–13 (G1) is dropped, because the platform sells 14–20. Sessions are P3.2. | Concerns 3 and 5 |
-| C · Cluster Capacity | Its Phase 1 is P0.12. Pools arrive by phase: Build in P0 (P0.19, security), Shared in P2 (P2.5), Large on demand (P4.3). HA is not a pool. Its Phases 3 and 4 are P3.5 and P3.6. | Concern 7 |
+| B · Spaces Filestore | The design is kept, but on any provider's object storage through the object-storage adapter (P0.25); the DigitalOcean key API becomes that adapter's first implementation, and Azure needs A15. One bucket per customer becomes two: a Production bucket and a non-production bucket (A2), because Spaces keys are per bucket only (verified). The bucket and keys are created in P1.4. The filestore is P3.1, delivered through the operator's platform-addons ConfigMap (`compute/operator/internal/resources/platformaddons.go`). It keeps web assets and files under 64 KiB in the database, reads through a local cache, retries reads that come back 404 just after a write, and uses a 14-day `trash/` lifecycle. Three adapter generations are built, for Odoo 14–20: 17–19, then 16 and 20, then 14–15. Appendix B's generation for 11–13 (G1) is dropped, because the platform sells 14–20. Sessions are P3.2. | Concerns 3 and 5 |
+| C · Cluster Capacity | Its DOKS-specific parts (autoscaler status ConfigMap, `doctl`, `do-block-storage`) go behind the capacity adapter and per-cell settings (P0.25). Its Phase 1 is P0.12. Pools arrive by phase: Build in P0 (P0.19, security), Shared in P2 (P2.5), Large on demand (P4.3). HA is not a pool. Its Phases 3 and 4 are P3.5 and P3.6. | Concern 7 |
 | D · PostgreSQL | CloudNativePG becomes the engine for every new environment (A1): dedicated 1-instance per Production (P1.9b, after the P1.9a qualification), shared for non-production (P2.2) with 2 instances and no PgBouncer. Sleep windows are dev 1 h, staging 2 h, trials 1 h; Production never sleeps (P2.1). Its cost table is superseded by the corrected model (architecture, concern 6). | Concerns 1, 6 and 7 |
 
 ## P0 · Launch blockers
@@ -257,7 +267,7 @@ Before launch. "Launch blocker" marks a finding from the review.
     - **No inbound mail:** no SMTP port is opened for inbound traffic anywhere.
     - **Egress allowed:**
         - DNS;
-        - 443 to the internet, with `except` for the pod, service and VPC ranges (reuse `_BLOCKED_CIDRS` from `k8s_builds.py`);
+        - 443 to the internet, with `except` for the pod, service and VPC ranges, link-local `169.254.0.0/16` (cloud metadata on every provider) and `100.64.0.0/10`, the same list as `_BLOCKED_CIDRS` in `k8s_builds.py`;
         - 993 and 995 to the internet, for Odoo's incoming mail servers;
         - SMTP only to the in-cluster mail relay (P1.8).
     - **Direct SMTP:** direct SMTP to the internet stays closed, so quotas cannot be bypassed. A per-tenant exception to one named host is staff-approved.
@@ -292,6 +302,7 @@ Before launch. "Launch blocker" marks a finding from the review.
 
 **P0.18 Pricing floor from the corrected cost model.** Needs A6.
 - **What:**
+    - the floor is computed per offering, from that offering's cell rate card (P0.25, P1.22);
     - implement the cost function from the architecture: the node price times the larger of the CPU and memory share, divided by packing, plus storage, backups, overhead and mail;
     - prices are at least cost ÷ 0.40 (60% margin), with a target of cost ÷ 0.30 (70%) at scale;
     - add-ons follow the same floor;
@@ -373,6 +384,34 @@ Before launch. "Launch blocker" marks a finding from the review.
     - every Odoo version in the P1.7 matrix passes the above;
     - an existing tenant is migrated with zero failed requests in an HTTP poll, and its old password no longer logs in.
 
+**P0.25 Remove provider and single-location assumptions from the code.** Launch blocker. Needs A14 and A17.
+- **What:**
+    - **Backup target per cell:** move backup storage from the global setting (`res_config_settings.py`) to a storage target on each cell (`saas.server`), with endpoint, bucket, region and encrypted key. Backups, snapshots and restores use the tenant's cell target. Existing tenants keep the current bucket as their cell's target.
+    - **Per-cell infrastructure names:** storage class, load-balancer annotations and node-pool label values become cell settings, not constants or DigitalOcean defaults.
+    - **Object-storage adapter:** behind an interface (buckets, scoped keys, lifecycle, versioning, server-side copy). DigitalOcean Spaces is the first implementation; data paths stay on the S3 API.
+    - **Capacity adapter:** reads the Cluster Autoscaler status where present, else pending pods and node conditions. Pool ceilings stay manual.
+    - **Rate card per cell:** node price, node allocatable, volume price and minimum volume size, replacing `cost_per_cpu_month` plus `cost_per_gb_ram_month` (`saas_server.py:190`). P0.18 uses it.
+    - **Region policy fields on `saas.region`:** jurisdiction, allowed providers, allowed locations for data, backup copies, logs and mail upstream.
+- **Where:** `control-plane/saas_core/models/saas_server.py`, `saas_region.py`, `res_config_settings.py`, `saas_instance_backup.py`, `drivers/kubernetes_driver.py`, new `control-plane/saas_core/providers/` (object storage, DNS, capacity, mail upstream), `scripts/bootstrap/`.
+- **Done when:**
+    - no code path outside `providers/` names a provider;
+    - two test cells with different backup targets back up and restore each to its own target;
+    - existing tenants' backups continue unchanged.
+
+**P0.26 Cell contract checker.** Launch blocker. Needs A14.
+- **What:** bootstrap runs the cell contract from the architecture as automated probes before a cell is registered, and again after every cluster upgrade:
+    - NetworkPolicy enforcement, including the cloud metadata address being unreachable from a tenant probe and a build probe;
+    - CSI expansion;
+    - LoadBalancer for HTTP, HTTPS and TCP 22;
+    - pool labels and taints;
+    - an object-storage key unable to read another bucket;
+    - endpoints inside the region's allowed locations;
+    - outbound reach to the control plane and the mail upstream.
+
+  A cell that fails any check cannot take customers.
+- **Where:** `scripts/bootstrap/bootstrap.py` (checks exist for PVC, DNS and certificates; extend them), `register_cluster.py`, `setup/09-BOOTSTRAP.md`.
+- **Done when:** the DOKS cell passes, and a cluster with NetworkPolicy enforcement turned off, or with metadata reachable, fails with a clear message.
+
 ## P1 · Launch features
 
 **P1.1 Custom domains for Production.** Needs A5.
@@ -453,6 +492,33 @@ Before launch. "Launch blocker" marks a finding from the review.
     - missing files in a manifest are 0 on 20 test tenants;
     - deduplication over 7 days is at most 1.3× one full backup (*assumption* tested here);
     - a second-region restore works.
+
+**P1.21 Data residency enforcement.** Needs A17.
+- **What:**
+    - **Placement:** the region policy (P0.25) is enforced at every place data can move: environment creation, Production-to-staging copies, backups and their second-region copy, restores, cross-cell moves, stored logs, archives and the mail upstream.
+    - **Refusals:** a move outside the allowed locations is refused with a clear reason.
+    - **Customer view:** the portal shows each environment's provider, country and backup locations.
+    - **Lower durability:** where only one site exists in a country, the customer is told that backup durability is lower.
+- **Where:** `saas_core/models/saas_region.py`, `saas_instance.py` (allocation, copy, move), `saas_instance_backup.py`, P1.5's copy Job, P1.8's relay settings, `frontend/veltnex`.
+- **Done when:**
+    - a copy or restore to a disallowed region is refused;
+    - every object a test tenant owns lies in allowed locations (an inventory script);
+    - the portal shows the locations.
+
+**P1.22 Region and provider choice, with pricing per provider.** Needs A19 and A14.
+- **What:**
+    - **Models:** new `saas.provider` and `saas.region.offering` (region, provider, active, rate card, price list, features), and `saas.server.offering_id`.
+    - **Pricing:** a price per plan per offering, set by staff or computed from the rate card. Each price is checked against that offering's 60% floor (P0.18), and the margin cron runs per offering. `saas_pricing._region_multiplier` stays as a fallback.
+    - **Portal:** project creation asks for a region, then shows that region's offerings as cards (provider, price for the plan, backup locations, features). The recommended card is the cheapest with capacity; the step is skipped if there is only one.
+    - **Allocation:** `_allocate_servers` stays within the chosen offering; all environments of a project use the project's region and, by default, its offering.
+    - **Change of region or provider:** a cell move at a customer-chosen window, checked against the region policy (P1.21), with the new price from the next billing period.
+    - **Invoices and margin reports** show region and provider.
+- **Where:** `control-plane/saas_core/models/saas_region.py`, new `saas_provider.py` and `saas_region_offering.py`, `saas_server.py`, `saas_instance.py` (`_allocate_servers`), `control-plane/saas_billing/models/saas_pricing.py`, `saas_website/controllers/api.py`, `frontend/veltnex` (region and provider step, Arabic strings).
+- **Done when:**
+    - with two test offerings in one region at different prices, a customer sees both, picks one, is placed in its cell and is billed its price;
+    - a price below that offering's floor cannot be published;
+    - the project's staging lands in the same offering;
+    - a provider change runs as a scheduled move.
 
 **P1.7 Odoo 14–20 support matrix.** Decided on 2026-10-11: the platform sells Odoo 14 to 20.
 - **What:**
@@ -796,6 +862,31 @@ Before launch. "Launch blocker" marks a finding from the review.
 **P2.9 OpenUpgrade automation for Community.**
 - **What:** for Community version steps that OpenUpgrade supports, the P1.18 upgrade-test environment runs OpenUpgrade automatically, one version step at a time, with logs. The supported steps are listed in the P1.7 matrix.
 - **Done when:** a Community 15 database reaches 16 in an upgrade-test environment without manual steps.
+
+**P2.10 Second provider onboarding.** Needs A14 and A15 (for Azure). Required before selling a country that DigitalOcean does not serve.
+- **What:** a written onboarding checklist, run for each new provider:
+    - its provisioning module (P2.11);
+    - the cell contract (P0.26);
+    - its object-storage adapter, including scoped keys or the A15 option for Azure;
+    - its DNS-01 solver;
+    - its capacity adapter;
+    - the P1.9a CloudNativePG qualification against its object store;
+    - restic and registry on its storage;
+    - its rate card and price floor;
+    - a full UI walk-through in that cell.
+
+  The first provider after DigitalOcean is the one the first geography-bound customer needs.
+- **Done when:** the checklist passes for that provider and a test customer in its cell runs every launch feature.
+
+**P2.11 Provisioning modules.** Needs A18.
+- **What:** an OpenTofu module per provider creates:
+    - the cluster, or for Hetzner a self-managed cluster (*assumed* Talos or k3s with Hetzner's cloud controller, CSI and Cilium);
+    - the Standard, Build and Shared pools with labels and taints;
+    - the load balancer, object-storage buckets, and DNS records in the platform DNS provider (A16).
+
+  Bootstrap then installs the platform. DigitalOcean is first, then each provider as P2.10 needs it.
+- **Where:** new `infra/<provider>/`, `scripts/bootstrap/`, `setup/`.
+- **Done when:** a fresh DigitalOcean cell is created from the module and passes P0.26 with no manual console step except the pool ceilings.
 
 ### Gate B · Growth
 

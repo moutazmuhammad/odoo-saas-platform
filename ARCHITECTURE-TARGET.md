@@ -13,7 +13,7 @@ Nothing here is implemented. All decisions are approved subject to the launch ac
 
 ## Decisions and their status
 
-All thirteen decisions were approved on 2026-10-11, subject to the launch acceptance criteria in the plan. Where the owner set a condition, it is a "Done when" in [PLAN-implementation.md](PLAN-implementation.md#launch-blockers-and-launch-acceptance-criteria).
+A1–A13 were approved on 2026-10-11 (A14–A19, provider independence and region pricing, are pending), subject to the launch acceptance criteria in the plan. Where the owner set a condition, it is a "Done when" in [PLAN-implementation.md](PLAN-implementation.md#launch-blockers-and-launch-acceptance-criteria).
 
 | # | Decision | Status | Condition or note | Plan items |
 | --- | --- | --- | --- | --- |
@@ -30,6 +30,12 @@ All thirteen decisions were approved on 2026-10-11, subject to the launch accept
 | A11 | Automatic Production backups included in every plan | **Approved with conditions** | Plan-based retention and recovery features | P1.16 |
 | A12 | Read-only window for the final major-version upgrade, chosen by the customer | **Approved with conditions** | A tested copy, a verified backup, a customer-selected window and a documented recovery procedure | P1.18 |
 | A13 | State an uptime target on the website; SLA only with HA | **Approved with conditions** | A target only, until HA passes failure and recovery tests; a contractual SLA only once the platform consistently meets it | P0.23, P4.1 |
+| A14 | Provider-agnostic cells: any provider meeting the cell contract; launch on DigitalOcean, add providers through the onboarding checklist when a region needs them | **Pending** | — | P0.25, P0.26, P2.10 |
+| A15 | Object storage on Azure (no S3 API) | **Pending** | Recommended: an Azure Blob adapter in the filestore module (restic, CloudNativePG and the registry support Azure natively). Alternative: an S3-compatible store run inside the cell | P2.10 when Azure is needed |
+| A16 | Platform DNS provider independent of the clouds, for the tenant domain and DNS-01 | **Pending** | One provider with good API and DNSSEC for all regions | P0.7, P0.26 |
+| A17 | Data residency per region; business data never leaves the allowed locations; central control plane holds metadata only | **Pending** | — | P0.25, P1.21 |
+| A19 | Customer chooses region, then provider; a separate price per provider in each region (owner requirement) | **Pending** (requirement given; model to approve) | Region → offerings (provider in region) → cells; price per plan per offering, never below that offering's floor; a project stays in one region and offering | P1.22, P0.18 |
+| A18 | Infrastructure as code: a provisioning module per provider | **Pending** | Recommended: OpenTofu; alternative: manual cluster creation plus bootstrap | P2.11 |
 
 **Launch blockers.** The full list, with each acceptance check, is in the plan's "Launch blockers and launch acceptance criteria". The owner added these on 2026-10-11:
 
@@ -44,7 +50,7 @@ Still open from revision 1: archive window, whether trials share the cluster, ad
 
 ## Summary
 
-**Keep Kubernetes, the Go operator and one namespace per environment.** Production stays dedicated and always on. Staging, dev and trials share and sleep. Revision 2 changes six things:
+**Keep Kubernetes, the Go operator and one namespace per environment, in provider-agnostic cells.** Each cell is a cluster on any provider that meets a tested contract, placed where the customer's data must stay. Production stays dedicated and always on. Staging, dev and trials share and sleep. Revision 2 changes six things:
 
 1. **One PostgreSQL engine:** CloudNativePG for every new environment (A1). Production keeps a dedicated database. Shared Production shards save about $1 per tenant a month and multiply the blast radius, so they are rejected.
 2. **The isolation boundary is the bucket, not the folder.** Spaces keys are per bucket only, so Production files get their own bucket and key (A2).
@@ -110,6 +116,94 @@ Still open from revision 1: archive window, whether trials share the cluster, ad
 | Large | Production above the Standard node size | `saas.platform/pool=large:NoSchedule` | When the first large customer arrives (P3–P4) |
 
 HA is not a pool. An HA tenant runs in its normal Production pool with pod anti-affinity, so that pool needs at least 2 nodes.
+
+## Provider-agnostic cells and data residency
+
+**Requirement (owner, 2026-10-11):** customer environments must be able to run on DigitalOcean, Hetzner, GCP, AWS, Azure, Huawei Cloud or Oracle Cloud. Some customers are bound to a geography, and no provider covers every country. A **cell** is therefore one Kubernetes cluster in one place, on any provider, that meets a fixed contract. The control plane manages every cell the same way, through the Kubernetes API and a few provider adapters.
+
+**What is already provider-neutral (verified):**
+
+- Clusters are reached only through a kubeconfig (`saas.server`).
+- Allocation picks a cluster by region (`_allocate_servers`).
+- Backup storage speaks the S3 API, with presets for AWS, DigitalOcean Spaces and Hetzner, plus a GCS client (`saas_instance_backup.py`).
+- The Build Job already blocks `169.254.0.0/16` and `100.64.0.0/10` (`k8s_builds.py:47`).
+- The registry, restic and CloudNativePG all support S3, GCS and Azure Blob storage natively.
+
+**What is tied to one provider or one place (verified):**
+
+| Today | Problem | Target |
+| --- | --- | --- |
+| Backup storage is one global setting (`res_config_settings.py`) | Every customer's backups go to one bucket in one country | A backup target per cell, in the cell's allowed locations |
+| Cost rate card: `cost_per_cpu_month` plus `cost_per_gb_ram_month` (`saas_server.py:190`) | Adds CPU and RAM separately, the double count found in concern 6; one card per provider shape is needed anyway | Per cell: node price and node allocatable; the concern-6 formula; volume price and minimum volume size |
+| Bootstrap supports DOKS and MicroK8s (`scripts/bootstrap`) | No path for other providers | A provider module per provider that produces a cell meeting the contract, then the same bootstrap |
+| Plans assume DigitalOcean: the Spaces key API (Appendix B), the DOKS autoscaler status and `doctl` (Appendix C), `do-block-storage` | Not portable | Provider adapters (below); per-cell storage class and node pool names |
+
+**The cell contract:** what any provider must give before a cell takes customers. Bootstrap tests every row automatically.
+
+| Contract item | Why | How it is checked |
+| --- | --- | --- |
+| Kubernetes within the operator's supported versions | Operator and CRD rules | Version check |
+| A CNI that **enforces NetworkPolicy** | Tenant isolation rests on it, and some providers ship a CNI that ignores policies unless it is enabled | A probe pod must fail to reach another namespace and the cloud metadata address |
+| Cloud metadata endpoint unreachable from tenant and build pods | Many providers serve node credentials at `169.254.169.254` | Covered by the probe; plus provider settings such as an IMDS hop limit of 1 where available |
+| CSI block storage with online volume expansion | Database volumes grow without downtime | Create, write, expand and check |
+| A LoadBalancer Service for HTTP, HTTPS and TCP 22 | Traefik and the SSH gateway | Live request through the load balancer |
+| Node pools that take labels and taints (`saas.platform/pool`) | Standard, Build, Shared and Large pools | Label and taint check |
+| Object storage with the S3 API and **credentials scoped to one bucket** | A2 isolation, backups, registry, WAL | Key A cannot list bucket B |
+| An object store and backup locations inside the region's allowed countries | Data residency | Endpoints are checked against the region policy |
+| Outbound 443 to the control plane and the mail upstream | Management and mail | Probe |
+
+**Provider adapters in the control plane.** Everything else uses Kubernetes and S3 directly. These are the only places a provider is named:
+
+1. **Object storage:** create and recycle buckets, scoped keys (create, rotate, revoke), lifecycle and versioning, server-side copy. Data paths use the S3 API.
+2. **DNS:** platform zones and DNS-01 for the wildcard. cert-manager has built-in solvers for Route 53, Cloud DNS, Azure DNS, DigitalOcean and Cloudflare, and webhooks for others.
+3. **Capacity:** read the Cluster Autoscaler status where the provider exposes it. Otherwise use pending pods and node conditions. Pool ceilings stay manual, as decided.
+4. **Mail upstream:** SES in a region allowed for that cell, or a generic SMTP provider where SES is not allowed.
+5. **Provisioning:** an infrastructure-as-code module per provider that creates the cluster, pools, load balancer, object storage and DNS records (A18). Bootstrap then installs the platform and runs the contract checks.
+
+**Provider fit at a glance.** These are *assumptions* from general knowledge, to be verified by each provider's onboarding checklist (P2.10). Only DigitalOcean's limits were verified in this review.
+
+| Provider | Managed Kubernetes | S3-compatible object storage | Per-bucket credentials | Notes |
+| --- | --- | --- | --- | --- |
+| DigitalOcean | DOKS | Spaces | Yes (verified) | Launch provider |
+| AWS | EKS | S3 | Yes, IAM (even per prefix) | Turn on NetworkPolicy enforcement in the CNI; IMDSv2 with hop limit 1 |
+| GCP | GKE | Cloud Storage through its S3 interoperability (HMAC keys) | Yes, IAM per bucket | Dataplane V2 or network policy enabled at creation |
+| Azure | AKS | **Blob Storage is not S3-compatible** | Per container (SAS or identity) | Needs A15; the network policy engine is chosen at creation |
+| Huawei Cloud | CCE | OBS (S3-compatible) | IAM and bucket policies | Check NetworkPolicy support per network model |
+| Oracle Cloud | OKE | Object Storage S3 compatibility API | IAM policies per bucket | Large minimum block volume size, so the per-tenant volume cost is higher |
+| Hetzner | **None**; self-managed (for example Talos or k3s with Hetzner's cloud controller and CSI, and Cilium) | Object Storage (S3-compatible) | To verify | Heavier operations: we run the Kubernetes control plane |
+
+**Data residency (A17):**
+
+- **Region policy:** each region carries a policy: its country or jurisdiction, the providers allowed, and the allowed locations for primary data, backup copies, logs and mail upstream.
+- **What stays in the region:** customer business data, meaning databases, files, backups, WAL, stored logs and mail content. It never leaves those allowed locations. The second backup copy goes to another zone, site or in-country provider. If none exists, the customer is told the durability is lower, rather than the data leaving.
+- **What the central control plane holds:** account, billing and project metadata, plus performance findings, which are normalized query text without values. If a jurisdiction ever forbids even that, a regional control plane is a later option.
+- **Blocked moves:** copying Production to staging across regions, cross-cell moves and restores to another region are refused unless the region policy allows them.
+- **Domains:** each cell gets its own wildcard under the tenant domain, for example `*.<region>.<tenant-domain>`, so routing and certificates stay per cell.
+
+**Pricing per cell:** the price floor (60%, aiming for 70%) is computed from each cell's own rate card.
+
+**Regions, providers and pricing (owner, 2026-10-11).** The customer chooses the region for their project. Each region is linked to several providers, and each provider has its own, different pricing.
+
+- **Model:**
+    - **`saas.region`:** the location and its residency policy. It exists today.
+    - **`saas.provider` (new):** DigitalOcean, AWS, GCP, Azure, Huawei Cloud, Oracle Cloud, Hetzner.
+    - **`saas.region.offering` (new):** one provider in one region. It holds:
+        - the cells (`saas.server`) that serve it;
+        - whether it is active and offered to customers;
+        - its rate card, used for the price floor;
+        - its price list;
+        - which features it supports (HA, PITR, SSH, backup locations).
+    - **`saas.server`:** each cell belongs to exactly one offering.
+- **Choosing:**
+    1. When creating a project, the customer picks a region.
+    2. The portal then shows that region's offerings as cards: provider name, monthly price for the chosen plan, backup locations, and available features.
+    3. The customer picks one. The recommended card is the cheapest that has capacity. If only one offering exists, the step is skipped.
+- **Pricing per offering:** each plan has a price per offering. The price is set by staff or computed from the offering's rate card, and it can never be below that offering's 60% floor; the target is 70% at scale. Publishing a price below the floor is refused. Today's single `saas.region.price_multiplier` (`saas_region.py:33`, used by `saas_pricing._region_multiplier`) becomes a fallback for offerings without a price list.
+- **The project stays together:** a project's environments (Production, staging, dev) live in the same region. By default they also use the same offering, so copies stay inside one provider's network and object storage.
+- **Changing region or provider:** this is a move between cells. It means a backup, a restore and a switch at a customer-chosen window (like pool moves), it must pass the region policy (A17), and it changes the price from the next billing period.
+- **Allocation:** `_allocate_servers` picks the least-loaded healthy cell within the chosen offering, not across the whole region.
+- **Billing:** invoices and the portal show region and provider. Margin reports are per offering.
+
 
 ## Architecture diagram
 
@@ -538,6 +632,7 @@ The card opens the full finding: the normalized query, its tables and module, th
 | D12 | Pools by phase: Standard now, Build in P0, Shared in P2, Large on demand | All pools at launch | Pay for a pool only when it has a job |
 | D13 | Tenant apps on their own registrable domain, on the Public Suffix List (A4) | Subdomains of the portal domain | Cookie isolation between tenants and from the portal |
 | D14 | Wildcard for platform hosts; custom domains on a separate issuance path with TXT ownership | HTTP-01 per platform host; HTTP-only verification for custom domains | Rate limits, and takeover safety (concern 8) |
+| D17 | Provider-agnostic cells behind a tested contract and five adapters (A14–A18) | Building for one cloud; a multi-cloud abstraction layer over every service | Customers bound to a country can be served on whatever provider exists there, while the platform stays one codebase |
 | D16 | Per-customer performance insights: a CronJob collector reading `pg_stat_statements`, the exporter's lock metrics and Traefik latency, with findings stored in the control-plane database (A10) | A per-tenant monitoring stack; an always-on perf service; `auto_explain` with a log pipeline; query ids as Prometheus labels | Lowest cost; no new always-on service; recommendations on the dashboard, not by email, avoiding notification fatigue |
 | D15 | Mail through AWS SES behind a platform relay that holds the only credential (A7) | An IAM user per customer; one shared SES credential in tenants; customers' own SMTP only | No AWS credentials in tenants; quotas, rate limits and abuse pauses per customer |
 
@@ -558,7 +653,7 @@ The card opens the full finding: the normalized query, its tables and module, th
 | Dedicated Production databases | None shared; each scales with its plan | Larger plan or the Large pool |
 | CloudNativePG operator | About 1,000 clusters per cell (*assumed*) | Watch reconcile latency; tune concurrency; open a new cell |
 | Operator | Reconcile latency above 30 s | 2 replicas with leader election; narrower informers |
-| Cell | About 1,500 environments or 60 nodes (*assumed*) | New cell |
+| Cell | About 1,500 environments or 60 nodes (*assumed*), or a customer needs a country with no cell | New cell, on whichever provider serves that country and meets the contract |
 | Control-plane crons | A cycle overruns its interval | Batched reads per cluster |
 
 **How it grows:**

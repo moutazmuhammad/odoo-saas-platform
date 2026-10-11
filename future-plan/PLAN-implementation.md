@@ -6,7 +6,7 @@ This plan turns the target architecture into ordered, shippable items. The four 
 
 Inside the appendices, an old file name means its appendix: `PLAN-backup-restore.md` is A, `PLAN-spaces-filestore.md` is B, `PLAN-cluster-capacity.md` is C, and `PLAN-postgresql-architecture.md` is D.
 
-**Status: plan only. Revision 3 (2026-10-11):** it fixes the six problems found in the review (launch scope, cost model, ordering contradictions, design security holes, missing launch work, wrong references) and adds Bring Your Own Server. Decisions A1–A19 are approved (A14–A19 delegated by the owner); A20 waits for the legal review; A21 (BYOS design) is new. The launch itself runs from `../PLAN-cost-reduction.md`. Implementation starts only when the owner says so, after this document is accepted.
+**Status: plan only. Revision 3 (2026-10-11):** it fixes the six problems found in the review (launch scope, cost model, ordering contradictions, design security holes, missing launch work, wrong references) and adds Bring Your Own Server, now on a `DockerComposeDriver` behind one infrastructure interface (owner direction, 2026-10-11). Decisions A1–A19 are approved (A14–A19 delegated by the owner); A20 waits for the legal review; A21 (BYOS design) is new. The launch itself runs from `../PLAN-cost-reduction.md`. Implementation starts only when the owner says so, after this document is accepted.
 
 ## How to use this plan
 
@@ -57,8 +57,8 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
 | A18 Provisioning modules: OpenTofu | P2.11 |
 | A19 Region, provider and pricing model | P1.22 (deferred), P0.18 |
 | A20 Enterprise source model and legal gate (pending legal) | P1.23 |
-| A21 Bring Your Own Server design (k3s, no platform SSH key, management fee) | P1.32 |
-| A22 Pricing and marketing on the oec.sh model (freemium tiers; backup rule to confirm) | P1.33, P1.34, P1.35 |
+| A21 BYOS on a Docker Compose driver with the mTLS agent, behind one interface | P1.36, P1.32, P1.37, P1.38 |
+| A22 Pricing: managed by resources, BYOS by subscription, Enterprise licence separate; marketing (backup rule and annual discount to confirm) | P1.33, P1.34, P1.35 |
 
 ## Launch scope (revision 3)
 
@@ -101,7 +101,7 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
     - P1.29 on-call, status page and control-plane observability;
     - P1.30 automated end-to-end walk-through.
 - **Honesty and pricing:** P0.23 uptime target; P0.18 cost model (the internal cost floor behind A22); P1.31 usage metering; P1.33 freemium pricing; P1.34 marketing site.
-- **Primary offer:** P1.32 Bring Your Own Server, home of the Free plan.
+- **Two hosting types under one control plane:** P1.36 one infrastructure interface; P1.32 BYOS on the `DockerComposeDriver` with the Veltnex agent, home of the Free plan; P1.37 capability matrix; P1.38 conformance test across runtimes.
 - **Parity features:**
     - P1.1 custom domains (A5 procedure);
     - P1.2 submodules;
@@ -851,72 +851,92 @@ Before launch. "Launch blocker" marks a finding from the review.
     - a tenant over its storage allowance gets the correct usage line;
     - the margin report lists every plan.
 
-**P1.32 Bring Your Own Server (BYOS).** **Tier L (launch)**: the primary offer and the home of the Free plan under the oec.sh pricing model (A22). Needs A21. Like oec.sh's model: the customer brings a server and pays only for operation and management.
-- **The customer provides:**
+**P1.32 Bring Your Own Server on the `DockerComposeDriver`.** Tier L: the second hosting type at launch. Needs A21 and P1.36.
+- **Customer requirements:**
     - Ubuntu 22.04 or 24.04 LTS, or Debian 12;
-    - at least 2 vCPU, 4 GB RAM and 40 GB disk for one small environment; 4 vCPU and 8 GB recommended;
-    - a public IPv4 address, with 80 and 443 reachable;
+    - at least 2 vCPU, 4 GB RAM and 40 GB disk (4 vCPU and 8 GB recommended);
+    - a public IPv4 address with 80 and 443 reachable;
     - root access, for the install only.
-- **Install:**
+- **Secure onboarding:**
     1. **Command:** `curl -sfL https://<portal>/byos/install.sh | sudo VELTNEX_TOKEN=… bash`, with a one-time token valid 30 minutes.
-    2. **Preflight:** OS, resources and ports, with a clear refusal before anything changes.
-    3. **Registration:** the script registers the server and reports progress milestones. Re-running it is safe.
-    4. **System setup:**
-        - wait for the apt lock;
-        - swap;
-        - kernel limits (inotify watches for Odoo 19 and later, as oec.sh found);
-        - UFW: 80 and 443 open, the Kubernetes API (6443) open **only** to the platform's egress addresses, SSH left exactly as the customer had it;
-        - unattended security upgrades.
-    5. **Platform:** single-node **k3s**, which is lighter than MicroK8s on small servers and enforces NetworkPolicy through its built-in controller. Then the same operator, cert-manager, Traefik, a small Prometheus with 2 days' retention and the backup tool, through the same bootstrap charts as a cell.
-    6. **Checks:** the cell contract checks (P0.26-core) run before the server takes environments.
-- **No platform root access:**
-    - unlike oec.sh, Veltnex installs **no SSH key**;
-    - it manages the server only through the Kubernetes API, with the least-privilege ServiceAccount of P0.1, held on the control plane only;
-    - support access needs a time-limited grant from the customer.
-- **The server is treated as untrusted, because the customer has root on it:**
-    - nothing shared with other customers goes there: no wildcard key, no shared registry login, no shared backup key;
-    - backup credentials are scoped to that customer's own bucket or prefix, or the customer brings their own S3;
-    - data the server reports is not trusted for anything but that customer.
-- **How it works on the server:**
-    - **Builds:** run on the customer's server (BuildKit Job) into a local registry, so they use the customer's CPU, not the Build pool. Tests (P1.11) run there too.
-    - **Domains:** the customer's own domains with per-host HTTP-01 certificates. An optional platform host goes under a **separate BYOS domain**, not the tenant domain, so BYOS issuance never touches the tenant domain's Let's Encrypt limit; ask Let's Encrypt for a rate-limit increase as BYOS grows.
-    - **Mail:** the customer's own SMTP at launch. The platform relay comes later as an add-on, through a public authenticated endpoint.
-    - **Backups:** the same restic engine and consistency model, off the server: the platform backup storage, billed per GB, in an allowed location for the server's region; or the customer's own S3.
-    - **Monitoring:** server heartbeat, disk, memory and environment health through the same Prometheus path. The performance advisor's collector runs on the server and sends its findings out.
-    - **Sleep:** off by default, because it saves the platform nothing.
-    - **Updates:** k3s, operator and charts are upgraded in customer-chosen windows. The OS stays the customer's responsibility.
-- **Billing:** a management fee per server, tiered by environment count or server size, plus usage of platform resources (backup storage, later mail). There is no SLA on infrastructure; the uptime target excludes the server and its provider. The fee covers support time, which is the main cost (metered in P1.31).
-- **Detach:** the customer can detach a server. Management stops and the platform's credentials and agents are removed. The data stays on the server, with a documented export.
-- **Where:** new `scripts/byos/install.sh` (generated per token), `scripts/bootstrap/` (shared chart install), `saas_core/models/saas_server.py` (`kind = byos`, `owner_partner_id`), the registration and progress API in `saas_website`, `saas_billing` (management-fee products), `frontend/veltnex` (Servers page, install command).
+    2. **Preflight:** OS, resources and ports, refusing before any change.
+    3. **Registration:** progress milestones, and safe re-runs.
+    4. **System setup:** apt-lock wait, swap, inotify limits, unattended security upgrades, UFW with 80 and 443 inbound only, and SSH left untouched.
+    5. **Agent:** it installs the **Veltnex agent**, which gets a per-server client certificate from the control plane's CA and connects outbound over mTLS.
+    6. **Runtime:** the agent installs Docker and Traefik through its signed operations.
+- **The install script is written by Veltnex (clean-room), not copied from oec.sh.** The owner shared oec.sh's Quick Connect script as a reference. It has no published licence and is served by their API, so their code is not reused, even modified. Only the techniques are.
+    - **Techniques kept:**
+        - root and OS preflight with support tiers (Ubuntu LTS and Debian stable first), failing before any change;
+        - JSON progress lines and milestones reported to the platform;
+        - the error trap that reports the failing step;
+        - one-time registration token, removed from the environment after use, and a separate progress token;
+        - safe re-runs;
+        - apt-lock wait;
+        - swap sized from RAM (skipped inside containers such as LXC);
+        - inotify limits for Odoo 19 and later;
+        - Docker CE from Docker's signed repository, with `daemon.json` log rotation;
+        - a repair step for a broken CA bundle;
+        - recording the SSH port before touching the firewall.
+    - **Done differently:**
+        - **Firewall:** **no `ufw --force reset`.** Rules are only added (80 and 443) and the customer's existing rules are kept. CSF or any other firewall is never disabled without the customer's consent; the script stops and explains instead.
+        - **No platform SSH key** in any account.
+        - **No Netdata:** it runs with `SYS_ADMIN`, `pid=host`, the Docker socket and 2 GB of memory, and streams to a fixed IP. Monitoring goes through the agent with lightweight collectors.
+        - **Pinned images:** images and binaries are pinned by version and digest, not `stable` or `v3.6`.
+        - **Verified script:** the script itself is signed, and its checksum is shown in the portal before running.
+        - **Traefik:** per-customer ACME e-mail, and the dashboard off.
+        - **No webhook secret in a config file:** the agent's mTLS certificate replaces the shared HMAC secret.
+        - **fail2ban:** optional, offered rather than imposed.
+        - **No `eval` in maintenance scripts:** cleanup (old images and build cache) runs as a signed agent operation, never with `eval`, and never prunes volumes.
+- **The agent:**
+    - runs as user `veltnex-agent` in the `docker` group, which is effectively root on that host, hence the controls below;
+    - executes only an allowlist of operations signed by the control plane (deploy, update, backup, restore, logs, shell session, health, usage), never arbitrary shell;
+    - the customer sees its audit log and can pause it;
+    - its certificate is revoked on detach.
+- **Runtime:**
+    - one Docker Compose project per environment: Odoo, cron, and PostgreSQL with the limited role (P0.24), on a project network;
+    - Traefik with per-host HTTP-01 on customer domains, or a separate BYOS domain;
+    - builds and tests with `docker build` and a throwaway PostgreSQL container on the server;
+    - blue-green updates through Traefik (start new, health-check, switch, stop old), reusing the old `SshDockerDriver` "shadow" approach;
+    - the update gate (`-u`) runs before the switch.
+- **Backups:** daily to the customer's own S3 in every plan. Veltnex off-site restic, with the P1.5 consistency model, from Pro.
+- **Monitoring:** health, resources and `pg_slow_queries.log` through the agent; the performance collector runs on the server.
+- **Treated as untrusted:** the server gets only its own credentials. Data it reports is trusted only for that customer.
+- **Billing:** by subscription (P1.33). Sleep is off. There is no infrastructure SLA.
+- **Detach:** the agent and its certificate are removed, and data stays on the server.
+- **Where:**
+    - `control-plane/saas_core/drivers/docker_compose_driver.py` (new; start from `git show cb9038d^:control-plane/saas_core/drivers/ssh_docker_driver.py`);
+    - a new `compute/tools/veltnex-agent` (Go: mTLS client, signed-operation allowlist, Compose runner);
+    - `scripts/byos/install.sh` (generated per token);
+    - `saas_core/models/saas_server.py` (`runtime = docker_compose`, owner, agent certificate);
+    - the registration and progress API in `saas_website`;
+    - `frontend/veltnex` (Servers page, install command).
 - **Done when:**
-    - a fresh Ubuntu 24.04 VM runs the command and registers within 10 minutes;
-    - a Production environment deploys, builds with tests, gets a TLS certificate on the customer's domain, backs up off-server and restores;
-    - the platform holds no SSH key on the server;
-    - the API port refuses any address but the platform's;
-    - detaching leaves Odoo data intact.
+    - a fresh Ubuntu 24.04 VM registers within 10 minutes;
+    - a Production environment deploys from Git with tests, gets TLS on the customer's domain, updates through blue-green with no failed requests in an HTTP poll at normal load, backs up and restores;
+    - an unsigned or non-allowlisted command is refused by the agent;
+    - there is no platform SSH key and no open management port;
+    - detaching leaves the Odoo data intact.
 
-**P1.33 Pricing on the oec.sh model (freemium).** Launch blocker. Needs A22.
+**P1.33 Pricing: managed by resources, BYOS by subscription.** Launch blocker. Needs A22.
 - **What:**
-    - **Plans (owner):** US dollars per month, excluding server cost:
-        - **Free $0:** 1 server, 2 projects, dashboard, deploy from the dashboard, shells, logs, uptime, and daily backups to the customer's own S3;
-        - **Starter $19:** up to 2 servers, plus Git auto-deployment with tests and promotion, monitoring, custom domains, staging with Mailpit;
-        - **Pro $39:** unlimited servers and projects within the published plan, plus teams and permissions, Veltnex automated off-site backups, and advanced monitoring (the Advisor);
-        - **Agency $199:** for hosting companies, with client organisations, white-label portal and client billing;
-        - **add-on, Managed Database Services:** after P4.1 and P4.2.
+    - **Managed hosting, by resources:** workers, storage and environments through the existing engine (`saas_pricing.py`), with the server cost included and the 60% floor from P0.18, checked with metering (P1.31).
+    - **BYOS, by subscription** (owner; US dollars per month, excluding servers):
+        - Free $0: 1 server, 2 projects;
+        - Starter $19: up to 2 servers;
+        - Pro $39: unlimited servers and projects within the published plan;
+        - Agency $199: hosting companies and resellers.
 
-      The feature split is a proposal the owner can move.
-    - **Annual:** 20% off (*assumed*, as at oec.sh; owner to confirm).
-    - **Feature gates:** enforced per plan in the portal and API: server count, Git webhooks, IAM members, Veltnex backup storage, the Advisor.
-    - **BYOS:** the customer pays the plan, and their provider bills the servers.
-    - **Managed cells:** the plan, plus infrastructure at metered provider cost (P1.31) shown line by line, plus a per-server management fee; Veltnex backups always included there (A11).
-    - **Margin:** the 60% target is measured on Veltnex's own revenue (plan plus management fee, not the pass-through), checked per plan by the margin cron.
+      Paid features are gated per plan. The proposed split: Git auto-deploy and monitoring from Starter; teams and permissions, Veltnex off-site backups and the Advisor from Pro; client organisations, white-label and client billing in Agency. Annual is 20% off (to confirm).
+    - **Every plan:** daily backups to the customer's own S3 (the backup rule to confirm); managed hosting always includes Veltnex backups (A11).
+    - **Odoo Enterprise licences are separate** from hosting and management fees in both models, so the comparison with Odoo.sh is clean.
     - **Free plan:** BYOS only, one per verified person or company; servers inactive for 90 days are detached.
     - **Existing customers:** keep their plan until renewal (notice in P0.27).
-- **Where:** `control-plane/saas_billing` (plan products, limits, annual price, pass-through usage lines, management fee), `saas_core/models/saas_plan.py` (limits and feature flags), `saas_iam` (members gated by plan), `frontend/veltnex` (pricing page, upgrade prompts at each gate).
+- **Where:** `control-plane/saas_billing` (subscription products, limits, feature gates, annual price), `saas_core/models/saas_plan.py` (limits and feature flags), `saas_iam` (members by plan), `frontend/veltnex` (pricing page with both hosting types, upgrade prompts).
 - **Done when:**
-    - each gate is enforced; for example, a second server or a third project on Free, a third server or a Git webhook beyond the plan, and team members below Pro are refused with an upgrade prompt;
-    - a managed-cell invoice shows the plan, the management fee and infrastructure lines equal to metered cost;
-    - the margin report shows each plan's margin on own revenue.
+    - every gate is enforced with an upgrade prompt;
+    - a managed invoice prices resources above the floor;
+    - a BYOS invoice shows only the subscription and any Veltnex storage;
+    - the margin report clears 60% for every managed plan and every subscription tier.
 
 **P1.34 Marketing site and content (oec.sh approach, honest).** Launch blocker for public launch.
 - **What:**
@@ -947,6 +967,31 @@ Before launch. "Launch blocker" marks a finding from the review.
     - an agency creates two client organisations, manages both, and each client sees only its own;
     - with white-label on, a client sees only the agency's brand;
     - the agency's wholesale invoice matches the metered usage of its clients.
+
+**P1.36 One infrastructure interface.** Launch blocker for BYOS. Needs A21.
+- **What:** extend `ComputeDriver` (`control-plane/saas_core/drivers/base.py`; 8 operations today) into the full interface:
+    - provision, deploy, update with the update gate, backup, restore, monitor and usage, destroy, exec, logs and log stream, interactive shell, health;
+    - a `capabilities()` call returning what the driver supports (rolling updates, blue-green, HA, PITR, sleep, shared database, and so on).
+
+  Move the roughly 40 `KubernetesDriver`-only methods behind it.
+- **Model code:** `saas.instance` calls only the interface, never a driver directly, and reads capabilities instead of checking `compute_driver == 'kubernetes'`.
+- **No rewrite:** the Kubernetes operator stays as it is.
+- **Where:** `drivers/base.py`, `drivers/kubernetes_driver.py`, `models/saas_instance.py`, `models/saas_instance_backup.py`, `models/saas_server.py` (runtime field).
+- **Done when:**
+    - all existing tests pass with the Kubernetes driver behind the interface;
+    - a fake driver in tests exercises every operation;
+    - no model code imports a concrete driver.
+
+**P1.37 Capability matrix per hosting type.** Launch.
+- **What:** the portal shows, per environment and in the docs, what its hosting type supports (architecture, "Capabilities are not identical"), read from the driver's `capabilities()`. Unsupported actions are hidden or explained, never offered and then failed.
+- **Done when:** a BYOS environment shows no sleep, HA or PITR options, and shows its blue-green deploy note; a managed one shows its add-ons.
+
+**P1.38 Conformance test across runtimes.** Launch.
+- **What:** in CI, the same Odoo version and the same custom addons (a test repository with a submodule) run on both drivers:
+    - deploy, build with tests, update with a module upgrade, backup, restore, Odoo shell, logs and custom domain.
+
+  Only the execution differs; results must match.
+- **Done when:** the suite passes on Kubernetes and Docker Compose for Odoo 16 and 18, and on every version in the P1.7 matrix before release.
 
 ### Gate A · Launch
 

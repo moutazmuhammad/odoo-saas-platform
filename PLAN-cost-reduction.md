@@ -13,7 +13,11 @@ Status: plan only. Nothing is built or deployed. Implementation starts when the 
 - **Sleep is required**, because it saves money, but only in the form that really reduces paid resources (section 3).
 - **Platform database** moves to its own VM, managed by the owner (P0.29).
 - **Billing intelligence:** usage metering (P1.31), so every customer is billed and priced from measured consumption.
-- **Bring Your Own Server is the primary offer at launch** (P1.32), on the oec.sh model. The customer brings a server and pays a flat plan; the server's provider bills them directly.
+- **One control plane, two hosting types (owner, 2026-10-11):**
+    - **Managed hosting:** Kubernetes and the existing operator, priced by resources.
+    - **Bring Your Own Server:** Docker Compose and Traefik on the customer's server, with a Veltnex agent over mTLS, priced by subscription.
+
+  Both sit behind one infrastructure interface (P1.36, P1.32), and the portal shows each type's capabilities (P1.37). The install script is a clean-room Veltnex script; oec.sh's code is not copied.
 - **Pricing on the oec.sh model (P1.33).** US dollars per month, excluding server cost:
     - Free $0: 1 server, 2 projects;
     - Starter $19: up to 2 servers;
@@ -58,7 +62,7 @@ The other launch work (Tier L in the full plan) also stays:
 
 | Rank | Reduction | Saving per month (*assumed* scale) | Risk it adds | Item |
 | --- | --- | --- | --- | --- |
-| C0 | **Bring Your Own Server first:** most customers run on their own servers under the flat plans, so Veltnex buys no compute, volumes or load balancer for them | About **$12–14 per customer moved to BYOS** (the managed cost per Production environment, corrected model); about **$600 or more** at 50 customers. Infrastructure risk moves off Veltnex's books | Less control over customer servers (handled by the cell checks and per-customer isolation); support load per server, which metering covers | P1.32, P1.33 |
+| C0 | **Bring Your Own Server (Docker Compose driver) for customers who have servers:** most customers run on their own servers under the flat plans, so Veltnex buys no compute, volumes or load balancer for them | About **$12–14 per customer moved to BYOS** (the managed cost per Production environment, corrected model); about **$600 or more** at 50 customers. Infrastructure risk moves off Veltnex's books | Less control over customer servers (handled by the cell checks and per-customer isolation); support load per server, which metering covers | P1.32, P1.33 |
 | C1 | **Run cells on `s-4vcpu-8gb` nodes, not `s-2vcpu-4gb`** | About **$590**: Production compute falls from about $22.60 to $10.85 per tenant. The DaemonSet share drops from 14% to about 6%, and the rollout surge pod fits beside the tenants | More tenants affected by one node failure; covered by P0.28 maintenance windows | New: C1 below |
 | C2 | **Sleep for non-production** (dev 1 h, staging 2 h, trials 1 h) **with a Shared pool that scales to zero** | About **$135** at 40 environments: about $3.35 per environment, because Odoo is awake about 15% of the time; more as environments grow | A 30 s wake on a warm node, 1–3 minutes from a cold pool | P2.1, P2.5 |
 | C3 | **One cell and one load balancer** until a paying customer needs another region | About **$76 or more per cell avoided**: cell overhead about $28 plus at least one node | None now; residency customers wait for a funded cell | Full plan "Later" tier |
@@ -79,7 +83,10 @@ The other launch work (Tier L in the full plan) also stays:
 | E4 | **Launch on the Managed PostgreSQL** (with the limited role, M1); **CloudNativePG in L+**, qualified on one PostgreSQL major first | **2–4** | A later move of each tenant by dump and restore, at a customer-chosen time | P1.9a, P1.9b |
 | E5 | **A stock mail relay** (Postfix with SASL and a rate-limit policy), a low SES account quota and a manual pause; the automated quota and abuse engine later | **2–3** | Abuse is handled by hand at first; the SES quota caps the damage | P1.8 |
 | E6 | **Customer buckets with the P3 filestore, not at launch;** trials use a prefix, not buckets | **1–2** | None until P3; stays far below the 100-bucket limit | P1.4 |
+| E8 | **Reuse the deleted `SshDockerDriver`** (commit `cb9038d`, 294 lines, Compose with shadow deploys) as the starting point of the `DockerComposeDriver` | **About 1–2** | Old code must be reviewed against today's security rules | P1.32 |
 | E7 | **Build the registry once**, with per-tenant access in P0.3, instead of a single pull credential that is replaced later | **About 1** | None | P0.3 (P1.24 merged) |
+
+**Added by the owner's architecture (one control plane, two runtimes):** the one infrastructure interface (P1.36), the Docker Compose driver with the agent (P1.32), the capability matrix (P1.37) and the conformance test (P1.38). Together they are *assumed* at 6–9 engineer-weeks: a second runtime costs more than a k3s cell would, and buys a lighter, more familiar BYOS for customers.
 
 **Not cut, by owner decision:**
 

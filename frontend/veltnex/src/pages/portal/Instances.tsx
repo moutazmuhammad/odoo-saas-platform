@@ -1,7 +1,7 @@
 import { i18nText } from "@/i18n";
 import * as React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Server, Plus, Search, ChevronRight } from "lucide-react";
+import { Server, Plus, Search, ChevronRight, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
@@ -10,6 +10,7 @@ import { AlertBanner } from "@/components/AlertBanner";
 import { PageHeader } from "@/components/PageHeader";
 import { DataTable, type Column } from "@/components/DataTable";
 import { CustomerFilter } from "@/components/CustomerFilter";
+import { canReactivate, goReactivate } from "@/components/ReactivateBanner";
 import { useAuth } from "@/context/AuthContext";
 import { useInstances } from "@/context/InstancesContext";
 import { formatBytes, formatDate } from "@/lib/format";
@@ -77,7 +78,26 @@ export default function Instances() {
     { key: "size", header: i18nText("Size"), hideBelow: "lg", className: "text-muted", render: (i) => i18nText("{0} workers · {1}", [i.workers, formatBytes(i.storage_gb)]) },
     { key: "status", header: i18nText("Status"), sortValue: (i) => projectStatus(i), render: (i) => <ProjectStatusBadge project={i} /> },
     { key: "created", header: i18nText("Created"), hideBelow: "md", className: "text-muted", sortValue: (i) => i.created, render: (i) => (i.created ? formatDate(i.created) : "—") },
-    { key: "go", header: "", align: "right", width: "44px", render: () => <ChevronRight className="size-4 text-muted" /> },
+    {
+      key: "go",
+      header: "",
+      align: "right",
+      width: "44px",
+      render: (i) =>
+        canReactivate(i) ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={(e) => {
+              e.stopPropagation();
+              goReactivate(i);
+            }}
+          >
+            <RotateCw className="size-4" />{i18nText("Reactivate")}</Button>
+        ) : (
+          <ChevronRight className="size-4 text-muted" />
+        ),
+    },
   ];
 
   return (

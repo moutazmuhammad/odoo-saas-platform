@@ -6,6 +6,7 @@ import { useInstances } from "@/context/InstancesContext";
 import { RuntimeStatusBadge } from "@/components/RuntimeStatusBadge";
 import { CopyButton } from "@/components/CopyButton";
 import { Spinner } from "@/components/Spinner";
+import { ReactivateBanner } from "@/components/ReactivateBanner";
 
 /** Shared layout for a single instance: a PERSISTENT header (identity + status +
  *  the live URL) that stays put while the section content below swaps in place —
@@ -79,6 +80,8 @@ export default function InstanceLayout() {
           </div>
         </div>
       )}
+
+      {inst && <ReactivateBanner project={inst} />}
 
       <PermissionContext.Provider value={inst ? { id: instanceId, permissions: inst.permissions } : null}><Outlet /></PermissionContext.Provider>
     </div>

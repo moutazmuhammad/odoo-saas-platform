@@ -19,7 +19,7 @@ vi.mock("@/lib/api", async (original) => ({
 const projects = [
   { id: 1, name: "alpha", customer: { id: 10, name: "Acme" }, state: "running", runtime_state: "online", runtime_checked_at: new Date().toISOString(), runtime_received_at: Date.now() },
   { id: 2, name: "beta", customer: { id: 20, name: "Zen" }, state: "stopped" },
-  { id: 3, name: "gamma", customer: { id: 10, name: "Acme" }, state: "cancelled" },
+  { id: 3, name: "gamma", customer: { id: 10, name: "Acme" }, state: "cancelled", permissions: ["billing.manage"] },
 ].map((project) => ({ domain: "example.com", region: "EU", created: "", workers: 2, storage_gb: 10, state_label: project.state, is_owned_project: project.customer.id === 10, ...project } as ApiInstance));
 
 beforeEach(() => {
@@ -44,6 +44,11 @@ describe("Staff customer project filtering", () => {
     expect(screen.queryByText("gamma")).not.toBeInTheDocument();
     await user.type(screen.getByPlaceholderText("Search projects…"), "missing");
     expect(screen.getByText("No matching projects")).toBeInTheDocument();
+  });
+
+  it("offers Reactivate only on cancelled projects", () => {
+    renderWithProviders(<Instances />);
+    expect(screen.getAllByRole("button", { name: /Reactivate/ })).toHaveLength(1);
   });
 
   it("restores the customer filter from the page URL", () => {

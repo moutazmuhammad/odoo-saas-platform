@@ -2646,5 +2646,9 @@
   "Production backups": "النسخ الاحتياطية للإنتاج",
   "Recent builds": "أحدث البناءات",
   "Website": "الموقع",
-  "{0} is suspended": "{0} موقوف"
+  "{0} is suspended": "{0} موقوف",
+  "This project is cancelled — your last snapshot is kept": "هذا المشروع ملغى — تم الاحتفاظ بآخر نسخة احتياطية",
+  "This project is cancelled": "هذا المشروع ملغى",
+  "We've kept your most recent full snapshot{0}. Reactivate the project to restore it. A one-time data-restoration fee{1} applies on top of the new plan.": "احتفظنا بآخر نسخة احتياطية كاملة لمشروعك{0}. أعد تفعيل المشروع لاستعادتها. تُضاف رسوم استعادة بيانات لمرة واحدة{1} إلى الخطة الجديدة.",
+  "Reactivate to start the project again on a new plan. No snapshot was kept, so it starts empty.": "أعد التفعيل لتشغيل المشروع من جديد على خطة جديدة. لم يتم الاحتفاظ بنسخة احتياطية، لذا سيبدأ فارغًا."
 }

@@ -108,7 +108,7 @@ class TestSpaShellRoutes(HttpCase):
 
     def test_static_shell_routes_all_serve_200(self):
         for path in ('/', '/docs', '/docs/some-article', '/help', '/login',
-                     '/my', '/my/home', '/my/instances', '/my/billing',
+                     '/my', '/my/home', '/my/dashboard', '/my/instances', '/my/billing',
                      '/my/settings'):
             resp = self.url_open(path)
             self.assertEqual(
@@ -166,6 +166,22 @@ class TestSpaShellRoutes(HttpCase):
         self.assertFalse(
             location.startswith('/login'),
             "an already-authenticated GET must not be bounced to /login")
+
+    def test_home_sends_signed_in_users_to_their_dashboard(self):
+        user = self.env['res.users'].sudo().create({
+            'name': 'Spa User 4', 'login': 'spauser4@example.com',
+            'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])]})
+        user.password = 'spauserpass4'
+        self.authenticate('spauser4@example.com', 'spauserpass4')
+        resp = self.url_open('/', allow_redirects=False)
+        self.assertIn(resp.status_code, (301, 302, 303))
+        self.assertTrue(resp.headers['Location'].endswith('/my/dashboard'))
+        # The portal's "Website" link still opens the public site.
+        self.assertEqual(self.url_open('/?site=1', allow_redirects=False).status_code, 200)
+
+    def test_home_serves_the_site_to_visitors(self):
+        self.authenticate(None, None)
+        self.assertEqual(self.url_open('/', allow_redirects=False).status_code, 200)
 
     def test_arabic_shell_keeps_spa_urls_unprefixed(self):
         self.opener.cookies.set('veltnex-language', 'ar')

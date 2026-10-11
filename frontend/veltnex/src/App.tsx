@@ -77,9 +77,13 @@ function InstanceHome() {
 // A signed-in customer's home is their dashboard, not the marketing page.
 // "/?site=1" (the portal's "Website" link) still shows the public site.
 export function HomeOrDashboard() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [params] = useSearchParams();
-  if (user && !params.has("site")) return <Navigate to="/my/dashboard" replace />;
+  const showSite = params.has("site");
+  // Don't paint the marketing page while the session check is in flight:
+  // a signed-in customer would see it flash before the dashboard.
+  if (loading && !showSite) return null;
+  if (user && !showSite) return <Navigate to="/my/dashboard" replace />;
   return <Home />;
 }
 

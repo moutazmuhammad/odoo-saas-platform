@@ -128,6 +128,11 @@ def spa_shell():
 class SaasHomeSpa(http.Controller):
     @http.route('/', type='http', auth='public', website=True, multilang=False, sitemap=True)
     def home_page(self, **kw):
+        # A signed-in customer's home is their dashboard. Redirect here, not
+        # in the SPA, so the marketing page never flashes on refresh.
+        # "/?site=1" (the portal's "Website" link) still shows the site.
+        if not request.env.user._is_public() and 'site' not in kw:
+            return request.redirect('/my/dashboard')
         return spa_shell()
 
 
@@ -193,7 +198,7 @@ class SaasRegistrationSpa(SaasRegistration):
 class SaasPortalSpa(SaasPortal):
 
     # --- Portal landing (was the QWeb "My Account" home) ---------------
-    @http.route(['/my', '/my/home'], type='http', auth='public', website=True, multilang=False)
+    @http.route(['/my', '/my/home', '/my/dashboard'], type='http', auth='public', website=True, multilang=False)
     def home(self, **kw):
         return spa_shell()
 

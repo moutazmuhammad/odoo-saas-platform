@@ -114,6 +114,13 @@ describe("Home after sign-in", () => {
     expect(screen.getByText("Marketing home")).toBeInTheDocument();
   });
 
+  it("paints nothing while the session check is still running", () => {
+    vi.mocked(useAuth).mockReturnValue({ user: null, loading: true } as unknown as ReturnType<typeof useAuth>);
+    renderAt("/");
+    expect(screen.queryByText("Marketing home")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dashboard page")).not.toBeInTheDocument();
+  });
+
   it("shows the public site to visitors", () => {
     vi.mocked(useAuth).mockReturnValue({ user: null } as unknown as ReturnType<typeof useAuth>);
     renderAt("/");

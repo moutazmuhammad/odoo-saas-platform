@@ -123,8 +123,8 @@ All go to the Teams channel through the alert webhook, and each one names the cl
 
 **Acceptance:** customers are never refused while a pool can still grow, no update ever waits for room on its node, and each of the four alerts has fired once in a test.
 
-## 8. Open questions
+## 8. Decisions (2026-10-11)
 
-1. **Ceilings:** the maximum nodes for the Standard pool and for the Large pool?
-2. **Large pool machine size:** `s-4vcpu-8gb` (general) or a memory-heavy size, depending on your large plans?
-3. **Moving a customer:** is 1–3 minutes of downtime, at a time the customer picks, acceptable until the zero-downtime move is possible?
+1. **Pool ceilings are set by hand** in the provider's UI (the DigitalOcean console for DOKS). The platform only reads each pool's maximum; it never changes it.
+2. **The Large pool's machine size is also chosen by hand** in the provider's UI. The platform reads each node's real size and picks the pool that fits a package, so a later change of machine size needs no platform change.
+3. **Moving a customer between pools may take 1–3 minutes of downtime,** at a time the customer picks, with an email before and after. This is an accepted exception to the zero-downtime rule until the move without the shared volume is possible.

@@ -9,7 +9,7 @@ Revision 2 answers eight review concerns, adds AWS SES for outgoing mail, and ha
 - **Verified:** checked in the repository, on the live DOKS cluster (read-only Prometheus and kubectl reads on 2026-10-11), or in a provider document that was opened and is linked.
 - **Assumption:** reasonable but not yet proven; each one has a test in the plan.
 
-Nothing here is implemented, and nothing should be until you approve the decisions in the next section.
+Nothing here is implemented, and nothing should be until you approve the decisions in the next section (A1–A13).
 
 ## Decisions awaiting your approval
 
@@ -24,6 +24,9 @@ Nothing here is implemented, and nothing should be until you approve the decisio
 | A7 | Outgoing mail through AWS SES | A platform mail relay per cell holds the only SES credential. Tenants get revocable relay credentials with rate limits, quotas and sender-domain checks; abuse pauses sending automatically. No direct SMTP egress from tenants; staging and dev never reach SES | An IAM user per customer (puts AWS credentials in tenant namespaces), or one shared SES credential in every tenant | Mail |
 | A8 | Production attachments in staging and dev copies | Staging gets them; dev gets them only when asked | Always copy them | Concern 3 |
 | A10 | Performance insights per customer | Basic insights (three alert levels on the dashboard, a short email only for Level 3 that affects users, 14 days of history) in every Production plan; 90-day history plus plan and index-hint views as a paid tier | All features free, or all paid | Performance monitoring |
+| A11 | Automatic Production backups | Included in every Production plan (the price floor covers them) | Keep them as a paid add-on | Backups |
+| A12 | Major Odoo version upgrade cutover | A customer-scheduled window in which Production is read-only, like pool moves: an exception to the zero-downtime rule | Rule out version upgrades | Database upgrade |
+| A13 | Uptime promise on the website | State a target, not an SLA; offer an SLA only with the HA add-on | Keep "99.99% uptime SLA" | Reliability |
 | A9 | Shared non-production cluster size | 2 instances per cell, about $19 a month per cell | 1 instance plus restore from WAL | Concern 7 |
 
 Still open from revision 1: archive window, whether trials share the cluster, add-ons at launch, second backup region, and Enterprise hosting (see the end of this file).
@@ -585,6 +588,46 @@ The card opens the full finding: the normalized query, its tables and module, th
 | SES or relay | Mail stays queued in Odoo and is retried; Production keeps working |
 | Let's Encrypt or DNS | Existing certificates last up to 30 days past the first failed renewal; alert at 14 days |
 
+## Required platform capabilities
+
+**These must exist on the platform (owner's list, 2026-10-11).** Most already exist. The gaps get launch items, except stored log history and automated OpenUpgrade runs, which come right after launch. "Today" is verified in the code on 2026-10-11.
+
+| Area | Capability | Today (verified) | Gap → plan item |
+| --- | --- | --- | --- |
+| Git and CI/CD | Connect GitHub | GitHub, GitLab, Gitea, Bitbucket; signed push webhooks (`controllers/webhook.py`) | — |
+| | Build on push | BuildKit Job per push (`k8s_builds.py`, `saas_instance_build.py`) | Cache (P2.6), Build pool (P0.19) |
+| | Branches mapped to dev, staging, Production | `_env_branch`, `action_link_environment_branch` | — |
+| | Automated tests, build failure detection | Build status and the update gate; **no test runs** | P1.11 tests per push |
+| Shell | Web shell | Browser terminal over WebSocket exec (`ssh_terminal.py`), into a shell container with no secrets | Hardening (P1.10) |
+| | SSH | **None:** no key-based SSH | P1.13 SSH gateway |
+| | Odoo shell and Python console | **Not usable:** the shell container has no `odoo.conf`, so `odoo shell` cannot connect | P1.12 |
+| Dependencies | `requirements.txt` and Python dependencies | Merged from every repository root at build (`templates/build/inspect.py`), installed in the image | Show the resolved package list per build (P1.11) |
+| Addons | Community and custom addons | Official Odoo images plus the customer's repositories | — |
+| | Git submodules | **None** (`fetch.sh` is shallow and drops `.git`) | P1.2 |
+| Logs and monitoring | Live logs | Live tail of the web container | P1.14 adds cron, install, build and pip logs |
+| | Build and server status | Build status; runtime observation (`saas_instance_health.py`) | — |
+| | Availability and performance indicators | Usage dashboard (Prometheus); **no uptime percentage** | P1.15 uptime; P2.7 performance |
+| | `pg_slow_queries.log` | **None** | P1.14 |
+| Backups | Automatic Production backups | Daily backups exist, but are a **paid add-on** (`saas_master.daily_backup_pct`) | P1.16: included in every Production plan (A11) |
+| | Manual backups, database import | Snapshots; import through a presigned upload | — |
+| | Restore | Per-database and full-instance restore | Swap-safe restore (P0.4) |
+| | Database plus filestore | Yes | Consistency model (P1.5) |
+| | Production copy in staging | Yes, neutralized and PII-masked | Attachment rule (A8) |
+| Staging | Test on Production data | Yes | — |
+| | Mail catcher | **None** | P1.3 |
+| | Promote staging to Production | Merge on the provider, **GitHub only** (`saas_instance_repo.py:879`) | P1.17: merge for all providers, plus a pre-deploy snapshot |
+| Platform | Automatic mail servers | **None** | P1.8 relay into Production, Mailpit for the rest |
+| | Customer domain on Production, subdomains for dev | Subdomains only | P1.1 |
+| | Server management: monitoring, backups, DNS | Platform-side, partial | P0.7, P0.11, P0.12, P1.1 |
+| | Database upgrade with a test before the final run | **Module upgrades only** (`_run_upgrade` runs `odoo -u`) | P1.18 version upgrade workflow; P2.9 OpenUpgrade automation |
+| | Access control by role and environment | Fine-grained permissions per environment (`saas_iam/roles.py`); **no persona roles** | P1.19 Developer, Tester and Project Manager presets |
+| | History of builds, imports and restores | Builds and database operations recorded separately | P1.20 one activity timeline per environment |
+
+**Two contradictions to fix:**
+
+- **Backups:** automatic Production backups must be included, not sold separately (A11). Their cost is already in the cost model (about $0.32 a month for a 2-worker plan).
+- **Website claims:** the website promises a "99.99% uptime SLA" (`frontend/veltnex/src/pages/Hosting.tsx:95`). A single Odoo pod is down 1–3 minutes on a node failure, and MAINTAINING.md forbids SLA promises. Change it to a target, or sell an SLA only with the HA add-on (A13, P0.23).
+
 ## Odoo.sh competitive gap analysis
 
 Unchanged from revision 1, plus mail: Odoo.sh catches staging mail and sends Production mail itself. Veltnex matches that with Mailpit and SES. Sources: [branches](https://www.odoo.com/documentation/18.0/administration/odoo_sh/getting_started/branches.html) and [pricing](https://www.odoo.sh/pricing), read on 2026-10-11.
@@ -596,9 +639,11 @@ Unchanged from revision 1, plus mail: Odoo.sh catches staging mail and sends Pro
 | Mail catcher | Yes | Missing | Launch (P1.3) |
 | Outgoing mail service | Yes | Missing | Launch (P1.8, SES) |
 | Backups in several locations | 7 daily, 4 weekly, 3 monthly; 3 locations | 7 dumps, one bucket | Launch (P1.5) |
-| Logs | Stored | Live tail | Launch: previous-container log; stored logs later |
+| Logs | Stored log files, including `pg_slow_queries.log` | Live tail only | Launch: named logs including `pg_slow_queries.log` (P1.14); stored 7 days (P2.8) |
 | Staging from neutralized Production | Yes | Yes, plus PII masking | Advantage |
-| Dev builds with tests | Yes; kept about 3 days | Production copy; kept | Tests later; persistence is an advantage |
+| Dev builds with tests | Yes; kept about 3 days | Production copy; kept; no tests | Tests per push at launch (P1.11); persistence is an advantage |
+| SSH and Odoo shell | Yes | Browser shell only | Launch (P1.12, P1.13) |
+| Version upgrades | Upgrade service with a test database | Module upgrades only | Launch workflow (P1.18) |
 | Git providers | GitHub | 4 providers | Advantage |
 | HA and PITR | Not on the pricing page | Missing | Premium add-ons |
 | Enterprise licence | Excluded from hosting price | Community images | Business decision |
@@ -608,10 +653,10 @@ Unchanged from revision 1, plus mail: Odoo.sh catches staging mail and sends Pro
 ```mermaid
 flowchart TD
     P0["P0 · Launch blockers (before launch)<br/>Least-privilege access · private registry, pull-only tenant credentials · tainted Build pool<br/>Restore swap · backup key scope · spread backups · tools per PG major · major-version guard<br/>Wildcard TLS with CAA, delegated DNS-01, CT watch · separate tenant domain + PSL<br/>Real client IP, fail-closed secrets · 2FA · CI gates · alerts · capacity reader<br/>Egress: private ranges denied, mail only via relay · right-sized memory · 60% price floor · vendored CloudNativePG"]
-    P1["P1 · Launch features (before launch)<br/>Custom domains (TXT ownership, separate issuer, takeover rules) · submodules · Mailpit<br/>Production + non-production buckets · restic with manifest v2 and snapshot file list · second-region copy<br/>Mail relay to SES with quotas · CloudNativePG for new Production · non-superuser roles · shell hardening<br/>Odoo 11–20 matrix · previous-container logs"]
-    P2["P2 · Cost engine<br/>Shared pool · shared CloudNativePG (2 instances, no pooler) · sleep 1 h / 2 h / 1 h<br/>Archive idle dev · batched control-plane reads · build cache · performance insights v1"]
+    P1["P1 · Launch features (before launch)<br/>Custom domains (TXT ownership, separate issuer, takeover rules) · submodules · Mailpit<br/>Production + non-production buckets · restic with manifest v2 and snapshot file list · second-region copy<br/>Mail relay to SES with quotas · CloudNativePG for new Production · non-superuser roles · shell hardening<br/>Odoo 11–20 matrix · tests per push · Odoo shell · SSH gateway · logs incl. pg_slow_queries.log<br/>Uptime % · backups included · promotion with pre-deploy snapshot · version upgrade workflow · persona roles · activity history"]
+    P2["P2 · Cost engine<br/>Shared pool · shared CloudNativePG (2 instances, no pooler) · sleep 1 h / 2 h / 1 h<br/>Archive idle dev · batched control-plane reads · build cache · performance insights v1<br/>Stored logs (7 days) · OpenUpgrade automation"]
     P3["P3 · Stateless Odoo<br/>Spaces filestore with DB-stored assets and local cache · sessions database<br/>Drop node pinning · backups from a platform namespace · moves between pools"]
-    P4["P4 · Premium and scale<br/>HA (2 instances + 2 Odoo pods) · PITR setting · Large and dedicated pools<br/>Tests per commit · stored logs · more cells · control plane on 2 servers · performance insights paid tier"]
+    P4["P4 · Premium and scale<br/>HA (2 instances + 2 Odoo pods) · PITR setting · Large and dedicated pools<br/>More cells · control plane on 2 servers · performance insights paid tier"]
     P0 --> P1
     P1 -- "Gate A · launch" --> P2
     P2 -- "Gate B · growth" --> P3
@@ -629,7 +674,7 @@ flowchart TD
 - Customers can connect custom domains such as `erp.customer.com` to Production.
 - Outgoing mail goes through AWS SES.
 
-**Awaiting approval:** A1–A9 (top of this file).
+**Awaiting approval:** A1–A13 (top of this file).
 
 **Still open:**
 

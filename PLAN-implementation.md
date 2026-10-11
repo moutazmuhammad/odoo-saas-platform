@@ -6,7 +6,7 @@ This plan turns the target architecture into ordered, shippable items. The four 
 
 Inside the appendices, an old file name means its appendix: `PLAN-backup-restore.md` is A, `PLAN-spaces-filestore.md` is B, `PLAN-cluster-capacity.md` is C, and `PLAN-postgresql-architecture.md` is D.
 
-**Status: plan only. Do not start implementation until the owner approves decisions A1–A10 in ARCHITECTURE-TARGET.md.** Items that depend on an unapproved decision name it in a "Needs" line.
+**Status: plan only. Do not start implementation until the owner approves decisions A1–A13 in ARCHITECTURE-TARGET.md.** Items that depend on an unapproved decision name it in a "Needs" line.
 
 ## How to use this plan
 
@@ -45,6 +45,9 @@ flowchart LR
 | A8 Attachments in staging and dev copies | P1.4 |
 | A9 Shared cluster with 2 instances | P2.2 |
 | A10 Performance insights split | P2.7, P4.7 |
+| A11 Production backups included | P1.16 |
+| A12 Read-only window for version upgrades | P1.18 |
+| A13 Uptime promise | P0.23 |
 
 ## Changes to the earlier plans
 
@@ -261,6 +264,10 @@ Before launch. "Launch blocker" marks a finding from the review.
 - **What:** vendor the chart in `compute/charts/vendor/cloudnative-pg` (repository rule) and install it in each cell. Nothing uses it until P1.9.
 - **Done when:** the operator runs in the test cluster and survives a node drain.
 
+**P0.23 Website claims match the architecture.** Needs A13.
+- **What:** replace "99.99% uptime SLA" (`frontend/veltnex/src/pages/Hosting.tsx:95`) and the "Uptime target" figure (`Home.tsx:584`) with a stated target that the single-pod design meets. Offer an SLA only with the HA add-on (P4.1). Same for the Arabic strings.
+- **Done when:** no page promises an SLA for base plans.
+
 ## P1 · Launch features
 
 **P1.1 Custom domains for Production.** Needs A5.
@@ -335,10 +342,6 @@ Before launch. "Launch blocker" marks a finding from the review.
     - deduplication over 7 days is at most 1.3× one full backup (*assumption* tested here);
     - a second-region restore works.
 
-**P1.6 Previous-container logs.**
-- **What:** the portal shows the previous container's log after a crash.
-- **Where:** `controllers/container_logs.py`, `kubernetes_driver.py`.
-
 **P1.7 Odoo 11–20 support matrix.**
 - **What:**
     - a matrix of Odoo version, image, Python and PostgreSQL major, using as few majors as possible;
@@ -404,16 +407,133 @@ Before launch. "Launch blocker" marks a finding from the review.
 - **Where:** `resources/deployment.go:225`, `saas_iam/roles.py`.
 - **Done when:** a shell user cannot write `/var/lib/odoo/sessions` or `/var/lib/odoo/addons`.
 
+**P1.11 Automated tests per push.**
+- **What:**
+    - **Test step:** after the image builds, a test Job on the Build pool runs `odoo --test-enable --stop-after-init -i <changed modules>` against an ephemeral PostgreSQL sidecar in the same pod. No shared database is needed, so it works before P2.
+    - **Per-branch setting:** off, changed modules only (default), or all custom modules, with optional test tags.
+    - **What a failure does:** a failed install or failed test marks the build red, keeps the old image serving, and blocks promotion to staging or Production for branches set to "tests required".
+    - **Build page:** shows the test log and the resolved Python packages (from `pip freeze` in the image).
+- **Where:** `control-plane/saas_core/drivers/k8s_builds.py`, `templates/build/`, `models/saas_instance_build.py`, `frontend/veltnex` (build page).
+- **Done when:**
+    - a commit with a failing test shows a red build and is not deployed;
+    - a passing commit deploys as today;
+    - the test pod never runs outside the Build pool.
+
+**P1.12 Odoo shell and Python console.**
+- **What:**
+    - **Who and what:** for users with a new `odoo_shell` permission and 2FA, the shell container gets a restricted `odoo.conf`. It holds the environment's non-superuser database owner login (P1.9) and no `admin_passwd`.
+    - **Ways in:** a portal button opens `odoo shell -d <db>` (Python with the ORM), and the same works from SSH (P1.13).
+    - **Safety:** on Production, the console warns that changes are live and logs the session start and end in the audit log.
+- **Where:** `compute/operator/internal/resources/deployment.go` (`shellContainer`, config render), `saas_iam/roles.py`, `controllers/ssh_terminal.py`, `frontend/veltnex`.
+- **Done when:**
+    - `env['res.partner'].search_count([])` works from the console;
+    - `admin_passwd` is not readable in the shell container;
+    - a user without the permission gets a plain shell only.
+
+**P1.13 SSH gateway.**
+- **What:**
+    - **Gateway:** one SSH gateway per cell (2 replicas, platform namespace), exposed on TCP 22 through Traefik's TCP router on the existing load balancer, so it costs no new load balancer.
+    - **Connecting:** users add SSH public keys in the portal, then `ssh <environment>@ssh.<tenant-domain>`.
+    - **Checks:** the gateway checks the key, `terminal.open` on that environment and 2FA enrolment through the control plane's API.
+    - **Session:** it execs into the shell container with its own ServiceAccount, bound per tenant namespace by the operator (the P0.1 mechanism). Interactive shell and remote commands at launch; SFTP later.
+    - **Audit and revocation:** every session is logged; access is revoked when a key or membership is removed.
+- **Where:** new `compute/tools/ssh-gateway` (Go), operator RBAC binding, `saas_core` models for SSH keys and a key-check API, `frontend/veltnex` (keys page), Traefik TCP entrypoint values.
+- **Done when:**
+    - a user's key opens a shell in their environment;
+    - the same key is refused for an environment they have no role on;
+    - a removed member is refused within a minute.
+
+**P1.14 Logs, including `pg_slow_queries.log`.** Replaces the old P1.6.
+- **What:** the portal's log viewer shows named logs per environment, live and as a download of what the node still holds:
+    - `odoo.log` (web container) and `cron.log` (cron container);
+    - `install.log` and `update.log` (init and update Jobs);
+    - `build.log` and `pip.log` (build Job);
+    - the previous container's log after a crash;
+    - `pg_slow_queries.log`: PostgreSQL's `log_min_duration_statement` lines from the database container. Default 1 s, adjustable per environment together with the P2.7 thresholds. Normalized text is shown where possible.
+- **Retention:** live history is what the kubelet keeps (*assumed* about 50 MB per container). Stored history is P2.8.
+- **Where:** `controllers/container_logs.py`, `kubernetes_driver.py` (`open_log_stream`: container, `previous`, Job logs), operator database parameters, `frontend/veltnex`.
+- **Done when:** a query slower than the threshold appears in `pg_slow_queries.log` within a minute, and each named log opens.
+
+**P1.15 Uptime and availability indicators.**
+- **What:**
+    - record each environment's observed-state transitions (Online, Unavailable, Stopped and so on) from the existing runtime observation into a history table;
+    - show uptime over 24 hours, 7 days and 30 days, excluding customer-requested stops and announced windows;
+    - show incidents on the environment's page.
+
+  No new service.
+- **Where:** `saas_core/models/saas_instance_health.py`, a new `saas.instance.runtime.event` model, `frontend/veltnex`.
+- **Done when:** a 5-minute forced outage shows as one incident and the right percentage.
+
+**P1.16 Automatic Production backups included.** Needs A11.
+- **What:**
+    - every Production environment gets daily backups (P1.5 engine, 7 daily, 4 weekly, 6 monthly) at no extra charge;
+    - the price floor (P0.18) carries their cost;
+    - the `daily_backup_pct` add-on is retired for Production and existing subscriptions are credited.
+
+  This is a billing change.
+- **Where:** `control-plane/saas_billing` (pricing, invoices), `saas_core/models/saas_instance.py` (`daily_backup_enabled` default for Production).
+- **Done when:** a new Production environment has scheduled backups without buying an add-on.
+
+**P1.17 Promotion from staging to Production.**
+- **What:**
+    - **Merge:** extend `_merge_branch_on_provider` beyond GitHub to GitLab, Gitea and Bitbucket.
+    - **Before deploy:** before any Production deploy (promotion, push or rollback), take an automatic pre-deploy snapshot of the database and the referenced files, so a bad migration can be undone.
+    - **Gates:** the update gate and the tests (P1.11) must pass.
+    - **Same tree:** if the merged tree equals the tested staging tree, reuse the staging image instead of rebuilding.
+- **Where:** `saas_core/models/saas_instance_repo.py:869`, `saas_instance.py` (`action_merge_environment`), `saas_instance_build.py`.
+- **Done when:**
+    - a GitLab project promotes staging to Production;
+    - a Production deploy always has a snapshot from minutes before it;
+    - restoring that snapshot returns the old data.
+
+**P1.18 Database version upgrade workflow.** Needs A12.
+- **What:**
+    1. **Start:** the customer picks a target Odoo version.
+    2. **Test copy:** the platform creates an upgrade-test environment from the latest Production backup.
+    3. **Upgraded database**, from one of two sources:
+        - **(a)** an upgraded database the customer imports. For Enterprise this comes from Odoo's own upgrade service; for anyone, from their own migration.
+        - **(b)** later, an automated OpenUpgrade run for Community (P2.9).
+    4. **Test:** the customer tests it with their custom code's upgrade branch.
+    5. **Cutover:** the customer schedules the final run. Production is read-only during the window, the same steps run on fresh data, the environment switches over, and the old Production is kept as a rollback snapshot.
+    6. **PostgreSQL majors:** the same workflow handles PostgreSQL major upgrades (P0.6).
+- **Where:** `saas_core/models/saas_instance_db_operation.py`, `saas_instance.py`, `frontend/veltnex` (upgrade wizard).
+- **Done when:** an Odoo 16 test project is upgraded to 17 through an imported database, with a test environment first and the old Production restorable afterwards.
+
+**P1.19 Persona roles.**
+- **What:** presets built from the existing fine-grained permissions (`saas_iam/roles.py`), assignable per environment:
+    - **Developer:** dev and staging get builds, deploy, logs, shell, SSH, Odoo shell and the SQL console; Production gets logs and build view only by default.
+    - **Tester:** staging gets view, logs and the mail catcher; dev gets view.
+    - **Project Manager:** everything except Production shell, SQL and database deletion; manages members and approves promotions.
+
+  Customers can still compose fine-grained roles.
+- **Where:** `saas_iam/roles.py`, `saas_iam` UI, `frontend/veltnex` (members page).
+- **Done when:** each preset grants exactly its table in a unit test.
+
+**P1.20 Activity history per environment.**
+- **What:** one timeline per environment showing who did what and when, with links to logs:
+    - builds and deploys (with commit and test result);
+    - promotions, rollbacks and imports;
+    - backups and restores;
+    - version upgrades, domain changes and plan changes.
+
+  It is read from `saas.build`, `saas.instance.db.operation`, `saas.instance.backup` and `saas.audit.log`; no new store.
+- **Where:** `saas_website/controllers/api.py`, `frontend/veltnex`.
+- **Done when:** a restore and an import both appear, with their user and result.
+
 ### Gate A · Launch
 
-- [ ] Decisions A1–A10 approved, and P0 and P1 done.
+- [ ] Decisions A1–A13 approved, and P0 and P1 done.
 - [ ] Restore drill passed for a Production tenant and the platform database.
 - [ ] Full UI walk-through as a new customer, including:
     - a custom domain with TXT proof;
     - a staging copy with mail caught;
     - Production mail through the relay;
-    - a build with a submodule;
-    - a restore.
+    - a build with a submodule and a failing test that blocks deploy;
+    - SSH and the Odoo shell;
+    - `pg_slow_queries.log` and uptime on the environment page;
+    - a promotion with its pre-deploy snapshot;
+    - a test version upgrade;
+    - a restore, shown in the activity history.
 
 ## P2 · Cost engine
 
@@ -500,6 +620,15 @@ Before launch. "Launch blocker" marks a finding from the review.
     - a lock held for 60 s while latency is above budget produces a Level 3 banner and exactly one email;
     - collector overhead stays under 2% of database CPU (*assumption* tested here).
 
+**P2.8 Stored logs (7 days).**
+- **What:** a log shipper DaemonSet (*assumed* Vector, vendored) sends tenant container logs, including `pg_slow_queries.log`, to compressed daily objects under the non-production or Production bucket's `logs/` prefix. They are kept 7 days, or 30 days on a paid tier. The portal searches a day's file on demand.
+- **Cost:** one small agent per node (*assumed* 50–100 MiB) and Spaces storage. Measure it before rollout.
+- **Done when:** yesterday's `odoo.log` downloads for any environment.
+
+**P2.9 OpenUpgrade automation for Community.**
+- **What:** for Community version steps that OpenUpgrade supports, the P1.18 upgrade-test environment runs OpenUpgrade automatically, one version step at a time, with logs. The supported steps are listed in the P1.7 matrix.
+- **Done when:** a Community 15 database reaches 16 in an upgrade-test environment without manual steps.
+
 ### Gate B · Growth
 
 - [ ] Measured idle saving per non-production environment compared with the model.
@@ -576,7 +705,7 @@ Before launch. "Launch blocker" marks a finding from the review.
 **P4.3 Large and dedicated pools.**
 - **What:** tainted pools on demand, at node cost plus margin, with a minimum term.
 
-**P4.4 Tests per commit and stored logs.**
+**P4.4 (moved):** tests per push are now P1.11 and stored logs P2.8.
 
 **P4.5 Second cell or region.**
 - **What:** bootstrap a cluster and register it as a `saas.server`.

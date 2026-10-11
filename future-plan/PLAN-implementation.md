@@ -57,6 +57,9 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
 | A18 Provisioning modules: OpenTofu | P2.11 |
 | A19 Region, provider and pricing model | P1.22 (deferred), P0.18 |
 | A20 Enterprise source model and legal gate (pending legal) | P1.23 |
+| A23 External PostgreSQL shards by tenant placement (supersedes A1) | P1.40–P1.43 |
+| A24 Shard implementation: self-managed VMs or provider-managed | P1.40 |
+| A25 HA and PITR included for Production or add-ons | P1.40, P1.43 |
 | A21 BYOS on a Docker Compose driver behind one interface; SSH with a per-server root key (owner), fresh-server rules | P1.36, P1.32, P1.37, P1.38 |
 | A22 Pricing: managed by resources, BYOS by subscription, Enterprise licence separate; marketing (no backups on Free; no annual discount on subscriptions) | P1.33, P1.34, P1.35 |
 
@@ -119,7 +122,7 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
 
 **Tier L+ · within about 90 days after launch:**
 
-- P1.9a and P1.9b CloudNativePG (core qualification, one major);
+- P1.40 external PostgreSQL shards, P1.41 placement and moves, P1.42 Odoo on shards (with moving existing tenants), P1.43 tenant PITR. These replace the CloudNativePG items (A23);
 - P1.18 major-upgrade workflow, needed before any upgrade is sold;
 - P1.35 agency white-label and client billing (the Agency plan itself sells at launch);
 - P1.19 persona roles;
@@ -374,7 +377,7 @@ Before launch. "Launch blocker" marks a finding from the review.
     - no tenant's working set exceeds its memory request for more than 10% of a week;
     - no evictions in that week.
 
-**P0.22 Vendor the CloudNativePG operator.** Needs A1.
+**P0.22 Vendor the CloudNativePG operator.** **Dropped (A23):** no CloudNativePG. Needs A1.
 - **What:** vendor the chart in `compute/charts/vendor/cloudnative-pg` (repository rule) and install it in each cell. Nothing uses it until P1.9a qualifies it.
 - **Done when:** the operator runs in the test cluster and survives a node drain.
 
@@ -642,7 +645,7 @@ Before launch. "Launch blocker" marks a finding from the review.
     - no tenant namespace contains an AWS credential;
     - relay throughput meets the SES account rate (*assumption* tested here).
 
-**P1.9a CloudNativePG qualification (core).** Needs A1. These tests are its conditions for adoption.
+**P1.9a CloudNativePG qualification (core).** **Superseded by A23** (external shards); kept for history, not built. Needs A1. These tests are its conditions for adoption.
 - **What:** on the test cluster, on the **PostgreSQL major used for new environments** (one major at launch; repeat for each further major and on each CloudNativePG upgrade):
     - backups (base backup plus the P1.5 logical backup) restore;
     - full restore, per-database restore and the switch after a restore into a new cluster (P0.4);
@@ -651,7 +654,7 @@ Before launch. "Launch blocker" marks a finding from the review.
 - **Not here:** failover with 2 instances is an entry criterion of P4.1, and PITR of P4.2.
 - **Done when:** every check passes and the qualification report is filed in `setup/`. Until then nothing moves to CloudNativePG.
 
-**P1.9b CloudNativePG for new Production.** Needs P1.9a.
+**P1.9b CloudNativePG for new Production.** **Superseded by A23**; not built. Needs P1.9a.
 - **What:** new Production environments get a dedicated CloudNativePG cluster with 1 instance, owned by the non-superuser application role (P0.24). Existing Managed tenants move by dump and restore at a customer-chosen time.
 - **Where:** CRD `spec.database.mode`, `controller/database.go`, `resources/cnpg.go`, `kubernetes_driver.py`.
 - **Done when:** a new Production environment passes the full UI walk-through, and a migrated tenant has zero data difference.
@@ -1057,6 +1060,61 @@ Before launch. "Launch blocker" marks a finding from the review.
     - the dashboard loads under 1.5 s at p95 for a customer with 50 projects, with one API call;
     - frontend tests cover routing and each card's empty, warning and normal states.
 
+**P1.40 External PostgreSQL shards.** Needs A23 and A24. Replaces the CloudNativePG items.
+- **What:**
+    - **Model:** a `saas.pg.shard` model with region, class (Production, non-production, dedicated), PostgreSQL major, endpoint, capacity limits, health and an encrypted admin credential held in the control plane only.
+    - **Provisioning for self-managed VM shards:**
+        - Ubuntu LTS and PostgreSQL from PGDG;
+        - tuned settings (`shared_buffers`, `effective_cache_size`, `max_connections` sized from RAM, `pg_stat_statements`, `log_line_prefix` with `%d`, `log_min_duration_statement`);
+        - TLS; pgBackRest to object storage (WAL and base backups);
+        - a streaming standby for Production shards;
+        - node and PostgreSQL metrics;
+        - a firewall allowing only the cell's private network.
+    - **Provider-managed shards:** use the same model through the provider adapter (P0.25).
+    - **Failover:** a scripted promotion runbook at launch; automatic failover later (decision).
+- **Where:** new `control-plane/saas_core/models/saas_pg_shard.py`; `scripts/shards/` (provisioning, clean-room); the provider adapter; `setup/`.
+- **Done when:**
+    - a Production shard and a non-production shard are provisioned from scratch;
+    - point-in-time restore of the whole shard to a chosen minute works;
+    - promoting the standby keeps tenants working after a reconnect;
+    - the shard's admin credential never appears in a tenant namespace.
+
+**P1.41 Tenant placement and moves.** Needs A23.
+- **Placement:** region and residency, class, PostgreSQL major, then the most headroom. The connection budget is computed from the plan, and shards stop admitting at 80% of `max_connections` or at sustained CPU above 60%.
+- **Moves:**
+    - `pg_dump` and restore in a customer-chosen window, or logical replication with a short switch;
+    - used to rebalance, to evict a noisy tenant, to change major version, and to go to or from a dedicated shard.
+- **Noisy-tenant detection:** from per-shard `pg_stat_statements` (P2.7's collector, filtered by `dbid`), with notice before any move.
+- **Done when:**
+    - placement never exceeds a shard's limits in a simulation of 500 tenants;
+    - a move by logical replication switches with under a minute of read-only time;
+    - a tenant's data is identical after a move (row counts and per-table hashes).
+
+**P1.42 Odoo on external shards.** Needs P1.40 and P1.41.
+- **What:**
+    - the operator's existing `External` database mode, with the control plane creating the database, owner role and per-role limits on the shard and writing only that role into the tenant Secret;
+    - tenant network policies allow 5432 to shard addresses only, with `sslmode=verify-full`;
+    - Odoo `db_maxconn` is set from the connection budget;
+    - the database manager, SQL console, backups, restores, copies to staging, neutralization and the performance collector all work against shards;
+    - the in-cluster PostgreSQL StatefulSet is retired for new tenants;
+    - **existing tenants move** from their in-cluster PostgreSQL to a shard in a customer-chosen window (customer notice in P0.27).
+- **Where:** `control-plane/saas_core/drivers/kubernetes_driver.py`, `models/saas_instance.py`, `saas_instance_backup.py`, `saas_instance_db_operation.py`; operator `controller/database.go` (External) and `resources/networkpolicy.go`.
+- **Done when:**
+    - the full walk-through (P1.30) passes for a new environment on a shard;
+    - an existing tenant migrates with no data difference;
+    - one tenant cannot connect to, or see data of, another tenant's database on the same shard;
+    - `pg_slow_queries.log` shows only the tenant's own lines.
+
+**P1.43 Tenant point-in-time restore from shard backups.** Needs P1.40. Answers A25.
+- **What:** to restore one tenant to time T:
+    1. restore the shard to a scratch server at T;
+    2. dump that tenant's databases;
+    3. restore them into a new environment, or swap them in place (P0.4);
+    4. delete the scratch server.
+
+  The files referenced at T come back as in the consistency model (trash retention at least the PITR window).
+- **Done when:** a tenant restored to a chosen minute has the data from before that minute and not after, every referenced file opens, and other tenants on the shard are untouched.
+
 ### Gate A · Launch
 
 - [ ] Every Tier L item in "Launch scope (revision 3)" is done and its "Done when" passed on the test cluster, through the automated walk-through (P1.30) wherever it applies.
@@ -1103,7 +1161,7 @@ Before launch. "Launch blocker" marks a finding from the review.
     - **the Shared pool's metered node-hours fall** in a one-week test, with environments asleep at night;
     - a push to a sleeping branch deploys without waking it.
 
-**P2.2 Shared CloudNativePG for non-production.** Needs A1 and A9.
+**P2.2 Shared CloudNativePG for non-production.** **Replaced by non-production shards (P1.40, P1.41)**; its isolation rules (non-superuser, no `CREATEDB`, per-role limits, platform-run database operations) apply to shards. Needs A1 and A9.
 - **What:**
     - **Cluster:** one cluster per PostgreSQL major per cell, on the **Standard** pool so the Shared pool can scale to zero. It has **1 instance with nightly dumps and WAL archiving until about 30 non-production environments per cell, then 2** (A9 revised), and **no PgBouncer**.
     - **Login per environment:** each environment gets a database and a login that is not superuser and has no `CREATEDB`, with:

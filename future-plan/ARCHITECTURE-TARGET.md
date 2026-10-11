@@ -17,7 +17,7 @@ All decisions, A1–A19, were approved on 2026-10-11. A14–A19 were delegated b
 
 | # | Decision | Status | Condition or note | Plan items |
 | --- | --- | --- | --- | --- |
-| A1 | CloudNativePG as the one PostgreSQL engine: dedicated 1 instance per Production environment, shared for non-production, HA by raising instances to 2 | **Approved with conditions** | Qualify backups, upgrades, failover and restore before adopting it for every environment. New Production uses it only after the qualification suite passes (P1.9a) | P0.22, P1.9a, P1.9b, P2.2, P3.3, P4.1, P4.2 |
+| A1 | CloudNativePG as the one PostgreSQL engine: dedicated 1 instance per Production environment, shared for non-production, HA by raising instances to 2 | **Superseded by A23** (external shards, 2026-10-11) | Qualify backups, upgrades, failover and restore before adopting it for every environment. New Production uses it only after the qualification suite passes (P1.9a) | P0.22, P1.9a, P1.9b, P2.2, P3.3, P4.1, P4.2 |
 | A2 | A Production bucket and a non-production bucket per customer, each with its own key | **Approved** | Test code can never reach Production files | P1.4, P3.1, P3.4 |
 | A3 | Sessions in a per-environment PostgreSQL database | **Approved with conditions** | Test session behaviour, performance and the automatic cleanup of expired sessions | P3.2 |
 | A4 | Tenant apps on their own registrable domain, on the Public Suffix List | **Approved (strongly)** | Protects the portal from cookies set by customer apps | P0.20, P0.7 |
@@ -39,6 +39,9 @@ All decisions, A1–A19, were approved on 2026-10-11. A14–A19 were delegated b
 | A20 | Odoo Enterprise source model and legal gate | **Pending legal review** | (a) bring your own Enterprise source, built per tenant into tenant-only registry repositories, at launch; (b) platform Enterprise images only with a written agreement with Odoo. No Enterprise offering before written legal confirmation | P1.23, P1.24 |
 | A21 | Bring Your Own Server on a `DockerComposeDriver` (Docker Compose + Traefik) behind one infrastructure interface. On a **fresh dedicated server**: firewall reset, CSF disabled, a **per-server** platform SSH key in root, and Netdata (owner, 2026-10-11) | **Approved direction** | Fresh-server preflight with customer confirmation; `from=`-restricted per-server keys; commands audited; Netdata sized to the server; capabilities shown per hosting type; conformance test across runtimes | P1.36, P1.32, P1.37, P1.38 |
 | A22 | Pricing and marketing: BYOS by subscription (Free $0, Starter $19, Pro $39, Agency $199 per month in USD, excluding servers; no annual discount; no backups on Free); managed hosting by resources with the 60% floor; Odoo Enterprise licences separate from hosting | **New** (owner requirement; design proposed) | Claims backed by published calculations; no invented social proof | P1.33, P1.34, P1.32 |
+| A23 | PostgreSQL outside Kubernetes: external shards (several customers per server) by tenant placement; Production, non-production and dedicated shard classes | **Owner direction** (2026-10-11); design proposed | Supersedes A1. Guardrails: per-role limits, opaque names, per-shard headroom, noisy-tenant moves, log filtering by database, TLS | P1.40–P1.43 |
+| A24 | Shard implementation | **Pending** | Recommended: self-managed PostgreSQL VMs (about $1.4 per tenant, or $2.7 with HA); provider-managed only where price and connection limits fit (DigitalOcean 8 GiB: $122.10, 197 connections) | P1.40 |
+| A25 | HA and PITR on Production shards: included for all Production, or priced add-ons | **Pending** | At about $1.3 per tenant for the standby, inclusion is affordable | P1.40, P1.43, P4.1, P4.2 |
 
 **Launch blockers.** The full list, with each acceptance check, is in the plan's "Launch blockers and launch acceptance criteria". The owner added these on 2026-10-11:
 
@@ -865,6 +868,79 @@ Until then, the "Enterprise" option is hidden.
 - it is neutralized, as today;
 - it is never registered as a second Production database;
 - whether such copies need anything more under the subscription is part of the legal gate.
+
+## PostgreSQL outside Kubernetes: external shards by tenant placement (owner direction, 2026-10-11)
+
+**Direction (owner):** move PostgreSQL entirely out of Kubernetes for managed hosting. Tenant databases live on **external PostgreSQL servers ("shards"), each serving several customers**, and a placement service decides which shard holds each tenant. The goals are lower operating cost and simpler database management.
+
+This **supersedes A1** (CloudNativePG everywhere) and revision 2's concern-1 conclusion (a dedicated database per Production environment). The isolation, noisy-neighbour and failure-domain risks found there are handled by the guardrails below rather than by one database server per tenant.
+
+**Evidence (verified 2026-10-11):**
+
+- **The operator already supports external databases:** `spec.database.mode: External` reads a pre-created Secret (`compute/operator/internal/controller/database.go`).
+- **Today's tenant network policy blocks it:** a database outside the namespace is unreachable, so egress to the shards must be added.
+- **DigitalOcean Managed PostgreSQL** ([limits](https://docs.digitalocean.com/products/databases/postgresql/details/limits/), [pricing](https://www.digitalocean.com/pricing/managed-databases)):
+    - backend connections are 97 at 4 GiB, 197 at 8 GiB and 397 at 16 GiB;
+    - there is no superuser;
+    - a single node costs $60.90 at 4 GiB, $122.10 at 8 GiB and $244.35 at 16 GiB.
+
+**Cost per Production tenant** (2-worker plan, about 8 connections each, *assumed*; shards kept at 80% of connections):
+
+| Shard type | Monthly cost | Tenants per shard | Per tenant | With a standby (HA) |
+| --- | --- | --- | --- | --- |
+| DigitalOcean Managed PostgreSQL 8 GiB | $122.10 | About 20 (197 connections) | About $6.1 | About $12 |
+| Self-managed PostgreSQL on an 8 GiB VM | About $48 (*assumed*, the `s-4vcpu-8gb` price) | About 35 (`max_connections` about 350) | About $1.4 | About $2.7 |
+| Revision 2: dedicated pod in Kubernetes | — | 1 | About $2.1 | Not offered |
+
+**Recommendation (A24): self-managed PostgreSQL VMs as shards,** with provider-managed PostgreSQL only where a provider's managed price and connection limits still fit the margin. Managed PostgreSQL is simpler to run but costs 3–4 times more per tenant on DigitalOcean.
+
+**Design:**
+
+- **Shard classes, never mixed:**
+    - **Production shards:** a primary plus a streaming standby, with WAL archiving and base backups to object storage (pgBackRest), so every Production tenant gets HA and point-in-time recovery at a shared cost.
+    - **Non-production shards** (staging, dev, trials): one node, with nightly backups and WAL.
+    - **Dedicated shards:** Large or heavy customers alone on their own server, a premium tier.
+- **One PostgreSQL major per shard:** Odoo 14–20 map onto majors 13–17 (P1.7). A major upgrade moves the tenant to a newer-major shard (P0.6 and P1.18 unchanged).
+- **Placement service in the control plane:** it picks a shard by these filters and ranks:
+    1. region and residency (the same region as the cell, A17);
+    2. class;
+    3. PostgreSQL major;
+    4. capacity: connection budget, CPU, memory and disk headroom, and database count.
+
+  The connection budget per tenant is computed from its plan: workers, gevent, cron, and Odoo's `db_maxconn` set low. A shard stops taking tenants at 80% of `max_connections` or at sustained CPU above 60%.
+- **Moves between shards:** `pg_dump` and restore in a customer-chosen window, or logical replication for a near-zero-downtime switch. They are used to rebalance, to evict a noisy tenant to a dedicated shard, and to change major version.
+- **Isolation on a shared server:**
+    - **Roles:** one owner role per environment, never superuser (P0.24, natural on shards); `REVOKE CONNECT … FROM PUBLIC`.
+    - **Per-role limits:** `CONNECTION LIMIT`, `statement_timeout`, `idle_in_transaction_session_timeout`, `work_mem` and `temp_file_limit`.
+    - **Names:** database and role names are opaque ids, because `pg_database` and `pg_roles` are visible to every login.
+    - **Admin credentials:** the shard's admin login stays in the control plane; tenant namespaces only get their own role.
+- **Noisy neighbours:** a shared server cannot fence CPU or IO per database. So each shard keeps headroom, the performance collector reads `pg_stat_statements` per shard (filtered by `dbid`) to rank tenants by load, and a tenant above its share for a sustained period is moved, with notice, to a less-loaded or dedicated shard.
+- **Logs and privacy:** `log_line_prefix` includes the database name. A customer's `pg_slow_queries.log` (P1.14) is filtered to their own databases before it is shown; other tenants' lines are never exposed.
+- **Connections:** no transaction-mode pooling, because Odoo's bus needs session features (`LISTEN/NOTIFY`). Connections are budgeted instead. A session-mode PgBouncer may be added only to absorb connection storms.
+- **Network:**
+    - shards sit in the cell's private network (VPC);
+    - tenant network policies allow egress to the shard addresses on 5432 only;
+    - TLS is required (`sslmode=verify-full`).
+- **Backups and restore:**
+    - **Shard level:** point-in-time recovery for the whole server.
+    - **Tenant level:**
+        - a daily logical dump per database (restic, P1.5), for downloads, moves and fast single-tenant restore;
+        - **tenant point-in-time restore**: restore the shard to a scratch server at time T, dump that one database, load it into the tenant's place, then delete the scratch server.
+- **Odoo becomes simpler sooner:** with the database outside the pod, Odoo shares no volume with PostgreSQL. The Odoo pod keeps only its filestore volume until P3 moves files to Spaces. Kubernetes nodes stop carrying database memory, so more Odoo fits per node.
+- **BYOS is unchanged:** the database stays in a container on the customer's server. The **Managed Database Services** add-on means placing a BYOS customer's database on a Veltnex shard in the same region.
+
+**What this changes in the plan:**
+
+- **Dropped:** P0.22 (vendor CloudNativePG), P1.9a and P1.9b, P2.2, and CloudNativePG in P4.1 and P4.2.
+- **Added:** P1.40 (shards), P1.41 (placement and moves), P1.42 (Odoo on external shards, including migrating existing tenants) and P1.43 (tenant point-in-time restore).
+- **HA and PITR:** they become properties of Production shards, so they can be included in plans rather than sold per tenant (A25).
+
+**Decisions:**
+
+- **A23:** external shards. This is the owner's direction; the design above is the proposal.
+- **A24:** self-managed VM shards first (recommended) versus provider-managed.
+- **A25:** whether shard-level HA and PITR are included for all Production or remain priced add-ons.
+- **Failover at launch:** a scripted, operator-triggered promotion of the standby (target recovery time about 15 minutes, *assumed*), or automatic failover (pg_auto_failover or Patroni) from the start (recommended later).
 
 ## Key architecture decisions
 

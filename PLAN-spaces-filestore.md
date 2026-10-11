@@ -77,6 +77,28 @@ Each tenant gets its own private bucket and a key that can reach only that bucke
 
 **Isolation.** Spaces can scope an access key to specific buckets (Read, or Read/Write/Delete), but not to a prefix inside a bucket ([manage access](https://docs.digitalocean.com/products/spaces/how-to/manage-access/)). So isolation is one bucket per tenant plus one limited key per tenant. The control plane creates both at provisioning through the DigitalOcean API and writes them into the tenant's Secret. A tenant's pod never holds a key that can reach another bucket, whatever identifier a request carries.
 
+**Giving a new tenant its bucket and key.** The control plane does this automatically while it provisions the tenant, before the first database exists; it adds a few seconds and the customer never sees it.
+
+1. **Take a bucket from the pool** (see recycling below), or create one if the pool is empty: a private fra1 bucket with a neutral random name such as `odoo-fs-7k2m9q`, made with the platform's full-access Spaces key, which lives only on the SaaS server.
+2. **Set the lifecycle rule** that expires `trash/` after the backup retention period.
+3. **Create a key limited to that bucket** through the DigitalOcean API (`POST /v2/spaces/keys`, one grant: that bucket, permission `readwrite`). DigitalOcean shows the secret only once, so it is stored immediately.
+4. **Store** the bucket name and the key in the tenant's record, encrypted with the existing helper (`saas_core/crypto.py`).
+5. **Create the Kubernetes Secret** `odoo-object-storage` in the tenant namespace.
+6. **Create the server as today:** the init Job starts, the storage module loads, checks the bucket, then `-i base` writes its first files to Spaces.
+
+Every step first checks whether it already happened (bucket assigned, key with this name exists), so the deploy's normal retries resume where they stopped. If a key was created but its secret was not stored, that key is deleted and a new one made.
+
+**Recycle buckets, never delete them.** DigitalOcean deletes a bucket asynchronously: it stays pending for at least two weeks and its name stays reserved in that time ([destroy a bucket](https://docs.digitalocean.com/products/spaces/how-to/destroy/)). With trials created and deleted often, that churn would also eat into the bucket limit. So when a tenant's reactivation window ends:
+
+1. Delete the tenant's key (`DELETE /v2/spaces/keys/{access_key}`), so nothing can reach the bucket any more.
+2. A background job empties the bucket, including `trash/` and `checklist/`, in batches of 1,000 objects per request.
+3. Once a listing shows it empty, the bucket goes back to the pool. The next tenant gets it with a brand-new key; the random name carries no trace of the previous owner.
+4. The pool keeps a few empty buckets ready (for example 5); buckets beyond what the pool needs are only then deleted, and their slow deletion no longer matters.
+
+**What you provide once:** a DigitalOcean API token allowed to manage Spaces keys, and a full-access Spaces key (the backup key, if it has full access). Both are stored in the SaaS settings.
+
+**To verify in Phase 2:** the exact request body for creating a key. The docs confirm the `/v2/spaces/keys` endpoint and a per-bucket `readwrite` permission, but do not show the full create example; most likely `{"name": …, "grants": [{"bucket": …, "permission": "readwrite"}]}` ([Spaces keys API](https://docs.digitalocean.com/reference/api/reference/spaces-keys/), [doctl spaces keys create](https://docs.digitalocean.com/reference/doctl/reference/spaces/keys/create)). Also whether buckets pending deletion count toward the account's bucket limit.
+
 **Object layout** (inside the tenant's bucket):
 
 | Prefix | Holds | Notes |
@@ -106,7 +128,7 @@ The module is the small part; most of the work is teaching the platform's own ba
 | Area | Today | With Spaces |
 | --- | --- | --- |
 | Operator (`compute/operator`) | Mounts `/var/lib/odoo` from the shared volume | Adds `server_wide_modules` to the `odoo.conf` template, ships `saas_object_storage` in the platform-addons ConfigMap, injects Spaces settings from a Secret, adds the cache `emptyDir`. A new `spec.storage.filestore.backend: Volume \| ObjectStorage` switch, default `Volume`, so existing tenants are untouched |
-| Control plane provisioning | Sizes one volume for database + files | Creates the bucket, its limited key and lifecycle rule through the DigitalOcean API; sizes the volume for the database only; deletes the bucket when the retained final snapshot expires |
+| Control plane provisioning | Sizes one volume for database + files | Takes a bucket from the pool (or creates one), adds its limited key and lifecycle rule; sizes the volume for the database only; after the reactivation window, deletes the key, empties the bucket and returns it to the pool |
 | Storage quota and usage | Volume usage | Volume usage + bucket size (daily listing, cached). The module refuses uploads once the tenant is over its storage allowance |
 | Daily backup and snapshots (backup plan) | Database dump + tar of the filestore | **Database dump only.** Files are already in the bucket and are never deleted before the backup retention ends (the `trash/` rule), so restic keeps only the database |
 | Snapshot restore and reactivation | Untar the filestore | Restore the database; files are already there |

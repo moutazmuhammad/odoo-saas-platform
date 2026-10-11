@@ -50,7 +50,7 @@ flowchart LR
         L["Local disk keeps only /tmp, sessions and logs, never attachments"]
         A --> B --> C
     end
-    S["DigitalOcean Spaces<br/>one shared private bucket, fra1, HTTPS<br/>a folder per tenant; keys reach the whole bucket"]
+    S["DigitalOcean Spaces<br/>one private bucket per tenant, fra1, HTTPS<br/>key limited to that bucket only"]
     P["PostgreSQL volume<br/>sized for the database only"]
     B -- objects --> S
     C -- rows --> P
@@ -73,38 +73,39 @@ The module arrives from the platform-addons ConfigMap; the Spaces credentials co
 
 ## Storage design
 
-All tenants share one private bucket, each under its own folder (prefix); objects keep Odoo's own content-addressed names, so database rows never change.
+Each tenant gets its own private bucket and a key that can reach only that bucket; objects keep Odoo's own content-addressed names, so database rows never change.
 
-**Decision (2026-10-11): one bucket for all tenants, no storage gateway.**
+**Decision (2026-10-11): a separate bucket and key per tenant.** Spaces can limit a key to specific buckets (Read, or Read/Write/Delete) but not to a folder inside one ([manage access](https://docs.digitalocean.com/products/spaces/how-to/manage-access/)). A bucket per tenant with a key limited to it means a leaked key, even read by the customer's own code through Shell or Git modules, reaches only that customer's own files. Each bucket also gets its own 800 operations/second, so one busy tenant cannot slow the others.
 
-**Accepted risk.** Spaces keys can be limited to a bucket but not to a folder inside it ([manage access](https://docs.digitalocean.com/products/spaces/how-to/manage-access/)), so every tenant pod holds a key that can reach the whole bucket. Hosting customers run their own code (Shell, Git modules), so any of them can read, overwrite or delete **any other tenant's files**. Storing the key in `odoo.conf` or a Kubernetes Secret instead of an environment variable does not change this: whatever the Odoo process can use, code inside it can read. This is accepted knowingly; the platform's terms should cover it, and the gateway option stays available if it must be closed later.
+**Giving a new tenant its bucket and key.** The control plane does this automatically while it provisions the tenant, before the first database exists; it adds a few seconds and the customer never sees it.
 
-**Mitigations that need no gateway:**
+1. **Take a bucket from the pool** (see recycling below), or create one if the pool is empty: a private fra1 bucket with a neutral random name such as `odoo-fs-7k2m9q`, made with the platform's full-access Spaces key, which lives only on the SaaS server.
+2. **Set the lifecycle rule** that expires `trash/` after the backup retention period.
+3. **Create a key limited to that bucket** through the DigitalOcean API (`POST /v2/spaces/keys`, one grant: that bucket, permission `readwrite`). DigitalOcean shows the secret only once, so it is stored immediately.
+4. **Store** the bucket name and the key in the tenant's record, encrypted with the existing helper (`saas_core/crypto.py`).
+5. **Create the Kubernetes Secret** `odoo-object-storage` in the tenant namespace.
+6. **Create the server as today:** the init Job starts, the storage module loads, checks the bucket, then `-i base` writes its first files to Spaces.
 
-- **Bucket versioning on.** An overwritten or deleted object keeps its previous version, so damage can be undone; a lifecycle rule expires old versions after the backup retention period.
-- **One Spaces key per tenant,** each with `readwrite` on the same bucket. A key still reaches everything, but the bucket's access logs name the key, so any access outside a tenant's own folder can be traced to that tenant. Keys default to 200 per account; ask DigitalOcean for more before that.
-- **A daily access-log check** flags any key that touched a folder other than its tenant's, and alerts to Teams.
+Every step first checks whether it already happened (bucket assigned, key with this name exists), so the deploy's normal retries resume where they stopped. If a key was created but its secret was not stored, that key is deleted and a new one made.
 
-**Giving a new tenant its folder and key** (automatic, during provisioning, before the first database exists):
+**Recycle buckets, never delete them.** DigitalOcean deletes a bucket asynchronously: it stays pending for at least two weeks and its name stays reserved in that time ([destroy a bucket](https://docs.digitalocean.com/products/spaces/how-to/destroy/)). With trials created and deleted often, that churn would also eat into the bucket limit. So when a tenant's reactivation window ends:
 
-1. Choose the tenant folder `tenants/<tenant-id>/` (the id is the platform's own, never typed by anyone).
-2. Create the tenant's Spaces key through the DigitalOcean API (`POST /v2/spaces/keys`, `readwrite` on the bucket) and store it encrypted in the tenant's record (`saas_core/crypto.py`).
-3. Create the Kubernetes Secret `odoo-object-storage` with the endpoint, bucket, the tenant's folder and key.
-4. Create the server as today: the init Job loads the storage module, which checks the bucket, then `-i base` writes its first files under the tenant's folder.
+1. Delete the tenant's key (`DELETE /v2/spaces/keys/{access_key}`), so nothing can reach the bucket any more.
+2. A background job empties the bucket, including `trash/` and `checklist/`, in batches of 1,000 objects per request.
+3. Once a listing shows it empty, the bucket goes back to the pool. The next tenant gets it with a brand-new key; the random name carries no trace of the previous owner.
+4. The pool keeps a few empty buckets ready (for example 5); buckets beyond what the pool needs are only then deleted, and their slow deletion no longer matters.
 
-Every step checks whether it already happened, so the deploy's normal retries resume safely.
+**What you provide once:** a DigitalOcean API token allowed to manage Spaces keys, and a full-access Spaces key (the backup key, if it has full access). Both are stored in the SaaS settings.
 
-**When a tenant ends** (after the reactivation window): delete its key, then a background job deletes everything under `tenants/<tenant-id>/` and `trash/<tenant-id>/` in batches of 1,000. Nothing waits on DigitalOcean's slow bucket deletion, because the bucket is never deleted.
+**To verify in Phase 2:** the exact request body for creating a key. The docs confirm the `/v2/spaces/keys` endpoint and a per-bucket `readwrite` permission, but do not show the full create example; most likely `{"name": …, "grants": [{"bucket": …, "permission": "readwrite"}]}` ([Spaces keys API](https://docs.digitalocean.com/reference/api/reference/spaces-keys/), [doctl spaces keys create](https://docs.digitalocean.com/reference/doctl/reference/spaces/keys/create)). Also the account's bucket limit, and whether buckets pending deletion count toward it.
 
-**What you provide once:** a DigitalOcean API token allowed to manage Spaces keys, and the bucket (with versioning and access logging turned on).
-
-**Object layout** (inside the shared bucket):
+**Object layout** (inside the tenant's bucket):
 
 | Prefix | Holds | Notes |
 | --- | --- | --- |
-| `tenants/<tenant-id>/<db>/<sha[:2]>/<sha>` | Attachment content | The part after `<db>/` is the `store_fname` Odoo already stores, so rows and backups stay valid |
-| `tenants/<tenant-id>/<db>/checklist/<sha>` | Empty “may be garbage” markers | Replaces the local `filestore/checklist` folder, same logic as Odoo |
-| `trash/<tenant-id>/<db>/<sha>` | Deleted content awaiting expiry | One lifecycle rule on `trash/` expires it after the backup retention period |
+| `<db>/<sha[:2]>/<sha>` | Attachment content | Same `store_fname` Odoo already stores, so rows and backups stay valid |
+| `<db>/checklist/<sha>` | Empty “may be garbage” markers | Replaces the local `filestore/checklist` folder, same logic as Odoo |
+| `trash/<db>/<sha>` | Deleted content awaiting expiry | Expired by the bucket's lifecycle rule after the backup retention period |
 
 **Write** (`_file_write`): compute the SHA-1 as Odoo does; `HEAD` the key; if it exists, compare the stored `x-amz-meta-sha1` (Odoo's collision check); otherwise write a checklist marker, then `PUT` the content with `Content-MD5`. Odoo inserts the row only after the write returns, so a successful write is never reported before the object is stored. A transaction that rolls back leaves an object plus its marker, which GC removes.
 
@@ -127,12 +128,12 @@ The module is the small part; most of the work is teaching the platform's own ba
 | Area | Today | With Spaces |
 | --- | --- | --- |
 | Operator (`compute/operator`) | Mounts `/var/lib/odoo` from the shared volume | Adds `server_wide_modules` to the `odoo.conf` template, ships `saas_object_storage` in the platform-addons ConfigMap, injects Spaces settings from a Secret, adds the cache `emptyDir`. A new `spec.storage.filestore.backend: Volume \| ObjectStorage` switch, default `Volume`, so existing tenants are untouched |
-| Control plane provisioning | Sizes one volume for database + files | Assigns the tenant folder and creates the tenant's Spaces key; sizes the volume for the database only; after the reactivation window, deletes the key and the tenant's folder |
+| Control plane provisioning | Sizes one volume for database + files | Takes a bucket from the pool (or creates one), adds its limited key and lifecycle rule; sizes the volume for the database only; after the reactivation window, deletes the key, empties the bucket and returns it to the pool |
 | Storage quota and usage | Volume usage | Volume usage + bucket size (daily listing, cached). The module refuses uploads once the tenant is over its storage allowance |
 | Daily backup and snapshots (backup plan) | Database dump + tar of the filestore | **Database dump only.** Files are already in the bucket and are never deleted before the backup retention ends (the `trash/` rule), so restic keeps only the database |
 | Snapshot restore and reactivation | Untar the filestore | Restore the database; files are already there |
 | Restore one database / customer upload | Unzip `filestore/` into the pod | Upload each file from the zip to the bucket (streamed), then load the database |
-| Copy Production to Staging/Dev | Zip, then unzip on the target | Copy objects folder to folder inside the bucket on the server side (no download), then load the database dump |
+| Copy Production to Staging/Dev | Zip, then unzip on the target | Copy objects bucket to bucket on the server side with the platform's key (no download), then load the database dump |
 | Database manager (Odoo's and `saas_tenant_dbm`) | Folder copy, zip, move, delete | Handled inside the module (the `service/db.py` seam): copy/delete by prefix, dump streams objects into the zip |
 | Platform scripts run in pods (password reset, neutralize, PII masking, database list) | Build a `Registry` directly | Import the module first; they rarely touch files, but this guarantees it |
 | Download of a backup zip from the Databases page | `pg_dump` + walk the filestore in the pod | `pg_dump` + stream the objects into the zip |
@@ -179,7 +180,7 @@ The volume shrinks from “database + files” to “database + a few MB”, whi
 Build for Odoo 17 first, prove it end to end on a fresh tenant, then add the other generations one at a time.
 
 1. **Phase 1 — Core + Odoo 17 (G3).** Shared core (Spaces client with SigV4 signing on `requests`, retries, startup check, cache), the G3 adapter, and the `service/db.py` seam. Tested against MinIO in CI and a real fra1 test bucket.
-2. **Phase 2 — Operator and control plane.** The `backend: ObjectStorage` switch, `odoo.conf` and Secret wiring, tenant folder and key creation, bucket versioning, access logging and lifecycle rules, storage usage and quota. New test tenants only.
+2. **Phase 2 — Operator and control plane.** The `backend: ObjectStorage` switch, `odoo.conf` and Secret wiring, bucket pool, per-tenant key and lifecycle rule, bucket recycling, storage usage and quota. New test tenants only.
 3. **Phase 3 — Platform flows.** Backups become database-only, restore, prod-to-staging copy by server-side object copy, the Databases-page zip, the weekly audit.
 4. **Phase 4 — Other versions.** G3 for 16, 18 and 19; G2 (14, 15); G1 (11–13, Python 3.5 syntax); G4 (20) once 20 is released. Each passes the same compatibility suite.
 5. **Phase 5 — Existing tenants (optional).** The migration tool, one tenant at a time, with the old files kept 30 days.
@@ -194,7 +195,7 @@ Build for Odoo 17 first, prove it end to end on a fresh tenant, then add the oth
 - [ ] Concurrent uploads of the same file, and of different files
 - [ ] Duplicate checksums and the SHA-1 collision check
 - [ ] GC: unreferenced objects move to `trash/`, referenced ones stay, a rolled-back upload is cleaned
-- [ ] Cross-tenant: an access by tenant A's key under tenant B's folder is caught by the daily access-log check and alerts; a deleted object of B is restored from its previous version
+- [ ] Cross-tenant: tenant A's key gets 403 on tenant B's bucket
 - [ ] Missing object and orphan object are both reported by the audit
 - [ ] Restore an old database dump: its files are still there (within retention)
 - [ ] Web assets, report PDFs, email attachments and images render; website assets load
@@ -204,11 +205,11 @@ Build for Odoo 17 first, prove it end to end on a fresh tenant, then add the oth
 
 ## Risks and open questions
 
-The items to confirm before Phase 2 are the account limits for keys and request rate on the shared bucket, and whether pods on DOKS take the free private path to Spaces. Cross-tenant access through the shared key is an accepted risk (Storage design).
+The items to confirm before Phase 2 are the account limits for buckets and keys, and whether pods on DOKS take the free private path to Spaces.
 
 | Risk or question | Why it matters | Plan |
 | --- | --- | --- |
-| Keys and request rate | One key per tenant (for audit) on the shared bucket; keys default to 200 per account; the shared bucket allows 800 operations/second for all tenants together | Request more keys and a higher request rate from DigitalOcean support before onboarding many tenants; the asset read cache keeps per-tenant request rates low |
+| Buckets and keys per account | One bucket and one key per tenant; keys default to 200 per account | Confirm the bucket limit and request higher bucket and key limits from DigitalOcean support before onboarding many tenants; the bucket pool keeps churn low |
 | Pod-to-Spaces network path | Free private routing is documented for Droplets, not DOKS pods | Test from a pod in fra1 (Networking section); transfer is free fra1-to-fra1 either way |
 | Lifecycle rules by prefix | GC relies on expiring `trash/` | Verify a prefix-scoped expiration rule on a test bucket in Phase 2 |
 | Page speed | Each uncached file read is a network call | Asset read cache; measure page loads against the volume today |
@@ -222,4 +223,4 @@ The items to confirm before Phase 2 are the account limits for keys and request 
 1. **New tenants only.** Existing tenants stay on their volumes; migrating them (Phase 5) is a later, separate decision.
 2. **Downloads always stream through Odoo,** so every access check stays inside Odoo. No signed links to the bucket.
 3. **Odoo 20 waits for its stable release** before its adapter (G4) is built.
-4. **One bucket for all tenants, no storage gateway,** with versioning, a key per tenant and daily access-log checks; cross-tenant access is an accepted risk.
+4. **A separate bucket and key per tenant,** so a key leaked through customer code reaches only that customer's files; buckets are recycled through a pool instead of deleted.

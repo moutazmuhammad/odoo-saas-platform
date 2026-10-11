@@ -9,7 +9,7 @@ Revision 2 answers eight review concerns, adds AWS SES for outgoing mail, and ha
 - **Verified:** checked in the repository, on the live DOKS cluster (read-only Prometheus and kubectl reads on 2026-10-11), or in a provider document that was opened and is linked.
 - **Assumption:** reasonable but not yet proven; each one has a test in the plan.
 
-Nothing here is implemented. All decisions are approved subject to the launch acceptance criteria (next section). Implementation waits for the owner's go-ahead.
+Nothing here is implemented. All decisions are approved subject to the launch acceptance criteria (next section). **This is the target design.** The launch is executed from the leaner [`PLAN-cost-reduction.md`](../PLAN-cost-reduction.md) at the repository root, which takes the security blockers and the cost cuts from here. Implementation waits for the owner's go-ahead.
 
 ## Decisions and their status
 
@@ -25,18 +25,20 @@ All decisions, A1–A19, were approved on 2026-10-11. A14–A19 were delegated b
 | A6 | Memory requests from measured usage | **Approved** | Pricing is based on usable node capacity, not theoretical node size | P0.21, P0.18 |
 | A7 | Central mail relay to AWS SES | **Approved** | No AWS credentials in tenants; quotas, isolation and automatic pausing on abuse | P1.8, P0.13 |
 | A8 | Production attachments copied to dev only on the customer's explicit request | **Approved** | Staging copies include them; dev does not unless asked | P1.4 |
-| A9 | Shared non-production cluster with 2 instances per cell | **Approved with conditions** | Test failover, storage growth and resource contention | P2.2 |
+| A9 | Shared non-production cluster with 2 instances per cell | **Approved with conditions; revised 2026-10-11** | **1 instance with nightly dumps until about 30 non-production environments per cell**, then 2. Test failover, storage growth and resource contention before the second instance | P2.2 |
 | A10 | Basic performance monitoring free; history and advanced reports paid | **Approved** | — | P2.7, P4.7 |
 | A11 | Automatic Production backups included in every plan | **Approved with conditions** | Plan-based retention and recovery features | P1.16 |
 | A12 | Read-only window for the final major-version upgrade, chosen by the customer | **Approved with conditions** | A tested copy, a verified backup, a customer-selected window and a documented recovery procedure | P1.18 |
 | A13 | State an uptime target on the website; SLA only with HA | **Approved with conditions** | A target only, until HA passes failure and recovery tests; a contractual SLA only once the platform consistently meets it | P0.23, P4.1 |
-| A20 | Odoo Enterprise source model and legal gate | **Pending legal review** | (a) bring your own Enterprise source, built per tenant into tenant-only registry repositories, at launch; (b) platform Enterprise images only with a written agreement with Odoo. No Enterprise offering before written legal confirmation | P1.23, P1.24 |
 | A14 | Provider-agnostic cells: any provider meeting the cell contract; launch on DigitalOcean, add providers through the onboarding checklist when a region needs them | **Approved** (delegated by the owner, 2026-10-11) | A cell takes customers only after P0.26 passes | P0.25, P0.26, P2.10 |
 | A15 | Object storage on Azure (no S3 API) | **Approved** (delegated) | An Azure Blob adapter in the filestore module, built only when the first Azure region is needed. restic, CloudNativePG and the registry already support Azure natively. No self-run object store, which would be a stateful service to operate | P2.10 |
 | A16 | Platform DNS provider independent of the clouds | **Approved** (delegated): **Cloudflare DNS**, DNS only, no proxy | Built-in cert-manager solver; API tokens scoped to a single zone; free DNSSEC and CAA; independent of every compute provider | P0.7, P0.26 |
 | A17 | Data residency per region; business data never leaves the allowed locations; the central control plane holds metadata only | **Approved** (delegated) | — | P0.25, P1.21 |
-| A19 | Customer chooses region, then provider; a separate price per provider in each region (owner requirement) | **Approved** (delegated) | Region → offerings (provider in region) → cells; a price per plan per offering, never below that offering's floor; a project stays in one region and offering | P1.22, P0.18 |
 | A18 | Infrastructure as code: a provisioning module per provider | **Approved** (delegated): **OpenTofu** | Open-source and Terraform-compatible, with providers for all seven clouds | P2.11 |
+| A19 | Customer chooses region, then provider; a separate price per provider in each region (owner requirement) | **Approved** (delegated) | Region → offerings (provider in region) → cells; a price per plan per offering, never below that offering's floor; a project stays in one region and offering | P1.22, P0.18 |
+| A20 | Odoo Enterprise source model and legal gate | **Pending legal review** | (a) bring your own Enterprise source, built per tenant into tenant-only registry repositories, at launch; (b) platform Enterprise images only with a written agreement with Odoo. No Enterprise offering before written legal confirmation | P1.23, P1.24 |
+| A21 | Bring Your Own Server: a single-customer k3s cell on the customer's server, managed only through a least-privilege Kubernetes API (no platform SSH key), builds on the customer's server, a management fee only | **New** (owner requirement; design proposed) | — | P1.32 |
+| A22 | Pricing and marketing on the oec.sh model: flat plans Free $0, Starter $19, Pro $39, Agency $199 per month in USD, excluding servers (owner); 20% annual to confirm; BYOS first, managed infrastructure at metered cost plus a management fee, and the 60% margin measured on Veltnex's own revenue | **New** (owner requirement; design proposed) | Claims backed by published calculations; no invented social proof | P1.33, P1.34, P1.32 |
 
 **Launch blockers.** The full list, with each acceptance check, is in the plan's "Launch blockers and launch acceptance criteria". The owner added these on 2026-10-11:
 
@@ -118,6 +120,30 @@ The remaining open questions were settled on 2026-10-11 (see the end of this fil
 
 HA is not a pool. An HA tenant runs in its normal Production pool with pod anti-affinity, so that pool needs at least 2 nodes.
 
+**Sleep: what it really saves (owner, 2026-10-11).** Stopping pods saves nothing by itself. The provider bills nodes and volumes, not pods. Sleep saves money only when all of these hold:
+
+1. **Sleeping workloads live on nodes that can disappear.** Non-production Odoo pods run alone on the Shared pool. The shared database, Mailpit and the wake activator run on the Standard pool. When environments sleep, the Shared pool's nodes empty and the autoscaler removes them. The pool's minimum is 0 at night and on weekends, and 1 node in business hours for fast wakes (a scheduled minimum, *assumed* to be tunable per cell). A cold pool means the first wake waits for a new node, about 1–3 minutes (*assumption*).
+2. **No reserved resources stay behind.** A sleeping environment keeps no pod, so it has no requests. Its database is a database inside the shared cluster, with no pod of its own. So its only remaining costs are volumes.
+3. **Volumes are kept as small as possible.**
+    - **Dev files:** before P3 a dev environment's files sit on a block volume, which bills while asleep. It is created at the minimum size (1 GiB, or the provider minimum), and dev copies have no attachments unless asked (A8).
+    - **Archiving:** after 14 idle days the environment is archived, its volume deleted, and only object storage remains.
+    - **After P3:** files live in the non-production bucket and are billed only for what is stored.
+4. **Measured, not assumed:** the metering reports Shared-pool node-hours and volume GiB-hours per day. The acceptance test is that the Shared pool's node-hours fall when environments sleep.
+
+**Behaviour during sleep:**
+
+| Topic | Rule |
+| --- | --- |
+| Who sleeps | Development after 1 idle hour, Staging after 2, Trials after 1. Production never sleeps. An "always awake" option is billed. |
+| What counts as activity | HTTP requests to the environment (excluding platform health probes and known crawlers), an open web shell or Odoo shell, a running build or deploy, and portal actions on that environment |
+| Wake-up | Any HTTP request to a sleeping host reaches the wake activator. Browsers see "Waking up your server…" and are redirected when it is ready. API and JSON calls get `503` with `Retry-After`, so webhooks such as payment test callbacks retry. The portal has a Wake button. Wakes are rate-limited per cell to avoid a storm. Target: under 30 s with a warm node, 1–3 minutes from a cold pool |
+| Builds while asleep | A push to a sleeping branch builds and runs its tests. The update gate (`-u`) runs as a Job against the shared database without waking the web pod. The environment stays asleep on the new image, and the next visit wakes it |
+| Scheduled actions (crons) | Staging and dev crons are already disabled by neutralization, so sleep changes nothing for them. A trial's crons do not run while it sleeps; on wake, Odoo runs each overdue job once. There is no catch-up for every missed run, the same as Odoo.sh's idle behaviour |
+| Backups | Dev and trials have no scheduled backups. A manual staging snapshot runs without waking: it dumps from the shared cluster and mounts the file volume in a Job. Archiving at 14 days needs no wake |
+| Billing | Non-production is a flat slot fee, whether it sleeps or not; the customer is not billed per awake hour. "Always awake" is a separate fee. Trials are free. Awake hours are metered internally to check cost and margin |
+| Shell, logs, mail catcher | Opening the shell wakes the environment. Logs and Mailpit stay readable while it sleeps |
+
+
 ## Provider-agnostic cells and data residency
 
 **Requirement (owner, 2026-10-11):** customer environments must be able to run on DigitalOcean, Hetzner, GCP, AWS, Azure, Huawei Cloud or Oracle Cloud. Some customers are bound to a geography, and no provider covers every country. A **cell** is therefore one Kubernetes cluster in one place, on any provider, that meets a fixed contract. The control plane manages every cell the same way, through the Kubernetes API and a few provider adapters.
@@ -149,6 +175,7 @@ HA is not a pool. An HA tenant runs in its normal Production pool with pod anti-
 | CSI block storage with online volume expansion | Database volumes grow without downtime | Create, write, expand and check |
 | A LoadBalancer Service for HTTP, HTTPS and TCP 22 | Traefik and the SSH gateway | Live request through the load balancer |
 | Node pools that take labels and taints (`saas.platform/pool`) | Standard, Build, Shared and Large pools | Label and taint check |
+| Kernel limits for Odoo (inotify watches; learned from oec.sh's installer) | Odoo 19 and later can exhaust the default inotify limit at start | `sysctl` check on each node |
 | Object storage with the S3 API and **credentials scoped to one bucket** | A2 isolation, backups, registry, WAL | Key A cannot list bucket B |
 | An object store and backup locations inside the region's allowed countries | Data residency | Endpoints are checked against the region policy |
 | Outbound 443 to the control plane and the mail upstream | Management and mail | Probe |
@@ -395,7 +422,7 @@ Today, while files are still on the volume, the same model applies with "copy th
 \text{cost} = \text{compute} + \text{DB volume} + \text{Spaces GiB} \cdot 0.02 + \text{backup GiB} \cdot 0.02 \cdot c + \frac{\text{cell and platform overhead}}{N_{tenants}} + \text{mail}
 ```
 
-Here `u_pack` is the packing efficiency, *assumed* at 0.75; it covers rollout headroom, autoscaler buffer and fragmentation. `c` is 2 when backups are copied to a second region.
+Here `u_pack` is the packing efficiency. It must leave room for one rollout surge pod per node, because before P3 the surge pod has to land on the tenant's own node. On `s-2vcpu-4gb` nodes that leaves room for only about one 2-worker tenant, so packing is about **0.45**. On `s-4vcpu-8gb` nodes it is about **0.75** (*assumed*: about 5 tenants of 1,100 MiB beside one 950 MiB surge). `c` is 2 when backups are copied to a second region. The result is a **variable-cost floor**: card fees, support labour and the margin lost while a new cell fills up are on top of it.
 
 **Realistic utilization (verified):**
 
@@ -405,36 +432,54 @@ Here `u_pack` is the packing efficiency, *assumed* at 0.75; it covers rollout he
 
 A6 sets requests to measured values. Per environment that means CPU about 150m and memory about the p95 working set. This is assumed at 950 MiB for a 2-worker Production environment, from the observed range.
 
-**Worked example: a 2-worker Production environment in a cell of 50 Production tenants (assumptions marked).**
+**Worked example: a 2-worker Production environment** (revision 3; assumptions marked):
 
-| Line | Today's requests | Right-sized requests (A6) |
+- **Requests:** Odoo plus cron 950 MiB (*assumed*; it must be replaced by the measured 7-day maximum, not a one-day average) and **its dedicated PostgreSQL 150 MiB**, which revision 2 left out. That is 1,100 MiB and about 200m CPU, so memory binds.
+- **Storage:** today's block volume until P3 moves files to Spaces.
+- **Node:** `s-4vcpu-8gb` at about $48 (*assumed* list price) with about 3,488m and 6,488 MiB usable (*assumed* allocatable minus the verified DaemonSet share), compared with today's `s-2vcpu-4gb`.
+
+| Line | `s-2vcpu-4gb`, packing 0.45 | `s-4vcpu-8gb`, packing 0.75 |
 | --- | --- | --- |
-| Requests | 437m / 448 MiB, so CPU binds at 29.4% | 150m / 950 MiB, so memory binds at 36.7% |
-| Compute, ÷ 0.75 | $9.40 | $11.73 |
-| Database volume (2 GiB) | inside the 10 GiB shared volume, $1.00 | $0.20 |
-| Files (5 GiB, Spaces) | inside the volume | $0.10 |
-| Backups (8 GiB after dedup, ×2 regions) | 7 full copies, about $1.00 | $0.32 |
-| Overhead ÷ 50 | $1.44 | $1.44 |
-| **Monthly cost** | **about $12.8 (with eviction risk)** | **about $13.8** |
-| Price at 60% margin (÷ 0.40) | $32 | **$34.5** |
-| Price at 70% margin (÷ 0.30) | $43 | **$46** |
+| Compute (Odoo + cron + its database) | $22.60 | $10.85 |
+| Block volume (10 GiB plan allowance) | $1.00 | $1.00 |
+| Backups (restic, 8 GiB after dedup, ×2 locations) | $0.32 | $0.32 |
+| Mail (about 1,000 messages) | $0.10 | $0.10 |
+| **Variable cost before overhead** | **$24.02** | **$12.27** |
 
-The overhead line is about $72 a month in total, all *assumed* or from published prices:
+**Overhead depends on how full the cell is.** One cell costs about $28 a month:
 
-- load balancer, $12 ([DOKS pricing](https://www.digitalocean.com/pricing/kubernetes));
-- cell services, about 0.25 of a node, $6;
+- load balancer, $12;
+- cell services, about $5 on the larger node;
 - Spaces subscription, $5;
-- the control-plane VM, assumed $48;
-- Prometheus volume, $1.
+- Prometheus volume, $1;
+- average Build-pool time, *assumed* $5.
 
-**Non-production with sleep** (*assumed*: awake 15% of the month, 400 MiB requested):
+The platform adds about $36: a right-sized control-plane VM and the separate platform database VM (*assumed* $24 and $12). That is about **$64 in total** for one cell.
 
-- compute about $0.75;
-- share of the 2-instance shared database cluster, about $19 per cell split over 50 environments, about $0.40;
-- files and overhead, about $0.30;
-- total about $1.5 a month, against about $8 always on.
+**Price floor by tenants in the cell** (`s-4vcpu-8gb`; card fees of about 3% included as `price × 0.97`):
 
-The saving becomes money only when the autoscaler removes nodes; on a small cluster it shows first as room for more tenants. The figures in Appendix D ($5.30 and $1.10) are superseded by this model.
+| Production tenants in the cell | Cost per tenant | Floor at 60% (÷ 0.37) | Target at 70% (÷ 0.27) |
+| --- | --- | --- | --- |
+| 10 | $18.70 | $50.50 | $69 |
+| 50 | $13.55 | $36.60 | $50 |
+| 200 | $12.60 | $34.00 | $47 |
+
+**What this means for pricing:**
+
+- **Node size:** a cell must not run on `s-2vcpu-4gb` nodes. There, the same tenant's variable cost is $24, so the 60% floor is about $68 at 50 tenants.
+- **Early cells:** new cells run below the 60% target until they fill. Prices are set for about 50 tenants per cell, and margin reports show the curve.
+- **After P3:** with files on Spaces and only the database on a volume, about $0.70 a month comes off the variable cost.
+
+**Non-production with sleep** (*assumed*: awake 15% of the month, 400 MiB Odoo request, `s-4vcpu-8gb`):
+
+- Odoo compute: about $0.60;
+- share of the shared database, one instance (A9 revised for launch): about $0.50 over 40 environments;
+- its database storage and file volume: about $0.20–0.60;
+- total: about **$1.30–1.70** a month, against about $5.80 when always on with a dedicated database.
+
+The saving is real only under the conditions in "Sleep: what it really saves" below. The Appendix D figures ($5.30 and $1.10) are superseded.
+
+**Verify these with metering:** every figure above becomes a measured number per tenant once usage metering exists (the cost-reduction plan, `PLAN-cost-reduction.md`).
 
 **Mail:** SES is billed per message (pass-through; see the SES item in the plan). It is priced as an included quota per plan plus usage.
 
@@ -457,7 +502,8 @@ The wildcard covers only the platform's own tenant domain, such as `*.main.eagle
 
 **Wildcard protections:**
 
-- **Separate domain (A4):** tenant apps get their own registrable domain, separate from the portal, which removes cookie tossing into the portal. Submit it to the Public Suffix List's private section, so browsers isolate cookies between tenants too.
+- **Separate domain (A4):** tenant apps get their own registrable domain, separate from the portal, which removes cookie tossing into the portal.
+- **Public Suffix List:** submit a **wildcard rule** `*.<tenant-domain>` to the List's private section. That makes each region label, such as `fra1.<tenant-domain>`, a public suffix, so every tenant host is its own site. Listing only `<tenant-domain>` would leave all tenants in one region sharing `fra1.<tenant-domain>`. The List's merge takes weeks to months, so launch does not wait for it: the separate domain alone protects the portal.
 - **Locked-down key:** the wildcard key lives only in Traefik's namespace. The control plane's least-privilege role (P0.1) cannot read Secrets there or in `cert-manager`.
 - **Narrow DNS credential:** `_acme-challenge.<tenant-domain>` is a CNAME into a dedicated challenge zone. That zone is its own Cloudflare zone (A16), and cert-manager's API token is scoped to that zone only, so a leaked token cannot repoint tenant traffic.
 - **Issuance controls:** CAA records allow only Let's Encrypt and only the platform's ACME account (`accounturi`), for both `issue` and `issuewild`. Certificate Transparency is watched, with an alert on any certificate for the tenant domain that the platform did not order.
@@ -615,6 +661,82 @@ The card opens the full finding: the normalized query, its tables and module, th
 
 **Cost:** the CronJob costs a few CPU-minutes per cell every 15 minutes. Storage is a few GB in the control-plane database. Level 3 emails are rare and go through the mail relay. Basic insights are included in every Production plan; the 90-day history and the plan and index-hint views are the paid tier (A10).
 
+## Pricing and go-to-market (oec.sh model)
+
+**Requirement (owner, 2026-10-11):** follow oec.sh's pricing system and its way of marketing. Their published model ([oec.sh](https://oec.sh/), read on 2026-10-11):
+
+- **Flat platform plans with no per-user fees:**
+    - Free "forever": 1 server, 3 environments, 2 projects, SSH terminal, daily backups;
+    - Starter $19 a month: 2 servers, 5 projects, 5 custom domains, sanitization;
+    - Pro $39 a month: "unlimited everything", DNS, replicas, advanced monitoring;
+    - SaaS $249 a month: storefront, client portal and Stripe billing for resellers;
+    - 20% off annual plans.
+- **Servers:** on the customer's own cloud account or server, "billed separately at provider rates, no markup". A managed option is mentioned without published prices.
+- **Marketing:**
+    - "Free Odoo Hosting on Any Cloud" and "Save 70% vs Odoo.sh";
+    - deploy in 60 seconds, no credit card;
+    - no vendor lock-in;
+    - audiences: agencies and resellers ("the cPanel + WHMCS for Odoo"), developers and partners;
+    - comparison and migration guides;
+    - social-proof counters;
+    - "Start Free, No Card" as the repeated call to action.
+
+**Veltnex version (A22):**
+
+| Offer | What the customer pays | Veltnex cost | Margin rule |
+| --- | --- | --- | --- |
+| **Bring Your Own Server** (primary, as at oec.sh) | A flat plan: Free, Starter, Pro, Agency. Servers are paid by the customer directly to their provider | Control plane share, support, monitoring, plus backup storage if the customer uses Veltnex's (billed per GB) | At least 60% on Veltnex's own revenue, from metering (P1.31). Support time is the main cost |
+| **Veltnex-managed cells** | The same flat plan, plus infrastructure at metered provider cost, shown line by line ("no markup"), plus a per-server "managed infrastructure" fee | Nodes, volumes, load balancer and backups | Infrastructure passes through at cost. **The 60% target applies to Veltnex's own revenue** (plan plus management fee), not to the pass-through. This replaces the earlier per-worker price floor for new customers; existing plans move at renewal |
+
+- **Plans (owner, 2026-10-11):** prices are in US dollars per month, **excluding server cost**, which the customer's provider bills. The server and project limits are the owner's; the feature split per plan is a proposal the owner can move.
+
+| Plan | Price | Limits (owner) | Features (proposed) |
+| --- | --- | --- | --- |
+| **Free** | $0 | 1 server, 2 projects | Dashboard management, deploy from the dashboard, web shell and Odoo shell, logs, uptime; daily backups to the customer's own S3; community support |
+| **Starter** | $19 | Up to 2 servers | Plus **Git auto-deployment** (push to deploy, tests, promotion), **monitoring** (resources, `pg_slow_queries.log`), custom domains, staging with Mailpit |
+| **Pro** | $39 | Unlimited servers and projects, within the published plan | Plus **teams and permissions** (persona roles, IAM), **automated backups** (Veltnex off-site storage, 7/4/6, integrity checks, restore drills, second location), **advanced monitoring** (the performance Advisor) |
+| **Agency** | $199 | For hosting companies and client management | Plus several client organisations, white-label portal, client billing |
+| **Add-on: Managed Database Services** | Per database (to set) | — | A Veltnex-run PostgreSQL with HA and PITR, once P4.1 and P4.2 exist |
+| **Annual** | 20% off (*assumed*, as at oec.sh; to confirm) | — | — |
+
+- **Agency segment:** hosting companies and resellers are the same customers Veltnex targets. The Agency plan sells client organisations at launch, and white-label and client billing follow within about 90 days (P1.35). The existing control plane (products, plans, billing, portal, IAM) is most of what a reseller platform needs.
+- **Freemium path:** connecting a server is free, so customers start relying on the dashboard. The paid features above are the upgrade path, gated per plan in the portal. Pro is where the high-value operations live; Agency serves resellers.
+- **Backup rule, reconciling A11 with the free tier (needs owner confirmation):** A11 said automatic Production backups are in every plan.
+    - **In every plan, including Free:** daily backups to the customer's own S3-compatible storage. This costs Veltnex nothing and avoids "lost my data on Veltnex" incidents.
+    - **The paid "Automated Backups" (Pro and above):** off-site backups run by Veltnex, with retention, integrity checks, restore drills and a second location.
+    - **Veltnex-managed cells:** they always include Veltnex backups (A11 unchanged there).
+- **Free-tier guardrails:** BYOS only, so Veltnex pays no compute. One free account per verified person or company (the trial rule already exists). Abuse controls apply, and inactive free servers are detached after 90 days of no contact.
+- **Marketing, honest version:**
+    - **Same structure:** the same message, "your cloud, no lock-in, deploy fast, save versus Odoo.sh", with "Start free, no card".
+    - **Savings claims:** every number is backed by a published calculation page. The Odoo.sh pricing page shows no amounts without its calculator (verified 2026-10-11), so the comparison must quote the calculator's output with a date.
+    - **"Deploy in N seconds":** measured by the automated walk-through (P1.30).
+    - **No invented social proof:** the counters start once real numbers exist.
+    - **Odoo trademark:** usage follows Odoo SA's trademark guidelines (to check).
+    - **Content and audiences:** comparison and migration guides (from Odoo.sh, Odoo Online and self-hosting), a partner and agency program, a developer page (API, Git, Odoo shell), and provider referral credits for new BYOS servers where providers offer them.
+
+## Bring Your Own Server (BYOS)
+
+**Requirement (owner, 2026-10-11):** besides hosting on Veltnex's cells, a customer can connect their own server, like oec.sh's "Bring Your Own Server", and pay Veltnex only for operation and management.
+
+**Reference (oec.sh's install script, shared by the owner):** a one-time token in a root install command; registration and progress callbacks; OS and resource preflight; an apt-lock wait; swap; raised inotify limits for Odoo 19; UFW (22, 80, 443) and fail2ban; Docker, Traefik and Netdata; and **the platform's SSH public key added to root's `authorized_keys`**. That last step gives the platform root on every customer server, so a breach of the platform becomes a breach of every customer server. Veltnex does not copy it.
+
+**Veltnex design (A21):**
+
+- **One technology:** a BYOS server becomes a private, single-customer **cell** with single-node **k3s**. It is light on 4 GB servers and enforces NetworkPolicy with its built-in controller. The cell runs the same operator, charts, backups, monitoring and advisor as a hosted cell, so there is no second (Docker) code path, which the repository already removed.
+- **Install:** the same kind of one-time-token command and preflight as oec.sh, plus the inotify, swap and apt-lock lessons. UFW opens 80 and 443, and opens the Kubernetes API (6443) **only to the platform's egress addresses**. SSH stays exactly as the customer had it.
+- **Control without root:**
+    - Veltnex manages the server only through the Kubernetes API, with a least-privilege ServiceAccount whose token stays on the control plane;
+    - there is no platform SSH key;
+    - support access needs a time-limited grant from the customer.
+- **Untrusted server:** the customer has root, so nothing shared goes there: no wildcard key, no shared registry or backup credential. Its backups use a key scoped to that customer, or the customer's own S3.
+- **Builds, domains and mail:**
+    - builds and tests run on the customer's server into a local registry;
+    - domains are the customer's own, with per-host certificates. An optional platform host goes under a separate BYOS domain, so BYOS certificate issuance never counts against the tenant domain's Let's Encrypt limit;
+    - mail uses the customer's SMTP at launch.
+- **Sleep:** off by default, because it saves the platform nothing.
+- **Billing:** a management fee per server (tiered), plus any platform storage used. There is no infrastructure SLA. Support time is the main cost and is metered.
+- **Phase:** **launch (Tier L)**. Under the oec.sh model BYOS is the primary offer and the home of the Free plan (A22).
+
 ## Odoo Enterprise
 
 **The rule:** Odoo Enterprise code is under a commercial licence, separate from Community's. One customer's subscription gives that customer rights; it gives no other customer of the platform access to the code. Veltnex therefore never stores Enterprise code where another customer could reach it, and never redistributes it unless Odoo agrees in writing.
@@ -743,8 +865,9 @@ Until then, the "Enterprise" option is hidden.
 | --- | --- |
 | Odoo pod or node | Before P3: 1–3 minutes. After P3: rescheduled on any node; HA tenants fail over |
 | Production database | Base plans: restore from the nightly snapshot set, losing up to 24 hours. PITR tenants: under 5 minutes lost |
-| Shared non-production cluster | CloudNativePG standby takes over; Production unaffected |
-| Cell | Scripted restore of each tenant into another cell from Spaces |
+| Shared non-production cluster | At launch, 1 instance: restore from its nightly dump and WAL, with non-production down meanwhile. With 2 instances: the standby takes over. Production is unaffected either way |
+| Cell | Scripted restore of each tenant into another cell from Spaces, practised in a whole-cell disaster-recovery drill with a measured recovery time |
+| Control plane | Tenants keep running; provisioning, billing, webhooks, mail-quota enforcement and domain checks stop. The platform database runs on its own VM, separate from the application VM and managed by the owner. The application VM is rebuilt by bootstrap in under an hour. Control-plane health (cron lag, job queue, portal uptime) is monitored |
 | Spaces region | Production backups copied nightly to the second region |
 | SES or relay | Mail stays queued in Odoo and is retried; Production keeps working |
 | Let's Encrypt or DNS | Existing certificates last up to 30 days past the first failed renewal; alert at 14 days |
@@ -760,7 +883,7 @@ Until then, the "Enterprise" option is hidden.
 | | Branches mapped to dev, staging, Production | `_env_branch`, `action_link_environment_branch` | — |
 | | Automated tests, build failure detection | Build status and the update gate; **no test runs** | P1.11 tests per push |
 | Shell | Web shell | Browser terminal over WebSocket exec (`ssh_terminal.py`), into a shell container with no secrets | Hardening (P1.10) |
-| | SSH | **None:** no key-based SSH | P1.13 SSH gateway |
+| | SSH | **None:** no key-based SSH | P1.13 SSH gateway, **deferred after launch** (owner); the web shell and Odoo shell cover launch |
 | | Odoo shell and Python console | **Not usable:** the shell container has no `odoo.conf`, so `odoo shell` cannot connect | P1.12 |
 | Dependencies | `requirements.txt` and Python dependencies | Merged from every repository root at build (`templates/build/inspect.py`), installed in the image | Show the resolved package list per build (P1.11) |
 | Addons | Community and custom addons | Official Odoo images plus the customer's repositories | — |
@@ -776,7 +899,7 @@ Until then, the "Enterprise" option is hidden.
 | | Production copy in staging | Yes, neutralized and PII-masked | Attachment rule (A8) |
 | Staging | Test on Production data | Yes | — |
 | | Mail catcher | **None** | P1.3 |
-| | Promote staging to Production | Merge on the provider, **GitHub only** (`saas_instance_repo.py:879`) | P1.17: merge for all providers, plus a pre-deploy snapshot |
+| | Promote staging to Production | Merge on the provider, **GitHub only** (`saas_instance_repo.py:869`) | P1.17: merge for all providers, plus a pre-deploy snapshot |
 | Platform | Automatic mail servers | **None** | P1.8 relay into Production, Mailpit for the rest |
 | | Customer domain on Production, subdomains for dev | Subdomains only | P1.1 |
 | | Server management: monitoring, backups, DNS | Platform-side, partial | P0.7, P0.11, P0.12, P1.1 |

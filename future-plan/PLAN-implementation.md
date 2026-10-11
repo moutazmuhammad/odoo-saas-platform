@@ -940,17 +940,21 @@ Before launch. "Launch blocker" marks a finding from the review.
     - **BYOS, by subscription** (owner; US dollars per month, excluding servers):
         - Free $0: 1 server, 2 projects;
         - Starter $19: up to 2 servers;
-        - Pro $39: unlimited servers and projects within the published plan;
+        - Pro $39: unlimited projects; servers, Veltnex backup storage, build minutes and support under the fair-use policy (architecture, "Fair use"), with allowances, 80% notices and add-ons;
         - Agency $199: hosting companies and resellers.
 
       Paid features are gated per plan. The proposed split: backups to the customer's own S3, Git auto-deploy and monitoring from Starter; teams and permissions, Veltnex off-site backups and the Advisor from Pro; client organisations, white-label and client billing in Agency. **No annual discount on management subscriptions** (owner).
     - **Backups (owner):** none on Free, so the customer must upgrade; the portal warns and signup asks for acknowledgement. Customer-S3 backups from Starter, Veltnex off-site from Pro. Managed hosting always includes Veltnex backups (A11).
+    - **Fair use:** the published allowances per plan for servers, Veltnex backup storage, retention, deploy triggers and support. They are enforced through metering (P1.31), with notices at 80% and throttling of new usage, never of existing data, at 100%. Add-ons are on the pricing page.
+    - **BYOS margin:** margin reports include BYOS's real costs (control plane share, monitoring, logs, Veltnex backups and support time), not just infrastructure.
     - **Odoo Enterprise licences are separate** from hosting and management fees in both models, so the comparison with Odoo.sh is clean.
     - **Free plan:** BYOS only, one per verified person or company; servers inactive for 90 days are detached.
     - **Existing customers:** keep their plan until renewal (notice in P0.27).
 - **Where:** `control-plane/saas_billing` (subscription products, limits, feature gates), `saas_core/models/saas_plan.py` (limits and feature flags), `saas_iam` (members by plan), `frontend/veltnex` (pricing page with both hosting types, upgrade prompts).
 - **Done when:**
     - every gate is enforced with an upgrade prompt;
+    - a Pro account with 11 servers gets the fair-use notice and the add-on offer;
+    - support time logged against a customer appears in their margin;
     - a managed invoice prices resources above the floor;
     - a BYOS invoice shows only the subscription and any Veltnex storage;
     - the margin report clears 60% for every managed plan and every subscription tier.

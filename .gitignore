@@ -20,3 +20,7 @@ __pycache__/
 
 # Machine-specific deployment destinations, values and success receipts.
 .local-deploy/
+
+# Third-party reference material kept locally only (no redistribution;
+# e.g. oec.sh scripts shared by the owner). Never commit.
+/reference/

@@ -694,10 +694,38 @@ The card opens the full finding: the normalized query, its tables and module, th
 | --- | --- | --- | --- |
 | **Free** | $0 | 1 server, 2 projects | Dashboard management, deploy from the dashboard, web shell and Odoo shell, logs, uptime; **no backups** (upgrade needed); community support |
 | **Starter** | $19 | Up to 2 servers | Plus **daily backups to the customer's own S3**, **Git auto-deployment** (push to deploy, tests, promotion), **monitoring** (resources, `pg_slow_queries.log`), custom domains, staging with Mailpit |
-| **Pro** | $39 | Unlimited servers and projects, within the published plan | Plus **teams and permissions** (persona roles, IAM), **automated backups** (Veltnex off-site storage, 7/4/6, integrity checks, restore drills, second location), **advanced monitoring** (the performance Advisor) |
+| **Pro** | $39 | **Unlimited projects**; servers, Veltnex backup storage, build minutes and support under **fair use** (below) | Plus **teams and permissions** (persona roles, IAM), **automated backups** (Veltnex off-site storage, 7/4/6, integrity checks, restore drills, second location), **advanced monitoring** (the performance Advisor) |
 | **Agency** | $199 | For hosting companies and client management | Plus several client organisations, white-label portal, client billing |
 | **Add-on: Managed Database Services** | Per database (to set) | — | A Veltnex-run PostgreSQL with HA and PITR, once P4.1 and P4.2 exist |
 | **Annual** | **No annual discount on management subscriptions** (owner, 2026-10-11). Managed hosting keeps its existing yearly pricing in the billing engine | — | — |
+
+**Fair use (owner, 2026-10-11).** Projects stay unlimited on Pro, but servers, build minutes, backup storage and support are under a published fair-use policy. Without it, a Pro customer with 50 servers using monitoring, backups and Git deployments heavily would cost more than $39. Starting points (*proposed*; the owner sets the final numbers):
+
+| Resource | Starter | Pro | Agency | Above the allowance |
+| --- | --- | --- | --- | --- |
+| Projects | Within the plan | Unlimited | Unlimited | — |
+| Servers | 2 | 10 included | 50 included | A per-server add-on price, or the next plan |
+| Veltnex backup storage (after deduplication) | None (customer S3) | 50 GiB per account | 500 GiB | Per GiB-month, priced above cost (2 locations at about $0.02 each) |
+| Builds on Veltnex builders | — (BYOS builds run on the customer's server) | Same | Same | Applies only to managed hosting, where minutes are in the resource price |
+| Metrics retention / deploy and build log retention | 7 days / 14 days | 14 days / 30 days | 30 days / 90 days | Longer retention is the paid performance tier (A10) |
+| Git deploy triggers | 200 a day | 1,000 a day | 5,000 a day | Rate-limited, not billed |
+| Support | Email, 2 business days | Email, 1 business day, up to 2 hours a month | Priority, up to 10 hours a month | Billed per hour, or the next plan |
+
+- **Enforcement:** metering (P1.31) watches every row. A customer gets a notice at 80% of an allowance. At 100%, new usage is throttled or blocked, never existing data or running environments, until they upgrade or buy the add-on.
+- **No hidden overage:** add-ons are listed on the pricing page.
+
+**BYOS cost to Veltnex is not zero.** Veltnex does not pay the customer's compute, but it pays for the items below (*assumed* per server per month at about 100 BYOS servers; metering replaces these with real numbers):
+
+| Cost line | Estimate | Note |
+| --- | --- | --- |
+| Control plane and its database (share) | About $0.40 | About $36 a month for the application and database VMs, shared by every customer |
+| Monitoring and metrics retention | About $0.10–0.30 | Netdata runs on the customer's server; Veltnex stores summaries and alert history |
+| Deploy logs, Git webhooks, build history | About $0.05–0.10 | Rows in the control-plane database plus log objects |
+| Veltnex backups (Pro and above) | About $0.32 per Production environment | restic 8 GiB after deduplication × 2 locations; restores add egress |
+| Builds | $0 | They run on the customer's server |
+| **Support and troubleshooting** | **The dominant cost:** at an *assumed* $30 an hour, 30 minutes a month is $15 | That is why support has a fair-use allowance per plan |
+
+Starter at $19 stays profitable only while support stays near its allowance. Metering tracks support time per customer, and margin reports flag customers whose support time breaks their plan's margin.
 
 - **Agency segment:** hosting companies and resellers are the same customers Veltnex targets. The Agency plan sells client organisations at launch, and white-label and client billing follow within about 90 days (P1.35). The existing control plane (products, plans, billing, portal, IAM) is most of what a reseller platform needs.
 - **Freemium path:** connecting a server is free, so customers start relying on the dashboard. The paid features above are the upgrade path, gated per plan in the portal. Pro is where the high-value operations live; Agency serves resellers.

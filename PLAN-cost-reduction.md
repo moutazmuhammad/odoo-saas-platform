@@ -21,7 +21,7 @@ Status: plan only. Nothing is built or deployed. Implementation starts when the 
 - **Pricing on the oec.sh model (P1.33).** US dollars per month, excluding server cost:
     - Free $0: 1 server, 2 projects;
     - Starter $19: up to 2 servers;
-    - Pro $39: unlimited servers and projects within the published plan;
+    - Pro $39: unlimited projects; servers, backup storage, build minutes and support under a published fair-use policy;
     - Agency $199: hosting companies and resellers (P1.35).
   It is freemium: connecting a server is free, and the paid features are Git auto-deploy, monitoring, teams and permissions, Veltnex automated backups and advanced monitoring, with Managed Database Services later.
 - **Marketing on the oec.sh approach (P1.34),** with every claim backed by a published calculation and no invented social proof.
@@ -62,7 +62,7 @@ The other launch work (Tier L in the full plan) also stays:
 
 | Rank | Reduction | Saving per month (*assumed* scale) | Risk it adds | Item |
 | --- | --- | --- | --- | --- |
-| C0 | **Bring Your Own Server (Docker Compose driver) for customers who have servers:** most customers run on their own servers under the flat plans, so Veltnex buys no compute, volumes or load balancer for them | About **$12–14 per customer moved to BYOS** (the managed cost per Production environment, corrected model); about **$600 or more** at 50 customers. Infrastructure risk moves off Veltnex's books | Less control over customer servers (handled by the cell checks and per-customer isolation); support load per server, which metering covers | P1.32, P1.33 |
+| C0 | **Bring Your Own Server for customers who already run servers:** Veltnex does not buy compute, volumes or a load balancer for them | **Not a net saving and not a migration.** It is the infrastructure Veltnex does not buy, about $12–14 a month per environment compared with managed hosting. Veltnex still pays the control-plane share, monitoring, logs, Veltnex backups (Pro and above) and above all **support**: about $1 a month plus support time per server (architecture, "BYOS cost to Veltnex is not zero"). It only applies to customers willing to run a server; managed customers do not move by themselves | Support load per server, capped by the fair-use support allowance; less control over the server | P1.32, P1.33 |
 | C1 | **Run cells on `s-4vcpu-8gb` nodes, not `s-2vcpu-4gb`** | About **$590**: Production compute falls from about $22.60 to $10.85 per tenant. The DaemonSet share drops from 14% to about 6%, and the rollout surge pod fits beside the tenants | More tenants affected by one node failure; covered by P0.28 maintenance windows | New: C1 below |
 | C2 | **Sleep for non-production** (dev 1 h, staging 2 h, trials 1 h) **with a Shared pool that scales to zero** | About **$135** at 40 environments: about $3.35 per environment, because Odoo is awake about 15% of the time; more as environments grow | A 30 s wake on a warm node, 1–3 minutes from a cold pool | P2.1, P2.5 |
 | C3 | **One cell and one load balancer** until a paying customer needs another region | About **$76 or more per cell avoided**: cell overhead about $28 plus at least one node | None now; residency customers wait for a funded cell | Full plan "Later" tier |
@@ -103,6 +103,8 @@ The other launch work (Tier L in the full plan) also stays:
 - **Managed hosting:** it always includes Veltnex backups.
 
 **No annual discount** on management subscriptions (owner).
+
+**C0 is not counted as profit.** Under the BYOS plans, profit is the subscription minus Veltnex's real costs per BYOS server, support above all. That is measured by metering (P1.31), and fair-use allowances protect it (P1.33).
 
 ## 3. Sleep: savings that are real
 

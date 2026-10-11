@@ -40,8 +40,8 @@ All decisions, A1–A19, were approved on 2026-10-11. A14–A19 were delegated b
 | A21 | Bring Your Own Server on a `DockerComposeDriver` (Docker Compose + Traefik) behind one infrastructure interface. On a **fresh dedicated server**: firewall reset, CSF disabled, a **per-server** platform SSH key in root, and Netdata (owner, 2026-10-11) | **Approved direction** | Fresh-server preflight with customer confirmation; `from=`-restricted per-server keys; commands audited; Netdata sized to the server; capabilities shown per hosting type; conformance test across runtimes | P1.36, P1.32, P1.37, P1.38 |
 | A22 | Pricing and marketing: BYOS by subscription (Free $0, Starter $19, Pro $39, Agency $199 per month in USD, excluding servers; no annual discount; no backups on Free); managed hosting by resources with the 60% floor; Odoo Enterprise licences separate from hosting | **New** (owner requirement; design proposed) | Claims backed by published calculations; no invented social proof | P1.33, P1.34, P1.32 |
 | A23 | PostgreSQL outside Kubernetes: external shards (several customers per server) by tenant placement; Production, non-production and dedicated shard classes | **Owner direction** (2026-10-11); design proposed | Supersedes A1. Guardrails: per-role limits, opaque names, per-shard headroom, noisy-tenant moves, log filtering by database, TLS | P1.40–P1.43 |
-| A24 | Shard implementation | **Pending** | Recommended: self-managed PostgreSQL VMs (about $1.4 per tenant, or $2.7 with HA); provider-managed only where price and connection limits fit (DigitalOcean 8 GiB: $122.10, 197 connections) | P1.40 |
-| A25 | HA and PITR on Production shards: included for all Production, or priced add-ons | **Pending** | At about $1.3 per tenant for the standby, inclusion is affordable | P1.40, P1.43, P4.1, P4.2 |
+| A24 | Shard implementation | **Approved: self-managed PostgreSQL VMs** (owner, 2026-10-11) | About $1.4 per Production tenant; provider-managed PostgreSQL only where its price and connection limits fit the margin | P1.40 |
+| A25 | HA for Production | **Decided: no HA at this point** (owner, 2026-10-11). Production shards run a single primary, keeping WAL archiving and base backups for recovery and tenant point-in-time restore. **The Odoo chart and operator are made HA-ready but off by default** (P1.44), so HA is a setting later, not a redesign | Recovery from a lost shard is restore from WAL and backups (recovery time *assumed* under 1 hour), not failover | P1.40, P1.43, P1.44 |
 
 **Launch blockers.** The full list, with each acceptance check, is in the plan's "Launch blockers and launch acceptance criteria". The owner added these on 2026-10-11:
 
@@ -892,12 +892,12 @@ This **supersedes A1** (CloudNativePG everywhere) and revision 2's concern-1 con
 | Self-managed PostgreSQL on an 8 GiB VM | About $48 (*assumed*, the `s-4vcpu-8gb` price) | About 35 (`max_connections` about 350) | About $1.4 | About $2.7 |
 | Revision 2: dedicated pod in Kubernetes | — | 1 | About $2.1 | Not offered |
 
-**Recommendation (A24): self-managed PostgreSQL VMs as shards,** with provider-managed PostgreSQL only where a provider's managed price and connection limits still fit the margin. Managed PostgreSQL is simpler to run but costs 3–4 times more per tenant on DigitalOcean.
+**Decided (A24): self-managed PostgreSQL VMs as shards,** with provider-managed PostgreSQL only where a provider's managed price and connection limits still fit the margin. Managed PostgreSQL is simpler to run but costs 3–4 times more per tenant on DigitalOcean.
 
 **Design:**
 
 - **Shard classes, never mixed:**
-    - **Production shards:** a primary plus a streaming standby, with WAL archiving and base backups to object storage (pgBackRest), so every Production tenant gets HA and point-in-time recovery at a shared cost.
+    - **Production shards:** a single primary at launch (A25: no HA yet), with WAL archiving and base backups to object storage (pgBackRest), so every Production tenant has point-in-time recovery at a shared cost. A streaming standby can be added later without changing tenants, because tenants connect through a stable shard name and the HA-ready chart (P1.44).
     - **Non-production shards** (staging, dev, trials): one node, with nightly backups and WAL.
     - **Dedicated shards:** Large or heavy customers alone on their own server, a premium tier.
 - **One PostgreSQL major per shard:** Odoo 14–20 map onto majors 13–17 (P1.7). A major upgrade moves the tenant to a newer-major shard (P0.6 and P1.18 unchanged).
@@ -933,14 +933,14 @@ This **supersedes A1** (CloudNativePG everywhere) and revision 2's concern-1 con
 
 - **Dropped:** P0.22 (vendor CloudNativePG), P1.9a and P1.9b, P2.2, and CloudNativePG in P4.1 and P4.2.
 - **Added:** P1.40 (shards), P1.41 (placement and moves), P1.42 (Odoo on external shards, including migrating existing tenants) and P1.43 (tenant point-in-time restore).
-- **HA and PITR:** they become properties of Production shards, so they can be included in plans rather than sold per tenant (A25).
+- **HA:** not at launch (A25). The chart and operator are HA-ready but off (P1.44).
+- **PITR:** it comes from the shard's WAL, with tenant restore through P1.43.
 
 **Decisions:**
 
 - **A23:** external shards. This is the owner's direction; the design above is the proposal.
-- **A24:** self-managed VM shards first (recommended) versus provider-managed.
-- **A25:** whether shard-level HA and PITR are included for all Production or remain priced add-ons.
-- **Failover at launch:** a scripted, operator-triggered promotion of the standby (target recovery time about 15 minutes, *assumed*), or automatic failover (pg_auto_failover or Patroni) from the start (recommended later).
+- **A24 (decided):** self-managed VM shards.
+- **A25 (decided):** no HA at launch, with an HA-ready chart. Failover tooling (pg_auto_failover or Patroni) comes with the first standby.
 
 ## Key architecture decisions
 

@@ -12,7 +12,7 @@ Status: plan only. Nothing is built or deployed. Implementation starts when the 
 - **SSH gateway deferred.** Launch has the web shell and the Odoo shell only.
 - **Sleep is required**, because it saves money, but only in the form that really reduces paid resources (section 3).
 - **Platform database** moves to its own VM, managed by the owner (P0.29).
-- **PostgreSQL leaves Kubernetes:** tenant databases live on external shards, several customers per server, placed by the control plane (A23, P1.40–P1.43). Self-managed VM shards are recommended over DigitalOcean's managed PostgreSQL, which costs 3–4 times more per tenant (A24).
+- **PostgreSQL leaves Kubernetes:** tenant databases live on external shards, several customers per server, placed by the control plane (A23, P1.40–P1.43). Shards are self-managed VMs (A24, decided), not DigitalOcean's managed PostgreSQL, which costs 3–4 times more per tenant. Production shards have no standby for now (A25); the Odoo chart is made HA-ready but off (P1.44).
 - **Billing intelligence:** usage metering (P1.31), so every customer is billed and priced from measured consumption.
 - **One control plane, two hosting types (owner, 2026-10-11):**
     - **Managed hosting:** Kubernetes and the existing operator, priced by resources.
@@ -68,7 +68,7 @@ The other launch work (Tier L in the full plan) also stays:
 | C2 | **Sleep for non-production** (dev 1 h, staging 2 h, trials 1 h) **with a Shared pool that scales to zero** | About **$135** at 40 environments: about $3.35 per environment, because Odoo is awake about 15% of the time; more as environments grow | A 30 s wake on a warm node, 1–3 minutes from a cold pool | P2.1, P2.5 |
 | C3 | **One cell and one load balancer** until a paying customer needs another region | About **$76 or more per cell avoided**: cell overhead about $28 plus at least one node | None now; residency customers wait for a funded cell | Full plan "Later" tier |
 | C4 | **No DOKS HA control plane** until an SLA is sold | About **$40** | Kubernetes API outages delay deploys; running tenants are unaffected | P0.23 |
-| C5 | **External PostgreSQL shards instead of a database per environment** (A23, self-managed VMs per A24): Production about $1.4 per tenant, or $2.7 with a standby, against about $2.1 for a pod; non-production on cheaper single-node shards. Kubernetes nodes stop carrying database memory | Small per tenant (about $0.70 without HA); the real gain is **HA and point-in-time recovery for every Production tenant at about $2.7**, which revision 2 could not offer cheaply | Noisy neighbours and shared failure per shard: per-role limits, headroom, moves, standby | P1.40–P1.42 |
+| C5 | **External PostgreSQL shards on self-managed VMs** (A23, A24) instead of a database pod per environment: about $1.4 per Production tenant on a single-primary shard with WAL (no standby, A25), against about $2.1 for a pod; non-production on cheaper single-node shards. Kubernetes nodes stop carrying database memory | About **$0.70 per Production tenant**, about $35 a month at 50 tenants; plus point-in-time recovery for every Production tenant from the shard's WAL | A shard outage affects every tenant on it until it is restored (no standby yet); per-role limits, headroom and moves handle noisy neighbours | P1.40–P1.43 |
 | C6 | **restic deduplication** instead of 7 full copies, with 7/4/6 retention | About **$26** at 50 tenants, growing with retention: 17 full copies would be about $2 per tenant | None; integrity checks catch damage | P1.5 |
 | C7 | **Non-production shards stay single-node** (no standby) until about 30 non-production environments per shard class | About **$48 per shard** not spent on a standby | A non-production outage during a restore; Production is unaffected | P1.40 |
 | C8 | **Right-size the control-plane VM from measurement**; the platform database on its own small VM | About **$12** net (*assumed*: application VM down from $48 to $24, database VM about $12) | None; the separate database is stronger | P0.29 |
@@ -175,7 +175,7 @@ Its acceptance check: one month of metered cost on the test cell is within 15% o
     - the Odoo 14–20 matrix, the price floor, the website target.
 4. **Launch readiness:** customer migration and notices, the disaster-recovery drill, load test, pentest, legal documents, operations and status page, and the automated walk-through. Then Gate A.
 5. **After launch, L+, within about 90 days:**
-    - CloudNativePG;
+    - external PostgreSQL shards and the HA-ready chart (P1.40–P1.44);
     - major-upgrade workflow;
     - persona roles, activity history;
     - Agency white-label and client billing (P1.35);

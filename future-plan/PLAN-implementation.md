@@ -58,8 +58,8 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
 | A19 Region, provider and pricing model | P1.22 (deferred), P0.18 |
 | A20 Enterprise source model and legal gate (pending legal) | P1.23 |
 | A23 External PostgreSQL shards by tenant placement (supersedes A1) | P1.40–P1.43 |
-| A24 Shard implementation: self-managed VMs or provider-managed | P1.40 |
-| A25 HA and PITR included for Production or add-ons | P1.40, P1.43 |
+| A24 Shard implementation: self-managed VMs (decided) | P1.40 |
+| A25 No Production HA now; HA-ready chart (decided) | P1.40, P1.43, P1.44 |
 | A21 BYOS on a Docker Compose driver behind one interface; SSH with a per-server root key (owner), fresh-server rules | P1.36, P1.32, P1.37, P1.38 |
 | A22 Pricing: managed by resources, BYOS by subscription, Enterprise licence separate; marketing (no backups on Free; no annual discount on subscriptions) | P1.33, P1.34, P1.35 |
 
@@ -122,7 +122,8 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
 
 **Tier L+ · within about 90 days after launch:**
 
-- P1.40 external PostgreSQL shards, P1.41 placement and moves, P1.42 Odoo on shards (with moving existing tenants), P1.43 tenant PITR. These replace the CloudNativePG items (A23);
+- P1.40 external PostgreSQL shards (self-managed VMs, A24; Production single primary with WAL, A25), P1.41 placement and moves, P1.42 Odoo on shards (with moving existing tenants), P1.43 tenant PITR. These replace the CloudNativePG items (A23);
+- P1.44 HA-ready chart and operator, off by default;
 - P1.18 major-upgrade workflow, needed before any upgrade is sold;
 - P1.35 agency white-label and client billing (the Agency plan itself sells at launch);
 - P1.19 persona roles;
@@ -1067,16 +1068,15 @@ Before launch. "Launch blocker" marks a finding from the review.
         - Ubuntu LTS and PostgreSQL from PGDG;
         - tuned settings (`shared_buffers`, `effective_cache_size`, `max_connections` sized from RAM, `pg_stat_statements`, `log_line_prefix` with `%d`, `log_min_duration_statement`);
         - TLS; pgBackRest to object storage (WAL and base backups);
-        - a streaming standby for Production shards;
-        - node and PostgreSQL metrics;
+            - node and PostgreSQL metrics;
         - a firewall allowing only the cell's private network.
     - **Provider-managed shards:** use the same model through the provider adapter (P0.25).
-    - **Failover:** a scripted promotion runbook at launch; automatic failover later (decision).
+    - **No standby at launch (A25):** Production shards are a single primary with WAL archiving and base backups. Recovery from a lost shard is a restore to a new VM. Failover tooling arrives with the first standby.
 - **Where:** new `control-plane/saas_core/models/saas_pg_shard.py`; `scripts/shards/` (provisioning, clean-room); the provider adapter; `setup/`.
 - **Done when:**
     - a Production shard and a non-production shard are provisioned from scratch;
     - point-in-time restore of the whole shard to a chosen minute works;
-    - promoting the standby keeps tenants working after a reconnect;
+    - a lost Production shard is rebuilt from WAL and base backups on a new VM within the target time (*assumed* under 1 hour), measured in a drill;
     - the shard's admin credential never appears in a tenant namespace.
 
 **P1.41 Tenant placement and moves.** Needs A23.
@@ -1114,6 +1114,40 @@ Before launch. "Launch blocker" marks a finding from the review.
 
   The files referenced at T come back as in the consistency model (trash retention at least the PITR window).
 - **Done when:** a tenant restored to a chosen minute has the data from before that minute and not after, every referenced file opens, and other tenants on the shard are untouched.
+
+**P1.44 HA-ready Odoo chart and operator (off by default).** Owner, 2026-10-11: no HA for Production now, but the charts must support it, so turning it on later is a setting, not a redesign.
+- **Today (verified):**
+    - the CRD rejects more than one replica (`compute/operator/api/v1alpha1/odooinstance_types.go:447`, a CEL rule);
+    - the web pod is pinned to the node of its RWO filestore volume (`resources/deployment.go:282`);
+    - the PodDisruptionBudget is actively deleted (`controller/workload.go:150`);
+    - the `odoo-instance` chart passes CRD fields through and adds none of its own (`compute/charts/odoo-instance/values.yaml`).
+- **What:**
+    - **CRD:** add `spec.ha` with `enabled` (default `false`), `replicas` (2–3), `antiAffinity` (`required` or `preferred`) and `podDisruptionBudget` (default `true` when enabled). The replica CEL rule allows more than one replica only when `spec.ha.enabled` is true.
+    - **Operator, when HA is enabled:**
+        - the Deployment runs `spec.ha.replicas` pods with pod anti-affinity on the node hostname, plus a zone topology-spread where zones exist;
+        - a rolling update with surge 1 and unavailable 0;
+        - a PodDisruptionBudget with at least `replicas − 1` available;
+        - no node pinning to a volume;
+        - **cron moves to its own single-replica Deployment**, so crons do not run N times; Odoo's `SKIP LOCKED` would make that safe anyway, but it would waste capacity.
+    - **Preconditions** checked by the operator, with a clear `HAUnavailable` condition when one is missing:
+        - files are not on an RWO volume (Spaces filestore, P3.1, or an RWX volume);
+        - sessions are in the database (P3.2);
+        - the database is external (`spec.database.mode: External`, the shards of P1.40).
+    - **Database endpoint ready for a standby:**
+        - `spec.database.external.hosts` (a list) and `targetSessionAttrs` (`read-write`);
+        - rendered as Odoo's `db_host` with comma-separated hosts, plus `PGTARGETSESSIONATTRS=read-write` in the environment, so libpq picks the writable server (*assumption*, tested per Odoo generation in P1.7);
+        - shards are addressed by a stable name (for example `pg-<shard>.db.<cell>.internal`), so adding a standby later changes DNS or the host list, not each tenant.
+    - **Chart:** `odoo-instance` gets the same keys (`ha.enabled: false`, `ha.replicas: 2`, `database.external.hosts: []`), still mapping one-to-one onto the CRD.
+    - **Control plane:**
+        - the driver passes `spec.ha` and the shard host list;
+        - `saas.plan._package()` multiplies Odoo pods by the replica count, so cost and price follow when HA is enabled;
+        - the capability matrix (P1.37) shows HA as "available when enabled".
+- **Where:** `compute/operator/api/v1alpha1/odooinstance_types.go`, `controller/workload.go`, `controller/validate.go`, `resources/deployment.go`, `resources/cron_resources.go`, `resources/configmap.go`, `compute/charts/odoo-operator/crds`, `compute/charts/odoo-instance/values.yaml` and `templates/odooinstance.yaml`, `control-plane/saas_core/drivers/kubernetes_driver.py`, `saas_core/models/saas_plan.py`.
+- **Done when:**
+    - **Unchanged by default:** with `ha.enabled: false`, existing tenants are untouched (envtests compare the rendered objects before and after);
+    - **Enabled:** with `ha.enabled: true` on a test tenant that meets the preconditions, 2 replicas run on different nodes with a PodDisruptionBudget and one cron pod, and a node drain causes zero failed requests in an HTTP poll;
+    - **Refused cleanly:** enabling HA without a precondition is refused with `HAUnavailable` and changes nothing;
+    - **Database host list:** a two-host `db_host` with `read-write` connects to the writable host for each Odoo version in P1.7.
 
 ### Gate A · Launch
 

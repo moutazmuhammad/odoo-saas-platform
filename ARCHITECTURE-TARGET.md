@@ -9,11 +9,11 @@ Revision 2 answers eight review concerns, adds AWS SES for outgoing mail, and ha
 - **Verified:** checked in the repository, on the live DOKS cluster (read-only Prometheus and kubectl reads on 2026-10-11), or in a provider document that was opened and is linked.
 - **Assumption:** reasonable but not yet proven; each one has a test in the plan.
 
-Nothing here is implemented. A1–A10 are approved, some with conditions; A11–A13 are pending (next section).
+Nothing here is implemented. All decisions are approved subject to the launch acceptance criteria (next section). Implementation waits for the owner's go-ahead.
 
 ## Decisions and their status
 
-Status as of 2026-10-11. "Approved with conditions" means the item ships only after the listed tests pass; each condition is a "Done when" in the plan.
+All thirteen decisions were approved on 2026-10-11, subject to the launch acceptance criteria in the plan. Where the owner set a condition, it is a "Done when" in [PLAN-implementation.md](PLAN-implementation.md#launch-blockers-and-launch-acceptance-criteria).
 
 | # | Decision | Status | Condition or note | Plan items |
 | --- | --- | --- | --- | --- |
@@ -27,14 +27,18 @@ Status as of 2026-10-11. "Approved with conditions" means the item ships only af
 | A8 | Production attachments copied to dev only on the customer's explicit request | **Approved** | Staging copies include them; dev does not unless asked | P1.4 |
 | A9 | Shared non-production cluster with 2 instances per cell | **Approved with conditions** | Test failover, storage growth and resource contention | P2.2 |
 | A10 | Basic performance monitoring free; history and advanced reports paid | **Approved** | — | P2.7, P4.7 |
-| A11 | Automatic Production backups included in every plan | **Pending** | — | P1.16 |
-| A12 | Read-only window for the final major-version upgrade, chosen by the customer | **Pending** | — | P1.18 |
-| A13 | State an uptime target on the website; SLA only with HA | **Pending** | — | P0.23 |
+| A11 | Automatic Production backups included in every plan | **Approved with conditions** | Plan-based retention and recovery features | P1.16 |
+| A12 | Read-only window for the final major-version upgrade, chosen by the customer | **Approved with conditions** | A tested copy, a verified backup, a customer-selected window and a documented recovery procedure | P1.18 |
+| A13 | State an uptime target on the website; SLA only with HA | **Approved with conditions** | A target only, until HA passes failure and recovery tests; a contractual SLA only once the platform consistently meets it | P0.23, P4.1 |
 
-**Launch blockers named by the owner on 2026-10-11:**
+**Launch blockers.** The full list, with each acceptance check, is in the plan's "Launch blockers and launch acceptance criteria". The owner added these on 2026-10-11:
 
-1. **No PostgreSQL superuser for any tenant.** Every Odoo environment, existing and new, must use a database role with limited rights. Database create, upgrade and restore must be retested after the change (P0.24).
-2. *(Points 2–4 were cut off in the message; to be added.)*
+- no PostgreSQL superuser for any tenant (P0.24);
+- no Production deploy without passing tests (P1.11);
+- an isolated, auditable SSH gateway (P1.13);
+- backups in every plan (P1.16);
+- safe major upgrades (P1.18);
+- an uptime target, not an SLA (P0.23).
 
 Still open from revision 1: archive window, whether trials share the cluster, add-ons at launch, second backup region, and Enterprise hosting (see the end of this file).
 
@@ -393,7 +397,7 @@ The wildcard covers only the platform's own tenant domain, such as `*.main.eagle
     - wildcard customer domains are not supported at launch.
 - **Primary domain:** the control plane sets `web.base.url` and `web.base.url.freeze` in the Production database. The default address keeps working.
 
-**Mail with AWS SES (decided 2026-10-11; design pending A7).** Nothing in the cluster receives SMTP from the internet. The only change is outbound mail toward SES.
+**Mail with AWS SES (decided and approved 2026-10-11, A7).** Nothing in the cluster receives SMTP from the internet. The only change is outbound mail toward SES.
 
 - **No AWS credentials in tenant namespaces:**
     - one SES credential exists, in a Secret in the relay's platform namespace (`veltnex-mail`);
@@ -687,7 +691,7 @@ flowchart TD
 - Customers can connect custom domains such as `erp.customer.com` to Production.
 - Outgoing mail goes through AWS SES.
 
-**Status:** A1–A10 approved (A1, A3 and A9 with conditions); A11–A13 pending (top of this file).
+**Status:** A1–A13 approved on 2026-10-11, subject to the launch acceptance criteria.
 
 **Still open:**
 

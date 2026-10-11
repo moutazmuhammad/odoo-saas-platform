@@ -91,7 +91,7 @@ Every step first checks whether it already happened (bucket assigned, key with t
 
 **When a server ends** (after its reactivation window), a background job deletes its folder `<server-id>/` and `trash/<server-id>/`; the bucket and key stay for the customer's other servers.
 
-**When a customer's last server ends, recycle the bucket, never delete it.** DigitalOcean deletes a bucket asynchronously: it stays pending for at least two weeks and its name stays reserved in that time ([destroy a bucket](https://docs.digitalocean.com/products/spaces/how-to/destroy/)). With trial customers coming and going, that churn would also eat into the bucket limit. So:
+**When a customer's last server ends, recycle the bucket, never delete it.** DigitalOcean deletes a bucket asynchronously: it stays pending for at least two weeks and its name stays reserved in that time ([destroy a bucket](https://docs.digitalocean.com/products/spaces/how-to/destroy/)). With trial customers coming and going, that churn would also eat into the bucket limit. Recycling never loses a customer's data: it starts only after every server of that customer has a verified copy in the archive bucket (see “Restoring a cancelled project” below), so a restore years later comes from the archive into a fresh bucket. Then:
 
 1. **Revoke access.** Delete the customer's key (`DELETE /v2/spaces/keys/{access_key}`), then list the account's keys and confirm no key still has a grant on this bucket. Prove it: a request signed with the old key must fail with 403.
 2. **Delete everything, including what a normal listing hides:**
@@ -102,6 +102,15 @@ Every step first checks whether it already happened (bucket assigned, key with t
 4. **Only then hand it out.** The bucket returns to the pool and the next customer gets it with a brand-new key. Each recycle step is written to the audit log (bucket, previous owner, times, listing results).
 
 The pool keeps a few empty buckets ready (for example 5); buckets beyond what the pool needs are only then deleted, and their slow deletion no longer matters. If any check fails, the bucket stays out of the pool and an alert goes to Teams.
+
+**Restoring a cancelled project, even years later.** A customer can bring back a deleted project after a year or more by paying the data-restoration fee, and that must work even after their bucket has been emptied and recycled. So the final copy of a server never lives in the customer's bucket; it lives in a separate **archive bucket** that only the platform can reach.
+
+1. **At cancellation**, before anything is deleted, an archive Job writes the server's final copy to the archive bucket under `archive/<customer-id>/<server-id>/<date>/`: the database dump, all of the server's files packed into one `files.tar` (streamed from the customer's bucket, never staged on disk), and a `manifest.json` (Odoo version, database names, file count, sizes, checksums).
+2. **The archive is checked before the original goes:** the Job re-reads the archive's checksums against the manifest. Only after that check passes may the server's folder be deleted, and later the bucket recycled. If the check fails, nothing is deleted and an alert goes to Teams.
+3. **The archive bucket uses Spaces Cold Storage:** $0.007 per GiB-month, about 3× cheaper than standard storage, with a 30-day minimum, $0.01 per GiB retrieved and a 128 KiB minimum per object ([Spaces pricing](https://docs.digitalocean.com/products/spaces/details/pricing/)). Packing files into one tar is what keeps the many small Odoo files from each being billed as 128 KiB.
+4. **No customer key ever reaches the archive.** Bucket recycling, customer deletion and the per-customer `trash/` rules never touch it.
+5. **Reactivation, at any time within the archive retention:** the customer pays the restoration fee; the control plane gives them a bucket from the pool with a new key (or their existing bucket if they still have other servers), restores the database from the dump, and unpacks `files.tar` into the new server's folder, streaming from the archive. The retrieval cost is covered by the fee.
+6. **Archive retention** is a SaaS setting (for example 3 years). A month before an archive expires, the customer gets an email offering reactivation; at expiry it is deleted and the deletion is written to the audit log.
 
 **What you provide once:** a DigitalOcean API token allowed to manage Spaces keys, and a full-access Spaces key (the backup key, if it has full access). Both are stored in the SaaS settings.
 

@@ -4,30 +4,37 @@ Oct 11, 2026 · @Mostafa · Revision 2 · Doc (revision 1 only): https://claude.
 
 This is the architecture review and the target design. The work items are in [PLAN-implementation.md](PLAN-implementation.md). That file also keeps the four earlier plans (backup and restore, Spaces filestore, cluster capacity, PostgreSQL) unchanged as Appendices A–D.
 
-Revision 2 answers eight review concerns, adds AWS SES for outgoing mail, and hardens the wildcard certificate and the custom-domain path. Every claim below is marked as one of:
+Revision 2 answers eight review concerns, adds AWS SES for outgoing mail, and hardens the wildcard certificate and the custom-domain path. Every claim below is marked as one of these. Decisions and their approval status are in the next section.
 
 - **Verified:** checked in the repository, on the live DOKS cluster (read-only Prometheus and kubectl reads on 2026-10-11), or in a provider document that was opened and is linked.
 - **Assumption:** reasonable but not yet proven; each one has a test in the plan.
 
-Nothing here is implemented, and nothing should be until you approve the decisions in the next section (A1–A13).
+Nothing here is implemented. A1–A10 are approved, some with conditions; A11–A13 are pending (next section).
 
-## Decisions awaiting your approval
+## Decisions and their status
 
-| # | Decision | Recommendation | Main alternative | Affects |
+Status as of 2026-10-11. "Approved with conditions" means the item ships only after the listed tests pass; each condition is a "Done when" in the plan.
+
+| # | Decision | Status | Condition or note | Plan items |
 | --- | --- | --- | --- | --- |
-| A1 | PostgreSQL engine for new environments | CloudNativePG everywhere: a dedicated 1-instance cluster per Production environment, and shared clusters for non-production. HA is set by raising the instance count to 2. | Keep the operator's Managed StatefulSet for Production | Concerns 1, 4, 7 |
-| A2 | Object-storage isolation boundary | Two buckets per customer: one for Production and one for all non-production environments, each with its own key | A bucket per environment | Concern 3 |
-| A3 | Session storage for stateless Odoo | A small per-environment PostgreSQL sessions database | Redis per cell, with an ACL per tenant | Concern 5 |
-| A4 | Tenant domain | Move tenant apps to their own registrable domain, separate from the portal, and add it to the Public Suffix List | Keep `*.eagle-tech.info` next to the portal | Concerns 2, 8 |
-| A5 | Custom-domain ownership | A DNS TXT record proves ownership at claim time and stays in place; it is re-checked daily and before every renewal | Ownership checked only at claim time | Concern 8 |
-| A6 | Memory requests | Size requests from measured usage; this raises the cost per tenant and the price floor | Keep requests at 25% of limits | Concern 6 |
-| A7 | Outgoing mail through AWS SES | A platform mail relay per cell holds the only SES credential. Tenants get revocable relay credentials with rate limits, quotas and sender-domain checks; abuse pauses sending automatically. No direct SMTP egress from tenants; staging and dev never reach SES | An IAM user per customer (puts AWS credentials in tenant namespaces), or one shared SES credential in every tenant | Mail |
-| A8 | Production attachments in staging and dev copies | Staging gets them; dev gets them only when asked | Always copy them | Concern 3 |
-| A10 | Performance insights per customer | Basic insights (three alert levels on the dashboard, a short email only for Level 3 that affects users, 14 days of history) in every Production plan; 90-day history plus plan and index-hint views as a paid tier | All features free, or all paid | Performance monitoring |
-| A11 | Automatic Production backups | Included in every Production plan (the price floor covers them) | Keep them as a paid add-on | Backups |
-| A12 | Major Odoo version upgrade cutover | A customer-scheduled window in which Production is read-only, like pool moves: an exception to the zero-downtime rule | Rule out version upgrades | Database upgrade |
-| A13 | Uptime promise on the website | State a target, not an SLA; offer an SLA only with the HA add-on | Keep "99.99% uptime SLA" | Reliability |
-| A9 | Shared non-production cluster size | 2 instances per cell, about $19 a month per cell | 1 instance plus restore from WAL | Concern 7 |
+| A1 | CloudNativePG as the one PostgreSQL engine: dedicated 1 instance per Production environment, shared for non-production, HA by raising instances to 2 | **Approved with conditions** | Qualify backups, upgrades, failover and restore before adopting it for every environment. New Production uses it only after the qualification suite passes (P1.9a) | P0.22, P1.9a, P1.9b, P2.2, P3.3, P4.1, P4.2 |
+| A2 | A Production bucket and a non-production bucket per customer, each with its own key | **Approved** | Test code can never reach Production files | P1.4, P3.1, P3.4 |
+| A3 | Sessions in a per-environment PostgreSQL database | **Approved with conditions** | Test session behaviour, performance and the automatic cleanup of expired sessions | P3.2 |
+| A4 | Tenant apps on their own registrable domain, on the Public Suffix List | **Approved (strongly)** | Protects the portal from cookies set by customer apps | P0.20, P0.7 |
+| A5 | Custom-domain ownership by a permanent DNS TXT record | **Approved** | Add a clear procedure for when the customer deletes the record or loses control of the domain (concern 8, "Ownership lost") | P1.1 |
+| A6 | Memory requests from measured usage | **Approved** | Pricing is based on usable node capacity, not theoretical node size | P0.21, P0.18 |
+| A7 | Central mail relay to AWS SES | **Approved** | No AWS credentials in tenants; quotas, isolation and automatic pausing on abuse | P1.8, P0.13 |
+| A8 | Production attachments copied to dev only on the customer's explicit request | **Approved** | Staging copies include them; dev does not unless asked | P1.4 |
+| A9 | Shared non-production cluster with 2 instances per cell | **Approved with conditions** | Test failover, storage growth and resource contention | P2.2 |
+| A10 | Basic performance monitoring free; history and advanced reports paid | **Approved** | — | P2.7, P4.7 |
+| A11 | Automatic Production backups included in every plan | **Pending** | — | P1.16 |
+| A12 | Read-only window for the final major-version upgrade, chosen by the customer | **Pending** | — | P1.18 |
+| A13 | State an uptime target on the website; SLA only with HA | **Pending** | — | P0.23 |
+
+**Launch blockers named by the owner on 2026-10-11:**
+
+1. **No PostgreSQL superuser for any tenant.** Every Odoo environment, existing and new, must use a database role with limited rights. Database create, upgrade and restore must be retested after the change (P0.24).
+2. *(Points 2–4 were cut off in the message; to be added.)*
 
 Still open from revision 1: archive window, whether trials share the cluster, add-ons at launch, second backup region, and Enterprise hosting (see the end of this file).
 
@@ -168,7 +175,7 @@ flowchart TB
 
 | Vector | Today | Risk | Target |
 | --- | --- | --- | --- |
-| Customer Python addons in Odoo | Non-root, read-only root, seccomp `RuntimeDefault`, no service-account token. The code can read `odoo.conf`: its own database password, which is a superuser login, and `admin_passwd` | Contained to the tenant's own database server. A superuser can run `COPY … TO PROGRAM` inside its own PostgreSQL container | New environments get a non-superuser database owner: `CREATEDB` only on a dedicated server, never on a shared one. `COPY PROGRAM` needs superuser, so it goes away |
+| Customer Python addons in Odoo | Non-root, read-only root, seccomp `RuntimeDefault`, no service-account token. The code can read `odoo.conf`: its own database password, which is a superuser login, and `admin_passwd` | Contained to the tenant's own database server. A superuser can run `COPY … TO PROGRAM` inside its own PostgreSQL container | **Launch blocker (P0.24):** every environment, existing and new, uses a limited owner role. `CREATEDB` is allowed on a dedicated server only. The superuser login exists only in a Secret that platform Jobs use, never in Odoo or the shell |
 | Builds (`pip install`, `setup.py`) | seccomp and AppArmor `Unconfined`, any node, private ranges blocked on egress | A kernel escape from a build lands on a node running other tenants | Tainted Build pool (P0). The push credential lives only in `odoo-builds`. BuildKit does not mount the client's `config.json` into `RUN` steps (*assumption* from BuildKit's design; test in P0) |
 | Registry credentials | The same push-capable login is in every tenant namespace | Anyone reading one tenant Secret could overwrite any tenant's image | A read-only pull credential in tenant namespaces; push only from the Build pool. Per-repository tokens need a token-auth registry, which comes later |
 | Shell | No secrets, but the data dir is read-write: session files and the data-dir `addons/` folder, which Odoo adds to its addons path | A shell user can hijack other users' sessions of the same customer, or plant a module that runs in Odoo. This is privilege escalation inside one customer, not across customers | The shell gets the code and a read-only filestore only. Sessions move to the database (A3). Shell access requires a full-developer role with 2FA |
@@ -370,6 +377,12 @@ The wildcard covers only the platform's own tenant domain, such as `*.main.eagle
     - an HTTP check alone is not enough, because a dangling CNAME left by an old owner would let anyone who claims the name pass it.
 - **Issuance:** a separate ClusterIssuer with its own ACME account, using HTTP-01 per host. It is ordered only after both checks pass, which avoids Let's Encrypt's failed-validation limits.
 - **Ongoing ownership (A5):** the TXT record stays in place. It is re-checked daily and before every renewal. If it is missing for 7 days, the host is disabled, its renewal stops and the customer is told. The daily check alone never proves ownership; it only detects loss of it.
+- **Ownership lost (A5 procedure).** This applies when the TXT record is deleted or changed, the domain expires, or someone else takes control of the zone:
+    - **Day 0:** the daily check, or the pre-renewal check, fails. The finding shows on the dashboard and a short email goes to project owners. The domain keeps serving on its current certificate.
+    - **Days 1–7:** a grace period. The customer restores the record, or re-verifies with a fresh token, at any time, and the finding clears.
+    - **Day 7:** the host leaves routing, renewal stops, and the certificate is revoked through ACME. If it was primary, `web.base.url` returns to the platform address. The customer is told, and the binding becomes "released".
+    - **Someone else proves a new TXT token for that host at any point:** the DNS owner wins. The old binding is removed at once, its certificate is revoked, and the previous customer is told. Nothing transfers automatically in the other direction.
+    - **Routing record removed but TXT still present:** the customer is warned that traffic no longer reaches Veltnex. There is no takeover risk, because nobody else can prove the TXT.
 - **Release and reuse:** removing a domain, or cancelling, takes the host out of routing at once. The record of the release is kept:
     - the same customer can re-add the domain with their existing token;
     - any other customer must prove a new TXT token, so a claim is never transferred automatically.
@@ -566,7 +579,7 @@ The card opens the full finding: the normalized query, its tables and module, th
 | High | Rate limits can be bypassed with a forged header; secrets fall back to plaintext | `api.py:162`, `crypto.py` | P0.8 |
 | High | No 2FA; CI does not gate; alerts reach only the log | — | P0.9–P0.11 |
 | High | Memory requests are below working sets, so evictions are possible under pressure | `_package()` against Prometheus | P0.21 (A6) |
-| Medium | The tenant database login is a superuser; the SQL console uses it | `database.go:92`, `saas_instance.py:2191` | P1.9 non-superuser roles for new environments |
+| Critical (launch blocker) | The tenant database login is a superuser for every environment; the SQL console uses it | `database.go:92`, `saas_instance.py:2191` | P0.24: a limited role for every environment, existing and new |
 | Medium | Shell can write sessions and the data-dir addons | `deployment.go:225` | P1.10 |
 | Medium | Egress 443 reaches in-cluster addresses; tenants have no outgoing mail path | `networkpolicy.go` | P0.13 and P1.8 |
 | Medium | Backups do not record code identity, and garbage collection can race the file copy | `run-backup.sh` | P1.5 manifest v2 and snapshot file list |
@@ -674,7 +687,7 @@ flowchart TD
 - Customers can connect custom domains such as `erp.customer.com` to Production.
 - Outgoing mail goes through AWS SES.
 
-**Awaiting approval:** A1–A13 (top of this file).
+**Status:** A1–A10 approved (A1, A3 and A9 with conditions); A11–A13 pending (top of this file).
 
 **Still open:**
 

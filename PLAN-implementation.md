@@ -6,7 +6,7 @@ This plan turns the target architecture into ordered, shippable items. The four 
 
 Inside the appendices, an old file name means its appendix: `PLAN-backup-restore.md` is A, `PLAN-spaces-filestore.md` is B, `PLAN-cluster-capacity.md` is C, and `PLAN-postgresql-architecture.md` is D.
 
-**Status: plan only. Do not start implementation until the owner approves decisions A1–A13 in ARCHITECTURE-TARGET.md.** Items that depend on an unapproved decision name it in a "Needs" line.
+**Status: plan only.** Decisions A1–A10 are approved, and A1, A3 and A9 carry conditions that are acceptance tests below. A11–A13 are pending, so items that need them wait. Implementation starts only when the owner says so.
 
 ## How to use this plan
 
@@ -35,19 +35,19 @@ flowchart LR
 
 | Decision (architecture) | Items that wait for it |
 | --- | --- |
-| A1 CloudNativePG everywhere | P0.22, P1.9, P2.2, P3.3, P4.1, P4.2 |
+| A1 CloudNativePG everywhere (approved with conditions) | P0.22, P1.9a, P1.9b, P2.2, P3.3, P4.1, P4.2 |
 | A2 Production and non-production buckets | P1.4, P3.1, P3.4 |
-| A3 Sessions database | P3.2 |
+| A3 Sessions database (approved with conditions) | P3.2 |
 | A4 Separate tenant domain | P0.20, P0.7 (domain choice) |
 | A5 Permanent TXT ownership | P1.1 |
 | A6 Memory requests from measurement | P0.21, P0.18 (price floor uses it) |
 | A7 Mail relay to SES | P1.8, P0.13 (mail egress) |
 | A8 Attachments in staging and dev copies | P1.4 |
-| A9 Shared cluster with 2 instances | P2.2 |
+| A9 Shared cluster with 2 instances (approved with conditions) | P2.2 |
 | A10 Performance insights split | P2.7, P4.7 |
-| A11 Production backups included | P1.16 |
-| A12 Read-only window for version upgrades | P1.18 |
-| A13 Uptime promise | P0.23 |
+| A11 Production backups included (pending) | P1.16 |
+| A12 Read-only window for version upgrades (pending) | P1.18 |
+| A13 Uptime promise (pending) | P0.23 |
 
 ## Changes to the earlier plans
 
@@ -56,7 +56,7 @@ flowchart LR
 | A · Backup & Restore | Its Phase 0 (disk safety, alert webhook) and Phase 1 (streaming restore with swap) are P0.4. Its Phases 2–4 (integrity, restic) are P1.5, which adds manifest v2 (code identity), a snapshot-consistent file list, uncompressed dumps for restic deduplication, and a second-region copy. Key scope is P0.5. restic repositories stay in the backup bucket, which no customer key reaches. | Consistency model (architecture, concern 4) |
 | B · Spaces Filestore | One bucket per customer becomes two: a Production bucket and a non-production bucket (A2), because Spaces keys are per bucket only (verified). The bucket and keys are created in P1.4. The filestore is P3.1, delivered through the operator's platform-addons ConfigMap (`compute/operator/internal/resources/platformaddons.go`). It keeps web assets and files under 64 KiB in the database, reads through a local cache, retries reads that come back 404 just after a write, and uses a 14-day `trash/` lifecycle. All four adapter generations are built, for Odoo 11–20: 17–19, then 16 and 20, then 14–15, then 11–13. Sessions are P3.2. | Concerns 3 and 5 |
 | C · Cluster Capacity | Its Phase 1 is P0.12. Pools arrive by phase: Build in P0 (P0.19, security), Shared in P2 (P2.5), Large on demand (P4.3). HA is not a pool. Its Phases 3 and 4 are P3.5 and P3.6. | Concern 7 |
-| D · PostgreSQL | CloudNativePG becomes the engine for every new environment (A1): dedicated 1-instance per Production (P1.9), shared for non-production (P2.2) with 2 instances and no PgBouncer. Sleep windows are dev 1 h, staging 2 h, trials 1 h; Production never sleeps (P2.1). Its cost table is superseded by the corrected model (architecture, concern 6). | Concerns 1, 6 and 7 |
+| D · PostgreSQL | CloudNativePG becomes the engine for every new environment (A1): dedicated 1-instance per Production (P1.9b, after the P1.9a qualification), shared for non-production (P2.2) with 2 instances and no PgBouncer. Sleep windows are dev 1 h, staging 2 h, trials 1 h; Production never sleeps (P2.1). Its cost table is superseded by the corrected model (architecture, concern 6). | Concerns 1, 6 and 7 |
 
 ## P0 · Launch blockers
 
@@ -261,12 +261,41 @@ Before launch. "Launch blocker" marks a finding from the review.
     - no evictions in that week.
 
 **P0.22 Vendor the CloudNativePG operator.** Needs A1.
-- **What:** vendor the chart in `compute/charts/vendor/cloudnative-pg` (repository rule) and install it in each cell. Nothing uses it until P1.9.
+- **What:** vendor the chart in `compute/charts/vendor/cloudnative-pg` (repository rule) and install it in each cell. Nothing uses it until P1.9a qualifies it.
 - **Done when:** the operator runs in the test cluster and survives a node drain.
 
 **P0.23 Website claims match the architecture.** Needs A13.
 - **What:** replace "99.99% uptime SLA" (`frontend/veltnex/src/pages/Hosting.tsx:95`) and the "Uptime target" figure (`Home.tsx:584`) with a stated target that the single-pod design meets. Offer an SLA only with the HA add-on (P4.1). Same for the Arabic strings.
 - **Done when:** no page promises an SLA for base plans.
+
+**P0.24 No PostgreSQL superuser for any tenant.** Launch blocker (owner, 2026-10-11). Applies to every environment, existing and new, on every engine.
+- **Today (verified):** the Managed PostgreSQL pod creates the tenant login as the image's `POSTGRES_USER` (`compute/operator/internal/resources/database.go:92`), which is the bootstrap superuser. Odoo, cron, the update Job, the SQL console (`saas_instance.py:2191`), the database manager, backups and restores all use it, and customer code can read it from `odoo.conf`.
+- **Design: two logins per database server.**
+    - **`veltnex_admin`:** superuser, kept in a new Secret `odoo-database-admin`. It is used only by the PostgreSQL pod and by platform Jobs that truly need it: creating roles, restore swap, terminating sessions, granting `pg_monitor` to the perf collector. It is never mounted into Odoo, cron or the shell.
+    - **`odoo_owner`:** `LOGIN NOSUPERUSER NOCREATEROLE NOREPLICATION NOBYPASSRLS`, with `CREATEDB` only on dedicated servers. It owns every Odoo database and the objects in them, and lives in `odoo-database-credentials`. It is what Odoo, cron, the update Job, the SQL console and the Odoo shell use.
+    - **Extensions:** Odoo's extensions (`unaccent`, `pg_trgm`) are created in `template1` by the admin, so they exist without superuser. They are trusted extensions from PostgreSQL 13. On the PostgreSQL 12 legacy engine, pre-creating them is required.
+    - **Restores:** `pg_restore --no-owner --role=odoo_owner`, so every restored object belongs to the owner. The swap and session termination use the admin.
+    - **Database manager:** "create" and "duplicate" (`CREATE DATABASE … TEMPLATE`) work as the owner, because it owns the source database and has `CREATEDB`. "Drop" works on its own databases.
+    - **CloudNativePG (P1.9):** its application user is a non-superuser owner, and superuser access is off by default (*assumption*, checked in P1.9a).
+    - **Shared non-production clusters (P2.2):** no `CREATEDB`; database operations go through the platform.
+- **Migrating existing tenants (zero downtime):**
+    1. A platform Job, as the admin, creates `odoo_owner` with a new password. For each Odoo database it runs `ALTER DATABASE … OWNER`, changes the owner of schema `public`, and sets the owner of every table, sequence, view, materialized view and function owned by the old login. These are catalog-only changes in one transaction per database.
+    2. Write the owner credentials to `odoo-database-credentials`, and move the old superuser to `odoo-database-admin` with a **rotated password**. Customer code could read the old one.
+    3. A rolling update of the Odoo pod picks up the new credentials. Old pods keep their connections until they are replaced.
+    4. Verify from the new pod that `SELECT rolsuper FROM pg_roles WHERE rolname = current_user` returns false.
+- **Where:**
+    - operator: `resources/database.go`, `secrets.go`, `configmap.go` (the `odoo.conf` login), `init_job.go`, `update_job.go`, `backup.go`, `restore.go`, `deployment.go` (console config);
+    - backup tools: `compute/tools/backup-tool/run-restore.sh` and `run-backup.sh`;
+    - control plane: `saas_core/models/saas_instance.py` (`hosting_sql_query`, `_do_restore_backup`, `_do_copy_dbs`, neutralize and mask), the database-manager platform addon (`resources/platformaddons/saas_tenant_dbm`), and a migration action for existing tenants.
+- **Done when (retested after the rights are reduced):**
+    - from Odoo and the SQL console, `rolsuper` is false, and these are refused: `COPY … TO PROGRAM`, `pg_read_server_files`, `ALTER SYSTEM`, `CREATE ROLE`;
+    - a new environment initialises (`-i base`), installs and upgrades modules (`-u` and the update gate);
+    - database-manager create, duplicate and drop work on a dedicated server;
+    - backup, per-database restore, full restore and the restore swap all work;
+    - a Production-to-staging copy with neutralization and masking works;
+    - the perf collector reads `pg_stat_statements` through `pg_monitor`;
+    - every Odoo version in the P1.7 matrix passes the above;
+    - an existing tenant is migrated with zero failed requests in an HTTP poll, and its old password no longer logs in.
 
 ## P1 · Launch features
 
@@ -282,6 +311,12 @@ Before launch. "Launch blocker" marks a finding from the review.
 - **Ongoing:**
     - the TXT record stays in place and is re-checked daily and before each renewal;
     - if it is missing for 7 days, the host is disabled, its renewal stops and the customer is told.
+- **Ownership lost (A5 procedure):** the TXT record is deleted or changed, the domain expires, or the zone changes hands.
+    - **Day 0:** a dashboard finding and a short email to owners. The domain keeps serving.
+    - **Days 1–7:** grace. Restoring or re-verifying clears it.
+    - **Day 7:** the host leaves routing, renewal stops and the certificate is revoked through ACME. `web.base.url` reverts if the domain was primary.
+    - **Another party proves a new TXT token:** the DNS owner wins. The old binding and its certificate go at once, and the previous customer is told.
+    - **Routing record removed but TXT still present:** a warning only.
 - **Release and reuse:**
     - removing a domain, or cancelling, takes the host out of routing at once and keeps a release record;
     - the same customer may re-add it with their token;
@@ -304,7 +339,8 @@ Before launch. "Launch blocker" marks a finding from the review.
     - an HTTP poll on the default host has zero failures during add and remove;
     - invitation emails use the primary domain;
     - a second customer cannot claim a released domain without a new TXT token;
-    - a domain whose TXT is removed is disabled after 7 days.
+    - a domain whose TXT is removed is warned on day 0 and disabled with its certificate revoked on day 7;
+    - a second customer proving a fresh TXT for a lost domain takes it over, and the first binding is removed with a notice.
 
 **P1.2 Git submodules.**
 - **What:** recursive fetch with the same host's credentials; record each submodule's commit.
@@ -387,17 +423,19 @@ Before launch. "Launch blocker" marks a finding from the review.
     - no tenant namespace contains an AWS credential;
     - relay throughput meets the SES account rate (*assumption* tested here).
 
-**P1.9 CloudNativePG for new Production, with non-superuser roles.** Needs A1.
-- **What:**
-    - new Production environments get a dedicated CloudNativePG cluster with 1 instance;
-    - Odoo connects as the database owner without superuser; `CREATEDB` is allowed only on dedicated clusters;
-    - the SQL console runs as that role;
-    - existing Managed tenants move by dump and restore at a customer-chosen time.
-- **Where:** CRD `spec.database.mode`, `controller/database.go`, `resources/cnpg.go`, `kubernetes_driver.py`, `saas_instance.py` (`hosting_sql_query`).
-- **Done when:**
-    - a new Production environment passes the UI walk-through;
-    - `COPY … TO PROGRAM` from the SQL console is refused;
-    - a migrated tenant has zero data difference.
+**P1.9a CloudNativePG qualification.** Needs A1 (approved with conditions); these tests are the conditions.
+- **What:** a qualification suite on the test cluster, run on every PostgreSQL major in the P1.7 matrix and repeated on each CloudNativePG upgrade:
+    - **Backups:** base backup and WAL to the backup bucket, and the P1.5 logical backup, both restorable.
+    - **Restore:** full restore, per-database restore and restore swap, plus PITR to a chosen minute (used by P4.2).
+    - **Upgrades:** a CloudNativePG operator upgrade with no data loss and only the documented restart; a PostgreSQL minor update; a major upgrade through the P1.18 workflow.
+    - **Failover:** with 2 instances, kill the primary under load and measure the failover time and lost transactions (the HA basis, P4.1).
+    - **Non-superuser:** the application user is not a superuser, and P0.24's checks pass.
+- **Done when:** every check passes on every supported major, and the results are recorded in `setup/` as the qualification report. Until then nothing moves to CloudNativePG.
+
+**P1.9b CloudNativePG for new Production.** Needs P1.9a.
+- **What:** new Production environments get a dedicated CloudNativePG cluster with 1 instance, owned by the non-superuser application role (P0.24). Existing Managed tenants move by dump and restore at a customer-chosen time.
+- **Where:** CRD `spec.database.mode`, `controller/database.go`, `resources/cnpg.go`, `kubernetes_driver.py`.
+- **Done when:** a new Production environment passes the full UI walk-through, and a migrated tenant has zero data difference.
 
 **P1.10 Shell hardening.**
 - **What:**
@@ -421,7 +459,7 @@ Before launch. "Launch blocker" marks a finding from the review.
 
 **P1.12 Odoo shell and Python console.**
 - **What:**
-    - **Who and what:** for users with a new `odoo_shell` permission and 2FA, the shell container gets a restricted `odoo.conf`. It holds the environment's non-superuser database owner login (P1.9) and no `admin_passwd`.
+    - **Who and what:** for users with a new `odoo_shell` permission and 2FA, the shell container gets a restricted `odoo.conf`. It holds the environment's non-superuser database owner login (P0.24) and no `admin_passwd`.
     - **Ways in:** a portal button opens `odoo shell -d <db>` (Python with the ORM), and the same works from SSH (P1.13).
     - **Safety:** on Production, the console warns that changes are live and logs the session start and end in the audit log.
 - **Where:** `compute/operator/internal/resources/deployment.go` (`shellContainer`, config render), `saas_iam/roles.py`, `controllers/ssh_terminal.py`, `frontend/veltnex`.
@@ -561,8 +599,11 @@ Before launch. "Launch blocker" marks a finding from the review.
 - **Done when:**
     - a staging environment is ready in under 2 minutes;
     - a heavy query cannot push others past their timeouts;
-    - a primary failover keeps dev environments working;
     - a tenant cannot list or connect to another tenant's database.
+- **A9 conditions:**
+    - **Failover:** killing the primary during a load test of 30 environments resumes within the measured CloudNativePG failover time, with no data loss beyond in-flight transactions.
+    - **Storage:** 70% disk and WAL growth during a bulk import are alerted before they become full, and the volume grows without downtime.
+    - **Contention:** with one environment running a heavy import, others' p95 query time stays within 2× their baseline.
 
 **P2.3 Archive long-idle dev environments.**
 - **What:** after the archive window (open question; *assumed* 14 days), dump the environment to the non-production bucket's archive prefix and drop it. Restore it on demand.
@@ -652,7 +693,10 @@ Before launch. "Launch blocker" marks a finding from the review.
 
 **P3.2 Sessions in a per-environment PostgreSQL database.** Needs A3.
 - **What:** a session store adapter per Odoo generation (werkzeug store for 11–14, vendored store from 15 — *assumption* to confirm in a spike), in a `<env>_sessions` database hidden by `dbfilter`, with a cleanup cron.
-- **Done when:** a user stays logged in across a pod replacement on another node, for each generation.
+- **Done when (A3 conditions):**
+    - **Behaviour:** a user stays logged in across a pod replacement on another node, for each generation. Logout, password change and session expiry behave as in stock Odoo. Two replicas share sessions.
+    - **Performance:** at 50 requests per second on a test tenant, the session store adds under 5 ms to p95 request time (*assumed* budget), and its database stays under 1% of the tenant's database time.
+    - **Cleanup:** sessions past their expiry are removed within 24 hours, and the table stays bounded in a 7-day soak test.
 
 **P3.3 Production database tuning presets.** Needs A1.
 - **What:** CloudNativePG parameters from the package (`shared_buffers`, `effective_cache_size`, `work_mem`, `max_connections`, autovacuum for Odoo's large tables), plus the P2.7 settings.
@@ -718,7 +762,7 @@ Before launch. "Launch blocker" marks a finding from the review.
 
 ## Open questions
 
-The approvals are A1–A10 in [ARCHITECTURE-TARGET.md](ARCHITECTURE-TARGET.md#decisions-awaiting-your-approval). These remain:
+The approvals are A1–A10 in [ARCHITECTURE-TARGET.md](ARCHITECTURE-TARGET.md#decisions-and-their-status). These remain:
 
 | Question | Blocks |
 | --- | --- |

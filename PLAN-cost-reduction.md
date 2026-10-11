@@ -93,13 +93,16 @@ The other launch work (Tier L in the full plan) also stays:
 - **Odoo 14–20:** costs 3–5 weeks.
 - **Sleep:** costs 2–3 weeks to build and pays back in C2.
 
-**Free-plan cost guardrails:** the Free plan is BYOS only, so Veltnex pays no compute. Its backups go to the customer's own S3. It allows one account per verified person or company. Servers inactive for 90 days are detached. Community support only.
+**Free-plan cost guardrails:** the Free plan is BYOS only, so Veltnex pays no compute. It has no backups. It allows one account per verified person or company. Servers inactive for 90 days are detached. Community support only.
 
-**Backup rule to confirm (reconciles A11 with the free tier):**
+**Backup rule (owner, 2026-10-11):**
 
-- **Every plan, Free included:** daily backups to the customer's own S3.
+- **Free:** no backups. The customer must upgrade, and the portal warns permanently; signup asks for acknowledgement.
+- **Starter:** daily backups to the customer's own S3.
 - **Pro and above:** Veltnex off-site automated backups, with retention, integrity checks, restore drills and a second location.
-- **Veltnex-managed cells:** they always include Veltnex backups.
+- **Managed hosting:** it always includes Veltnex backups.
+
+**No annual discount** on management subscriptions (owner).
 
 ## 3. Sleep: savings that are real
 

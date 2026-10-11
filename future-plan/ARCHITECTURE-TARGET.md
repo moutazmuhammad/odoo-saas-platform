@@ -38,7 +38,7 @@ All decisions, A1–A19, were approved on 2026-10-11. A14–A19 were delegated b
 | A19 | Customer chooses region, then provider; a separate price per provider in each region (owner requirement) | **Approved** (delegated) | Region → offerings (provider in region) → cells; a price per plan per offering, never below that offering's floor; a project stays in one region and offering | P1.22, P0.18 |
 | A20 | Odoo Enterprise source model and legal gate | **Pending legal review** | (a) bring your own Enterprise source, built per tenant into tenant-only registry repositories, at launch; (b) platform Enterprise images only with a written agreement with Odoo. No Enterprise offering before written legal confirmation | P1.23, P1.24 |
 | A21 | Bring Your Own Server on a `DockerComposeDriver` (Docker Compose + Traefik) behind one infrastructure interface, managed through a Veltnex agent with mTLS and signed operations, with no platform SSH key | **Approved direction** (owner, 2026-10-11) | Capabilities shown per hosting type; the conformance test runs the same Odoo and addons on both runtimes | P1.36, P1.32, P1.37, P1.38 |
-| A22 | Pricing and marketing: BYOS by subscription (Free $0, Starter $19, Pro $39, Agency $199 per month in USD, excluding servers); managed hosting by resources with the 60% floor; Odoo Enterprise licences separate from hosting; 20% annual to confirm | **New** (owner requirement; design proposed) | Claims backed by published calculations; no invented social proof | P1.33, P1.34, P1.32 |
+| A22 | Pricing and marketing: BYOS by subscription (Free $0, Starter $19, Pro $39, Agency $199 per month in USD, excluding servers; no annual discount; no backups on Free); managed hosting by resources with the 60% floor; Odoo Enterprise licences separate from hosting | **New** (owner requirement; design proposed) | Claims backed by published calculations; no invented social proof | P1.33, P1.34, P1.32 |
 
 **Launch blockers.** The full list, with each acceptance check, is in the plan's "Launch blockers and launch acceptance criteria". The owner added these on 2026-10-11:
 
@@ -670,7 +670,7 @@ The card opens the full finding: the normalized query, its tables and module, th
     - Starter $19 a month: 2 servers, 5 projects, 5 custom domains, sanitization;
     - Pro $39 a month: "unlimited everything", DNS, replicas, advanced monitoring;
     - SaaS $249 a month: storefront, client portal and Stripe billing for resellers;
-    - 20% off annual plans.
+    - 20% off annual plans (Veltnex does not copy this; see below).
 - **Servers:** on the customer's own cloud account or server, "billed separately at provider rates, no markup". A managed option is mentioned without published prices.
 - **Marketing:**
     - "Free Odoo Hosting on Any Cloud" and "Save 70% vs Odoo.sh";
@@ -692,19 +692,20 @@ The card opens the full finding: the normalized query, its tables and module, th
 
 | Plan | Price | Limits (owner) | Features (proposed) |
 | --- | --- | --- | --- |
-| **Free** | $0 | 1 server, 2 projects | Dashboard management, deploy from the dashboard, web shell and Odoo shell, logs, uptime; daily backups to the customer's own S3; community support |
-| **Starter** | $19 | Up to 2 servers | Plus **Git auto-deployment** (push to deploy, tests, promotion), **monitoring** (resources, `pg_slow_queries.log`), custom domains, staging with Mailpit |
+| **Free** | $0 | 1 server, 2 projects | Dashboard management, deploy from the dashboard, web shell and Odoo shell, logs, uptime; **no backups** (upgrade needed); community support |
+| **Starter** | $19 | Up to 2 servers | Plus **daily backups to the customer's own S3**, **Git auto-deployment** (push to deploy, tests, promotion), **monitoring** (resources, `pg_slow_queries.log`), custom domains, staging with Mailpit |
 | **Pro** | $39 | Unlimited servers and projects, within the published plan | Plus **teams and permissions** (persona roles, IAM), **automated backups** (Veltnex off-site storage, 7/4/6, integrity checks, restore drills, second location), **advanced monitoring** (the performance Advisor) |
 | **Agency** | $199 | For hosting companies and client management | Plus several client organisations, white-label portal, client billing |
 | **Add-on: Managed Database Services** | Per database (to set) | — | A Veltnex-run PostgreSQL with HA and PITR, once P4.1 and P4.2 exist |
-| **Annual** | 20% off (*assumed*, as at oec.sh; to confirm) | — | — |
+| **Annual** | **No annual discount on management subscriptions** (owner, 2026-10-11). Managed hosting keeps its existing yearly pricing in the billing engine | — | — |
 
 - **Agency segment:** hosting companies and resellers are the same customers Veltnex targets. The Agency plan sells client organisations at launch, and white-label and client billing follow within about 90 days (P1.35). The existing control plane (products, plans, billing, portal, IAM) is most of what a reseller platform needs.
 - **Freemium path:** connecting a server is free, so customers start relying on the dashboard. The paid features above are the upgrade path, gated per plan in the portal. Pro is where the high-value operations live; Agency serves resellers.
-- **Backup rule, reconciling A11 with the free tier (needs owner confirmation):** A11 said automatic Production backups are in every plan.
-    - **In every plan, including Free:** daily backups to the customer's own S3-compatible storage. This costs Veltnex nothing and avoids "lost my data on Veltnex" incidents.
-    - **The paid "Automated Backups" (Pro and above):** off-site backups run by Veltnex, with retention, integrity checks, restore drills and a second location.
-    - **Veltnex-managed cells:** they always include Veltnex backups (A11 unchanged there).
+- **Backup rule (owner, 2026-10-11):**
+    - **Free has no backups;** the customer must upgrade to get them. The portal shows a permanent "No backups on the Free plan" warning, and signup asks the customer to acknowledge it.
+    - **Starter:** daily backups to the customer's own S3-compatible storage (*proposed* tier).
+    - **Pro and above:** Veltnex off-site automated backups, with retention, integrity checks, restore drills and a second location.
+    - **Managed hosting:** it always includes Veltnex backups. A11 applies to managed hosting.
 - **Free-tier guardrails:** BYOS only, so Veltnex pays no compute. One free account per verified person or company (the trial rule already exists). Abuse controls apply, and inactive free servers are detached after 90 days of no contact.
 - **Marketing, honest version:**
     - **Same structure:** the same message, "your cloud, no lock-in, deploy fast, save versus Odoo.sh", with "Start free, no card".
@@ -751,7 +752,7 @@ flowchart TB
 | --- | --- | --- |
 | Database | Dedicated PostgreSQL per Production (limited role, P0.24); shared cluster for non-production | A PostgreSQL container on the customer's server, same limited role; the data never leaves the server |
 | Filestore | Volume, then Spaces at P3 | A local Docker volume on the server |
-| Backups | Veltnex off-site restic, included per plan | Daily to the customer's own S3 in every plan; Veltnex off-site restic on Pro and above |
+| Backups | Veltnex off-site restic, included per plan | None on Free; daily to the customer's own S3 from Starter; Veltnex off-site restic from Pro |
 | Builds and tests | Build pool (P0.19) | On the customer's server (`docker build`), tests in a throwaway PostgreSQL container |
 | Routing and TLS | Traefik in the cell; wildcard for the tenant domain; per-host certificates for custom domains | Traefik on the server with per-host HTTP-01 (customer domains, or a separate BYOS domain) |
 | Isolation | Namespaces, NetworkPolicy, Pod Security | One customer per server; Docker networks per project; the agent's operation allowlist |

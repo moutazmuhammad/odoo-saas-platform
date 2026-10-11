@@ -58,7 +58,7 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
 | A19 Region, provider and pricing model | P1.22 (deferred), P0.18 |
 | A20 Enterprise source model and legal gate (pending legal) | P1.23 |
 | A21 BYOS on a Docker Compose driver with the mTLS agent, behind one interface | P1.36, P1.32, P1.37, P1.38 |
-| A22 Pricing: managed by resources, BYOS by subscription, Enterprise licence separate; marketing (backup rule and annual discount to confirm) | P1.33, P1.34, P1.35 |
+| A22 Pricing: managed by resources, BYOS by subscription, Enterprise licence separate; marketing (no backups on Free; no annual discount on subscriptions) | P1.33, P1.34, P1.35 |
 
 ## Launch scope (revision 3)
 
@@ -898,7 +898,7 @@ Before launch. "Launch blocker" marks a finding from the review.
     - builds and tests with `docker build` and a throwaway PostgreSQL container on the server;
     - blue-green updates through Traefik (start new, health-check, switch, stop old), reusing the old `SshDockerDriver` "shadow" approach;
     - the update gate (`-u`) runs before the switch.
-- **Backups:** daily to the customer's own S3 in every plan. Veltnex off-site restic, with the P1.5 consistency model, from Pro.
+- **Backups:** **none on Free** (upgrade needed, with a warning the customer acknowledges). Daily to the customer's own S3 from Starter. Veltnex off-site restic, with the P1.5 consistency model, from Pro.
 - **Monitoring:** health, resources and `pg_slow_queries.log` through the agent; the performance collector runs on the server.
 - **Treated as untrusted:** the server gets only its own credentials. Data it reports is trusted only for that customer.
 - **Billing:** by subscription (P1.33). Sleep is off. There is no infrastructure SLA.
@@ -926,12 +926,12 @@ Before launch. "Launch blocker" marks a finding from the review.
         - Pro $39: unlimited servers and projects within the published plan;
         - Agency $199: hosting companies and resellers.
 
-      Paid features are gated per plan. The proposed split: Git auto-deploy and monitoring from Starter; teams and permissions, Veltnex off-site backups and the Advisor from Pro; client organisations, white-label and client billing in Agency. Annual is 20% off (to confirm).
-    - **Every plan:** daily backups to the customer's own S3 (the backup rule to confirm); managed hosting always includes Veltnex backups (A11).
+      Paid features are gated per plan. The proposed split: backups to the customer's own S3, Git auto-deploy and monitoring from Starter; teams and permissions, Veltnex off-site backups and the Advisor from Pro; client organisations, white-label and client billing in Agency. **No annual discount on management subscriptions** (owner).
+    - **Backups (owner):** none on Free, so the customer must upgrade; the portal warns and signup asks for acknowledgement. Customer-S3 backups from Starter, Veltnex off-site from Pro. Managed hosting always includes Veltnex backups (A11).
     - **Odoo Enterprise licences are separate** from hosting and management fees in both models, so the comparison with Odoo.sh is clean.
     - **Free plan:** BYOS only, one per verified person or company; servers inactive for 90 days are detached.
     - **Existing customers:** keep their plan until renewal (notice in P0.27).
-- **Where:** `control-plane/saas_billing` (subscription products, limits, feature gates, annual price), `saas_core/models/saas_plan.py` (limits and feature flags), `saas_iam` (members by plan), `frontend/veltnex` (pricing page with both hosting types, upgrade prompts).
+- **Where:** `control-plane/saas_billing` (subscription products, limits, feature gates), `saas_core/models/saas_plan.py` (limits and feature flags), `saas_iam` (members by plan), `frontend/veltnex` (pricing page with both hosting types, upgrade prompts).
 - **Done when:**
     - every gate is enforced with an upgrade prompt;
     - a managed invoice prices resources above the floor;

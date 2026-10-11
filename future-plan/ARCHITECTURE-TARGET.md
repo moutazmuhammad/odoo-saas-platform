@@ -958,6 +958,7 @@ Until then, the "Enterprise" option is hidden.
 | | Server management: monitoring, backups, DNS | Platform-side, partial | P0.7, P0.11, P0.12, P1.1 |
 | | Database upgrade with a test before the final run | **Module upgrades only** (`_run_upgrade` runs `odoo -u`) | P1.18 version upgrade workflow; P2.9 OpenUpgrade automation |
 | | Access control by role and environment | Fine-grained permissions per environment (`saas_iam/roles.py`); **no persona roles** | P1.19 Developer, Tester and Project Manager presets |
+| | Summary dashboard as the home after login | A dashboard page exists but is not routed; login lands on `/` (`Login.tsx:57`) | P1.39 |
 | | History of builds, imports and restores | Builds and database operations recorded separately | P1.20 one activity timeline per environment |
 
 **Two contradictions to fix:**

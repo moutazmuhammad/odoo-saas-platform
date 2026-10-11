@@ -113,7 +113,8 @@ All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the la
     - P1.15 uptime;
     - P1.17 promotion with a verified snapshot;
     - P1.7 Odoo 14–20 matrix;
-    - P1.10 shell hardening.
+    - P1.10 shell hardening;
+    - P1.39 summary dashboard as the home after login.
 - **Cost:** P2.1 sleep (owner decision: required); the shared non-production database (P2.2, 1 instance); P2.5 Shared pool.
 
 **Tier L+ · within about 90 days after launch:**
@@ -1008,6 +1009,49 @@ Before launch. "Launch blocker" marks a finding from the review.
 
   Only the execution differs; results must match.
 - **Done when:** the suite passes on Kubernetes and Docker Compose for Odoo 16 and 18, and on every version in the P1.7 matrix before release.
+
+**P1.39 One summary dashboard as the customer's home after login.** Launch (owner, 2026-10-11).
+- **Today (verified):**
+    - after login the SPA sends the user to `/`, the marketing home page (`frontend/veltnex/src/pages/Login.tsx:57`);
+    - `/my` redirects to the projects list (`App.tsx:102`);
+    - a dashboard page already exists (`pages/portal/Dashboard.tsx`, with project stats, wallet, invoices and action items, covered by `__tests__/CustomerProjects.test.tsx`), but **no route uses it**.
+- **What:**
+    - **Routing:**
+        - route `/my/dashboard` to the dashboard and make it the `/my` index;
+        - after login, with no explicit redirect, go to `/my/dashboard`, not `/`;
+        - a signed-in user who opens `/` is sent to the dashboard too;
+        - the public site stays reachable from a "Website" link.
+    - **What it summarises, for both hosting types (managed and BYOS):**
+        - **Projects and environments:** counts by status (online, stopped, sleeping, failed), plus the ones needing action.
+        - **Servers:**
+            - managed cells, as the customer's share;
+            - BYOS servers: online or offline, CPU, memory and disk (Netdata or Prometheus);
+            - the hosting type and its capabilities (P1.37).
+        - **Builds and deploys:** the latest ones, failed tests that blocked Production (P1.11), pending promotions.
+        - **Backups:**
+            - the last successful backup per Production environment;
+            - missing or failed ones;
+            - the permanent "No backups on the Free plan" warning with an upgrade button.
+        - **Health and performance:** uptime over 24 hours and 30 days (P1.15), and open Level 2 and 3 performance findings (P2.7, once it ships).
+        - **Domains and certificates:** custom domains awaiting verification, "ownership lost" (P1.1), and certificates expiring.
+        - **Billing:**
+            - plan and subscription;
+            - the current month's usage and estimated cost from metering (P1.31);
+            - open invoices, wallet, next renewal;
+            - usage against plan limits (servers, projects, storage), with upgrade prompts at each gate (P1.33).
+        - **Odoo Enterprise:** subscription status and expiry, where used (P1.23).
+        - **Team:** recent activity (P1.20) and pending invitations.
+        - **Quick actions:** create a project, connect a server, deploy, open a shell.
+    - **One aggregated API call:** extend the existing `api.dashboard` endpoint (`control-plane/saas_website/controllers/api.py`). It is served from data the control plane already holds (batched cluster reads, metering, runtime observations), cached for about 60 seconds per customer, and never makes a live call per environment.
+    - **Staff:** keep the existing customer filter (`CustomerFilter`).
+    - **Languages:** Arabic and English, right-to-left aware.
+- **Where:** `frontend/veltnex/src/App.tsx`, `pages/Login.tsx`, `pages/portal/Dashboard.tsx` and its cards, `lib/api.ts`, `control-plane/saas_website/controllers/api.py` (`dashboard`), `saas_website/static/src/i18n/ar.json`.
+- **Done when:**
+    - logging in with no redirect lands on `/my/dashboard`;
+    - a signed-in visit to `/` lands there too;
+    - every card links to its detail page;
+    - the dashboard loads under 1.5 s at p95 for a customer with 50 projects, with one API call;
+    - frontend tests cover routing and each card's empty, warning and normal states.
 
 ### Gate A · Launch
 

@@ -166,6 +166,7 @@ Its acceptance check: one month of metered cost on the test cell is within 15% o
     - C4, C6, C8 and C9 alongside.
 3. **Launch features, BYOS and pricing:**
     - Bring Your Own Server (P1.32), the freemium plans with their feature gates (P1.33), the Agency plan with client organisations, and the marketing site (P1.34);
+    - the summary dashboard as the customer's home after login (P1.39);
     - custom domains, submodules, Mailpit, the stock mail relay, the test gate;
     - Odoo shell, logs including `pg_slow_queries.log`, uptime, promotion;
     - the Odoo 14–20 matrix, the price floor, the website target.

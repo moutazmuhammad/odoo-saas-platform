@@ -93,10 +93,15 @@ Every step first checks whether it already happened (bucket assigned, key with t
 
 **When a customer's last server ends, recycle the bucket, never delete it.** DigitalOcean deletes a bucket asynchronously: it stays pending for at least two weeks and its name stays reserved in that time ([destroy a bucket](https://docs.digitalocean.com/products/spaces/how-to/destroy/)). With trial customers coming and going, that churn would also eat into the bucket limit. So:
 
-1. Delete the customer's key (`DELETE /v2/spaces/keys/{access_key}`), so nothing can reach the bucket any more.
-2. A background job empties the bucket in batches of 1,000 objects per request.
-3. Once a listing shows it empty, the bucket goes back to the pool. The next customer gets it with a brand-new key; the random name carries no trace of the previous owner.
-4. The pool keeps a few empty buckets ready (for example 5); buckets beyond what the pool needs are only then deleted, and their slow deletion no longer matters.
+1. **Revoke access.** Delete the customer's key (`DELETE /v2/spaces/keys/{access_key}`), then list the account's keys and confirm no key still has a grant on this bucket. Prove it: a request signed with the old key must fail with 403.
+2. **Delete everything, including what a normal listing hides:**
+    - every object, in batches of 1,000 per request;
+    - every old object version and delete marker, if versioning was ever turned on (`ListObjectVersions`);
+    - every unfinished multipart upload (`ListMultipartUploads`, then abort each one); these hold uploaded data that a normal listing never shows.
+3. **Prove the bucket is empty.** All three listings (objects, versions, multipart uploads) must come back empty, twice, a few minutes apart. Reset the bucket's settings to the platform default: no CORS, no bucket policy, only the standard `trash/` lifecycle rule.
+4. **Only then hand it out.** The bucket returns to the pool and the next customer gets it with a brand-new key. Each recycle step is written to the audit log (bucket, previous owner, times, listing results).
+
+The pool keeps a few empty buckets ready (for example 5); buckets beyond what the pool needs are only then deleted, and their slow deletion no longer matters. If any check fails, the bucket stays out of the pool and an alert goes to Teams.
 
 **What you provide once:** a DigitalOcean API token allowed to manage Spaces keys, and a full-access Spaces key (the backup key, if it has full access). Both are stored in the SaaS settings.
 

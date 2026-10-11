@@ -6,7 +6,7 @@ This plan turns the target architecture into ordered, shippable items. The four 
 
 Inside the appendices, an old file name means its appendix: `PLAN-backup-restore.md` is A, `PLAN-spaces-filestore.md` is B, `PLAN-cluster-capacity.md` is C, and `PLAN-postgresql-architecture.md` is D.
 
-**Status: plan only.** Decisions A1–A13 were approved on 2026-10-11, subject to the launch acceptance criteria below. A14–A19 (provider independence and region pricing) are pending. Implementation starts only when the owner says so, after this document is accepted.
+**Status: plan only.** All decisions, A1–A19, were approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the launch acceptance criteria below. Implementation starts only when the owner says so, after this document is accepted.
 
 ## How to use this plan
 
@@ -33,7 +33,7 @@ flowchart LR
 
 ## Decisions and the items they drive
 
-A1–A13 approved on 2026-10-11, subject to the launch acceptance criteria. A14–A19 (provider independence and region pricing) are pending.
+All approved on 2026-10-11 (A14–A19 delegated by the owner), subject to the launch acceptance criteria.
 
 | Decision (architecture) | Items that wait for it |
 | --- | --- |
@@ -50,12 +50,12 @@ A1–A13 approved on 2026-10-11, subject to the launch acceptance criteria. A14�
 | A11 Production backups included | P1.16 |
 | A12 Read-only window for version upgrades | P1.18 |
 | A13 Uptime promise | P0.23 |
-| A14 Provider-agnostic cells (pending) | P0.25, P0.26, P2.10 |
-| A15 Azure object storage (pending) | P2.10 |
-| A16 Platform DNS provider (pending) | P0.7, P0.26 |
-| A17 Data residency (pending) | P0.25, P1.21 |
-| A18 Provisioning modules (pending) | P2.11 |
-| A19 Region, provider and pricing model (pending) | P1.22, P0.18 |
+| A14 Provider-agnostic cells | P0.25, P0.26, P2.10 |
+| A15 Azure object storage | P2.10 |
+| A16 Platform DNS provider: Cloudflare | P0.7, P0.26 |
+| A17 Data residency | P0.25, P1.21 |
+| A18 Provisioning modules: OpenTofu | P2.11 |
+| A19 Region, provider and pricing model | P1.22, P0.18 |
 
 ## Launch blockers and launch acceptance criteria
 
@@ -186,10 +186,13 @@ Before launch. "Launch blocker" marks a finding from the review.
 **P0.4 Restore safety.** Appendix A, Phase 0 and Workstream A.
 - **What:**
     - bounded `/tmp`;
-    - streaming restore into `<db>__restoring`, then a swap;
-    - a free-space check first.
+    - streaming restore, never through local disk;
+    - where the restore goes (settled 2026-10-11):
+        - **on CloudNativePG:** into a new cluster on a new volume, then switch Odoo to it after verification; the old cluster is deleted after 24 hours;
+        - **on the Managed StatefulSet:** into a new volume and pod, or `<db>__restoring` when the volume has room, then the swap;
+        - drop-then-load only on Managed tenants that have not moved yet, and only after a fresh verified backup.
 - **Where:** `compute/operator/internal/resources/backup.go:73`, `restore.go:94`, `compute/tools/backup-tool/run-restore.sh`, `control-plane/saas_core/models/saas_instance.py` (`_do_restore_backup`, `_do_copy_dbs`).
-- **Done when:** Appendix A's checks for disk safety, large restore, safe failure and bad upload pass.
+- **Done when:** Appendix A's checks for disk safety, large restore, safe failure and bad upload pass, and a restore never requires growing the live volume.
 
 **P0.5 Backup key scope.** Launch blocker.
 - **Steps:**
@@ -215,7 +218,7 @@ Before launch. "Launch blocker" marks a finding from the review.
 
 **P0.7 Wildcard TLS for the tenant domain, with protections.** Launch blocker. Needs A4 for the domain name.
 - **What:** one `*.<tenant-domain>` certificate through DNS-01, held in Traefik's default `TLSStore`, with `spec.domain.tls.mode: Shared` for platform hosts. It is protected by:
-    - **Delegated challenge:** `_acme-challenge.<tenant-domain>` is a CNAME into a challenge zone in a separate DigitalOcean team, so cert-manager's token can change nothing else.
+    - **Delegated challenge:** `_acme-challenge.<tenant-domain>` is a CNAME into a dedicated challenge zone on Cloudflare (A16). cert-manager's API token is scoped to that zone only, so it can change nothing else.
     - **CAA records:** they allow only Let's Encrypt and only the platform's ACME account (`accounturi`), for `issue` and `issuewild`.
     - **Certificate Transparency watch:** an alert on any certificate for the tenant domain that the platform did not order.
     - **Key location:** the key lives only in Traefik's namespace (P0.1 denies reading it).
@@ -525,7 +528,8 @@ Before launch. "Launch blocker" marks a finding from the review.
     - a matrix of Odoo version, image, Python and PostgreSQL major, using as few majors as possible, starting with Odoo 14, the oldest, on PostgreSQL 13;
     - `supportedOdooVersions` covers 14.0–20.0 (today 17.0–20.0);
     - versions 14–16 must be added to the chart and to `saas.odoo.version`;
-    - a portal notice on versions Odoo no longer patches, with an upgrade offer (P1.18).
+    - a portal notice on versions Odoo no longer patches, with an upgrade offer (P1.18);
+    - Enterprise: customers may bring their own subscription and addons through their repository. Before it is advertised, check Odoo's Enterprise terms for third-party hosting.
 - **Where:** `compute/charts/odoo-operator/values.yaml`, `saas_core/models/saas_odoo_version.py`, `kubernetes_driver.py`.
 - **Done when:** one tenant per version deploys, builds an addon, backs up and restores.
 
@@ -980,10 +984,21 @@ Before launch. "Launch blocker" marks a finding from the review.
 
 ## Open questions
 
-The approvals are A1–A10 in [ARCHITECTURE-TARGET.md](ARCHITECTURE-TARGET.md#decisions-and-their-status). These remain:
+All decisions are recorded in [ARCHITECTURE-TARGET.md](ARCHITECTURE-TARGET.md#decisions-and-their-status). The questions open in revision 1 were settled on 2026-10-11 (architecture, "Open questions and assumptions"):
 
-| Question | Blocks |
-| --- | --- |
+| Settled | Value | Item |
+| --- | --- | --- |
+| Archive window | 14 idle days | P2.3 |
+| Trials | Share the non-production cluster; 14 days; sleep after 1 h | P2.1, P2.2 |
+| Second backup location | Per region policy; ams3 for fra1 | P1.5, P1.21 |
+| Safe two-copy restore | Restore into a new volume or cluster, switch, delete the old one after 24 h | P0.4 |
+| SES region | Nearest allowed per cell; eu-central-1 for fra1 | P1.8 |
+| Add-ons at launch | None; PITR with P4.2, HA after Gate C | P4.1, P4.2 |
+| Enterprise | Bring your own subscription; check Odoo's terms first | P1.7 |
+
+**Needs the owner:** register the tenant domain (P0.20, P0.7) and take the SES account out of the sandbox (P1.8).
+
+--- | --- |
 | Archive window | P2.3 |
 | Whether trials share the cluster | P2.2 |
 | Second region for backup copies | P1.5 |

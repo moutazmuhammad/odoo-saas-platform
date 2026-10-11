@@ -13,7 +13,7 @@ Nothing here is implemented. All decisions are approved subject to the launch ac
 
 ## Decisions and their status
 
-A1–A13 were approved on 2026-10-11 (A14–A19, provider independence and region pricing, are pending), subject to the launch acceptance criteria in the plan. Where the owner set a condition, it is a "Done when" in [PLAN-implementation.md](PLAN-implementation.md#launch-blockers-and-launch-acceptance-criteria).
+All decisions, A1–A19, were approved on 2026-10-11. A14–A19 were delegated by the owner, subject to the launch acceptance criteria in the plan. Where the owner set a condition, it is a "Done when" in [PLAN-implementation.md](PLAN-implementation.md#launch-blockers-and-launch-acceptance-criteria).
 
 | # | Decision | Status | Condition or note | Plan items |
 | --- | --- | --- | --- | --- |
@@ -30,12 +30,12 @@ A1–A13 were approved on 2026-10-11 (A14–A19, provider independence and regio
 | A11 | Automatic Production backups included in every plan | **Approved with conditions** | Plan-based retention and recovery features | P1.16 |
 | A12 | Read-only window for the final major-version upgrade, chosen by the customer | **Approved with conditions** | A tested copy, a verified backup, a customer-selected window and a documented recovery procedure | P1.18 |
 | A13 | State an uptime target on the website; SLA only with HA | **Approved with conditions** | A target only, until HA passes failure and recovery tests; a contractual SLA only once the platform consistently meets it | P0.23, P4.1 |
-| A14 | Provider-agnostic cells: any provider meeting the cell contract; launch on DigitalOcean, add providers through the onboarding checklist when a region needs them | **Pending** | — | P0.25, P0.26, P2.10 |
-| A15 | Object storage on Azure (no S3 API) | **Pending** | Recommended: an Azure Blob adapter in the filestore module (restic, CloudNativePG and the registry support Azure natively). Alternative: an S3-compatible store run inside the cell | P2.10 when Azure is needed |
-| A16 | Platform DNS provider independent of the clouds, for the tenant domain and DNS-01 | **Pending** | One provider with good API and DNSSEC for all regions | P0.7, P0.26 |
-| A17 | Data residency per region; business data never leaves the allowed locations; central control plane holds metadata only | **Pending** | — | P0.25, P1.21 |
-| A19 | Customer chooses region, then provider; a separate price per provider in each region (owner requirement) | **Pending** (requirement given; model to approve) | Region → offerings (provider in region) → cells; price per plan per offering, never below that offering's floor; a project stays in one region and offering | P1.22, P0.18 |
-| A18 | Infrastructure as code: a provisioning module per provider | **Pending** | Recommended: OpenTofu; alternative: manual cluster creation plus bootstrap | P2.11 |
+| A14 | Provider-agnostic cells: any provider meeting the cell contract; launch on DigitalOcean, add providers through the onboarding checklist when a region needs them | **Approved** (delegated by the owner, 2026-10-11) | A cell takes customers only after P0.26 passes | P0.25, P0.26, P2.10 |
+| A15 | Object storage on Azure (no S3 API) | **Approved** (delegated) | An Azure Blob adapter in the filestore module, built only when the first Azure region is needed. restic, CloudNativePG and the registry already support Azure natively. No self-run object store, which would be a stateful service to operate | P2.10 |
+| A16 | Platform DNS provider independent of the clouds | **Approved** (delegated): **Cloudflare DNS**, DNS only, no proxy | Built-in cert-manager solver; API tokens scoped to a single zone; free DNSSEC and CAA; independent of every compute provider | P0.7, P0.26 |
+| A17 | Data residency per region; business data never leaves the allowed locations; the central control plane holds metadata only | **Approved** (delegated) | — | P0.25, P1.21 |
+| A19 | Customer chooses region, then provider; a separate price per provider in each region (owner requirement) | **Approved** (delegated) | Region → offerings (provider in region) → cells; a price per plan per offering, never below that offering's floor; a project stays in one region and offering | P1.22, P0.18 |
+| A18 | Infrastructure as code: a provisioning module per provider | **Approved** (delegated): **OpenTofu** | Open-source and Terraform-compatible, with providers for all seven clouds | P2.11 |
 
 **Launch blockers.** The full list, with each acceptance check, is in the plan's "Launch blockers and launch acceptance criteria". The owner added these on 2026-10-11:
 
@@ -46,7 +46,7 @@ A1–A13 were approved on 2026-10-11 (A14–A19, provider independence and regio
 - safe major upgrades (P1.18);
 - an uptime target, not an SLA (P0.23).
 
-Still open from revision 1: archive window, whether trials share the cluster, add-ons at launch, second backup region, and Enterprise hosting (see the end of this file).
+The remaining open questions were settled on 2026-10-11 (see the end of this file). Only the tenant domain name needs the owner, because it is a brand choice and a purchase.
 
 ## Summary
 
@@ -458,7 +458,7 @@ The wildcard covers only the platform's own tenant domain, such as `*.main.eagle
 
 - **Separate domain (A4):** tenant apps get their own registrable domain, separate from the portal, which removes cookie tossing into the portal. Submit it to the Public Suffix List's private section, so browsers isolate cookies between tenants too.
 - **Locked-down key:** the wildcard key lives only in Traefik's namespace. The control plane's least-privilege role (P0.1) cannot read Secrets there or in `cert-manager`.
-- **Narrow DNS credential:** `_acme-challenge.<tenant-domain>` is a CNAME into a dedicated challenge zone. That zone sits in a separate DigitalOcean team whose token can change nothing else, so a leaked cert-manager token cannot repoint tenant traffic.
+- **Narrow DNS credential:** `_acme-challenge.<tenant-domain>` is a CNAME into a dedicated challenge zone. That zone is its own Cloudflare zone (A16), and cert-manager's API token is scoped to that zone only, so a leaked token cannot repoint tenant traffic.
 - **Issuance controls:** CAA records allow only Let's Encrypt and only the platform's ACME account (`accounturi`), for both `issue` and `issuewild`. Certificate Transparency is watched, with an alert on any certificate for the tenant domain that the platform did not order.
 - **Renewal:** renewal starts 30 days before expiry (cert-manager), with an expiry alert at 14 days.
 - **Subdomain reuse:** a cancelled tenant's subdomain is quarantined for 90 days (*assumed*), so old links and bookmarks never reach a new customer.
@@ -788,14 +788,21 @@ flowchart TD
 
 **Status:** A1–A13 approved on 2026-10-11, subject to the launch acceptance criteria.
 
-**Still open:**
+**Settled on 2026-10-11 (delegated by the owner):**
 
-1. **Archiving:** how many idle days before a dev environment is archived? *Assumed: 14.*
-2. **Trials:** do they share the non-production cluster, and how long do they last? *Assumed: yes, 14 days.*
-3. **Paid add-ons:** sell HA, PITR and dedicated pools at launch, or on demand?
-4. **Second region** for backup copies. *Assumed: ams3.*
-5. **Enterprise:** Enterprise hosting or Community only?
-6. **New tenant domain name** (A4).
+1. **Archiving:** a dev environment idle for 14 days is archived to its region's object storage. It can be restored on demand in about a minute.
+2. **Trials:** they share the non-production cluster, sleep after 1 idle hour, and last 14 days.
+3. **Add-ons at launch:**
+    - none of HA, PITR or dedicated pools are sold at launch;
+    - PITR becomes part of the Business tier's recovery features once P4.2 passes;
+    - HA is sold after Gate C, when it has passed failure and recovery tests;
+    - dedicated pools are on request.
+4. **Second backup location:** set per region by its residency policy. For the DigitalOcean fra1 cell it is ams3, which is inside the EU.
+5. **Enterprise:** Community by default. Customers may bring their own Odoo Enterprise subscription and addons through their repository. Before this is advertised, Odoo's Enterprise terms for third-party hosting are checked; that check is a P1.7 task.
+6. **Safe two-copy restore** (Appendix A, open question 3): restores go into a new database volume, or a new CloudNativePG cluster, and Odoo switches over after verification. The old volume is deleted after 24 hours. Volumes never have to grow for a restore, and the extra cost is a few hours of a second volume. Managed StatefulSet tenants that have not moved yet use drop-then-load, only after a fresh verified backup.
+7. **SES region:** per cell, the nearest SES region the region policy allows; for fra1 it is eu-central-1. Leaving the SES sandbox is an owner action on the AWS account.
+
+**Needs the owner:** the tenant domain name (A4). It should be a short registrable domain, separate from the portal's brand domain, used only for tenant apps. It goes on the Public Suffix List once registered.
 
 **Evidence still needed (each has a test in the plan):**
 

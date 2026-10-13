@@ -115,3 +115,21 @@ extraArgs: []
 
 podAnnotations: {}
 podLabels: {}
+
+# P0.1: the control plane never receives cluster-admin on a new install.
+# Existing cluster-admin bindings are NOT removed by a Helm upgrade.
+controlPlaneRBAC:
+  enabled: true
+  serviceAccount:
+    name: saas-control-plane
+    namespace: kube-system
+  buildNamespace: odoo-builds
+  toolboxNamespace: saas-toolbox
+  monitoring:
+    namespace: monitoring
+    serviceNames: [prometheus-server, "prometheus-server:80", "http:prometheus-server:80"]
+
+# P0.19: fail closed if builders lack required pool placement, or tenant /
+# toolbox / operator pods try to tolerate that pool. Provision nodes separately.
+buildPoolIsolation:
+  enabled: true

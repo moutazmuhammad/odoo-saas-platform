@@ -26,8 +26,9 @@ import (
 // single-instance `Cluster` CR (PITR and managed recovery) behind the same
 // OdooInstance API — see internal/controller/database.go.
 //
-// Connection details are wired via secretKeyRef against DatabaseSecretName,
-// not passed as literal values, so this builder never handles the
+// Bootstrap credentials are wired only to DatabaseAdminSecretName; Odoo
+// receives a separately provisioned, limited application login. Values are
+// not passed as literals, so this builder never handles the
 // plaintext password itself.
 func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance, platform Platform) *appsv1.StatefulSet {
 	labels := WithComponent(instance, "database")
@@ -48,7 +49,7 @@ func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance, platform Platform)
 	envFrom := func(key string) corev1.EnvVarSource {
 		return corev1.EnvVarSource{
 			SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: DatabaseSecretName(instance)},
+				LocalObjectReference: corev1.LocalObjectReference{Name: DatabaseAdminSecretName(instance)},
 				Key:                  key,
 			},
 		}
@@ -88,7 +89,7 @@ func DatabaseStatefulSet(instance *saasv1alpha1.OdooInstance, platform Platform)
 							Image:           platform.postgresImage(instance.Spec.Database.Version),
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env: []corev1.EnvVar{
-								{Name: "POSTGRES_DB", ValueFrom: ptr.To(envFrom("dbname"))},
+								{Name: "POSTGRES_DB", Value: "postgres"},
 								{Name: "POSTGRES_USER", ValueFrom: ptr.To(envFrom("username"))},
 								{Name: "POSTGRES_PASSWORD", ValueFrom: ptr.To(envFrom("password"))},
 								{Name: "PGDATA", Value: "/var/lib/postgresql/data/pgdata"},

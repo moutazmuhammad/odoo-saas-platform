@@ -30,6 +30,7 @@ func readyInstance(t *testing.T, r *OdooInstanceReconciler, name string) (*saasv
 		return k8sClient.Get(testCtx, client.ObjectKey{Name: ns}, &namespace) == nil
 	})
 	patchStatefulSetReady(t, ns, resources.DatabaseStatefulSetName(instance))
+	completeDatabaseRoles(t, r, instance)
 	reconcileUntil(t, r, name, func(i *saasv1alpha1.OdooInstance) bool {
 		var job batchv1.Job
 		return k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: resources.OdooInitJobName(instance)}, &job) == nil

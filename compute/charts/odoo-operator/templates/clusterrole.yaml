@@ -18,6 +18,13 @@ metadata:
   labels:
     {{- include "odoo-operator.labels" . | nindent 4 }}
 rules:
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [rolebindings]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles]
+    resourceNames: [veltnex-tenant-access]
+    verbs: [bind]
   - apiGroups: [""]
     resources:
       - configmaps

@@ -17,6 +17,31 @@ spec.loader.exec_module(bootstrap)
 
 
 class BootstrapTests(unittest.TestCase):
+    def test_export_never_grants_cluster_admin(self):
+        self.assertEqual([obj['kind'] for obj in bootstrap.account_manifests()],
+                         ['ServiceAccount', 'Secret'])
+
+    def test_credential_verification_accepts_only_expected_permissions(self):
+        def answer(args, **kwargs):
+            request = args[5:]
+            allowed = request[:2] in [
+                ['get', 'odooinstances'], ['list', 'namespaces'],
+                ['list', 'deployments.apps'], ['create', 'jobs.batch']]
+            if allowed:
+                return b'yes\n'
+            raise subprocess.CalledProcessError(1, args, output=b'no\n')
+        with patch.object(bootstrap, 'command', side_effect=answer):
+            bootstrap.verify_control_plane_kubeconfig('/tmp/candidate')
+        with patch.object(bootstrap, 'command', return_value=b'yes\n'):
+            with self.assertRaises(bootstrap.Error):
+                bootstrap.verify_control_plane_kubeconfig('/tmp/legacy-admin')
+
+    def test_credential_verification_does_not_mistake_connection_failure_for_denial(self):
+        failure = subprocess.CalledProcessError(1, 'kubectl', output=b'', stderr=b'connection refused')
+        with patch.object(bootstrap, 'command', side_effect=failure):
+            with self.assertRaises(subprocess.CalledProcessError):
+                bootstrap.verify_control_plane_kubeconfig('/tmp/candidate')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -122,6 +147,19 @@ class BootstrapTests(unittest.TestCase):
                 self.assertRaises(subprocess.CalledProcessError):
             bootstrap.prepare_cluster('doks', cfg, self.work / 'admin', self.work)
         export.assert_not_called()
+        register.assert_not_called()
+        self.assertEqual(output.read_text(), 'previous verified credential')
+
+    def test_failed_rbac_verification_preserves_output_and_skips_registration(self):
+        output = Path(self.cfg['output'])
+        output.write_text('previous verified credential')
+        cfg = dict(self.cfg, ingress_ip='203.0.113.5', nodes=[{}], register_saas={'ssh': {}})
+        with patch.object(bootstrap.local, 'require'), patch.object(bootstrap, 'command', return_value=b'admin'), \
+                patch.object(bootstrap.Cluster, 'helm'), patch.object(bootstrap.Cluster, 'apply'), \
+                patch.object(bootstrap, 'smoke'), patch.object(bootstrap, 'export_kubeconfig', return_value={'users': []}), \
+                patch.object(bootstrap, 'verify_control_plane_kubeconfig', side_effect=bootstrap.Error('broad grant')), \
+                patch.object(bootstrap, 'remote_python') as register, self.assertRaises(bootstrap.Error):
+            bootstrap.prepare_cluster('microk8s', cfg, self.work / 'admin', self.work)
         register.assert_not_called()
         self.assertEqual(output.read_text(), 'previous verified credential')
 

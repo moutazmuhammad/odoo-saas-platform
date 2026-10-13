@@ -127,7 +127,7 @@ psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres \
 psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres \
   -c "CREATE DATABASE \"${DB_NAME}\""
 pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-  --no-owner --single-transaction --exit-on-error "${WORKDIR}/db.dump"
+  --no-owner --no-privileges --role="$DB_USER" --single-transaction --exit-on-error "${WORKDIR}/db.dump"
 
 while IFS=$'\t' read -r NAME TARGET; do
   echo "[restore-tool] restoring extra database ${NAME} into ${TARGET}@${DB_HOST}:${DB_PORT}"
@@ -136,7 +136,7 @@ while IFS=$'\t' read -r NAME TARGET; do
   psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres \
     -c "CREATE DATABASE \"${TARGET}\""
   pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$TARGET" \
-    --no-owner --single-transaction --exit-on-error "${WORKDIR}/dbs/${NAME}.dump"
+    --no-owner --no-privileges --role="$DB_USER" --single-transaction --exit-on-error "${WORKDIR}/dbs/${NAME}.dump"
 done < "${WORKDIR}/db-pairs"
 
 echo "[restore-tool] extracting filestore into ${ODOO_DATA_DIR}"

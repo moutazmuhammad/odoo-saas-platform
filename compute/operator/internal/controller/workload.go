@@ -104,6 +104,16 @@ func (r *OdooInstanceReconciler) reconcileWorkload(ctx context.Context, instance
 	}
 
 	web := resources.OdooDeployment(instance, r.platform())
+	// Secret-backed init-container env is resolved only at pod creation.
+	// Hash connection data so unrelated Secret updates do not trigger rollouts.
+	var credentials corev1.Secret
+	if err := r.Get(ctx, types.NamespacedName{Namespace: resources.TenantNamespace(instance), Name: resources.DatabaseSecretName(instance)}, &credentials); err != nil {
+		return err
+	}
+	if web.Spec.Template.Annotations == nil {
+		web.Spec.Template.Annotations = map[string]string{}
+	}
+	web.Spec.Template.Annotations["saas.odoo.example.com/database-credentials-version"] = databaseCredentialsDigest(&credentials)
 	setOwner(instance, web)
 	if err := r.apply(ctx, web); err != nil {
 		return err

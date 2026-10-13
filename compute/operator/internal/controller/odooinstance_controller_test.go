@@ -7,6 +7,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -76,6 +77,7 @@ func TestReconcile_FullLifecycle(t *testing.T) {
 	})
 
 	assertExists(t, &corev1.ServiceAccount{}, ns, resources.OdooServiceAccountName(instance))
+	assertExists(t, &rbacv1.RoleBinding{}, ns, "veltnex-control-plane")
 	assertExists(t, &corev1.ResourceQuota{}, ns, resources.ResourceQuotaName(instance))
 	assertExists(t, &corev1.LimitRange{}, ns, resources.LimitRangeName(instance))
 	assertExists(t, &corev1.Secret{}, ns, resources.AdminSecretName(instance))
@@ -93,6 +95,7 @@ func TestReconcile_FullLifecycle(t *testing.T) {
 	// Step 2: simulate the managed PostgreSQL StatefulSet becoming ready
 	// (a kubelet would normally drive this).
 	patchStatefulSetReady(t, ns, resources.DatabaseStatefulSetName(instance))
+	completeDatabaseRoles(t, r, instance)
 
 	reconcileUntil(t, r, "acme", func(i *saasv1alpha1.OdooInstance) bool {
 		var job batchv1.Job
@@ -266,6 +269,12 @@ func TestReconcile_ExternalDatabaseWaitsForCredentialsSecret(t *testing.T) {
 		t.Fatalf("creating external credentials secret: %v", err)
 	}
 
+	auditName := "odoo-database-audit-" + databaseCredentialsDigest(secret)[:16]
+	reconcileUntil(t, r, "external-db", func(i *saasv1alpha1.OdooInstance) bool {
+		var job batchv1.Job
+		return k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: auditName}, &job) == nil
+	})
+	patchJobSucceeded(t, ns, auditName)
 	final = reconcileUntil(t, r, "external-db", func(i *saasv1alpha1.OdooInstance) bool {
 		c := findCondition(i, saasv1alpha1.ConditionDatabaseReady)
 		return c != nil && c.Status == metav1.ConditionTrue
@@ -303,6 +312,7 @@ func TestReconcile_RestoreConfigured_GatesWebDeploymentUntilJobSucceeds(t *testi
 		return k8sClient.Get(testCtx, client.ObjectKey{Name: ns}, &namespace) == nil
 	})
 	patchStatefulSetReady(t, ns, resources.DatabaseStatefulSetName(instance))
+	completeDatabaseRoles(t, r, instance)
 
 	reconcileUntil(t, r, "restored", func(i *saasv1alpha1.OdooInstance) bool {
 		var job batchv1.Job
@@ -357,6 +367,7 @@ func TestReconcile_RestoreFailure_NeverCreatesWebDeployment(t *testing.T) {
 		return k8sClient.Get(testCtx, client.ObjectKey{Name: ns}, &namespace) == nil
 	})
 	patchStatefulSetReady(t, ns, resources.DatabaseStatefulSetName(instance))
+	completeDatabaseRoles(t, r, instance)
 	reconcileUntil(t, r, "restore-failed", func(i *saasv1alpha1.OdooInstance) bool {
 		var job batchv1.Job
 		return k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: resources.OdooRestoreJobName(instance)}, &job) == nil
@@ -421,6 +432,7 @@ func TestReconcile_RestoreIdempotent_MultipleReconcilesDoNotRerunRestore(t *test
 		return k8sClient.Get(testCtx, client.ObjectKey{Name: ns}, &namespace) == nil
 	})
 	patchStatefulSetReady(t, ns, resources.DatabaseStatefulSetName(instance))
+	completeDatabaseRoles(t, r, instance)
 	reconcileUntil(t, r, "restore-idempotent", func(i *saasv1alpha1.OdooInstance) bool {
 		var job batchv1.Job
 		return k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: resources.OdooRestoreJobName(instance)}, &job) == nil
@@ -567,4 +579,17 @@ func patchPVCBound(t *testing.T, namespace, name string) {
 	if err := k8sClient.Status().Update(testCtx, &pvc); err != nil {
 		t.Fatalf("patching pvc status: %v", err)
 	}
+}
+
+// envtest has no kubelet: explicitly simulate the platform privilege Job,
+// separately from PostgreSQL readiness and Odoo schema initialization.
+func completeDatabaseRoles(t *testing.T, r *OdooInstanceReconciler, instance *saasv1alpha1.OdooInstance) {
+	t.Helper()
+	ns := resources.TenantNamespace(instance)
+	reconcileUntil(t, r, instance.Name, func(i *saasv1alpha1.OdooInstance) bool {
+		var job batchv1.Job
+		return k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: resources.DatabaseRolesJobName}, &job) == nil
+	})
+	assertNotExists(t, &batchv1.Job{}, ns, resources.OdooInitJobName(instance))
+	patchJobSucceeded(t, ns, resources.DatabaseRolesJobName)
 }

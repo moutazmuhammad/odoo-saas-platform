@@ -34,6 +34,12 @@ import (
 // data must outlive deletion, precisely because it lives outside the
 // tenant namespace being torn down.
 func (r *OdooInstanceReconciler) finalizeInstance(ctx context.Context, instance *saasv1alpha1.OdooInstance) error {
+	if err := r.validateTenantNamespace(instance); err != nil {
+		return err
+	}
+	if err := r.requireOwnedTenantNamespace(ctx, instance); err != nil {
+		return err
+	}
 	logger := log.FromContext(ctx)
 	ns := resources.TenantNamespace(instance)
 

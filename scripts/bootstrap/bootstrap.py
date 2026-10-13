@@ -210,10 +210,6 @@ def issuer_manifest(email):
 def account_manifests():
     return [
         {'apiVersion': 'v1', 'kind': 'ServiceAccount', 'metadata': {'name': 'saas-control-plane', 'namespace': 'kube-system'}},
-        {'apiVersion': 'rbac.authorization.k8s.io/v1', 'kind': 'ClusterRoleBinding',
-         'metadata': {'name': 'saas-control-plane'},
-         'roleRef': {'apiGroup': 'rbac.authorization.k8s.io', 'kind': 'ClusterRole', 'name': 'cluster-admin'},
-         'subjects': [{'kind': 'ServiceAccount', 'name': 'saas-control-plane', 'namespace': 'kube-system'}]},
         {'apiVersion': 'v1', 'kind': 'Secret', 'type': 'kubernetes.io/service-account-token',
          'metadata': {'name': 'saas-control-plane-token', 'namespace': 'kube-system',
                       'annotations': {'kubernetes.io/service-account.name': 'saas-control-plane'}}},
@@ -234,6 +230,32 @@ def export_kubeconfig(cluster):
             'clusters': [{'name': name, 'cluster': {'server': endpoint, 'certificate-authority-data': ca}}],
             'users': [{'name': 'saas-control-plane', 'user': {'token': base64.b64decode(secret['data']['token']).decode()}}],
             'contexts': [{'name': name, 'context': {'cluster': name, 'user': 'saas-control-plane'}}]}
+
+
+def verify_control_plane_kubeconfig(path):
+    """Reject exported credentials with broad privileges, including old bindings."""
+    checks = [
+        (True, ['get', 'odooinstances']),
+        (True, ['list', 'namespaces']),
+        (True, ['list', 'deployments.apps', '--all-namespaces']),
+        (True, ['create', 'jobs.batch', '-n', 'odoo-builds']),
+        (False, ['create', 'namespaces']),
+        (False, ['list', 'secrets', '--all-namespaces']),
+        (False, ['get', 'secrets', '-n', 'cert-manager']),
+        (False, ['create', 'clusterrolebindings.rbac.authorization.k8s.io']),
+        (False, ['create', 'serviceaccounts', '--subresource=token', '-n', 'kube-system']),
+    ]
+    for expected, request in checks:
+        args = ['kubectl', '--kubeconfig', path, 'auth', 'can-i', *request]
+        try:
+            answer = command(args, capture=True).decode().strip()
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode != 1 or (exc.stdout or b'').decode().strip() != 'no':
+                raise
+            answer = 'no'
+        if answer not in ('yes', 'no') or (answer == 'yes') != expected:
+            raise Error('Control-plane RBAC check failed: ' + ' '.join(request)
+                        + '; verify the restricted roles and remove legacy grants after the test observation period.')
 
 
 def smoke(cluster):
@@ -317,7 +339,9 @@ def prepare_cluster(kind, cfg, admin, work):
                  extra=('-f', local.local_path(cfg['operator_values'])) if cfg.get('operator_values') else ())
     cluster.kubectl('rollout', 'status', 'deployment/odoo-operator', '-n', 'odoo-system', '--timeout=5m')
     smoke(cluster)
-    output = private(cfg['output'], json.dumps(export_kubeconfig(cluster), indent=2).encode())
+    candidate = private(work / 'control-plane-candidate.json', json.dumps(export_kubeconfig(cluster), indent=2).encode())
+    verify_control_plane_kubeconfig(candidate)
+    output = private(cfg['output'], candidate.read_bytes())
     # Verify the exact credential delivered to SaaS before reporting success.
     command(['kubectl', '--kubeconfig', output, 'get', 'odooinstances', '--all-namespaces'], capture=True)
     if cfg.get('register_saas'):

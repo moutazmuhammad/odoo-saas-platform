@@ -552,14 +552,17 @@ Do it on all three nodes: each serves its own certificate.
 
 ### 12.3 Create the control plane's token and kubeconfig (node1)
 
+Customer Git builds require separate workers with the Build label and taint;
+they no longer run on tenant workers. See the [P0.19 runbook](../docs/P0.19-build-pool.md).
+Static workers provide placement isolation but do not establish DOKS autoscaling acceptance.
+
 Safe to run again, for example to rebuild the file:
 
 ```bash
 . /root/cluster.env
 [ -n "$API_HOST" ] || echo "!! API_HOST is empty: do step 2.2 first"
 kubectl -n kube-system create serviceaccount saas-control-plane --dry-run=client -o yaml | kubectl apply -f -
-kubectl create clusterrolebinding saas-control-plane --clusterrole=cluster-admin \
-  --serviceaccount=kube-system:saas-control-plane --dry-run=client -o yaml | kubectl apply -f -
+# The operator chart installs veltnex-control-plane and scoped RoleBindings.
 kubectl -n kube-system apply -f - <<'EOF'
 apiVersion: v1
 kind: Secret
@@ -583,7 +586,7 @@ EOF
 kubectl --kubeconfig /root/kubeconfig-prod get nodes      # all the nodes
 ```
 
-Don't use `microk8s config` instead: it's the permanent admin certificate. This token can be revoked by deleting its Secret. The control plane needs at least: create/update tenants, list the operator Deployment across namespaces, and read Leases in `kube-system` (its health check); `cluster-admin` covers all of it.
+Don't use `microk8s config` instead: it's the permanent admin certificate. This token can be revoked by deleting its Secret. Install the current operator chart with `controlPlaneRBAC.enabled=true` first (Kubernetes 1.30+). It grants OdooInstance writes, cluster inventory reads and scoped operational access. Verify the credential with the [P0.1 runbook](../docs/P0.1-control-plane-rbac.md); existing broad bindings require the staged migration there.
 
 | Error | Fix |
 |---|---|
@@ -594,19 +597,9 @@ Don't use `microk8s config` instead: it's the permanent admin certificate. This 
 
 ### 12.4 Staff cluster terminal (node1, optional)
 
-The **Terminal** button on a *Kubernetes Clusters* form opens `kubectl` and `helm` on the cluster in the browser. It runs in a toolbox pod that the control plane starts in the `saas-toolbox` namespace, as the `saas-toolbox` ServiceAccount. The control plane never grants permissions itself; you decide here what that ServiceAccount may do:
+The **Terminal** button uses the `saas-toolbox/saas-toolbox` account installed by the operator chart. Its `veltnex-toolbox-read` role can read cluster inventory and OdooInstances; it cannot read Secrets or change cluster resources. The pod runs as UID 1000 with all capabilities dropped. Staff administration uses a separate administrator kubeconfig.
 
-```bash
-kubectl create namespace saas-toolbox --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n saas-toolbox create serviceaccount saas-toolbox --dry-run=client -o yaml | kubectl apply -f -
-kubectl create clusterrolebinding saas-toolbox --clusterrole=cluster-admin \
-  --serviceaccount=saas-toolbox:saas-toolbox --dry-run=client -o yaml | kubectl apply -f -
-```
-
-- **Read-only instead:** use `--clusterrole=view`. The terminal can then list, describe and read logs, but not change anything.
-- **Who can open it:** users with *SaaS Terminal → Cluster Shell* on the Users form. Every session is logged on the cluster record.
-- **The pod:** `alpine/k8s` (kubectl and helm). It stops on its own after 8 hours and starts again on the next open.
-- **Turn it off:** `kubectl delete clusterrolebinding saas-toolbox`. To remove everything, also run `kubectl delete namespace saas-toolbox`.
+Users still need *SaaS Terminal → Cluster Shell* permission; sessions are logged and the pod expires after eight hours. For existing installations, remove legacy toolbox grants and recreate the old toolbox pod using the [P0.1 migration runbook](../docs/P0.1-control-plane-rbac.md).
 
 ---
 

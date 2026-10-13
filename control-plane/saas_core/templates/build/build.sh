@@ -1,13 +1,13 @@
 #!/bin/sh
-# Build Job, step 3 (rootless BuildKit): build /files/Dockerfile against the
-# prepared /workspace context, push IMAGE_REF, then print the result markers
+# Build Job client: submit /files/Dockerfile to the isolated rootless daemon
+# using the prepared /workspace context, push IMAGE_REF, then print the markers
 # the control plane parses from this container's log.
 set -eu
 output="type=image,name=${IMAGE_REF},push=true"
 if [ "${REGISTRY_INSECURE:-}" = "1" ]; then
   output="${output},registry.insecure=true"
 fi
-buildctl-daemonless.sh build \
+buildctl --addr "${BUILDKIT_HOST:?missing isolated BuildKit address}" build \
   --frontend dockerfile.v0 \
   --local context=/workspace \
   --local dockerfile=/files \

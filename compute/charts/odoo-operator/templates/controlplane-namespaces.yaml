@@ -1,0 +1,22 @@
+{{- if .Values.controlPlaneRBAC.enabled }}
+{{- $root := . }}
+{{- $names := dict .Values.controlPlaneRBAC.buildNamespace true .Values.controlPlaneRBAC.toolboxNamespace true .Values.controlPlaneRBAC.monitoring.namespace true .Values.controlPlaneRBAC.serviceAccount.namespace true }}
+{{- range $name, $_ := $names }}
+{{- if not (lookup "v1" "Namespace" "" $name) }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $name }}
+  annotations:
+    # Never remove shared namespaces on uninstall or take ownership of
+    # existing namespaces created by bootstrap or another Helm release.
+    helm.sh/resource-policy: keep
+  {{- if eq $name $root.Values.controlPlaneRBAC.toolboxNamespace }}
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

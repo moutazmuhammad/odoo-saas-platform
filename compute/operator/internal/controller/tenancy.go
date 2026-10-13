@@ -2,8 +2,11 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	saasv1alpha1 "github.com/freightright/odoo-saas-platform/operator/api/v1alpha1"
@@ -15,10 +18,27 @@ import (
 // reconciliation step: nothing else in this file can be applied before its
 // target namespace exists.
 func (r *OdooInstanceReconciler) reconcileTenancy(ctx context.Context, instance *saasv1alpha1.OdooInstance) error {
+	if err := r.validateTenantNamespace(instance); err != nil {
+		return err
+	}
+	if err := r.requireOwnedTenantNamespace(ctx, instance); err != nil {
+		return err
+	}
 	ns := resources.Namespace(instance)
 	setOwner(instance, ns)
 	if err := r.apply(ctx, ns); err != nil {
 		return err
+	}
+
+	if r.ControlPlaneServiceAccount != "" {
+		if r.ControlPlaneNamespace == "" {
+			return fmt.Errorf("control-plane namespace is required for tenant delegation")
+		}
+		binding := resources.TenantControlPlaneBinding(instance, r.ControlPlaneNamespace, r.ControlPlaneServiceAccount)
+		setOwner(instance, binding)
+		if err := r.apply(ctx, binding); err != nil {
+			return err
+		}
 	}
 
 	sa := resources.ServiceAccount(instance)
@@ -75,4 +95,23 @@ func preserveStorageQuota(quota *corev1.ResourceQuota, claims []corev1.Persisten
 		quota.Spec.Hard = quota.Spec.Hard.DeepCopy()
 		quota.Spec.Hard[corev1.ResourceRequestsStorage] = minimum
 	}
+}
+
+// Refuse to adopt a pre-existing namespace controlled by someone else, even
+// when its name has the tenant prefix. Namespace ownership is security state.
+func (r *OdooInstanceReconciler) requireOwnedTenantNamespace(ctx context.Context, instance *saasv1alpha1.OdooInstance) error {
+	var live corev1.Namespace
+	err := r.Get(ctx, types.NamespacedName{Name: resources.TenantNamespace(instance)}, &live)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, owner := range live.OwnerReferences {
+		if owner.APIVersion == saasv1alpha1.GroupVersion.String() && owner.Kind == "OdooInstance" && owner.UID == instance.UID && owner.Name == instance.Name {
+			return nil
+		}
+	}
+	return fmt.Errorf("refusing to adopt or delete a namespace not owned by this OdooInstance")
 }

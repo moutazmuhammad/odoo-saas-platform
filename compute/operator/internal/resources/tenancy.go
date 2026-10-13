@@ -2,6 +2,7 @@ package resources
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -117,4 +118,17 @@ func mergeLabels(base map[string]string, extra map[string]string) map[string]str
 		out[k] = v
 	}
 	return out
+}
+
+const TenantAccessRoleName = "veltnex-tenant-access"
+
+// TenantControlPlaneBinding delegates access only inside this tenant's namespace.
+// The identity comes from operator startup flags, never from an OdooInstance.
+func TenantControlPlaneBinding(instance *saasv1alpha1.OdooInstance, namespace, account string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		TypeMeta:   metav1.TypeMeta{APIVersion: rbacv1.SchemeGroupVersion.String(), Kind: "RoleBinding"},
+		ObjectMeta: metav1.ObjectMeta{Name: "veltnex-control-plane", Namespace: TenantNamespace(instance), Labels: CommonLabels(instance)},
+		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: TenantAccessRoleName},
+		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: account, Namespace: namespace}},
+	}
 }

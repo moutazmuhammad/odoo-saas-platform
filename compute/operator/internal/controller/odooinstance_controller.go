@@ -13,6 +13,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -68,6 +69,10 @@ type OdooInstanceReconciler struct {
 	// OperatorNamespace is the namespace the operator runs in.
 	OperatorNamespace string
 
+	// Control-plane identity delegated into validated tenant namespaces.
+	ControlPlaneServiceAccount string
+	ControlPlaneNamespace      string
+
 	// SupportedOdooVersions restricts spec.version to a known-good list.
 	// Empty means "no restriction" (development convenience only).
 	SupportedOdooVersions []string
@@ -86,6 +91,8 @@ type OdooInstanceReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=core,resources=pods/resize,verbs=patch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,resourceNames=veltnex-tenant-access,verbs=bind
 // +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=cronjobs;jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
@@ -119,6 +126,15 @@ func (r *OdooInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	defer func() {
 		reconcileDuration.WithLabelValues(instance.Name).Observe(time.Since(start).Seconds())
 	}()
+
+	// Namespace safety must precede deletion as well as provisioning: an
+	// OdooInstance is writable by the control plane, not a namespace capability.
+	if err := r.validateTenantNamespace(&instance); err != nil {
+		return r.handleReconcileError(ctx, &instance, "UnsafeTenantNamespace", err)
+	}
+	if err := r.requireOwnedTenantNamespace(ctx, &instance); err != nil {
+		return r.handleReconcileError(ctx, &instance, "UnsafeTenantNamespace", err)
+	}
 
 	// Deletion path.
 	if !instance.DeletionTimestamp.IsZero() {
@@ -434,6 +450,7 @@ func (r *OdooInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.Secret{}).
+		Owns(&rbacv1.RoleBinding{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&batchv1.Job{}).

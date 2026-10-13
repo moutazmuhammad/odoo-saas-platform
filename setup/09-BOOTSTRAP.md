@@ -121,9 +121,11 @@ For private platform images, set optional `dockerconfigjson` to a local Docker a
 
 ## Cluster readiness and SaaS registration
 
+Customer Git builds also require the separately provisioned [P0.19 Build pool](../docs/P0.19-build-pool.md). Bootstrap installs the chart's admission guards but does not create provider node pools. Without dedicated build capacity, builds remain Pending and eventually reach their deadline; tenant nodes are never a fallback.
+
 Both cluster scripts require Ready nodes, successful Helm releases/operator rollout, a temporary PVC write/read plus in-cluster DNS lookup, and a real certificate for `bootstrap-check.<domain>` issued through Traefik's HTTP-01 routing. The readiness Job/PVC are deleted after the storage check. The `saas-bootstrap/bootstrap-tls` certificate/secret remain for renewal and reuse across retries. A failed check stops the command; it does not report the cluster as ready.
 
-After those checks, the script exports a dedicated service-account kubeconfig with permissions matching the platform's existing cluster-admin integration. The output has mode `0600` and contains a long-lived credential: keep it private. The exported credential is tested against the API/CRD and does not depend on `doctl`, local admin certificates or exec auth plugins.
+After those checks, the script exports a dedicated service-account kubeconfig and verifies both required operations and forbidden cluster-wide privileges before replacing the output or registering SaaS. The operator chart installs the restricted roles and fixed namespaces; Kubernetes 1.30+ with ValidatingAdmissionPolicy is required. Existing cluster-admin bindings cause verification to fail until the [P0.1 migration](../docs/P0.1-control-plane-rbac.md) is completed. The output has mode `0600` and contains a long-lived credential: keep it private. It does not depend on `doctl`, local admin certificates or exec auth plugins.
 
 To register automatically, add this optional block to the cluster JSON **before** running `apply`:
 

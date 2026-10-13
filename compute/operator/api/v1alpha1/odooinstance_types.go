@@ -423,6 +423,9 @@ type TenancySpec struct {
 	// NamespaceOverride sets an explicit target namespace name instead of
 	// the default derived name (`odoo-tenant-<instance name>`). Immutable
 	// once set: moving a live tenant between namespaces is not supported.
+	// Non-empty overrides must remain inside the reserved odoo-tenant- prefix.
+	// +kubebuilder:validation:Pattern=`^(odoo-tenant-[a-z0-9]([-a-z0-9]*[a-z0-9])?)?$`
+	// +kubebuilder:validation:MaxLength=63
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="tenancy.namespaceOverride is immutable"
 	NamespaceOverride string `json:"namespaceOverride,omitempty"`

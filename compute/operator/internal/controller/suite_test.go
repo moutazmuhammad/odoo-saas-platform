@@ -89,12 +89,14 @@ func buildTestScheme() *runtime.Scheme {
 func testReconciler() *OdooInstanceReconciler {
 	ingressClass := "test"
 	return &OdooInstanceReconciler{
-		Client:                k8sClient,
-		Scheme:                k8sClient.Scheme(),
-		Recorder:              &discardRecorder{},
-		NetworkingProvider:    NetworkingProviderIngress,
-		IngressClassName:      &ingressClass,
-		SupportedOdooVersions: []string{"17.0", "18.0", "19.0"},
+		Client:                     k8sClient,
+		Scheme:                     k8sClient.Scheme(),
+		Recorder:                   &discardRecorder{},
+		NetworkingProvider:         NetworkingProviderIngress,
+		IngressClassName:           &ingressClass,
+		ControlPlaneServiceAccount: "saas-control-plane",
+		ControlPlaneNamespace:      "kube-system",
+		SupportedOdooVersions:      []string{"17.0", "18.0", "19.0"},
 	}
 }
 

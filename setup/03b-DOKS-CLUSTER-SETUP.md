@@ -63,6 +63,19 @@ kubectl get storageclass           # do-block-storage (default)
 
 This file holds an **admin** token that expires after a few days. Use it only for setup. The control plane gets its own permanent, revocable token in step 9.
 
+### 1.1 Dedicated Build pool (P0.19)
+
+Before enabling customer Git builds, provision a separate `build` pool with
+`saas.platform/pool=build` as both its label and a `NoSchedule` taint, autoscaling
+minimum zero and a reviewed maximum. Builds require this pool and cannot fall
+back to tenant nodes. Keep platform/tenant capacity in a separate non-build pool.
+
+Follow the [P0.19 provisioning and acceptance runbook](../docs/P0.19-build-pool.md)
+for the exact command, credential probe and scale-from/to-zero checks. The chart
+and SaaS update must be deployed together; the chart alone does not provision
+provider nodes. Keep `buildPoolIsolation.enabled=true`. Existing builds must
+finish or be cancelled before migration; tainting a node does not evict tenants.
+
 ---
 
 ## 2. Traffic: Traefik behind a Load Balancer
@@ -167,8 +180,7 @@ The control plane reads it through the Kubernetes API, so it is never exposed pu
 
 ```bash
 kubectl -n kube-system create serviceaccount saas-control-plane --dry-run=client -o yaml | kubectl apply -f -
-kubectl create clusterrolebinding saas-control-plane --clusterrole=cluster-admin \
-  --serviceaccount=kube-system:saas-control-plane --dry-run=client -o yaml | kubectl apply -f -
+# Restricted RBAC is installed by the operator chart in step 5.
 kubectl -n kube-system apply -f - <<'EOF'
 apiVersion: v1
 kind: Secret
@@ -179,14 +191,9 @@ type: kubernetes.io/service-account-token
 EOF
 ```
 
-**7.2 Staff terminal (optional).** The **Terminal** button on the cluster form runs `kubectl`/`helm` as this account. Use `--clusterrole=view` for read-only.
+**7.2 Staff terminal (optional).** The operator chart installs `saas-toolbox/saas-toolbox` with `veltnex-toolbox-read`: cluster inventory and OdooInstance reads only. The toolbox runs without root or added capabilities. Administrative changes use a separate administrator kubeconfig.
 
-```bash
-kubectl create namespace saas-toolbox --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n saas-toolbox create serviceaccount saas-toolbox --dry-run=client -o yaml | kubectl apply -f -
-kubectl create clusterrolebinding saas-toolbox --clusterrole=cluster-admin \
-  --serviceaccount=saas-toolbox:saas-toolbox --dry-run=client -o yaml | kubectl apply -f -
-```
+The chart requires Kubernetes 1.30+ for workload admission guards. Existing installations retain their old bindings until explicitly migrated. Follow the [P0.1 migration and permission checks](../docs/P0.1-control-plane-rbac.md) before accepting this cluster as restricted.
 
 ---
 

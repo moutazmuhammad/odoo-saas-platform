@@ -1269,15 +1269,24 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 'app.kubernetes.io/managed-by': 'saas-control-plane'}},
             'spec': {
                 'serviceAccountName': _TOOLBOX_NAME,
+                'securityContext': {
+                    'runAsNonRoot': True, 'runAsUser': 1000, 'runAsGroup': 1000,
+                    'seccompProfile': {'type': 'RuntimeDefault'},
+                },
                 'restartPolicy': 'Never',
                 'activeDeadlineSeconds': _TOOLBOX_LIFETIME,
                 'terminationGracePeriodSeconds': 5,
                 'containers': [{
                     'name': 'toolbox',
+                    'securityContext': {
+                        'allowPrivilegeEscalation': False,
+                        'capabilities': {'drop': ['ALL']},
+                    },
                     'image': self.server._toolbox_image(),
                     'command': ['sh', '-c',
                                 "trap 'exit 0' TERM; while :; do sleep 3600 & wait $!; done"],
-                    'env': [{'name': 'PS1', 'value': '[%s] \\w \\$ ' % self.server.name}],
+                    'env': [{'name': 'HOME', 'value': '/tmp'},
+                            {'name': 'PS1', 'value': '[%s] \\w \\$ ' % self.server.name}],
                     'resources': {
                         'requests': {'cpu': '10m', 'memory': '64Mi'},
                         'limits': {'cpu': '1', 'memory': '512Mi'},

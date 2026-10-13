@@ -5,7 +5,12 @@ A build is one Kubernetes Job in the shared ``odoo-builds`` namespace:
 1. ``fetch`` (git image): clone each repo at the exact commit.
 2. ``inspect`` (the Odoo base image, for Python): find each repo's addons
    directory and module versions, merge Python requirements.
-3. ``build`` (rootless BuildKit): build the tenant Dockerfile and push it.
+3. ``buildkitd`` (rootless native sidecar): execute the tenant Dockerfile.
+4. ``build`` (isolated buildctl client): supply credentials and push it.
+
+All steps require the tainted Build pool. The daemon has no registry Secret
+mount, client filesystem or shared process namespace; RUN steps cannot read
+the client's Docker configuration through the daemon's /proc filesystem.
 
 The build pod never gets Kubernetes API credentials; it reports back by
 printing marker lines (``SAAS_BUILD_DIGEST`` / ``SAAS_BUILD_RESULT``) that
@@ -32,6 +37,8 @@ from kubernetes import client as k8s_client
 from kubernetes.client.rest import ApiException
 
 BUILD_NAMESPACE = 'odoo-builds'
+BUILD_POOL_KEY = 'saas.platform/pool'
+BUILD_POOL_VALUE = 'build'
 _BUILD_LABEL = 'saas.odoo.example.com/build'
 _TENANT_PULL_SECRET = 'tenant-registry'
 # Per-build dockerconfigjson Secret (<job name> + suffix) the build pod's
@@ -116,9 +123,9 @@ class ImageBuildMixin:
         except ApiException as e:
             if e.status != 404:
                 raise RuntimeError('reading namespace %s failed: %s' % (BUILD_NAMESPACE, e)) from e
-            core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(
-                name=BUILD_NAMESPACE,
-                labels={'app.kubernetes.io/managed-by': 'saas-control-plane'})))
+            raise RuntimeError(
+                'Build namespace %s is missing. Install the operator chart and its '
+                'control-plane RBAC before starting builds.' % BUILD_NAMESPACE) from e
 
         egress = [
             {'to': [{'namespaceSelector': {}, 'podSelector': {'matchLabels': {'k8s-app': 'kube-dns'}}}],
@@ -231,16 +238,20 @@ class ImageBuildMixin:
             ]
         mounts = [{'name': 'workspace', 'mountPath': '/workspace'},
                   {'name': 'files', 'mountPath': '/files', 'readOnly': True}]
-        build_mounts = mounts + [{'name': 'buildkit', 'mountPath': '/home/user/.local/share/buildkit'}]
+        socket_mount = {'name': 'buildkit-socket', 'mountPath': '/run/buildkit'}
+        build_mounts = mounts + [socket_mount]
         volumes = [
             {'name': 'workspace', 'emptyDir': {}},
             {'name': 'files', 'configMap': {'name': name}},
             {'name': 'buildkit', 'emptyDir': {'sizeLimit': '20Gi'}},
+            {'name': 'buildkit-socket', 'emptyDir': {}},
         ]
         build_env = [
             {'name': 'IMAGE_REF', 'value': image_ref},
             {'name': 'REGISTRY_INSECURE', 'value': '1' if registry_insecure else ''},
-            {'name': 'BUILDKITD_FLAGS', 'value': '--oci-worker-no-process-sandbox --config /files/buildkitd.toml'},
+            {'name': 'BUILDKIT_HOST', 'value': 'unix:///run/buildkit/buildkitd.sock'},
+            {'name': 'DOCKER_CONFIG', 'value': '/home/user/.docker'},
+            {'name': 'HOME', 'value': '/tmp'},
         ]
         if registry_username:
             volumes.append({'name': 'docker-config', 'secret': {
@@ -260,6 +271,14 @@ class ImageBuildMixin:
                         'restartPolicy': 'Never',
                         'automountServiceAccountToken': False,
                         'enableServiceLinks': False,
+                        'shareProcessNamespace': False,
+                        'affinity': {'nodeAffinity': {'requiredDuringSchedulingIgnoredDuringExecution': {
+                            'nodeSelectorTerms': [{'matchExpressions': [{
+                                'key': BUILD_POOL_KEY, 'operator': 'In', 'values': [BUILD_POOL_VALUE],
+                            }]}],
+                        }}},
+                        'tolerations': [{'key': BUILD_POOL_KEY, 'operator': 'Equal',
+                                         'value': BUILD_POOL_VALUE, 'effect': 'NoSchedule'}],
                         # Scratch space is writable by the rootless user.
                         'securityContext': {'fsGroup': 1000,
                                             'fsGroupChangePolicy': 'OnRootMismatch'},
@@ -277,20 +296,47 @@ class ImageBuildMixin:
                              'volumeMounts': mounts,
                              'resources': {'requests': {'cpu': '100m', 'memory': '128Mi'},
                                            'limits': {'cpu': '500m', 'memory': '256Mi'}}},
+                            # A native sidecar exits with the Job. Keeping the
+                            # client in a separate PID/mount namespace matters:
+                            # no-process-sandbox RUNs can inspect daemon processes.
+                            {'name': 'buildkitd', 'image': builder_image,
+                             'restartPolicy': 'Always',
+                             'command': ['rootlesskit', 'buildkitd'],
+                             'args': ['--oci-worker-no-process-sandbox',
+                                      '--config', '/etc/buildkit/buildkitd.toml',
+                                      # RootlessKit maps namespace GID 0 to pod GID 1000.
+                                      '--addr', 'unix:///run/buildkit/buildkitd.sock', '--group', '0'],
+                             'volumeMounts': [
+                                 {'name': 'buildkit', 'mountPath': '/home/user/.local/share/buildkit'},
+                                 socket_mount,
+                                 {'name': 'files', 'mountPath': '/etc/buildkit/buildkitd.toml',
+                                  'subPath': 'buildkitd.toml', 'readOnly': True}],
+                             'securityContext': {
+                                 'runAsUser': 1000, 'runAsGroup': 1000,
+                                 'seccompProfile': {'type': 'Unconfined'},
+                                 'appArmorProfile': {'type': 'Unconfined'},
+                             },
+                             'startupProbe': {
+                                 'exec': {'command': ['buildctl', '--addr', 'unix:///run/buildkit/buildkitd.sock', 'debug', 'workers']},
+                                 'periodSeconds': 2, 'timeoutSeconds': 2, 'failureThreshold': 90},
+                             'resources': {
+                                 'requests': {'cpu': '500m', 'memory': '1Gi', 'ephemeral-storage': '4Gi'},
+                                 'limits': {'cpu': '2', 'memory': '4Gi', 'ephemeral-storage': '24Gi'},
+                             }},
                         ],
                         'containers': [{
                             'name': 'build', 'image': builder_image,
                             'command': ['sh', '/files/build.sh'],
                             'env': build_env, 'volumeMounts': build_mounts,
                             'securityContext': {
-                                # Rootless BuildKit's documented requirements.
-                                'runAsUser': 1000, 'runAsGroup': 1000,
-                                'seccompProfile': {'type': 'Unconfined'},
-                                'appArmorProfile': {'type': 'Unconfined'},
+                                'runAsNonRoot': True, 'runAsUser': 1001, 'runAsGroup': 1000,
+                                'allowPrivilegeEscalation': False,
+                                'capabilities': {'drop': ['ALL']},
+                                'seccompProfile': {'type': 'RuntimeDefault'},
                             },
                             'resources': {
-                                'requests': {'cpu': '500m', 'memory': '1Gi', 'ephemeral-storage': '4Gi'},
-                                'limits': {'cpu': '2', 'memory': '4Gi', 'ephemeral-storage': '24Gi'},
+                                'requests': {'cpu': '100m', 'memory': '128Mi'},
+                                'limits': {'cpu': '500m', 'memory': '512Mi'},
                             },
                         }],
                         'volumes': volumes,

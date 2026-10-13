@@ -42,6 +42,12 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           args:
+            {{- if .Values.controlPlaneRBAC.enabled }}
+            - --control-plane-service-account={{ .Values.controlPlaneRBAC.serviceAccount.name }}
+            - --control-plane-namespace={{ .Values.controlPlaneRBAC.serviceAccount.namespace }}
+            {{- else }}
+            - --control-plane-service-account=
+            {{- end }}
             - --leader-elect=false
             - --metrics-secure={{ .Values.metrics.secure }}
             - --networking-provider={{ .Values.networking.provider }}

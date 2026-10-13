@@ -64,6 +64,11 @@ func DatabaseSecretName(instance *saasv1alpha1.OdooInstance) string {
 	return "odoo-database-credentials"
 }
 
+// DatabaseAdminSecretName is never consumed by an Odoo workload.
+func DatabaseAdminSecretName(instance *saasv1alpha1.OdooInstance) string {
+	return "odoo-database-admin"
+}
+
 // DatabaseStatefulSetName is the name of the managed PostgreSQL workload.
 func DatabaseStatefulSetName(instance *saasv1alpha1.OdooInstance) string {
 	return "postgresql"

@@ -79,8 +79,12 @@ func main() {
 		supportedVersionsCSV  string
 		allowMutableTags      bool
 		secureMetrics         bool
+		controlPlaneAccount   string
+		controlPlaneNamespace string
 	)
 
+	flag.StringVar(&controlPlaneAccount, "control-plane-service-account", "saas-control-plane", "ServiceAccount granted access inside tenant namespaces; empty disables delegation.")
+	flag.StringVar(&controlPlaneNamespace, "control-plane-namespace", "kube-system", "Namespace of the platform control-plane ServiceAccount.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8443", "The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager. "+
@@ -154,6 +158,8 @@ func main() {
 		CNPGPostgresImageRepository: cnpgPostgresImageRepo,
 		PlatformPullSecret:          platformPullSecret,
 		OperatorNamespace:           operatorNamespace(),
+		ControlPlaneServiceAccount:  controlPlaneAccount,
+		ControlPlaneNamespace:       controlPlaneNamespace,
 		SupportedOdooVersions:       supportedVersions,
 		AllowMutableTags:            allowMutableTags,
 	}

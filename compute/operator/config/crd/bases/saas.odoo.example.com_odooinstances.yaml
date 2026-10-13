@@ -693,6 +693,9 @@ spec:
                       NamespaceOverride sets an explicit target namespace name instead of
                       the default derived name (`odoo-tenant-<instance name>`). Immutable
                       once set: moving a live tenant between namespaces is not supported.
+                      Non-empty overrides must remain inside the reserved odoo-tenant- prefix.
+                    maxLength: 63
+                    pattern: ^(odoo-tenant-[a-z0-9]([-a-z0-9]*[a-z0-9])?)?$
                     type: string
                     x-kubernetes-validations:
                     - message: tenancy.namespaceOverride is immutable

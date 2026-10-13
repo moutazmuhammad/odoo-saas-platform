@@ -1,0 +1,40 @@
+{{- if .Values.buildPoolIsolation.enabled }}
+{{- if not (semverCompare ">=1.30.0-0" .Capabilities.KubeVersion.Version) }}
+{{- fail "buildPoolIsolation requires Kubernetes >= 1.30 with ValidatingAdmissionPolicy and native sidecars enabled" }}
+{{- end }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: veltnex-build-pool-isolation
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods, pods/ephemeralcontainers]
+  matchConditions:
+    - name: platform-or-tenant-pod
+      expression: "object.metadata.namespace in ['odoo-builds', 'saas-toolbox', {{ .Release.Namespace | squote }}] || object.metadata.namespace.startsWith('odoo-tenant-')"
+  validations:
+    # All selector terms are ORed: each must restrict placement to build nodes.
+    - expression: "object.metadata.namespace != 'odoo-builds' || (has(object.spec.affinity) && has(object.spec.affinity.nodeAffinity) && has(object.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution) && size(object.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms) > 0 && object.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms.all(t, has(t.matchExpressions) && t.matchExpressions.exists(e, e.key == 'saas.platform/pool' && e.operator == 'In' && has(e.values) && size(e.values) == 1 && e.values[0] == 'build')))"
+      message: "Build pods require node affinity exclusively to saas.platform/pool=build."
+    - expression: "object.metadata.namespace != 'odoo-builds' || (has(object.spec.tolerations) && object.spec.tolerations.exists(t, has(t.key) && t.key == 'saas.platform/pool' && (!has(t.operator) || t.operator == 'Equal') && has(t.value) && t.value == 'build' && has(t.effect) && t.effect == 'NoSchedule'))"
+      message: "Build pods require the exact build pool NoSchedule toleration."
+    - expression: "object.metadata.namespace == 'odoo-builds' || !has(object.spec.tolerations) || object.spec.tolerations.all(t, !((!has(t.effect) || t.effect == '' || t.effect == 'NoSchedule') && ((has(t.operator) && t.operator == 'Exists' && (!has(t.key) || t.key == '' || t.key == 'saas.platform/pool')) || (has(t.key) && t.key == 'saas.platform/pool' && (!has(t.operator) || t.operator == 'Equal') && has(t.value) && t.value == 'build'))))"
+      message: "Tenant, toolbox and operator pods cannot tolerate the build pool taint."
+    - expression: "request.operation != 'CREATE' || !has(object.spec.nodeName) || object.spec.nodeName == ''"
+      message: "Direct node assignment bypasses pool isolation and is forbidden."
+    - expression: "object.metadata.namespace != 'odoo-builds' || !has(object.spec.shareProcessNamespace) || !object.spec.shareProcessNamespace"
+      message: "Build clients and daemons must have separate process namespaces."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: veltnex-build-pool-isolation
+spec:
+  policyName: veltnex-build-pool-isolation
+  validationActions: [Deny]
+{{- end }}

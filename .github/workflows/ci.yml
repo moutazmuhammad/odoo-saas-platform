@@ -198,6 +198,9 @@ jobs:
         working-directory: compute/operator
     steps:
       - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
       - uses: actions/setup-go@v5
         with:
           go-version-file: compute/operator/go.mod
@@ -206,6 +209,12 @@ jobs:
         run: go vet ./...
       - name: Unit + envtest suites
         run: make test
+      - name: PostgreSQL tools for database-role integration tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql postgresql-contrib libpq-dev
+      - name: Database-role SQL, authentication and restore integration
+        run: python3 -m unittest discover -s test -p 'test_database_roles*.py' -v
 
   image-scan:
     # SEC-007 (supply chain) — proactive guard against shipping a

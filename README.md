@@ -93,6 +93,8 @@ References:
 
 | Doc | For |
 |---|---|
+| [PLAN-managed-hosting.md](PLAN-managed-hosting.md) | Managed Hosting plan: economics, architecture, launch blockers, Codex backlog (proposed, awaiting approval) |
+| [PLAN-byos.md](PLAN-byos.md) | Bring-your-own-server plan |
 | [setup/04-IMAGES-AND-REGISTRY.md](setup/04-IMAGES-AND-REGISTRY.md) | Every image, building them, the tenant build pipeline, private registries |
 | [setup/05-DEVELOPMENT.md](setup/05-DEVELOPMENT.md) | Local dev environment, tests, SPA build, customer docs |
 | [setup/06-CICD.md](setup/06-CICD.md) | Automated builds/deployments, required GitHub secrets, server bootstrap and rollback |

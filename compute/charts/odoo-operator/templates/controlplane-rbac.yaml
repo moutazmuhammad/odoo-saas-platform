@@ -1,0 +1,273 @@
+{{- if .Values.controlPlaneRBAC.enabled }}
+{{- $cp := .Values.controlPlaneRBAC.serviceAccount }}
+{{- if not (lookup "v1" "ServiceAccount" $cp.namespace $cp.name) }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $cp.name }}
+  namespace: {{ $cp.namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+automountServiceAccountToken: false
+---
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: veltnex-control-plane
+rules:
+  - apiGroups: [saas.odoo.example.com]
+    resources: [odooinstances]
+    verbs: [get, list, watch, create, patch, delete]
+  - apiGroups: [""]
+    resources: [namespaces, nodes]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: veltnex-control-plane
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: veltnex-control-plane
+subjects:
+  - kind: ServiceAccount
+    name: {{ $cp.name }}
+    namespace: {{ $cp.namespace }}
+---
+# This role is NEVER bound cluster-wide. The operator binds it only in a
+# validated namespace owned by the matching OdooInstance.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: veltnex-tenant-access
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, create, delete]
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [get, create]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, create, update, patch]
+  - apiGroups: [""]
+    resources: [configmaps, serviceaccounts]
+    verbs: [get]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, create]
+  - apiGroups: [batch]
+    resources: [cronjobs]
+    verbs: [get]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: veltnex-control-plane-builds
+  namespace: {{ .Values.controlPlaneRBAC.buildNamespace }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets, configmaps]
+    verbs: [get, create, update, patch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, create, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    resourceNames: [build-egress]
+    verbs: [get, update]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: veltnex-control-plane
+  namespace: {{ .Values.controlPlaneRBAC.buildNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: veltnex-control-plane-builds
+subjects:
+  - kind: ServiceAccount
+    name: {{ $cp.name }}
+    namespace: {{ $cp.namespace }}
+---
+{{- if not (lookup "v1" "ServiceAccount" .Values.controlPlaneRBAC.toolboxNamespace "saas-toolbox") }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: saas-toolbox
+  namespace: {{ .Values.controlPlaneRBAC.toolboxNamespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+---
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: veltnex-toolbox-read
+rules:
+  - apiGroups: [saas.odoo.example.com]
+    resources: [odooinstances]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [namespaces, nodes]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: veltnex-toolbox-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: veltnex-toolbox-read
+subjects:
+  - kind: ServiceAccount
+    name: saas-toolbox
+    namespace: {{ .Values.controlPlaneRBAC.toolboxNamespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: veltnex-control-plane-toolbox
+  namespace: {{ .Values.controlPlaneRBAC.toolboxNamespace }}
+rules:
+  - apiGroups: [""]
+    resources: [serviceaccounts]
+    resourceNames: [saas-toolbox]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    resourceNames: [saas-toolbox]
+    verbs: [get, delete]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [pods/exec]
+    resourceNames: [saas-toolbox]
+    verbs: [get, create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [saas-toolbox-registry]
+    verbs: [update]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: veltnex-control-plane
+  namespace: {{ .Values.controlPlaneRBAC.toolboxNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: veltnex-control-plane-toolbox
+subjects:
+  - kind: ServiceAccount
+    name: {{ $cp.name }}
+    namespace: {{ $cp.namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: veltnex-control-plane-metrics
+  namespace: {{ .Values.controlPlaneRBAC.monitoring.namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [services/proxy]
+    resourceNames: {{ .Values.controlPlaneRBAC.monitoring.serviceNames | toJson }}
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: veltnex-control-plane
+  namespace: {{ .Values.controlPlaneRBAC.monitoring.namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: veltnex-control-plane-metrics
+subjects:
+  - kind: ServiceAccount
+    name: {{ $cp.name }}
+    namespace: {{ $cp.namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: veltnex-control-plane-system
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [cluster-autoscaler-status]
+    verbs: [get]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    resourceNames: [kube-scheduler, kube-controller-manager]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: veltnex-control-plane-system
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: veltnex-control-plane-system
+subjects:
+  - kind: ServiceAccount
+    name: {{ $cp.name }}
+    namespace: {{ $cp.namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: veltnex-control-plane-operator-health
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    resourceNames: [odoo-instance-operator.saas.odoo.example.com]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: veltnex-control-plane-operator-health
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: veltnex-control-plane-operator-health
+subjects:
+  - kind: ServiceAccount
+    name: {{ $cp.name }}
+    namespace: {{ $cp.namespace }}
+{{- end }}

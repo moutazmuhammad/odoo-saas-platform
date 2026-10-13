@@ -20,7 +20,7 @@ class BuildCommandTests(unittest.TestCase):
             script = work / 'build.sh'
             script.write_text((ROOT / 'control-plane/saas_core/templates/build/build.sh')
                               .read_text().replace('/workspace', str(workspace)))
-            binary = work / 'buildctl-daemonless.sh'
+            binary = work / 'buildctl'
             binary.write_text('#!' + sys.executable + '\n' + '''
 import json, os, pathlib, sys
 args = sys.argv[1:]
@@ -41,6 +41,7 @@ pathlib.Path(args[args.index('--metadata-file') + 1]).write_text(
             binary.chmod(0o755)
             env = dict(os.environ, PATH=str(work) + os.pathsep + os.environ['PATH'],
                        IMAGE_REF='registry.example.com/team/tenant:build-123',
+                       BUILDKIT_HOST='unix:///run/buildkit/buildkitd.sock',
                        REGISTRY_INSECURE='1' if insecure else '',
                        BUILD_FAIL='1' if fail else '', BUILD_CALL=str(work / 'call.json'))
             result = subprocess.run(['sh', script], env=env, capture_output=True, text=True, timeout=10)
@@ -53,6 +54,7 @@ pathlib.Path(args[args.index('--metadata-file') + 1]).write_text(
         # Empty means all stages; "true" would name a stage instead.
         self.assertEqual(call['options']['no-cache'], '')
         self.assertEqual(call['options']['filename'], 'Dockerfile')
+        self.assertEqual(call['args'][:3], ['--addr', 'unix:///run/buildkit/buildkitd.sock', 'build'])
         output = call['args'][call['args'].index('--output') + 1]
         self.assertEqual(output, 'type=image,name=registry.example.com/team/tenant:build-123,push=true')
         self.assertIn('SAAS_BUILD_DIGEST sha256:' + 'a' * 64, result.stdout)

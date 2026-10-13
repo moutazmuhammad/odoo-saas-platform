@@ -89,6 +89,10 @@ class BackupRestoreTest(unittest.TestCase):
         result = self.run_tool('run-restore.sh')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len([c for c in self.commands() if c[0] == 'pg_restore']), 1)
+        restore = next(c for c in self.commands() if c[0] == 'pg_restore')
+        self.assertIn('--no-owner', restore)
+        self.assertIn('--no-privileges', restore)
+        self.assertIn('--role=' + self.env['DB_USER'], restore)
 
     def test_cross_instance_restore_maps_database_and_filestore(self):
         self.fixture(['source_live'])

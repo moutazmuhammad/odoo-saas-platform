@@ -2,7 +2,10 @@ package controller
 
 import (
 	"fmt"
+	"github.com/freightright/odoo-saas-platform/operator/internal/resources"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"slices"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
@@ -137,4 +140,15 @@ func isMutableTag(tag string) bool {
 		return true
 	}
 	return false
+}
+
+func (r *OdooInstanceReconciler) validateTenantNamespace(instance *saasv1alpha1.OdooInstance) error {
+	name := resources.TenantNamespace(instance)
+	if !strings.HasPrefix(name, saasv1alpha1.NamespacePrefix) || len(name) == len(saasv1alpha1.NamespacePrefix) || len(validation.IsDNS1123Label(name)) != 0 {
+		return fmt.Errorf("tenant namespaces must be valid DNS labels starting with %s", saasv1alpha1.NamespacePrefix)
+	}
+	if name == r.OperatorNamespace || name == r.GatewayNamespace || name == r.ControlPlaneNamespace {
+		return fmt.Errorf("tenant namespace collides with a protected platform namespace")
+	}
+	return nil
 }

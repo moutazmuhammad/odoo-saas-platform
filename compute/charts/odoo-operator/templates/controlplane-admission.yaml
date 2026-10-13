@@ -1,0 +1,60 @@
+{{- if .Values.controlPlaneRBAC.enabled }}
+{{- if not (semverCompare ">=1.30.0-0" .Capabilities.KubeVersion.Version) }}
+{{- fail "controlPlaneRBAC requires Kubernetes >= 1.30 with ValidatingAdmissionPolicy enabled" }}
+{{- end }}
+{{- if or (ne .Values.controlPlaneRBAC.buildNamespace "odoo-builds") (ne .Values.controlPlaneRBAC.toolboxNamespace "saas-toolbox") }}
+{{- fail "controlPlaneRBAC buildNamespace/toolboxNamespace must match the control-plane driver: odoo-builds/saas-toolbox" }}
+{{- end }}
+# Namespace-scoped workload creation must not bypass RBAC by mounting host
+# credentials or a privileged ServiceAccount. Rootless BuildKit still needs
+# Unconfined seccomp/AppArmor; its node isolation is P0.19, not granted here.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: veltnex-control-plane-workloads
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods, pods/ephemeralcontainers]
+  matchConditions:
+    - name: platform-workload-namespace
+      expression: "object.metadata.namespace in [{{ .Values.controlPlaneRBAC.buildNamespace | squote }}, {{ .Values.controlPlaneRBAC.toolboxNamespace | squote }}]"
+  variables:
+    - name: containers
+      expression: "object.spec.containers + (has(object.spec.initContainers) ? object.spec.initContainers : []) + (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])"
+  validations:
+    - expression: "!has(object.spec.securityContext) || !has(object.spec.securityContext.sysctls) || size(object.spec.securityContext.sysctls) == 0"
+      message: "Platform workload sysctl overrides are forbidden."
+    - expression: "variables.containers.all(c, !has(c.securityContext) || ((!has(c.securityContext.procMount) || c.securityContext.procMount == 'Default') && (!has(c.securityContext.windowsOptions) || !has(c.securityContext.windowsOptions.hostProcess) || !c.securityContext.windowsOptions.hostProcess)))"
+      message: "Unmasked proc mounts and Windows host processes are forbidden."
+    - expression: "(!has(object.spec.hostNetwork) || !object.spec.hostNetwork) && (!has(object.spec.hostPID) || !object.spec.hostPID) && (!has(object.spec.hostIPC) || !object.spec.hostIPC)"
+      message: "Platform builds and toolbox pods cannot share host namespaces."
+    - expression: "!has(object.spec.volumes) || object.spec.volumes.all(v, !has(v.hostPath))"
+      message: "Host filesystem mounts are forbidden."
+    - expression: "variables.containers.all(c, !has(c.securityContext) || ((!has(c.securityContext.privileged) || !c.securityContext.privileged) && (!has(c.securityContext.capabilities) || !has(c.securityContext.capabilities.add) || size(c.securityContext.capabilities.add) == 0)))"
+      message: "Privileged containers and added Linux capabilities are forbidden."
+    - expression: "variables.containers.all(c, !has(c.ports) || c.ports.all(p, !has(p.hostPort) || p.hostPort == 0))"
+      message: "Host ports are forbidden."
+    - expression: "object.metadata.namespace != {{ .Values.controlPlaneRBAC.buildNamespace | squote }} || ((!has(object.spec.serviceAccountName) || object.spec.serviceAccountName == 'default') && has(object.spec.automountServiceAccountToken) && !object.spec.automountServiceAccountToken)"
+      message: "Builds use only the default ServiceAccount without an API token."
+    - expression: "object.metadata.namespace != {{ .Values.controlPlaneRBAC.buildNamespace | squote }} || !has(object.spec.volumes) || object.spec.volumes.all(v, !has(v.projected) || v.projected.sources.all(s, !has(s.serviceAccountToken)))"
+      message: "Builds cannot request projected ServiceAccount tokens."
+    - expression: "object.metadata.namespace != {{ .Values.controlPlaneRBAC.toolboxNamespace | squote }} || (!has(object.spec.serviceAccountName) || object.spec.serviceAccountName in ['default', 'saas-toolbox'])"
+      message: "Toolbox pods can use only their restricted ServiceAccount."
+    - expression: "object.metadata.namespace != {{ .Values.controlPlaneRBAC.toolboxNamespace | squote }} || (has(object.spec.securityContext) && has(object.spec.securityContext.runAsNonRoot) && object.spec.securityContext.runAsNonRoot && (!has(object.spec.securityContext.runAsUser) || object.spec.securityContext.runAsUser != 0) && has(object.spec.securityContext.seccompProfile) && object.spec.securityContext.seccompProfile.type == 'RuntimeDefault' && variables.containers.all(c, has(c.securityContext) && has(c.securityContext.allowPrivilegeEscalation) && !c.securityContext.allowPrivilegeEscalation && (!has(c.securityContext.runAsUser) || c.securityContext.runAsUser != 0) && (!has(c.securityContext.runAsNonRoot) || c.securityContext.runAsNonRoot) && (!has(c.securityContext.seccompProfile) || c.securityContext.seccompProfile.type == 'RuntimeDefault') && has(c.securityContext.capabilities) && has(c.securityContext.capabilities.drop) && 'ALL' in c.securityContext.capabilities.drop))"
+      message: "Toolbox pods must use non-root users, RuntimeDefault seccomp and drop all capabilities."
+    - expression: "object.metadata.namespace != {{ .Values.controlPlaneRBAC.toolboxNamespace | squote }} || !has(object.spec.volumes) || object.spec.volumes.all(v, has(v.configMap) || has(v.emptyDir) || has(v.projected) || has(v.secret) || has(v.downwardAPI) || has(v.persistentVolumeClaim) || has(v.csi))"
+      message: "Toolbox volume types must satisfy the restricted Pod Security profile."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: veltnex-control-plane-workloads
+spec:
+  policyName: veltnex-control-plane-workloads
+  validationActions: [Deny]
+{{- end }}

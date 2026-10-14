@@ -88,7 +88,7 @@ class SaasJob(models.Model):
     def enqueue(self, record, method, args=(), *, idempotency_key=None,
                  channel='default', lock_key=None, max_attempts=3,
                  idempotent=False, priority=10, eta=None, run_now=True,
-                 on_error=None, on_error_args=()):
+                 on_error=None, on_error_args=(), transactional=False):
         """Persist a job and return its record. Idempotent on
         ``idempotency_key``: if a pending/running/done job already carries it,
         that job is returned and nothing new is created.
@@ -97,6 +97,11 @@ class SaasJob(models.Model):
         an immediate background worker so the job starts promptly — like the old
         ``run_in_background`` — while the durable row + reaper guarantee it still
         runs if that worker (or the process) dies. The cron is the backstop.
+
+        ``transactional`` keeps the job inside the caller's transaction: the
+        caller's cursor is never committed here, so the job exists only if the
+        caller's work commits (a rolled-back payment queues nothing). The
+        immediate worker, when one is needed, starts after that commit.
 
         Public cross-addon API: called from saas_billing (account_move.py)
         in addition to saas_core's own instance/backup/webhook code.
@@ -126,7 +131,10 @@ class SaasJob(models.Model):
         # Delivered on commit: wakes a dedicated worker right away.
         self.env.cr.execute('NOTIFY %s' % self._NOTIFY_CHANNEL)
         if run_now and not eta:
-            job._spawn_worker()
+            if transactional:
+                job._spawn_worker_after_commit()
+            else:
+                job._spawn_worker()
         return job
 
     @api.model
@@ -205,6 +213,34 @@ class SaasJob(models.Model):
 
         threading.Thread(
             target=_target, name='saas_job_%s' % job_id, daemon=True).start()
+
+    def _spawn_worker_after_commit(self):
+        """Like ``_spawn_worker``, but leaves the caller's transaction alone:
+        once it commits, a thread with its own cursor runs the job (unless a
+        dedicated worker, woken by NOTIFY, or the channel cap says otherwise).
+        A rollback discards the callback together with the job."""
+        self.ensure_one()
+        job_id = self.id
+        channel = self.channel
+        dbname = self.env.cr.dbname
+
+        def _target():
+            import odoo
+            from odoo import api as odoo_api, SUPERUSER_ID
+            try:
+                reg = odoo.modules.registry.Registry(dbname)
+                with reg.cursor() as cr:
+                    env = odoo_api.Environment(cr, SUPERUSER_ID, {})
+                    Job = env['saas.job']
+                    if (Job._dedicated_worker_alive()
+                            or not Job._should_spawn_now(channel)):
+                        return  # the worker process or the cron runs it
+                    Job._worker_loop(job_id, channel)
+            except Exception:
+                _logger.exception("saas.job %s worker thread crashed", job_id)
+
+        self.env.cr.postcommit.add(lambda: threading.Thread(
+            target=_target, name='saas_job_%s' % job_id, daemon=True).start())
 
     @api.model
     def _worker_loop(self, first_job_id, channel):

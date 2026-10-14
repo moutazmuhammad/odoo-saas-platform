@@ -240,6 +240,8 @@ class AccountMove(models.Model):
             )
             if paid_for_instance:
                 instance._capture_payment_token_from_invoice(paid_for_instance[:1])
+            order_invoice = (paid_invoices
+                             & instance.sale_order_id.invoice_ids)[:1]
             instance._append_log("Payment received.")
             instance.message_post(
                 body=_("Payment received. Deploying instance automatically."),
@@ -248,13 +250,8 @@ class AccountMove(models.Model):
                 "SaaS instance %s: payment received, queuing auto-deploy.",
                 instance.subdomain,
             )
-            # Deploy in background thread — decoupled from the accounting write
-            run_in_background(
-                instance, '_do_deploy_after_payment',
-                error_method='_on_background_error',
-                error_args=('failed',),
-                thread_name='saas_deploy_payment_%s' % instance.subdomain,
-            )
+            # Durable job in this transaction: no paid order is lost on restart.
+            instance._enqueue_deploy_after_payment(order_invoice)
         # --- Handle pending plan changes (trial upgrade or paid plan change) ---
         # Match by the explicit invoice link first (exact — survives
         # sale_order_id being overwritten between request and payment),

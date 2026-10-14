@@ -1202,10 +1202,11 @@ class SaasInstance(models.Model):
                         % (child_repo.name, e))
         return child
 
-    def _activate_pending_environment(self):
+    def _activate_pending_environment(self, invoice=None):
         """Provision a paid Staging/Development child and deploy (saas_billing
-        clears the activation invoice). Children never get their own billing cycle (the
-        recurring cost rides the Production renewal)."""
+        clears the activation invoice and passes it as *invoice*). Children
+        never get their own billing cycle (the recurring cost rides the
+        Production renewal)."""
         self.ensure_one()
         if self.environment == 'production':
             return
@@ -1223,10 +1224,21 @@ class SaasInstance(models.Model):
         self._append_log("Environment payment received — deploying.")
         self.message_post(body=_(
             "Environment server payment received. Deploying automatically."))
-        run_in_background(
-            self, '_do_deploy_after_payment',
-            error_method='_on_background_error', error_args=('failed',),
-            thread_name='saas_env_deploy_%s' % self.subdomain)
+        self._enqueue_deploy_after_payment(invoice)
+
+    def _enqueue_deploy_after_payment(self, invoice=None):
+        """Queue the post-payment deploy as a durable job inside the current
+        (payment) transaction: it commits or rolls back with the payment, so a
+        process restart can't lose a paid order. Keyed on invoice + instance,
+        so a repeated payment notice queues nothing new."""
+        self.ensure_one()
+        return self.env['saas.job'].enqueue(
+            self, '_do_deploy_after_payment', channel='deploy',
+            idempotency_key='deploy:inv%s:inst%s' % (
+                invoice.id if invoice else 0, self.id),
+            lock_key='instance:%s' % self.id, idempotent=True,
+            on_error='_on_background_error', on_error_args=('failed',),
+            transactional=True)
 
     def _env_slots_for(self, env_type):
         """Purchased slot count for an env type on this Production anchor."""
@@ -4663,8 +4675,16 @@ END $$;
     # ========== Deploy Flow ==========
 
     def _do_deploy_after_payment(self):
-        """Background deploy triggered by payment — instance already in 'paid' state."""
+        """Durable job body: deploy an instance whose payment landed. Only a
+        'paid' instance deploys; a re-run after the deploy already moved on
+        (the reaper requeued a job that died after its commit) is a no-op
+        instead of an error that would fail a healthy instance."""
         self.ensure_one()
+        if self.state != 'paid':
+            _logger.info(
+                "SaaS instance %s: post-payment deploy skipped (state %s).",
+                self.subdomain, self.state)
+            return
         self.action_deploy()
 
     def action_deploy(self):

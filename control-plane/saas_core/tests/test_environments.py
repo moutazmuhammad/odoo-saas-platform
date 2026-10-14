@@ -320,13 +320,13 @@ class TestEnvironments(TransactionCase):
         self.assertEqual((prod.staging_slots, prod.dev_slots), (0, 0))
         invoice = prod.sale_order_id.invoice_ids
 
-        def queue_deploy(instance, method, **kwargs):
+        def queue_deploy(instance, paid_invoice=None):
             self.assertEqual(instance, prod)
-            self.assertEqual(method, '_do_deploy_after_payment')
+            self.assertEqual(paid_invoice, invoice)
             self._assert_checkout_slots_granted(prod)
 
-        with patch('odoo.addons.saas_billing.models.account_move.run_in_background',
-                   side_effect=queue_deploy) as deploy:
+        with patch.object(type(prod), '_enqueue_deploy_after_payment',
+                          autospec=True, side_effect=queue_deploy) as deploy:
             invoice.write({'payment_state': 'paid'})
             invoice._saas_check_instance_payment()
         deploy.assert_called_once()

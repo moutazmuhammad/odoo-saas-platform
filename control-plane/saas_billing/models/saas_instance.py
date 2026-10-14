@@ -3336,9 +3336,10 @@ class SaasInstance(models.Model):
         })
         return vals
 
-    def _activate_pending_environment(self):
+    def _activate_pending_environment(self, invoice=None):
+        invoice = invoice or self.env_pending_invoice_id
         self.env_pending_invoice_id = False
-        return super()._activate_pending_environment()
+        return super()._activate_pending_environment(invoice)
 
     def _env_child_extra_vals(self):
         vals = super()._env_child_extra_vals()

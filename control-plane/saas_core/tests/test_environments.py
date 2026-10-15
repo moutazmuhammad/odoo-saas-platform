@@ -221,7 +221,7 @@ class TestEnvironments(TransactionCase):
             self.assertAlmostEqual(invoice.amount_total, result['charge'], 2)
             # Optional origin: leaving it unpaid never suspends the server.
             self.assertTrue(child._is_optional_invoice(invoice))
-            # Payment: the account.move hook calls _apply_pending_plan_change.
+            # Payment: the queued plan-change job calls _apply_pending_plan_change.
             child._apply_pending_plan_change()
         self.assertEqual(child.plan_id, big)
         self.assertFalse(child.pending_plan_id)

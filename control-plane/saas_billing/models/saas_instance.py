@@ -2051,40 +2051,43 @@ class SaasInstance(models.Model):
         """Safety net for the payment hook: apply pending plan changes
         whose invoice is already paid.
 
-        The normal path is ``_saas_check_instance_payment()`` firing when
-        the invoice's payment_state flips, then applying the change in a
-        background thread. If that is ever missed (thread killed mid-way,
-        payment post-processed while the module was upgrading, hook error
-        rolled back with the payment retried independently), the customer
-        has paid but stays on the old plan forever — there was no retry.
-        This cron converges those stragglers.
+        The normal path is ``_saas_check_instance_payment()`` queuing a
+        durable job in the payment transaction. If that is ever missed
+        (payment post-processed while the module was upgrading, or a job
+        that failed terminally), the customer has paid but stays on the old
+        plan. This cron queues the same keyed job again, so it never races
+        or duplicates a queued one.
         """
         instances = self.search([('pending_plan_id', '!=', False)])
+        Job = self.env['saas.job'].sudo()
         for instance in instances:
             try:
                 invoice = instance._paid_pending_change_invoice()
                 if not invoice:
                     continue
-                method = ('_apply_pending_upgrade' if instance.is_trial
-                          else '_apply_pending_plan_change')
+                key = 'planchange:inv%s:inst%s' % (invoice.id, instance.id)
+                if Job.search_count([
+                        ('idempotency_key', '=', key),
+                        ('state', 'in', ('pending', 'running', 'done'))]):
+                    continue  # queued or applied: enqueue would dedupe it
                 _logger.info(
                     "SaaS instance %s: invoice %s for pending change to %s "
-                    "is paid but the change was never applied — applying "
-                    "now (safety-net cron, %s).",
+                    "is paid but the change was never applied — queuing it "
+                    "(safety-net cron).",
                     instance.subdomain, invoice.name,
-                    instance.pending_plan_id.name, method,
+                    instance.pending_plan_id.name,
                 )
                 instance._append_log(
                     "Pending plan change invoice %s is paid but the change "
-                    "was never applied — applying now (safety-net cron)."
+                    "was never applied — queued again (safety-net cron)."
                     % invoice.name
                 )
-                getattr(instance, method)()
+                instance._enqueue_paid_plan_change(invoice)
                 self.env.cr.commit()
             except Exception:
                 self.env.cr.rollback()
                 _logger.exception(
-                    "Safety-net cron failed to apply paid pending plan "
+                    "Safety-net cron failed to queue paid pending plan "
                     "change for %s", instance.subdomain,
                 )
 
@@ -2696,8 +2699,8 @@ class SaasInstance(models.Model):
             self._append_log("Reactivating instance after paid subscription.")
             try:
                 # Use _do_restart synchronously here (we're already inside
-                # the background payment thread). action_restart would
-                # spawn another bg thread and decouple error reporting.
+                # the durable plan-change job). action_restart would queue
+                # separate work and decouple error reporting.
                 self._do_restart()
             except Exception as e:
                 # Leave plan/trial unchanged so the customer can retry.
@@ -3035,6 +3038,47 @@ class SaasInstance(models.Model):
             return True
 
         return invoice
+
+    def _enqueue_paid_plan_change(self, invoice):
+        """Queue the pending plan change paid by *invoice* as a durable job
+        inside the current transaction. Keyed on invoice + instance, so a
+        repeated payment notice or the safety-net cron queues nothing new."""
+        self.ensure_one()
+        return self.env['saas.job'].enqueue(
+            self, '_do_apply_paid_plan_change', args=(invoice.id,),
+            channel='deploy',
+            idempotency_key='planchange:inv%s:inst%s' % (invoice.id, self.id),
+            lock_key='instance:%s' % self.id, idempotent=True,
+            on_error='_on_plan_change_job_error', transactional=True)
+
+    def _do_apply_paid_plan_change(self, invoice_id):
+        """Durable job body: apply the pending change *invoice_id* paid for.
+        A no-op once it is applied, or when a newer request replaced it, so a
+        re-run can never apply a change twice or apply an unpaid one."""
+        self.ensure_one()
+        if (not self.pending_plan_id
+                or self._paid_pending_change_invoice().id != invoice_id):
+            _logger.info(
+                "SaaS instance %s: paid plan change for invoice %s already "
+                "applied or superseded; nothing to do.",
+                self.subdomain, invoice_id)
+            return
+        if self.is_trial:
+            self._apply_pending_upgrade()
+        else:
+            self._apply_pending_plan_change()
+
+    def _on_plan_change_job_error(self, exception):
+        """Terminal failure of a paid plan change. The change stays pending,
+        so the state is left alone and the safety-net cron queues it again;
+        the failure is logged, recorded and alerted."""
+        error_msg = str(exception)
+        self._append_log("Paid plan change failed: %s" % error_msg)
+        self.write({'last_error': error_msg,
+                    'last_error_date': fields.Datetime.now()})
+        self.env['saas.alert']._notify(
+            'operation_failed', 'plan change on %s failed' % self.subdomain,
+            level='error', detail=error_msg)
 
     def _apply_pending_plan_change(self):
         """Apply a pending upgrade after payment is confirmed."""

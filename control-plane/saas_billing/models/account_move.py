@@ -2,8 +2,6 @@ import logging
 
 from odoo import api, fields, models, _
 
-from odoo.addons.saas_core.utils import run_in_background
-
 _logger = logging.getLogger(__name__)
 
 
@@ -263,11 +261,6 @@ class AccountMove(models.Model):
             ('sale_order_id', 'in', sale_orders.ids),
         ])
         for instance in upgrade_instances:
-            # Pick the right method: trial upgrade or paid plan change
-            if instance.is_trial:
-                method = '_apply_pending_upgrade'
-            else:
-                method = '_apply_pending_plan_change'
             # Capture saved card if the upgrade payment carried a token —
             # gives customers without a previously-saved card a chance to
             # opt in here too.
@@ -277,16 +270,21 @@ class AccountMove(models.Model):
             )
             if paid_for_instance:
                 instance._capture_payment_token_from_invoice(paid_for_instance[:1])
+            # Only the invoice of the CURRENT pending change applies it, so
+            # an unrelated paid invoice on the same order can't.
+            change_invoice = instance._paid_pending_change_invoice()
+            if not change_invoice:
+                _logger.info(
+                    "SaaS instance %s: pending change to %s is not paid yet.",
+                    instance.subdomain, instance.pending_plan_id.name,
+                )
+                continue
             _logger.info(
-                "SaaS instance %s: payment received, applying %s.",
-                instance.subdomain, method,
+                "SaaS instance %s: payment received, queuing plan change "
+                "(invoice %s).", instance.subdomain, change_invoice.name,
             )
-            run_in_background(
-                instance, method,
-                error_method='_on_background_error',
-                error_args=(),
-                thread_name='saas_planchange_%s' % instance.subdomain,
-            )
+            # Durable job in this transaction: applied exactly once.
+            instance._enqueue_paid_plan_change(change_invoice)
 
     @api.model
     def _saas_start_paid_restorations(self, instances):

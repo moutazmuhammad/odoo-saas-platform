@@ -1,12 +1,13 @@
-"""C3.1: a paid invoice queues a durable deploy job inside the payment
-transaction — never a thread that a restart can lose."""
+"""C3.1/C3.2: a paid invoice queues a durable deploy or plan-change job
+inside the payment transaction — never a thread that a restart can lose."""
+from datetime import timedelta
 from unittest.mock import patch
 
+from odoo import fields
 from odoo.tests.common import TransactionCase, tagged
 
 
-@tagged('post_install', '-at_install')
-class TestPaidDeployJob(TransactionCase):
+class _PaidJobCase(TransactionCase):
 
     def setUp(self):
         super().setUp()
@@ -15,23 +16,21 @@ class TestPaidDeployJob(TransactionCase):
         icp.set_param('saas_master.hosting_worker_price', '10.0')
         icp.set_param('saas_master.hosting_storage_price_per_gb', '0.3')
         self.Job = env['saas.job'].sudo()
-        product = env['saas.product'].sudo().search([('is_hosting', '=', True)], limit=1) \
+        self.product = env['saas.product'].sudo().search([('is_hosting', '=', True)], limit=1) \
             or env['saas.product'].sudo().create({
                 'name': 'JQ Hosting', 'is_hosting': True, 'is_published': True})
-        self.plan = env['saas.plan'].sudo().create({
-            'name': 'JQ Plan', 'is_custom': True, 'workers': 2, 'storage_limit': 20,
-            'cpu_limit': 1.0, 'ram_limit': '1g', 'price': 50.0, 'yearly_price': 480.0,
-            'currency_id': env.company.currency_id.id,
-            'saas_product_ids': [(6, 0, [product.id])]})
-        self.product = product
+        self.plan = self._mk_plan('JQ Plan', 2, 50.0)
         self.partner = env['res.partner'].sudo().create({'name': 'JQ Cust'})
         self.domain = env['saas.based.domain'].sudo().search([], limit=1) \
             or env['saas.based.domain'].sudo().create({'name': 'jq.example.com'})
-        self.inst = self._mk('jqprod', state='draft')
-        self.inst.action_confirm_and_bill()
-        self.assertEqual(self.inst.state, 'pending_payment')
-        self.invoice = self.inst.sale_order_id.invoice_ids
-        self.assertEqual(len(self.invoice), 1)
+
+    def _mk_plan(self, name, workers, price):
+        return self.env['saas.plan'].sudo().create({
+            'name': name, 'is_custom': True, 'workers': workers,
+            'storage_limit': 20, 'cpu_limit': 1.0, 'ram_limit': '1g',
+            'price': price, 'yearly_price': price * 10,
+            'currency_id': self.env.company.currency_id.id,
+            'saas_product_ids': [(6, 0, [self.product.id])]})
 
     def _mk(self, sub, state, **vals):
         return self.env['saas.instance'].sudo().create(dict({
@@ -40,6 +39,14 @@ class TestPaidDeployJob(TransactionCase):
             'plan_id': self.plan.id, 'billing_period': 'monthly',
             'environment': 'production', 'region_id': False, 'state': state,
         }, **vals))
+
+    def _mk_invoice(self, amount=5.0):
+        inv = self.env['account.move'].sudo().create({
+            'move_type': 'out_invoice', 'partner_id': self.partner.id,
+            'invoice_line_ids': [(0, 0, {'name': 'jq', 'quantity': 1,
+                                         'price_unit': amount})]})
+        inv.action_post()
+        return inv
 
     def _forbid_commit(self):
         """The payment transaction must never be committed by the handler."""
@@ -55,14 +62,29 @@ class TestPaidDeployJob(TransactionCase):
             p.start()
             self.addCleanup(p.stop)
 
-    def _deploy_jobs(self, inst):
+    def _jobs(self, inst, method):
         return self.Job.search([
             ('model', '=', 'saas.instance'), ('res_id', '=', inst.id),
-            ('method', '=', '_do_deploy_after_payment')])
+            ('method', '=', method)])
 
     def _pay(self, invoice):
         invoice.write({'payment_state': 'paid'})
         invoice._saas_check_instance_payment()
+
+
+@tagged('post_install', '-at_install')
+class TestPaidDeployJob(_PaidJobCase):
+
+    def setUp(self):
+        super().setUp()
+        self.inst = self._mk('jqprod', state='draft')
+        self.inst.action_confirm_and_bill()
+        self.assertEqual(self.inst.state, 'pending_payment')
+        self.invoice = self.inst.sale_order_id.invoice_ids
+        self.assertEqual(len(self.invoice), 1)
+
+    def _deploy_jobs(self, inst):
+        return self._jobs(inst, '_do_deploy_after_payment')
 
     # ------------------------------------------------------------- enqueue
     def test_payment_queues_one_job_in_the_payment_transaction(self):
@@ -103,11 +125,7 @@ class TestPaidDeployJob(TransactionCase):
 
     def test_paid_environment_queues_one_job(self):
         self._forbid_commit()
-        env_invoice = self.env['account.move'].sudo().create({
-            'move_type': 'out_invoice', 'partner_id': self.partner.id,
-            'invoice_line_ids': [(0, 0, {'name': 'stg', 'quantity': 1,
-                                         'price_unit': 5.0})]})
-        env_invoice.action_post()
+        env_invoice = self._mk_invoice()
         child = self._mk('jqprod-stg', state='pending_payment',
                          environment='staging', parent_id=self.inst.id,
                          env_pending_invoice_id=env_invoice.id)
@@ -161,3 +179,118 @@ class TestPaidDeployJob(TransactionCase):
         self.assertEqual(job.state, 'failed')
         self.assertEqual(self.inst.state, 'failed')
         self.assertIn('cluster unreachable', self.inst.last_error)
+
+
+@tagged('post_install', '-at_install')
+class TestPaidPlanChangeJob(_PaidJobCase):
+
+    def setUp(self):
+        super().setUp()
+        self.big = self._mk_plan('JQ Big', 4, 90.0)
+        self.inst = self._mk('jqchange', state='running')
+        self.invoice = self._mk_invoice(40.0)
+        self.inst.write({'pending_plan_id': self.big.id,
+                         'pending_billing_period': 'monthly',
+                         'pending_change_invoice_id': self.invoice.id})
+        resize = patch.object(type(self.inst), '_update_container_resources',
+                              lambda rec: None)
+        resize.start()
+        self.addCleanup(resize.stop)
+
+    def _change_jobs(self):
+        return self._jobs(self.inst, '_do_apply_paid_plan_change')
+
+    def _run(self, job):
+        # _run_one claims with raw SQL: flush ORM writes (requeues) first.
+        self.env.flush_all()
+        self.Job._run_one(job.id)
+        job.invalidate_recordset()
+        self.inst.invalidate_recordset()
+
+    # ------------------------------------------------------------- enqueue
+    def test_payment_queues_one_job_in_the_payment_transaction(self):
+        self._forbid_commit()
+        self._pay(self.invoice)
+        job = self._change_jobs()
+        self.assertEqual(len(job), 1)
+        self.assertEqual(job.idempotency_key,
+                         'planchange:inv%s:inst%s' % (self.invoice.id, self.inst.id))
+        self.assertEqual(job.args_json, '[%d]' % self.invoice.id)
+        self.assertEqual(job.lock_key, 'instance:%s' % self.inst.id)
+        self.assertEqual(job.on_error, '_on_plan_change_job_error')
+        self.assertEqual(self.inst.plan_id, self.plan, "applied by the job, not inline")
+
+    def test_duplicate_paid_webhook_queues_one_job(self):
+        self._forbid_commit()
+        self._pay(self.invoice)
+        self._pay(self.invoice)
+        self.assertEqual(len(self._change_jobs()), 1)
+
+    # ----------------------------------------------------------------- run
+    def test_job_applies_the_change_exactly_once(self):
+        self._pay(self.invoice)
+        job = self._change_jobs()
+        self._no_commit()
+        self._run(job)
+        self.assertEqual(job.state, 'done')
+        self.assertEqual(self.inst.plan_id, self.big)
+        self.assertFalse(self.inst.pending_plan_id)
+        # A re-run (reaper requeue after its commit) changes nothing.
+        job.write({'state': 'pending', 'attempts': 0})
+        with patch.object(type(self.inst), '_apply_pending_plan_change',
+                          side_effect=AssertionError('applied twice')):
+            self._run(job)
+        self.assertEqual(job.state, 'done')
+
+    def test_trial_upgrade_runs_the_upgrade_method(self):
+        self.inst.is_trial = True
+        self._pay(self.invoice)
+        job = self._change_jobs()
+        calls = []
+        self._no_commit()
+        with patch.object(type(self.inst), '_apply_pending_upgrade',
+                          lambda rec: calls.append('upgrade')), \
+                patch.object(type(self.inst), '_apply_pending_plan_change',
+                             lambda rec: calls.append('change')):
+            self._run(job)
+        self.assertEqual(calls, ['upgrade'])
+
+    def test_superseded_change_is_not_applied(self):
+        self._pay(self.invoice)
+        job = self._change_jobs()
+        # The customer replaced the request before the job ran.
+        self.inst.pending_change_invoice_id = self._mk_invoice(60.0)
+        self._no_commit()
+        self._run(job)
+        self.assertEqual(job.state, 'done')
+        self.assertEqual(self.inst.plan_id, self.plan)
+        self.assertEqual(self.inst.pending_plan_id, self.big)
+
+    def test_worker_killed_mid_apply_completes_after_restart(self):
+        self._pay(self.invoice)
+        job = self._change_jobs()
+        # The worker claimed the job and died: no heartbeat since.
+        job.write({'state': 'running', 'attempts': 1,
+                   'last_heartbeat': fields.Datetime.now() - timedelta(hours=1)})
+        self._no_commit()
+        self.Job._cron_reap_jobs()
+        self.assertEqual(job.state, 'pending')
+        self._run(job)
+        self.assertEqual(job.state, 'done')
+        self.assertEqual(self.inst.plan_id, self.big)
+
+    def test_terminal_failure_keeps_state_and_is_visible(self):
+        self._pay(self.invoice)
+        job = self._change_jobs()
+        job.max_attempts = 1
+
+        def boom(rec):
+            raise ValueError('restart failed')
+
+        self._no_commit()
+        with patch.object(type(self.inst), '_apply_pending_plan_change', boom):
+            self._run(job)
+        self.assertEqual(job.state, 'failed')
+        self.assertEqual(self.inst.state, 'running')
+        self.assertEqual(self.inst.pending_plan_id, self.big, "still pending for a retry")
+        self.assertIn('restart failed', self.inst.last_error)

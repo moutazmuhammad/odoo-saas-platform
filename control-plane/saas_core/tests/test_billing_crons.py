@@ -237,10 +237,11 @@ class TestBillingLifecycleCrons(TransactionCase):
 
     # ---------------- _cron_apply_paid_pending_changes ----------------
 
-    def test_paid_pending_change_applies_for_trial(self):
-        inst = self._inst('pend1', is_trial=True, pending_plan_id=self.plan.id)
-        paid_inv = self._move(payment_state='paid')
+    def _run_cron_and_jobs(self, inst, paid_inv):
+        """Run the safety net, then the jobs it queued; return the applied
+        methods in order and the queued jobs."""
         applied = []
+        Job = self.env['saas.job'].sudo()
         with patch.object(type(inst), '_paid_pending_change_invoice',
                            lambda self: paid_inv), \
                 patch.object(type(inst), '_apply_pending_upgrade',
@@ -248,40 +249,50 @@ class TestBillingLifecycleCrons(TransactionCase):
                 patch.object(type(inst), '_apply_pending_plan_change',
                              lambda self: applied.append('change')):
             self.Instance._cron_apply_paid_pending_changes()
+            jobs = Job.search([('model', '=', 'saas.instance'),
+                               ('res_id', '=', inst.id),
+                               ('method', '=', '_do_apply_paid_plan_change')])
+            for job in jobs:
+                Job._run_one(job.id)
+        return applied, jobs
+
+    def test_paid_pending_change_applies_for_trial(self):
+        inst = self._inst('pend1', is_trial=True, pending_plan_id=self.plan.id)
+        paid_inv = self._move(payment_state='paid')
+        applied, jobs = self._run_cron_and_jobs(inst, paid_inv)
         self.assertEqual(applied, ['upgrade'])
+        self.assertEqual(jobs.idempotency_key,
+                         'planchange:inv%s:inst%s' % (paid_inv.id, inst.id))
 
     def test_paid_pending_change_applies_for_non_trial(self):
         inst = self._inst('pend2', is_trial=False, pending_plan_id=self.plan.id)
         paid_inv = self._move(payment_state='paid')
-        applied = []
-        with patch.object(type(inst), '_paid_pending_change_invoice',
-                           lambda self: paid_inv), \
-                patch.object(type(inst), '_apply_pending_upgrade',
-                             lambda self: applied.append('upgrade')), \
-                patch.object(type(inst), '_apply_pending_plan_change',
-                             lambda self: applied.append('change')):
-            self.Instance._cron_apply_paid_pending_changes()
+        applied, jobs = self._run_cron_and_jobs(inst, paid_inv)
         self.assertEqual(applied, ['change'])
+        self.assertEqual(jobs.state, 'done')
+
+    def test_paid_pending_change_not_requeued_while_queued(self):
+        inst = self._inst('pend2b', is_trial=False, pending_plan_id=self.plan.id)
+        paid_inv = self._move(payment_state='paid')
+        with patch.object(type(inst), '_paid_pending_change_invoice',
+                           lambda self: paid_inv):
+            self.Instance._cron_apply_paid_pending_changes()
+            self.Instance._cron_apply_paid_pending_changes()
+        self.assertEqual(self.env['saas.job'].sudo().search_count([
+            ('method', '=', '_do_apply_paid_plan_change'),
+            ('res_id', '=', inst.id)]), 1)
 
     def test_paid_pending_change_left_alone_when_unpaid(self):
         inst = self._inst('pend3', is_trial=False, pending_plan_id=self.plan.id)
-        applied = []
-        with patch.object(type(inst), '_paid_pending_change_invoice',
-                           lambda self: self.env['account.move']), \
-                patch.object(type(inst), '_apply_pending_upgrade',
-                             lambda self: applied.append('upgrade')), \
-                patch.object(type(inst), '_apply_pending_plan_change',
-                             lambda self: applied.append('change')):
-            self.Instance._cron_apply_paid_pending_changes()
+        applied, jobs = self._run_cron_and_jobs(inst, self.env['account.move'])
         self.assertEqual(applied, [])
+        self.assertFalse(jobs)
 
     def test_paid_pending_change_ignores_instances_without_pending_plan(self):
-        self._inst('pend4', pending_plan_id=False)
-        applied = []
-        with patch.object(type(self.Instance), '_apply_pending_upgrade',
-                           lambda self: applied.append('upgrade')):
-            self.Instance._cron_apply_paid_pending_changes()
+        inst = self._inst('pend4', pending_plan_id=False)
+        applied, jobs = self._run_cron_and_jobs(inst, self._move(payment_state='paid'))
         self.assertEqual(applied, [])
+        self.assertFalse(jobs)
 
     # ---------------- _cron_check_trial_expiry ----------------
 

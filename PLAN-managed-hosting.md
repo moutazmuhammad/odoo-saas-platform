@@ -2,6 +2,8 @@
 
 **Revision 5.2 · 2026-10-13 · Status: revision 5 ACCEPTED by the owner as the architectural baseline, subject to the validation gates in §30.** Revision 5.2 only reorganizes execution: §25 is now the execution roadmap (session rules, phases PH0–PH11, milestones M0–M7, dependency graph, cost and approval map, next tasks) and §26 the task catalogue (120 tasks with a tracking table and an evidence log). No architectural, financial or security decision changed. Nothing here is authorized for implementation, purchase or deployment until the owner approves the remaining actions in §29.
 
+**Revision 5.3 (2026-10-15, PROPOSED, not yet accepted):** adds §31, a review of shared multi-node clusters with Hetzner Cloud autoscaling at the owner's request. It proposes decisions D20–D28 and tasks K1.1–K1.7 and K2.1–K2.6. No revision 5 decision changes until the owner answers D20–D28.
+
 Revision 5.1 changes only four things, and every earlier verified finding and decision stands:
 - §9.1: server choice by cost per safely hosted tenant;
 - §17.6: a lead-time reorder point replaces the fixed 60% server-ordering threshold;
@@ -431,7 +433,7 @@ flowchart TB
 | **Changed** | Storage engine Longhorn → TopoLVM (a StorageClass and bootstrap change) | Recovery without Kubernetes; no unused replication layer; cheapest before the first customer (§14.3) |
 | | Backup key model and filestore method | Measured failures in lab B0 (§15) |
 | | Capacity checks → hold ledger | Customers can be charged for resources that cannot be allocated today (§17.4) |
-| **Not introduced** | CNPG or shared PostgreSQL, Ceph or replicated storage, multi-node cells, cluster autoscaler, service mesh, external secret store, managed databases | No measured economic or safety case at this stage |
+| **Not introduced** (multi-node and autoscaler under review: §31, D20) | CNPG or shared PostgreSQL, Ceph or replicated storage, multi-node cells, cluster autoscaler, service mesh, external secret store, managed databases | No measured economic or safety case at this stage |
 
 ---
 
@@ -633,7 +635,7 @@ The AX42 setup fee (€49) is the only sunk cost of starting a cell. Cancellatio
 | Bin packing | The scheduler packs by requests. Admission keeps 20% RAM unsold [ASSUMP] plus one surge pod's worth of headroom per cell for rolling updates |
 | Rolling upgrades | Existing `MaxSurge 1 / MaxUnavailable 0` [CODE `deployment.go:55-56`]; all pods are on the same node, so RWO is fine |
 | **Host maintenance** | A cell reboot means minutes of downtime for **all** tenants on it (single replica, no HA; owner A25). Published monthly maintenance window; unattended security upgrades without auto-reboot; Ubuntu Livepatch (free for 5 machines; commercial-use wording inconsistent [DOC]) or batched reboots. Measured in Q5 |
-| **Autoscaling** | No cluster autoscaler on cells. Capacity is added in server steps by admission/alerts (§23). Build nodes are created per job |
+| **Autoscaling** | Under review in §31 (D20: autoscaled Cloud pools beside a non-autoscaled dedicated base pool). Until decided: no cluster autoscaler on cells. Capacity is added in server steps by admission/alerts (§23). Build nodes are created per job |
 | In-place pod resize | GA since Kubernetes 1.35 [DOC]; MicroK8s channel 1.35 [CODE `ubuntu_microk8s.py:24`]. Already used for PostgreSQL resize [CODE] |
 | Graceful shutdown | Odoo SIGTERM handling exists upstream; confirm the `terminationGracePeriodSeconds` value in the operator during C2 |
 
@@ -1642,11 +1644,11 @@ This section and §26 are the **only** implementation plan. They replace revisio
 | Milestone | Exit criteria |
 |---|---|
 | **M0 Repository and CI safeguards** | R0.1 recorded; R0.2, C1.1, C1.2, C1.4 COMPLETED (a failing test demonstrably blocks deploy); C14.1–C14.4 COMPLETED (renamed CRD installs and reconciles on a fresh cluster) |
-| **M1 Billing and provisioning defects fixed** | C3.1–C3.3, C3.5, C3.7, C4.1, C4.2, C6.1–C6.5, C6.7–C6.10, C17.1 COMPLETED. The crash-safety suite (C3.7) passes: no paid order lost, each operation applied exactly once. The paid-upgrade suite (C6.8) passes, including its owner-approved live DOKS step: no charge for a known-infeasible upgrade, nothing captured before verified delivery (C6.D8), no upgrade reported applied before verification, a named owner on every delay, one release per undelivered upgrade, and zero availability-probe failures while upgrades are pending (C6.9 continuity invariant). C6.6 is P1 and does not gate M1 (reasoning in §26.4 under C6) |
-| **M2 Security and resource management ready** | C5.1–C5.6, C19.1, C8.1, C8.2, C9.1–C9.3, I4.1, I4.2, C16.1, C16.2, C7.1 COMPLETED. Over-capacity orders are never charged (C5.6); spoofed `X-Forwarded-For` is blocked; staff TOTP is on |
-| **M3 Hetzner cell operational** | I1.4, ST1, C12.1, I4.3, Q3, Q4, Q5, Q6, P1, C11.1, C11.2, C11.4 COMPLETED on the real cell |
-| **M4 Backup and DR verified** | I6.1–I6.8, C8.3, I9.1, B1, Q2, I8.1, C11.3, **Q1a** COMPLETED against **real B2**; DR cap entered in the ledger; I7 done |
-| **M5 Full customer lifecycle verified** | C13.1–C13.3, C10.1–C10.4, C15.1–C15.3, C7.2, L1, E2E1 COMPLETED |
+| **M1 Billing and provisioning defects fixed** | C3.1–C3.3, C3.5, C3.7, C4.1, C4.2, C6.1–C6.5, C6.7–C6.10, C17.1, K1.5 COMPLETED. The crash-safety suite (C3.7) passes: no paid order lost, each operation applied exactly once. The paid-upgrade suite (C6.8) passes, including its owner-approved live DOKS step: no charge for a known-infeasible upgrade, nothing captured before verified delivery (C6.D8), no upgrade reported applied before verification, a named owner on every delay, one release per undelivered upgrade, and zero availability-probe failures while upgrades are pending (C6.9 continuity invariant). C6.6 is P1 and does not gate M1 (reasoning in §26.4 under C6) |
+| **M2 Security and resource management ready** | C5.1–C5.6, K1.4 (if D20), C19.1, C8.1, C8.2, C9.1–C9.3, I4.1, I4.2, C16.1, C16.2, C7.1 COMPLETED. Over-capacity orders are never charged (C5.6); spoofed `X-Forwarded-For` is blocked; staff TOTP is on |
+| **M3 Hetzner cell operational** | I1.4, K1.1–K1.3 (if D20), ST1, C12.1, I4.3, Q3, Q4, Q5, Q6, P1, C11.1, C11.2, C11.4 COMPLETED on the real cell |
+| **M4 Backup and DR verified** | I6.1–I6.8, K1.7 (if D20), C8.3, I9.1, B1, Q2, I8.1, C11.3, **Q1a** COMPLETED against **real B2**; DR cap entered in the ledger; I7 done |
+| **M5 Full customer lifecycle verified** | K1.6 (if D26), C13.1–C13.3, C10.1–C10.4, C15.1–C15.3, C7.2, L1, E2E1 COMPLETED |
 | **M6 First-paying-customer readiness** | GATE6: every §30 box ticked with evidence; C15.4, O1, O2, LA1 COMPLETED; owner sign-off |
 | **M7 Post-launch optimization** | LA3, LA4 done; PH11 tasks run when their triggers are met (§22–§23) |
 
@@ -1710,6 +1712,7 @@ flowchart LR
 | C7.2 | I9.1, I6.7 | Never purge without a verified final snapshot |
 | C5.5 / C6.2 fallback refund via provider | C15.3 | A void needs no provider refund; until C15.3 the fallback path credits the wallet |
 | Q1a | C11.2, C11.3 | Detection time is part of the RTO |
+| K1.4 | K1.2 | The ledger needs the real pools (if D20) |
 
 **What can run in parallel:**
 - Lanes A, B-code and C-code have no shared files except where cross-phase links are listed. They can run in any interleaving.
@@ -1830,6 +1833,7 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | C6.9 | PH1 | Service continuity during a pending upgrade | P0 | C6.3 | NOT STARTED | UNIT, INTEG[LOCAL], INTEG[TEST-SRV], ACCEPT[DOKS] | YES (operator release + live check on the DOKS test cluster) |
 | C6.10 | PH1 | Authorize at purchase, capture on verified delivery | P0 | C6.3, C3.1, C3.2 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C17.1 | PH1 | A downgrade never sends a smaller volume | P0 | — | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| K1.5 | PH1 | Operator safety guards (versions, deletion, connections, module versions) | P0 | — | NOT STARTED | UNIT, INTEG[LOCAL], INTEG[TEST-SRV] | no |
 | C18.1 | PH1 | Renewal billing for stopped and suspended tenants that hold storage | P1 | C4.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C5.1 | PH2 | Capacity ledger model and computation | P0 | — | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C5.2 | PH2 | Shadow mode at checkout | P0 | C5.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
@@ -1837,6 +1841,7 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | C5.4 | PH2 | Upgrade holds include surge | P0 | C5.3, C3.2 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C5.5 | PH2 | Failed deploy → release, never capture | P0 | C5.3, C3.5, C6.10 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C5.6 | PH2 | Switch to enforce mode (validation) | P0 | C5.2, C5.3, C5.4, C5.5 | NOT STARTED | INTEG[TEST-SRV], ACCEPT | no |
+| K1.4 | PH2 | Pool-aware capacity ledger | P0 | C5.1, K1.2 | BLOCKED | UNIT, INTEG[TEST-SRV] | no |
 | C19.1 | PH2 | Capacity forecast and reorder-point alert | P0 | C5.1 | NOT STARTED | UNIT | no |
 | C8.1 | PH3 | Mandatory secret-encryption key | P0 | — | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C8.2 | PH3 | Encrypt bucket keys and migrate existing values | P0 | C8.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
@@ -1859,6 +1864,9 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | I5.2 | PH5 | On-demand build node | P0 | I5.1, I1.4 | NOT STARTED | UNIT, INTEG[H] | YES (cents per build) |
 | I1.3 | PH5 | Order the first cell server | P0 | R0.1, I1.1, I1.2, I2.2 | BLOCKED | ACCEPT | YES ($114/month + €49 once) |
 | I1.4 | PH5 | Bootstrap and harden the cell (validation) | P0 | I1.3, C14.4 | NOT STARTED | INTEG[H], ACCEPT | YES |
+| K1.1 | PH5 | Shared cluster bootstrap: base node, Cloud network, CCM and CSI | P0 | R0.1 (D20, D21, D22, D25), I1.1 | BLOCKED | UNIT, INTEG[H] | YES (hourly Cloud servers) |
+| K1.2 | PH5 | Cluster Autoscaler and node pools | P0 | K1.1, R0.1 (D23, D24) | BLOCKED | UNIT, INTEG[H] | YES (hourly Cloud servers; pool bounds) |
+| K1.3 | PH5 | Operator placement and eviction policy | P0 | C14.1, R0.1 (D20) | BLOCKED | UNIT, INTEG[LOCAL] | no |
 | ST1 | PH5 | TopoLVM acceptance on the cell | P0 | I1.4, I2.2, I2.3 | NOT STARTED | INTEG[H], ACCEPT | no |
 | C12.1 | PH5 | Deploy and live-verify the security set | P0 | I1.4, R0.2 | NOT STARTED | INTEG[H], ACCEPT | YES |
 | I4.3 | PH5 | Registry live validation | P0 | I4.1, I4.2, I1.4 | NOT STARTED | INTEG[H] | no |
@@ -1882,6 +1890,8 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | I6.7 | PH7 | Backups mandatory for every production plan | P0 | I6.2, I6.3, I6.4, I6.5, C8.3 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | I9.1 | PH7 | Restore verifier (V1–V5) | P0 | — | NOT STARTED | UNIT, INTEG[LOCAL] | no |
 | I6.8 | PH7 | Restore job: PITR, restart, archiving check, readiness | P0 | I6.2, I6.5, I9.1 | NOT STARTED | UNIT, INTEG[LOCAL] | no |
+| K1.6 | PH7 | Module update with restore point and maintenance mode | P0 | I6.2, R0.1 (D26) | BLOCKED | UNIT, INTEG[TEST-SRV] | no |
+| K1.7 | PH7 | Autoscaling and node-loss failure-injection suite (AS1–AS16) | P0 | K1.1, K1.2, K1.3, K1.4, I6.8, C6.10 | BLOCKED | INTEG[H], ACCEPT | YES (hourly Cloud servers) |
 | B1 | PH7 | Real-B2 primitive tests | P0 | B2.1, I6.2, I6.5, I6.6 | NOT STARTED | INTEG[B2], ACCEPT | YES (< $1) |
 | I8.1 | PH7 | Restore-cell tooling | P0 | I5.1, I6.6, I6.8, I9.1 | NOT STARTED | UNIT, INTEG[LOCAL] | no |
 | Q2 | PH7 | Per-tenant PITR from real B2 | P0 | B1, ST1, I6.7, I6.8, I9.1 | NOT STARTED | INTEG[H][B2], ACCEPT | no |
@@ -1917,6 +1927,12 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | X7 | PH11 | Jobs-worker threads per channel | P1 | C3.1 | NOT STARTED | UNIT | no |
 | X8 | PH11 | Upgrade recommendations | P2 | GATE6 | NOT STARTED | UNIT | no |
 | I3 | PH11 | DNS-01 wildcard per cell | P1 | GATE6. Trigger: about 30 new environments a week | NOT STARTED | INTEG[H] | YES |
+| K2.1 | PH11 | Odoo major upgrade by clone | P2 | K1.5, I6.8. Trigger: first customer request | NOT STARTED | — | no |
+| K2.2 | PH11 | PostgreSQL major upgrade | P1 | K1.5, I6.1. Trigger: before 2028-11-09 (PG 16 EOL) | NOT STARTED | — | no |
+| K2.3 | PH11 | Filestore on object storage with a guard addon | P2 | R0.1 (D28). Trigger: §14.5 | NOT STARTED | — | no |
+| K2.4 | PH11 | Planned consolidation of elastic-prod nodes | P1 | K1.3, K1.4. Trigger: a node < 30% for 7 days | NOT STARTED | — | no |
+| K2.5 | PH11 | Automated fencing of unreachable Cloud nodes | P1 | K1.3. Trigger: first overflow tenant | NOT STARTED | — | no |
+| K2.6 | PH11 | HA Kubernetes control plane | P2 | K1.1. Trigger: ≥ 3 base nodes or a control-plane incident | NOT STARTED | — | no |
 | P2 | PH11 | Density ramp; re-run the §9.1 comparison | P1 | P1. It may run before GATE6 if the owner wants a measured density early | NOT STARTED | INTEG[H] | YES (≈ €2) |
 | Q1b | PH11 | Auction-path DR drill | P2 | Q1a | NOT STARTED | INTEG[H] | YES (≈ €3) |
 | Q1c | PH11 | Cross-provider DR drill (yearly) | P1 | Q1a | NOT STARTED | INTEG[DO] | YES (≈ $2) |
@@ -1928,7 +1944,7 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | G5 | PH11 | Partner portal and white-label | P2 | GATE6 | NOT STARTED | INTEG | YES |
 | G6 | PH11 | HA option for Scale/Dedicated | P2 | GATE6 | NOT STARTED | INTEG[H] | YES (cost per customer) |
 
-**Totals:** 129 tasks in 12 phases, by priority: P0 102, P1 18, P2 9. 42 need owner approval. (Rev 5.2 had 120 tasks: P0 95, P1 16, P2 9, 39 approvals. Added on 2026-10-15: C3.8 (P1), C6.3–C6.5, C6.7–C6.9 (P0), C6.6 (P1). Approvals added: C6.3 and C6.8 for the live DOKS step, and C6.9 for the operator release and live check. C6.9 was first the delay credit, then re-scoped after C6.D5. C6.10 (P0, no approval) added for C6.D8.)
+**Totals:** 142 tasks in 12 phases, by priority: P0 109, P1 21, P2 12. 45 need owner approval. (Rev 5.2 had 120 tasks: P0 95, P1 16, P2 9, 39 approvals. Added on 2026-10-15: C3.8 (P1), C6.3–C6.5, C6.7–C6.9 (P0), C6.6 (P1). Approvals added: C6.3 and C6.8 for the live DOKS step, and C6.9 for the operator release and live check. C6.9 was first the delay credit, then re-scoped after C6.D5. C6.10 (P0, no approval) added for C6.D8. Revision 5.3 (§31): K1.1–K1.7 (P0; K1.1, K1.2, K1.7 need approval) and K2.1–K2.6 (P1: K2.2, K2.4, K2.5; P2: K2.1, K2.3, K2.6).)
 
 ### 26.2 Baseline: capabilities that already exist (verified at `b7c0aa0`; no task needed)
 
@@ -1970,6 +1986,7 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | 2026-10-15 | C6.D8 | DECIDED | Owner: the customer is not charged until the upgrade or server creation is confirmed; if a failure other than resource unavailability happens after payment, the payment is returned; the transaction stays pending until the customer has the service. Planned as authorize → verify → capture: new task C6.10 (P0, M1); C6.2 becomes a release (void + wallet hold return) with automatic release at T2 for non-resource failures and before authorization expiry; C5.3/C5.5 apply the same to new servers; C6.D3 amended, C6.D6 resolved; C15.1 must record manual-capture support (Stripe documents it, Paddle/Lemon Squeezy unverified; otherwise fallback = immediate charge + refund). Open: C6.D9 (authorization near expiry; default release). Read-only code check at `b8cb3db`: no `authorized`/capture/void handling exists; execution triggers on invoice paid; wallet consumed at invoice creation. No code, deploy or DOKS operation | Plan change |
 | 2026-10-15 | C6.D10 | OPEN | Owner: production is Hetzner, not DOKS, with node autoscaling (Cluster Autoscaler). Recorded with its conflicts for an owner decision before PH5: §29 D1 (single-node MicroK8s cells on dedicated AX42, node-local TopoLVM) and C6.D4 (no automatic paid nodes). A new node does not complete an existing tenant's upgrade when its volumes pin it to a full node (deferred DB resize; RWO filestore co-location, `deployment.go:274`); upstream Cluster Autoscaler support for Hetzner dedicated servers not verified. New C6.9 risk R7 (scale-down eviction). I1.4 and E2E1 gain production-cluster checks. No §29 edit | Plan change |
 | 2026-10-15 | C6.D10 | PARTLY DECIDED | Owner: the Go operator and `saas-jobs` own the Odoo environment lifecycle; the Cluster Autoscaler alone provides worker nodes; environments run on a shared cluster and nothing creates a server per customer. Still open: node source (Hetzner Cloud / dedicated / mix), multi-node cluster shape, Kubernetes distribution and storage engine (vs §29 D1), cost bounds replacing C6.D4, scale-down safety (R7). Question raised: whether I5.2's on-demand build node becomes an autoscaled build node group | Plan change |
+| 2026-10-15 | §31 review | PROPOSED | Architecture review of shared multi-node clusters with Hetzner Cloud autoscaling (owner request). Read-only: repository inspected at `c72b1fa`; external facts from primary sources (§31.16). Main findings: the Cluster Autoscaler scales Hetzner Cloud servers only; current CPX/CCX cost ≈ 2.6× an AX42 per GB RAM and CX/CAX are not available; node-local storage pins tenants, Cloud Volumes move but cap at 16 per server. Recommended option C (dedicated base pool + autoscaled Cloud pools). Launch blockers found in code: PG version mutable, deletion after a 2-minute best-effort backup, `-u` on a live DB, image change without `-u`. Added D20–D28 and K1.1–K1.7, K2.1–K2.6. No code, image, deploy or cluster operation | Plan change |
 
 ### 26.4 Task cards
 
@@ -2359,7 +2376,7 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 | C6.D7 | After a cancel, what happens to parts of the upgrade that already took effect (e.g. the database resize completed but the Odoo rollout did not; a volume already grown)? Recommendation:<br>• leave them in place, with no disruption and no shrink;<br>• count them in capacity;<br>• bring them back to the paid package only at the next customer-initiated change, through a zero-downtime rolling update | OPEN (C6.2 implements the recommended "leave in place" default; the decision only adds or removes the later scale-down) | C6.2 |
 | C6.D8 | **No capture before delivery** (owner, 2026-10-15): "the customer should not be charged until we confirm that the upgrade or server creation can be completed successfully … the transaction should remain pending until the customer successfully receives the service they paid for."<br>• **Scope:** upgrades, environment plans, storage blocks and **new servers**. A renewal of a running service is captured at once, because that service is already delivered.<br>• **Before:** resource unavailability that is known before purchase → nothing authorized or charged (C6.7, C5.3, C5.4).<br>• **Pending:** card authorization (manual capture) plus wallet hold; nothing captured.<br>• **Capture:** only after verified delivery (C6.3 for an upgrade; running and healthy for a new server).<br>• **Resource unavailability after authorization:** stays pending; the customer may cancel after T2; released before the authorization lapses.<br>• **Any other failure:** released automatically once it is final (a non-resource block still unresolved at T2, or a deploy's final failure).<br>• **Fallback:** a provider or payment method without manual capture is charged at once, and the same triggers issue a full refund instead of a void | DECIDED | C6.10, C6.2, C5.3, C5.5, C15.1–C15.3 |
 | C6.D9 | An upgrade or new server still pending on resource unavailability when the card authorization nears expiry. Online card authorizations commonly last about 7 days; Visa merchant-initiated ones (saved-card charges) about 4 days 18 h [DOC Stripe]. Options:<br>(a) release before expiry and tell the customer they can buy again;<br>(b) re-authorize the saved card automatically.<br>Recommendation: (a). It is simpler and never places a new hold without the customer acting | OPEN (C6.2 and C5.5 implement (a) as the default; (b) would only add a re-authorization step) | C6.2, C5.5, C6.10 |
-| C6.D10 | **Production on Hetzner with node autoscaling** (owner direction, 2026-10-15).<br>**Decided (owner, 2026-10-15): split of responsibilities.**<br>• The Go operator and `saas-jobs` own the lifecycle of each Odoo environment (create, package, upgrade, stop, restore, delete).<br>• The Cluster Autoscaler alone provides worker nodes.<br>• Many environments share one cluster; nothing creates a server per customer, and neither the operator nor `saas-jobs` provisions nodes for a tenant.<br>• The C6 code therefore never calls a cloud API to add capacity: resource unavailability remains a Pending pod or deferred resize that the autoscaler may resolve.<br>**Still open, to decide before PH5**, because it touches §29 D1 (single-node MicroK8s cells on dedicated AX42 servers, TopoLVM local volumes) and C6.D4 (no automatic paid nodes):<br>• **Node source:** Hetzner Cloud servers (hourly), dedicated servers, or a mix. Upstream Cluster Autoscaler support for Hetzner dedicated (Robot) servers is not verified.<br>• **Cluster shape:** multi-node clusters instead of one-node cells; Kubernetes distribution; storage engine for multi-node (node-local TopoLVM pins every tenant to its node).<br>• **Cost bounds:** node group, server type and maximum node count, set by the owner as the standing authorization that replaces C6.D4 for autoscaled nodes.<br>• **Scale-down safety:** tenant PostgreSQL and the last ready Odoo pod are never evicted (C6.9 R7) | PARTLY DECIDED (responsibility split); rest OPEN, not blocking PH1 code: C6 treats resource unavailability the same with or without an autoscaler | C6.D4, C6.9, C6.7, C5.1, §29 D1, I1.x |
+| C6.D10 | **Production on Hetzner with node autoscaling** (owner direction, 2026-10-15).<br>**Decided (owner, 2026-10-15): split of responsibilities.**<br>• The Go operator and `saas-jobs` own the lifecycle of each Odoo environment (create, package, upgrade, stop, restore, delete).<br>• The Cluster Autoscaler alone provides worker nodes.<br>• Many environments share one cluster; nothing creates a server per customer, and neither the operator nor `saas-jobs` provisions nodes for a tenant.<br>• The C6 code therefore never calls a cloud API to add capacity: resource unavailability remains a Pending pod or deferred resize that the autoscaler may resolve.<br>**Still open, to decide before PH5**, because it touches §29 D1 (single-node MicroK8s cells on dedicated AX42 servers, TopoLVM local volumes) and C6.D4 (no automatic paid nodes):<br>• **Node source:** Hetzner Cloud servers (hourly), dedicated servers, or a mix. Upstream Cluster Autoscaler support for Hetzner dedicated (Robot) servers is not verified.<br>• **Cluster shape:** multi-node clusters instead of one-node cells; Kubernetes distribution; storage engine for multi-node (node-local TopoLVM pins every tenant to its node).<br>• **Cost bounds:** node group, server type and maximum node count, set by the owner as the standing authorization that replaces C6.D4 for autoscaled nodes.<br>• **Scale-down safety:** tenant PostgreSQL and the last ready Odoo pod are never evicted (C6.9 R7) | PARTLY DECIDED (responsibility split); the rest is reviewed in §31 and proposed as D20–D24, D27. Not blocking PH1 code: C6 treats resource unavailability the same with or without an autoscaler | C6.D4, C6.9, C6.7, C5.1, §29 D1, I1.x |
 
 **C6 tasks and the M1 gate.**
 - **In M1:** C6.2, C6.3, C6.4, C6.5, C6.7, C6.8, C6.9 and C6.10. M1 is "billing and provisioning defects fixed", and these close defects in the money path and the service path:
@@ -4240,6 +4257,134 @@ Each task below is P1 or P2 and starts only when its trigger in §22–§23 is m
 
 ---
 
+### Tasks from the §31 shared-cluster review (revision 5.3; placed in PH1, PH2, PH5, PH7, PH11)
+
+#### K1.5 · Operator safety guards
+`P0 · S · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[LOCAL], INTEG[TEST-SRV]`
+- **Objective:** Close the data-loss paths that §31.1 found in the operator, whatever D20 decides.
+- **Current status:** NOT STARTED. Findings K3, K4, K6, K7, K8 and the default `max_connections` (§31.1).
+- **Files:**
+  - `compute/operator/internal/controller/validate.go`, `controller/finalize.go`, `resources/database.go`;
+  - `control-plane/saas_core/drivers/kubernetes_driver.py`, `k8s_builds.py`;
+  - `compute/tools/backup-tool/Dockerfile`.
+- **Change:**
+  - **Versions:** reject a change of `spec.database.version` on an existing instance; Managed PostgreSQL accepts only the version the backup tool supports (16) until K2.2. Reject an Odoo major change of `spec.version` until K2.1.
+  - **Deletion:** the finalizer deletes PVCs only after the control plane has recorded a verified final backup for that instance (C7.2). Otherwise it keeps the volumes (Retain) and raises an alert. A fresh environment that never became ready may be deleted (C5.5).
+  - **Connections:** set `max_connections` = 2 × (workers + 3) + 10 and Odoo `db_maxconn` (§13).
+  - **Module versions:** a new image whose module manifest versions changed is deployed only through the `-u` path, never as a plain image change.
+  - **Wording:** remove "restic" from the settings view and the add-on description (K5).
+- **Depends:** strict: — . Parallel: C7.2, C2.
+- **Steps:** Implement; envtest for each guard; control-plane tests; upgrade-with-data test for any new field.
+- **Acceptance:** AS12 and AS13 pass; a version change is rejected with a clear status; a deletion whose final backup fails keeps the volumes; `max_connections` follows the workers.
+- **Tests:** Go unit and envtest; `INTEG[TEST-SRV]`.
+- **Risks:** An existing instance on PG ≠ 16. Mitigation: list them first; the control plane never sets a PG version, so tenants it created run 16 (§31.1 K2).
+- **Rollback:** Revert.
+
+#### K1.4 · Pool-aware capacity ledger
+`P0 · M · $0 · Approval: no · Status: BLOCKED · Tests: UNIT, INTEG[TEST-SRV]`
+- **Objective:** Admission knows that base tenants are bound to their node and that Cloud pools can grow only to their maximum.
+- **Current status:** BLOCKED on D20 and K1.2.
+- **Files:** `control-plane/saas_core/models/saas_server.py`; the C5.1 hold model.
+- **Change:** Per base node: RAM, CPU, LV bytes, DR cap. Per Cloud pool: max nodes × measured allocatable (never the autoscaler template), volumes per node ≤ 16. Placement order: base node (best fit) → `elastic-prod` → no charge.
+- **Depends:** strict: C5.1, K1.2.
+- **Steps:** Implement; unit tests per limit; upgrade-with-data test.
+- **Acceptance:** Synthetic placements choose the right pool; a 17th volume is never placed on a node; a full pool refuses before payment.
+- **Tests:** Unit; `INTEG[TEST-SRV]`.
+- **Risks:** Stale allocatable. Mitigation: refreshed by the health cron, as C6.7.
+- **Rollback:** Revert to cluster-level checks.
+
+#### K1.1 · Shared cluster bootstrap: base node, Cloud network, CCM and CSI
+`P0 · M · hourly Cloud servers · Approval: YES · Status: BLOCKED · Tests: UNIT, INTEG[H]`
+- **Objective:** One cluster per location that dedicated base nodes and Cloud nodes both join (§31.5).
+- **Current status:** BLOCKED on D20, D21, D22, D25.
+- **Files:** `scripts/bootstrap/` (new target); vendored charts for hcloud CCM and CSI (local folders, owner rule).
+- **Change:**
+  - Kubernetes control plane on its own small Cloud server or the first base node (D22); datastore snapshots to B2.
+  - Robot vSwitch coupled to a Cloud Network; CNI MTU 1400 (E11).
+  - CCM with Robot and Cloud support; CSI on Cloud nodes only; TopoLVM on base nodes only; storage classes per pool.
+  - One location per cluster.
+- **Depends:** strict: R0.1 (D20, D21, D22, D25), I1.1.
+- **Steps:** Bootstrap on hourly Cloud servers (control plane + one Cloud worker) and, after I1.3, the base node; cross-node traffic and NetworkPolicy tests.
+- **Acceptance:** A Cloud worker joins from cloud-init; a pod on the base node reaches PG only in its namespace across nodes; a Cloud Volume attaches on a Cloud node and is refused on the base node; a control-plane snapshot restores.
+- **Tests:** `INTEG[H]`.
+- **Risks:** MicroK8s worker join with an external CCM is untested (D25 fallback: k3s).
+- **Rollback:** Single-node cells (revision 5).
+
+#### K1.2 · Cluster Autoscaler and node pools
+`P0 · M · hourly Cloud servers · Approval: YES (pool bounds) · Status: BLOCKED · Tests: UNIT, INTEG[H]`
+- **Objective:** Cloud pools `elastic-prod`, `elastic-nonprod` and `build` grow and shrink automatically within owner-set bounds.
+- **Current status:** BLOCKED on K1.1, D23, D24.
+- **Files:** Vendored Cluster Autoscaler chart; `HCLOUD_CLUSTER_CONFIG` per pool (labels, taints, cloud-init).
+- **Change:**
+  - At least two server types per role, priority expander (E3);
+  - explicit kubelet reservations (E2);
+  - maximum nodes per pool and a node-hour alert (D24);
+  - `build` pool tainted; `elastic-nonprod` minimum from D23;
+  - the per-project server limit raised in advance (needs one month and a paid invoice, E3).
+- **Depends:** strict: K1.1, R0.1 (D23, D24).
+- **Steps:** Deploy; scale-up and scale-down tests; out-of-stock fallback test.
+- **Acceptance:** AS1–AS3 and AS5 pass; node-hours are reported per pool.
+- **Tests:** `INTEG[H]`.
+- **Risks:** Spend. Mitigation: maximums and the alert.
+- **Rollback:** Autoscaler off; pools fixed.
+
+#### K1.3 · Operator placement and eviction policy
+`P0 · M · $0 · Approval: no · Status: BLOCKED · Tests: UNIT, INTEG[LOCAL]`
+- **Objective:** Every tenant pod lands in its pool and is protected from unsafe removal (§31.9).
+- **Current status:** BLOCKED on D20 and C14.1 (CRD change once).
+- **Files:** `compute/operator/api/v1alpha1/odooinstance_types.go`; `internal/resources/` (deployment, database, backup, update and restore Jobs); `kubernetes_driver.py`.
+- **Change:**
+  - CR field for the pool (set by the control plane), mapped to node selector, toleration, storage class and priority class;
+  - `safe-to-evict: "false"` on production and `elastic-prod` PG/Odoo pods and on every running Job;
+  - a `maxUnavailable: 0` PDB on production PG and Odoo;
+  - node annotation `scale-down-disabled` while a maintenance operation runs.
+- **Depends:** strict: C14.1, R0.1 (D20).
+- **Steps:** Implement; envtest; regression test that non-production pods stay evictable.
+- **Acceptance:** AS5, AS10 pass; envtest shows the annotations and PDBs per environment class.
+- **Tests:** Go unit and envtest.
+- **Risks:** Undrainable nodes block host maintenance. Mitigation: planned moves through the operator (§31.9).
+- **Rollback:** Revert.
+
+#### K1.6 · Module update with restore point and maintenance mode
+`P0 · M · $0 · Approval: no · Status: BLOCKED · Tests: UNIT, INTEG[TEST-SRV]`
+- **Objective:** A failed `odoo -u` never leaves a half-updated database (§31.8).
+- **Current status:** BLOCKED on D26 and I6.2. Today the update Job runs against the live database (K7).
+- **Files:** `compute/operator/internal/controller/update.go`, `resources/update_job.go`; `k8s_builds.py`; the SPA deploy flow.
+- **Change:** Restore point (WAL-G + filestore manifest) → maintenance mode → `-u` Job → success: new image; failure: PITR to the restore point. Optional rehearsal on a PITR clone in the `build` pool. The customer sees the expected window before confirming.
+- **Depends:** strict: I6.2, R0.1 (D26).
+- **Steps:** Implement; tests with an addon that fails mid-update.
+- **Acceptance:** AS11 passes; zero customer writes lost; the old image serves after a failure.
+- **Tests:** `INTEG[TEST-SRV]`.
+- **Risks:** Downtime of the update itself (D26).
+- **Rollback:** Today's live update.
+
+#### K1.7 · Autoscaling and node-loss failure-injection suite
+`P0 · M · hourly Cloud servers · Approval: YES · Status: BLOCKED · Tests: INTEG[H], ACCEPT`
+- **Objective:** Prove §31.12 before production.
+- **Current status:** BLOCKED on K1.1–K1.4.
+- **Files:** **new** `scripts/tests/autoscaling/`.
+- **Change:** —
+- **Depends:** strict: K1.1, K1.2, K1.3, K1.4, I6.8, C6.10.
+- **Steps:** Run AS1–AS16 with the C6.8 availability probe; record times in §26.3.
+- **Acceptance:** All pass; measured re-attach time, wake time and node-provision time recorded. **Critical test:** a failure blocks M4.
+- **Tests:** As above.
+- **Risks:** Cost. Mitigation: hourly servers deleted after each run.
+- **Rollback:** —
+
+#### K2.1–K2.6 · Future improvements (PH11)
+`Status: NOT STARTED · each card is written when its trigger is met`
+
+| ID | Priority | Task | Trigger | Depends |
+|---|---|---|---|---|
+| K2.1 | P2 | Odoo major upgrade by clone (§31.8) | First customer request | K1.5, I6.8, D11 legal gate for Enterprise |
+| K2.2 | P1 | PostgreSQL major upgrade (`pg_upgrade` on a copy or dump/restore) | Before 2028-11-09 (PG 16 EOL) | K1.5, I6.1 |
+| K2.3 | P2 | Filestore on object storage with a guard addon (§31.7) | §14.5 trigger | D28 |
+| K2.4 | P1 | Planned consolidation of `elastic-prod` nodes | An `elastic-prod` node < 30% for 7 days | K1.3, K1.4 |
+| K2.5 | P1 | Automated fencing of unreachable Cloud nodes | First overflow tenant | K1.3 |
+| K2.6 | P2 | HA Kubernetes control plane | ≥ 3 base nodes or a control-plane incident | K1.1 |
+
+---
+
 ## 27. Risks and mitigation
 
 | Risk | Likelihood / impact | Mitigation |
@@ -4310,6 +4455,15 @@ Each task below is P1 or P2 and starts only when its trigger in §22–§23 is m
 | D17 | Server choice by cost per safely hosted tenant (§9.1): first cell AX42-1 (LTD if offered; HEL1 if DE is slow); later cells by the §9.1 rule; buy ECC LTD stock opportunistically; AX162 rejected; EX63 only after ECC confirmation and P2 | Approve |
 | D18 | Lead-time reorder point instead of a fixed 60% (§17.6); cloud stopgap only for paid orders with ETA > 3 days | Approve |
 | D19 | Final CRD API group name for C14 (e.g. a domain the owner controls) | Choose |
+| D20 | Cluster shape (§31.4): **one shared multi-node cluster per location** with a dedicated base pool (not autoscaled) and Cloud pools autoscaled by the Cluster Autoscaler (option C), instead of one single-node cell per server. Changes §8 "not introduced", §11 (cell, autoscaling) and C6.D4 for Cloud pools; alternatives A (keep cells) and B (Cloud only) | Approve C |
+| D21 | Production placement and storage (§31.6): production tenants on the dedicated base pool with TopoLVM, so D1/D14/D17 stay per base node; Cloud Volumes only in Cloud pools (one per environment); re-evaluate B if CX/CAX return to stock | Approve |
+| D22 | Kubernetes control plane: a separate small Cloud server (CPX32, €35.99/month [DOC]) from day one, or on the first base node at launch | Separate server |
+| D23 | Non-production and trials on `elastic-nonprod` (Cloud Volumes; sleep empties nodes). Pool minimum 0 (wake takes minutes; changes the S1 target) or 1 node in business hours (≈ €70/month) | Choose |
+| D24 | Autoscaler bounds as the standing cost authorization that replaces C6.D4 for Cloud pools: server types per pool (at least two per role), maximum nodes per pool, node-hour alert | Choose values |
+| D25 | Kubernetes distribution for the shared cluster: keep MicroK8s (cloud-init worker join and external CCM tested in K1.1), k3s as the fallback | Approve |
+| D26 | Module updates (`odoo -u`): restore point + announced short maintenance window, a customer-initiated exception to the zero-downtime rule, instead of updating a live database | Approve |
+| D27 | Production consolidation: never by the autoscaler; only planned moves in customer-chosen windows (K2.4) | Approve |
+| D28 | Filestore on block storage at launch; object storage (`fs_attachment`) only at the §14.5 trigger with a guard addon (K2.3); S3 filesystem mounts rejected | Approve |
 
 ---
 
@@ -4318,7 +4472,7 @@ Each task below is P1 or P2 and starts only when its trigger in §22–§23 is m
 **Rule:** this checklist is the exit criterion of milestone **M6** and of task **GATE6** (§25.3, §26.4). Every box must be ticked with evidence linked in §26.3, or there is no paying customer. A failed item is a **no-go** until it is fixed and re-run. Items deferred to PH11 (§26.4) are not on this list.
 
 **Decisions**
-- [ ] D1–D19 decided and recorded.
+- [ ] D1–D28 decided and recorded.
 
 **Money and lifecycle (L1 on a throwaway control-plane DB)**
 - [ ] C3: kill the jobs worker mid-deploy after payment → the deploy completes after restart.
@@ -4366,7 +4520,406 @@ Each task below is P1 or P2 and starts only when its trigger in §22–§23 is m
 
 ---
 
+## 31. Shared-cluster autoscaling: architecture review (revision 5.3, 2026-10-15)
+
+**Status: PROPOSED.** Nothing in this section is approved, and no accepted revision 5 decision changes until the owner answers D20–D28 (§31.15). Where a recommendation conflicts with an earlier decision, the conflict is named. The review changed no code, built no image and touched no cluster.
+
+**Owner request (2026-10-15):** review a low-cost, reliable multi-tenant design with these properties:
+- one Odoo pod and one PostgreSQL pod per customer;
+- many customers on shared worker nodes;
+- worker nodes scaled up and down by the Hetzner Cluster Autoscaler where technically supported;
+- customer data safe through restarts, node failures, drains and autoscaler removals.
+
+Owner direction already recorded in C6.D10: the Go operator and `saas-jobs` own the environment lifecycle, the Cluster Autoscaler alone provides worker nodes, and nothing creates a server per customer.
+
+**Evidence tags** are those of "How to read this plan". **[UNVERIFIED]** marks a claim that could not be checked in a primary source.
+
+### 31.1 Verified facts
+
+#### Repository [CODE, read 2026-10-15 at `c72b1fa`]
+
+| # | Fact | Where |
+|---|---|---|
+| K1 | **Every tenant has one PVC shared by PostgreSQL and the filestore.** The control plane always sets `sharedWithDatabase: true`; PG mounts subPath `postgres`, Odoo subPath `odoo`. The field is immutable. Plan §14.4 assumed separate DB and filestore volumes (I2.3 still has to build the split) | `kubernetes_driver.py:545`; `resources/database.go:158-182`; `resources/pvc.go:46-52`; `odooinstance_types.go:133-135` |
+| K2 | PostgreSQL: StatefulSet, 1 replica, `postgres:16` by default, RWO, `OnDelete`, in-place resize `NotRequired`, WAL on the same volume, `max_connections` not set (default 100) | `resources/database.go:58-106,241-259`; `controller/database.go:266-318` |
+| K3 | **`spec.database.version` is mutable** (enum 13–17), and an image change deletes the PG pod. A version change would start a new major on the old data directory. There is no `pg_upgrade` or dump/restore path | `odooinstance_types.go:53-55`; `controller/database.go:281-282`; no check in `validate.go` |
+| K4 | The backup tool ships `pg_dump` 16 only, while the CRD accepts PG 13–17 | `compute/tools/backup-tool/Dockerfile:12,27` |
+| K5 | **Backups today:** nightly `pg_dump -Fc` + filestore `tar.gz`, run one after the other while Odoo is live (not mutually consistent), via rclone to one bucket with **one global key copied into every tenant namespace**. No WAL-G, no PITR, no encryption. The settings UI and the add-on text still say "restic" | `run-backup.sh:26-132`; `kubernetes_driver.py:701-762`; `saas_instance_backup.py:363-381`; `res_config_settings_views.xml:85` |
+| K6 | **Deleting a CR runs a best-effort final backup, waits at most 2 min, then deletes the namespace and its PVCs.** Longhorn's reclaim policy is `Delete` | `controller/finalize.go:21-73,105-108`; `vendor/longhorn/values.yaml:186` |
+| K7 | **Module update:** an `odoo -u` Job runs against the live database while the old pods keep serving; on failure the old image keeps serving. A plain image change without a token rolls with **no** `-u` | `resources/update_job.go:18-59`; `controller/update.go:45-129`; `k8s_builds.py:438-472` |
+| K8 | `spec.version` (Odoo) is only checked against the supported list; a major change is a plain image change. No version-upgrade offer exists in the product | `controller/validate.go:44`; `Hosting.tsx:456` |
+| K9 | **Every RWO consumer has a required pod affinity to one node** (web, PG, backup Jobs); the surge pod of a rolling update must fit on that node | `resources/deployment.go:274-303`; `resources/pvc.go:56-66` |
+| K10 | No nodeSelector, tolerations, priorityClass, PDB or `safe-to-evict` annotation on tenant pods | operator search |
+| K11 | Isolation that exists: namespace per tenant, PSS `restricted`, default-deny NetworkPolicy (PG only from the same namespace), ResourceQuota and LimitRange per plan, no service-account token, non-root read-only Odoo | `resources/tenancy.go`, `networkpolicy.go:45-138`, `deployment.go:129-136` |
+| K12 | Suspend scales Odoo and PG to 0 and keeps PVCs, Secrets and the namespace | `controller/suspension.go:137-291` |
+| K13 | Builds: a Job in `odoo-builds` with node affinity and toleration `saas.platform/pool=build`; the bootstrap does not create that pool, and the runbook it cites (`docs/P0.19-build-pool.md`) does not exist in `main` | `k8s_builds.py:275-281` |
+| K14 | No Cluster Autoscaler, Hetzner Cloud API, Hetzner CSI, TopoLVM or k3s anywhere. Bootstrap targets are MicroK8s (Longhorn forced) and DOKS | `bootstrap.py:299-316,358` |
+| K15 | Capacity check sums plan **limits** against `max_cpu_cores`/`max_ram_gb` (0 = unlimited); no node allocatable, storage or volume-count check | `saas_server.py:148-182,441-463` |
+| K16 | The operator injects `saas_tenant_dbm` into every tenant (`--load=base,web,saas_tenant_dbm`). No object-storage attachment addon exists; JuiceFS filestore code is dead | `platformaddons.go:23-32`; `saas_server.py:209-217` |
+
+#### External [DOC, read 2026-10-15; sources in §31.16]
+
+| # | Fact |
+|---|---|
+| E1 | **The Cluster Autoscaler's Hetzner provider handles Hetzner Cloud servers only.** The source says so; nodes whose provider ID is not `hcloud://` are ignored, so a mixed cluster works, but dedicated (Robot) nodes are never scaled |
+| E2 | Pools: `--nodes=min:max:type:location:name`, one server type and one location each. Join is only via the cloud-init you supply. Scale from zero is supported. **The template node reports allocatable = full server capacity** (no system reservation), so the autoscaler can over-estimate what fits. Placement groups are capped at 10 servers |
+| E3 | Before creating servers, the provider does **not** check stock. Creation can fail with `resource_unavailable` (412), `resource_limit_exceeded` (403, per-project limits that Hetzner does not publish) or 429. A failed pool backs off 5 min, up to 30 min; `max-node-provision-time` is 15 min |
+| E4 | **Scale-down is blocked by** pods annotated `safe-to-evict: "false"`, pods with a restrictive PDB, pods with local storage (hostPath, non-memory emptyDir), and pods that cannot be placed elsewhere; nodes annotated `scale-down-disabled`. Defaults: unneeded time 10 min, utilization threshold 0.5 |
+| E5 | The autoscaler acts only on pods that **failed to schedule**. No documentation or code reacts to a `Deferred`/`Infeasible` in-place resize [UNVERIFIED: inference]. Kubernetes 1.37 adds alpha scheduler preemption for deferred resizes |
+| E6 | **Hetzner Cloud Volumes:** 10 GB–10 TB, 1 GB steps, grow online, never shrink; **max 16 per server**; one server at a time; **attach only in the same location**; deleting a server **detaches** (does not delete) its volumes; triple-replicated; no Hetzner backups or snapshots of volumes; up to 5,000/7,500 IOPS and 200/300 MB/s per volume. Attach time is not documented |
+| E7 | **Hetzner CSI driver:** RWO/RWOP only (no RWX); expansion supported; topology key `csi.hetzner.cloud/location`; `WaitForFirstConsumer`; not usable on dedicated (Robot) nodes |
+| E8 | **Cloud prices after the 2026-06-15 adjustment (DE/FI, monthly cap, without IPv4):** CPX32 (4/8) €35.49, CPX42 (8/16) €69.49, CPX62 (16/32) €129.99, CCX33 (8/32) €138.49, CCX43 (16/64) €275.99. **The whole CX and CAX line is marked "not available"** (e.g. CX53 16/32 would be €29.49). Primary IPv4 €0.50 |
+| E9 | Volume price: €0.0440/GB-month on hetzner.com/cloud/block-storage on 2026-10-15; this plan's §7.1 used €0.0572 from 2026-10-13 [UNVERIFIED which is current] |
+| E10 | AX42: €97.30 + €1.70 IPv4, €49 setup (unchanged). Hetzner Object Storage €6.49/month incl. 1 TB; B2 $6.95/TB; DO Spaces $5 incl. 250 GiB |
+| E11 | **A Robot vSwitch can be coupled to a Cloud Network**, so dedicated and cloud servers share one private network: one Cloud Network per vSwitch, eu-central network zone only, VLAN interface on the dedicated server, MTU 1400 |
+| E12 | The CCM sets `hcloud://` IDs for Cloud servers and `hrobot://` for Robot servers, and deletes Node objects whose servers are gone |
+| E13 | **PDBs** only govern Eviction-API (voluntary) disruptions. Deleting a pod or Deployment bypasses them, and they cannot prevent node failure. `maxUnavailable: 0` on a single replica makes the node **undrainable** |
+| E14 | A StatefulSet pod on an unreachable node is **not** deleted automatically. It waits for the Node object to be deleted, the kubelet to return, or a force delete; the `node.kubernetes.io/out-of-service` taint is the safe path after confirmed shutdown. A local PV whose node is gone leaves the pod unable to run |
+| E15 | Odoo writes attachment files **before** the transaction commits, marks them in a GC checklist, and a daily autovacuum deletes unreferenced checklist files. **A missing file reads as empty content, not an error.** Sessions live in `<data_dir>/sessions`, outside the per-database filestore [ODOO 17.0–19.0] |
+| E16 | Standard Odoo 17–19 stores attachments only in `file` or `db`. OCA `fs_attachment` (+ `fs_attachment_s3`) exists for 17.0/18.0, **Beta**, installed per database. It has no uninstall hook: after an uninstall, attachments it stored would read as empty [UNVERIFIED: inferred from code] |
+| E17 | S3 mounts: Mountpoint-s3 cannot modify existing files, rename directories or lock; s3fs has no atomic renames and no multi-client coordination; GeeseFS has no locking and flushes asynchronously; JuiceFS is POSIX-compatible but needs a metadata database and stores chunks, not files |
+| E18 | PostgreSQL EOL: 16 on 2028-11-09, 17 on 2029-11-08, 18 on 2030-11-14. `pg_upgrade` needs both binary sets, and matching checksum settings (18 enables checksums by default). `max_wal_size` is not a hard limit; WAL is kept until archived, and a full `pg_wal` PANICs the server |
+| E19 | Odoo major upgrades transform the database (Odoo upgrade service for Enterprise; OpenUpgrade for Community, one major at a time). Switching the image is not an upgrade path [inference from both projects' docs] |
+
+**Could not verify:** current volume price (E9); per-location CPX/CCX stock; project server limits; volume attach/detach time; autoscaler behaviour on deferred resizes; whether MicroK8s worker join from cloud-init and CCM `--cloud-provider=external` work together (no test yet); vSwitch or Cloud Network fees.
+
+### 31.2 Contradictions found
+
+| # | Contradiction | Resolution proposed |
+|---|---|---|
+| X1 | Owner direction (autoscaled shared nodes) vs §8 "not introduced: multi-node cells, cluster autoscaler", §11 "no cluster autoscaler on cells" and C6.D4 | D20, D24 |
+| X2 | The autoscaler cannot scale dedicated servers (E1) vs D1 (production on dedicated AX42) | D21: dedicated stays a **non-autoscaled base pool**; autoscaling applies to Cloud pools |
+| X3 | Node-local storage (D14 TopoLVM) pins every tenant to its node, so the autoscaler can never remove a base node and a new node never helps an existing tenant (E4, K9) | Accepted by design for the base pool; elastic pools use Cloud Volumes (§31.6) |
+| X4 | Plan §14.4 and D14 assume split DB/filestore volumes; the code shares one PVC (K1) | Split stays required on the base pool (I2.3). On Cloud Volumes keep one volume per environment because of the 16-volume limit (§31.6) |
+| X5 | D4 (WAL-G + filestore sync + per-tenant B2 keys) vs code: pg_dump + tar, global key, UI says restic (K5) | Unchanged plan (I6, I6.6, C8); correct the "restic" wording (K1.5) |
+| X6 | D13 retention (final snapshot kept 90 d) vs the 2-minute best-effort final backup before PVC deletion (K6) | Launch blocker: K1.5 + C7.2 |
+| X7 | Owner zero-downtime rule vs `odoo -u` against a live database (K7) | D26 |
+| X8 | §11 sleep wake target S1 (p95 < 60 s) vs waking a non-production environment whose pool has scaled to zero (node creation ≤ 5 min plus boot and join, E3) | D23 |
+
+### 31.3 The central constraint
+
+A tenant runs one PostgreSQL pod and one Odoo pod on **one RWO volume**, with required affinity to one node (K1, K9). Three consequences decide the design:
+
+1. **Production tenants are always on** (owner rule: production never sleeps). Their nodes are never empty, so scale-**down** recovers money only after churn, and only by moving a tenant. With one replica, a move is a stop and a start: **downtime for that tenant**. Autoscaling's value for production is fast scale-**up**, not lower idle cost.
+2. **Node-local volumes (TopoLVM, local disk) cannot move.** The autoscaler cannot remove such a node (E4), a new node cannot help an existing tenant that needs more room (K9, E5), and losing the node means a restore from backup (RPO ≤ 5 min, RTO up to hours; D15).
+3. **Network volumes (Hetzner Cloud Volumes) can move within a location** (E6, E7). A node can be removed and a tenant survives node loss without data loss, but: the volume must re-attach (time undocumented), 16 volumes per node, IOPS capped per volume, and only on Cloud servers, whose RAM costs about **2.6× an AX42's** per GB (AX42 €101.04/64 GB = €1.58/GB; CPX62 €130.49/32 GB = €4.08/GB; CCX43 €4.32/GB) [DOC].
+
+So the question is not "autoscaling or not" but **which workloads sit on movable, autoscaled capacity**.
+
+### 31.4 Options compared
+
+| | **A. Revision 5 baseline** | **B. Cloud only** | **C. Hybrid (recommended)** | D. Cloud with node-local disks |
+|---|---|---|---|---|
+| Shape | One single-node MicroK8s cell per AX42 | One shared cluster per location on Hetzner Cloud; all tenants on Cloud Volumes | One shared cluster per location: **dedicated base pool** (not autoscaled) for production, **Cloud pools** (autoscaled) for everything elastic | Cloud nodes, tenant data on the node's own disk |
+| Autoscaling | None (servers ordered by the §17.6 reorder point) | All nodes | Cloud pools only (E1) | Scale-up only; removal loses data |
+| Production storage | TopoLVM, node-local, RAID1 | Cloud Volume, triple-replicated, movable | TopoLVM on the base pool; Cloud Volume for overflow | Node-local |
+| Node loss | Restore from B2: RPO ≤ 5 min, RTO ≤ 4 h (D15) | Re-attach elsewhere: RPO 0, RTO minutes [UNVERIFIED, test AS6] | Base: as A. Overflow: as B | Restore from B2, and every autoscaler removal is a data-loss risk |
+| Cost (§31.13) | Lowest above ~3 tenants | ≈ 1.75–2.0× A at 5–250 tenants (CPX); lowest only if CX returns | A + the Cloud pools' usage + a control-plane node | — |
+| New components | — | CCM, CSI, autoscaler, multi-node networking | Same as B, plus vSwitch coupling (E11) | — |
+| Verdict | Safe, cheapest, no elasticity | Simplest uniform elasticity; at current CPX prices it roughly doubles infrastructure per tenant (€12.1 → €24 at 50 tenants), so the §19/§21 margin model would have to be re-run before it could be chosen | **Recommended** | **Rejected** |
+
+**Why C, not B:** B's extra cost is the whole infrastructure cost of every tenant. C adds Cloud capacity only where it is used briefly (builds, upgrade rehearsals, restore checks, sleeping non-production) or where it buys time (paid-order overflow while the next dedicated server arrives). If CX returns to stock, B's cost drops below A's (§31.13), and D21 should be re-evaluated.
+
+**What C replaces instead of adding:** the custom on-demand build node (I5.1/I5.2) becomes an autoscaled `build` pool, and the "Hetzner Cloud stopgap cell" of §17.6/D18 becomes the `elastic-prod` overflow pool in the same cluster, with no second cluster to bootstrap.
+
+### 31.5 Recommended launch architecture (option C)
+
+```mermaid
+flowchart TB
+  subgraph CP["Control plane (DO droplet, unchanged): Odoo saas_* + saas-jobs"]
+  end
+  subgraph CL["One Kubernetes cluster per location (eu-central network zone), MicroK8s unless D25 says otherwise"]
+    KCP["Kubernetes control plane: small Cloud server or base node (D22)"]
+    subgraph BASE["Pool base — Hetzner dedicated AX42 (Robot), NOT autoscaled, label pool=base"]
+      P1["Production tenants: Odoo + PostgreSQL, TopoLVM LVs (DB + filestore split)"]
+    end
+    subgraph EP["Pool elastic-prod — Cloud CPX/CCX, autoscaled min 0"]
+      P2["Paid-order overflow: Odoo + PG on one Cloud Volume; never removed by the autoscaler"]
+    end
+    subgraph EN["Pool elastic-nonprod — Cloud, autoscaled min 0 (or 1 in business hours, D23)"]
+      P3["Staging, dev, trials: one Cloud Volume each; sleep → pods gone → node removable"]
+    end
+    subgraph EB["Pool build — Cloud, tainted, autoscaled min 0"]
+      P4["BuildKit Jobs; upgrade rehearsals; restore verification (I9.1)"]
+    end
+    CA["Cluster Autoscaler (Cloud pools only) + CCM (hcloud + hrobot) + CSI (Cloud nodes only)"]
+  end
+  B2[("Backblaze B2 (unchanged, D4)")]
+  CP -->|kubeconfig| KCP
+  P1 & P2 & P3 -->|WAL-G + filestore sync| B2
+```
+
+| Decision area | Recommendation | Fits the existing design because |
+|---|---|---|
+| Cluster | One shared cluster per location; dedicated servers join it as base nodes; Cloud pools join over a vSwitch-coupled Cloud Network (E11) | `saas.server` is one cluster holding many tenants, with capacity fields [CODE `saas_server.py:148-182`]; the operator is cluster-scoped |
+| Production placement | `pool=base`. The base pool grows by the §17.6 reorder point (manual at launch, G1 later): nothing about dedicated ordering changes | D1, D14, D17, D18 keep their meaning per base node |
+| Overflow | A paid order that fits no base node but fits `elastic-prod` is placed there on a Cloud Volume. It moves to a base node only in a customer-chosen window, or stays | Replaces the D18 stopgap cell |
+| Non-production and trials | `elastic-nonprod` on Cloud Volumes. Sleep (D5) then empties nodes, which the autoscaler removes, so **sleep finally saves cash** (§10 noted it saved none on a paid cell) | D5 |
+| Builds and temporary jobs | `build` pool, min 0 | Replaces I5.1/I5.2's custom server API code with a standard component |
+| Lifecycle ownership | Operator + `saas-jobs`: environments, volumes, placement, moves. Autoscaler: nodes only. **No component creates a server per customer** | C6.D10 |
+| Kubernetes control plane | D22: a small always-on Cloud server (CPX32 €35.99 incl. IPv4 [DOC]), so losing a base node never takes the cluster's API with it; or co-located on the first base node at launch to save that cost | — |
+
+### 31.6 Storage design
+
+| Data | Base pool (production) | Cloud pools (overflow, non-production) | Why |
+|---|---|---|---|
+| PostgreSQL data + WAL | **TopoLVM thick LV**, own filesystem, RAID1 (D14 unchanged) | **One Hetzner Cloud Volume per environment**, `WaitForFirstConsumer`, expansion on | Local NVMe is the cheapest per GB and the fastest; the autoscaler never touches base nodes, so node-local is safe there. Cloud Volumes are the only storage that survives an autoscaler removal |
+| Filestore | **Second TopoLVM LV** (split, I2.3) so a full filestore cannot stop PostgreSQL | **Same volume as PG** (subPaths, today's code, K1) | The 16-volumes-per-node limit (E6) would halve density with two volumes. Fill protection on the shared volume comes from the existing storage state machine (fence at 100%) plus an alert at 85% |
+| WAL growth | `max_wal_size` ≤ 1 GiB, `archive_timeout` 60 s, alert on archive lag (C11); WAL stays on the DB LV so it fills only that tenant [MEAS v3 lab] | Same | A full `pg_wal` PANICs only that tenant (E18) |
+| Backups | WAL-G + content-addressed filestore sync to B2 with per-tenant keys and Object Lock (D4 unchanged) | Same | Cloud Volumes have no Hetzner backup (E6); replication is not a backup |
+| Object storage for the filestore | **Not at launch** (§31.7) | Same | — |
+
+**Compared, per production tenant** (sold 44 GB [ASSUMP §14.4]):
+
+| Approach | Storage cost/month | Node loss | Moves between nodes | Autoscaler can remove its node | Verdict |
+|---|---|---|---|---|---|
+| TopoLVM LV on AX42 (local NVMe, RAID1) | ≈ €0.24/GB-month as part of the server ($0.28 in §14.5) — already paid by the base node | Restore from B2: RPO ≤ 5 min, RTO ≤ 4 h | Copy only (dump/restore or WAL-G), planned window | No (Robot node, never autoscaled) | **Base pool** |
+| Hetzner Cloud Volume | €1.94–2.52 (44 GB × €0.0440–0.0572) [DOC E9] | Re-attach: RPO 0, RTO minutes [UNVERIFIED] | Detach/attach in the same location: tenant downtime of a pod restart plus attach | Yes, once its pods are evictable | **Cloud pools** |
+| Cloud server local disk | Included in the server | Data lost with the node | No | **Must never** | Rejected (D) |
+| Longhorn replicated across Cloud nodes | Disk × replicas + engine overhead | Survives | Yes | Yes | Rejected: replicas on paid Cloud disk cost more than Cloud Volumes, plus Longhorn's operational load |
+| Shared PostgreSQL | — | — | — | — | Rejected in §13 (D3) on measured isolation failures |
+
+**When storage is unavailable** (PG pod cannot be rescheduled):
+
+| Cause | What happens | Handling |
+|---|---|---|
+| Base node lost (TopoLVM) | PG pod stays Pending forever: its PV is pinned to a node that is gone (E14) | §15.5 runbook: restore from B2 to `elastic-prod` in the same cluster (no new cluster to bootstrap when the Kubernetes control plane is separate, D22), fence the old node, then a planned move back |
+| Cloud node lost | Server deleted → volume detached → pod scheduled elsewhere. Server alive but unreachable → pod stuck Terminating (E14) | K2.5 fencing: power off via API, add the `out-of-service` taint, pod moves. Until K2.5: the on-call user does it from the runbook |
+| No node in the volume's location with room | Pending; autoscaler adds a node in that location's pool (pools are per location, E2) | Pools only in the cluster's one location |
+| 16 volumes on every node | Pending; autoscaler adds a node only if the CSI volume limit is visible to it [UNVERIFIED] | The ledger counts volumes per node (K1.4) and the pool never relies on the autoscaler for this |
+| Volume creation fails (`no_space_left_in_location`) | Pending, no PV | Classed as resource unavailability: stays pending under C6.D8; alert |
+
+### 31.7 Filestore: decision and scenarios
+
+**Decision for launch:** the filestore stays on block storage, next to its database on the same node (TopoLVM LV on base, the shared Cloud Volume elsewhere), backed up by the content-addressed sync to B2. Object storage for attachments stays a trigger-based future option (§14.5, K2.3), not a launch component.
+
+**Why not object storage now:**
+1. Standard Odoo has no S3 backend (E16). The only maintained route is OCA `fs_attachment`: **Beta**, installed per tenant database, and a tenant admin who uninstalls it would see stored attachments read as **empty** (E15, E16). Preventing that needs a platform guard addon that blocks uninstalling it and a per-version test suite on 17/18/19.
+2. Customer custom code can still write files through `ir.attachment` or directly to `data_dir`; the guard covers only the standard path.
+3. Mounting a bucket as a filesystem is rejected: the documented semantics (E17) break Odoo's assumptions (sessions, rename, locking, temporary files); JuiceFS works but adds a metadata database per cluster that becomes critical for every tenant.
+4. Storage saving is small at launch: B2 at $6.95/TB vs local disk already paid for.
+
+| Scenario | Mechanism | Impact | Handling |
+|---|---|---|---|
+| Odoo pod restart or reschedule | Volume reattaches (same node on base; any node in the location on Cloud) | Seconds to minutes of that tenant's downtime | Rolling update for planned changes (`maxSurge 1`, same node) |
+| Node removed by the autoscaler | Only Cloud nodes; filestore is on a Cloud Volume | None if pods are evictable; prod overflow pods are not (§31.9) | §31.9 rules |
+| Upgrade and rollback | `odoo -u` can create or delete attachments | Rollback of the DB alone would leave orphan files (harmless) or reference files deleted later (GC deletes only unreferenced checklist files, E15) | Restore point = WAL-G restore point + filestore manifest at the same time; content-addressed objects are never overwritten, so a matching set always exists |
+| Restore DB without its filestore, or mismatched versions | Rows reference files that are missing | Attachments silently empty (E15) | V2 check in every restore (§15.7): 0 missing files older than the filestore RPO before T |
+| Writes during backup | File written before commit (E15) | A backup may hold files of rolled-back transactions | Harmless: content-addressed, GC'd later. The 5-min sync bounds missing files (§15.2) |
+| Storage full or orphans | Checklist GC only (E15); files copied in from outside are never collected | Volume fills | Fence at 100%, alert at 85%; orphan report job (future) |
+| Multiple Odoo replicas | RWO, one node; replicas are not offered (§12) | — | Only with RWX or object storage (K2.3) |
+| Suspend, resume, move, delete | Suspend keeps the volume (K12). Move = copy in a planned window. Delete = purge after retention and a verified final backup (D13, C7.2, K1.5) | — | — |
+| Credentials | No object-storage credential in a tenant at launch. Backup keys per tenant (I6.6) | — | — |
+| Local development | Export zip with filestore manifest (§17.1) | — | Unchanged |
+
+### 31.8 Workflows
+
+**New environment (purchase).** States are distinct and each is shown to ops; the customer sees only "creating" or the C6.4 status:
+
+| State | Meaning | Signal |
+|---|---|---|
+| Unschedulable | No node has room; the scheduler emits `FailedScheduling` | Pod `Pending` |
+| Node provisioning | The autoscaler emitted `TriggeredScaleUp`; Hetzner creates the server (≤ 5 min timeout), cloud-init joins it, CNI and CSI become ready (≤ 15 min `max-node-provision-time`) | Event on the pod; new Node not yet Ready |
+| Storage provisioning | CSI creates and attaches the volume, or TopoLVM creates the LV | PVC `Pending` → `Bound` |
+| Starting | Image pull, PG init, `odoo-init` (`-i base`) | Init Job running |
+| **Ready** | PG accepts connections, init Job succeeded, Odoo answers its health check, the route serves | Only this state lets C6.10 capture |
+
+Steps:
+1. Checkout: the C5 ledger checks a base node by dominant resource; else `elastic-prod` within its configured maximum (D24) using **real** allocatable, not the autoscaler template (E2); else no charge (waitlist).
+2. Hold (C5.3) → authorization (C6.10) → `saas.job` deploy keyed by the invoice (C3.1): no duplicate job.
+3. Operator applies the CR with the pool chosen by the control plane (K1.3): node selector, toleration, storage class, priority class.
+4. Pending pods trigger the autoscaler only for Cloud pools. **Classify failures:** `resource_unavailable`, `resource_limit_exceeded`, `no_space_left_in_location`, unschedulable after scale-up → **resource unavailability**: stays pending under C6.D8 (released before the authorization lapses). Image pull, init failure, PG start failure, CrashLoop → **non-resource**: final after the C3 retries → C5.5 release.
+5. Ready → C6.10 capture.
+6. **Cleanup on release:** delete the CR of an environment that never became ready. The finalizer deletes its namespace and volume only when the environment is fresh (no restore source); a restore or migration target never deletes its source (K1.5).
+
+**Same-major module or code update** (the common "deploy new addons" case). Today the `-u` Job runs against the live database while old pods serve (K7). Proposed (D26), cheapest safe:
+1. Optional rehearsal: PITR clone onto the `build` pool, run `-u`, report, delete (hourly Cloud cost only).
+2. WAL-G restore point + filestore manifest.
+3. Maintenance mode: web pods to 0 or a maintenance page (downtime = `-u` duration).
+4. `odoo -u` Job against the new image.
+5. Success → new image serves. Failure → PITR to the restore point (no customer writes happened since step 3), old image serves.
+6. A plain image change without `-u` is refused when the module manifest versions changed (K1.5).
+
+**Odoo major upgrade** (future, K2.1): never in place.
+1. PITR clone onto `elastic-nonprod` as a new environment.
+2. Upgrade with the Odoo upgrade service (Enterprise, legal gate) or OpenUpgrade (Community, one major at a time) (E19).
+3. Customer tests the copy.
+4. Cutover window: freeze production, take a final clone, re-run the upgrade, switch the route. Downtime = the measured upgrade run.
+5. Keep the old environment stopped for N days as the rollback (cost: its volume only).
+
+**PostgreSQL major upgrade** (future, K2.2; PG 16 is supported to 2028-11-09): a Job with both binary sets runs `pg_upgrade` on a copy of the volume, or dump/restore into a new environment; checksum settings must match (E18). Until then the operator refuses any `database.version` change (K1.5).
+
+**Resize CPU/RAM:** Odoo rolling update (surge pod on the **same** node, K9); PG in place (C6.9). If the node has no room: a base tenant cannot be helped by a new node, so it waits under C6 (C5.4 holds prevent most cases) or the customer chooses a move. An overflow tenant can also be moved to a new Cloud node in a customer window (detach/attach).
+
+**Storage increase:** online grow (TopoLVM LV needs free space in the node's volume group, which the ledger tracks; Cloud Volume grows online, E6). Never shrink (C17.1).
+
+**Backup:** WAL-G continuous + delta base backups + filestore sync every 5 min + daily `pg_dump` (D4). Backup Jobs annotated `safe-to-evict: "false"` while running.
+
+**Restore (PITR):** to a new environment (preferred, keeps the original for comparison), or in place after a restore point; V1–V5 (§15.7) before handing over; restart PG once; new key generation (§15.3).
+
+**Node removal:** §31.9.
+
+**Concurrency:** every operation on an environment runs as a `saas.job` under `instance:<id>` (exists); the operator refuses a second package change while one is pending (C6.7).
+
+**Cost of the temporary capacity in these workflows:** a clone or rehearsal of a Starter tenant fits a CPX42 slot (€0.1114/h per whole node [DOC]); billed only while the pool node exists; the old environment kept for rollback costs its volume (≈ €2/month for 44 GB) [DOC E9].
+
+### 31.9 Safe scale-down and node removal
+
+**Base pool:** never removed by the autoscaler (Robot nodes are invisible to it, E1). Removal = planned consolidation (move every tenant in customer windows) then cancel the server.
+
+**Cloud pools: a node may be removed only when all of these hold:**
+1. it is in an autoscaled pool, not `base`;
+2. no pod on it carries `safe-to-evict: "false"`; the operator sets that annotation on:
+   - every PostgreSQL and Odoo pod of an `elastic-prod` tenant;
+   - every running backup, restore, update, migration or build Job;
+3. it has no pod whose volume cannot move (no local storage; E4 blocks those anyway);
+4. its utilization stayed under the threshold for the unneeded time (defaults 0.5 / 10 min, E4);
+5. the operator has not annotated the node `scale-down-disabled` (set during a maintenance operation on any tenant there).
+
+**Non-production pods** are evictable: an awake staging environment may be restarted on another node (seconds to minutes; acceptable for non-production). Sleeping environments have no pods.
+
+**Production overflow is never moved by the autoscaler.** Moving it costs that tenant a short outage, which the zero-downtime rule allows only in a customer-chosen window. A nightly `saas-jobs` consolidation check proposes moves when an `elastic-prod` node is below 30% for 7 days (K2.4).
+
+**PDBs:** a `maxUnavailable: 0` PDB on production PG and Odoo blocks accidental `kubectl drain` and node-upgrade tools, but it makes those nodes undrainable (E13) and protects nothing against node failure or direct deletion. Recommended as a guard on base and `elastic-prod` tenants, together with `safe-to-evict: "false"`; every planned move goes through the operator, not through drains.
+
+**Cost of keeping a node:** one overflow tenant keeps a whole `elastic-prod` node alive: a CPX42 costs €69.99/month incl. IPv4 [DOC]. That is the price of not interrupting that tenant until a planned move.
+
+**Volume moves:** a removed Cloud node detaches its volumes (E6); re-attaching has no per-operation fee in the price list [DOC E8–E10]; the cost is the tenant's downtime, so moves are kept to planned windows.
+
+### 31.10 Isolation and efficiency on shared nodes
+
+| Area | State [CODE] | Recommendation |
+|---|---|---|
+| CPU/memory | Quota + LimitRange; memory request = limit planned (§11, C2) | Keep. Elastic pools: kubelet `system-reserved`/`kube-reserved` set explicitly, because the autoscaler template ignores them (E2) |
+| PostgreSQL memory | `shared_buffers` 25%, `work_mem` /64 of the limit | Keep; set `max_connections` = 2 × (workers + 3) + 10 and Odoo `db_maxconn` 8–16 (§13; K1.5). Today 100 connections vs up to 64 per Odoo process |
+| Disk I/O | No I/O limits on TopoLVM | Measure in ST1/Q4; Cloud Volumes have their own per-volume IOPS cap (E6), which isolates overflow tenants |
+| Disk full | Separate LV per tenant on base; one volume per tenant on Cloud | As §31.6 |
+| Network | Default-deny; PG reachable only in its namespace (K11) | Keep; C12 live tests on the multi-node CNI with MTU 1400 over the vSwitch (E11) |
+| Secrets | Per-tenant DB passwords; global backup key (K5) | I6.6/C8 per-tenant keys before launch |
+| Kubernetes permissions and customer addons | No SA token; PSS restricted; custom code only from contracted customers (§16) | Keep; Q6 hostile-module test also on a Cloud node |
+| Priority | None (K10) | `platform-critical` > `tenant-production` > `tenant-nonprod` > `build` (§11, K1.3) |
+| Odoo and PG placement | Same node, required (K9) | Keep: one volume, lower latency, simpler moves |
+| Separate pools for production and non-production | Not today | **Yes**, at no extra cost: non-production on `elastic-nonprod` frees base capacity and makes sleep save money. Separate pools for staging vs dev: no (no benefit found) |
+| Node per customer | — | No; only as the sold Dedicated tier (§16) |
+
+### 31.11 Risk and solution matrix
+
+Priority: **LB** = launch blocker, **RL** = required for launch, **FI** = future improvement.
+
+| # | Problem or failure | Root cause | Customer impact | Recommended solution | Change to Veltnex | Added infra cost | Complexity | Recovery | Priority |
+|---|---|---|---|---|---|---|---|---|---|
+| AR1 | Customer deletion loses data | Final backup best-effort for 2 min, then PVCs deleted (K6) | Data gone if the backup failed | Finalizer deletes volumes only after the control plane records a verified final backup; else keep and alert | K1.5, C7.2 | $0 | Low | Volume kept → backup retried | **LB** |
+| AR2 | PG major change corrupts or fails to start | `database.version` mutable (K3) | Tenant DB down | Reject version change on existing instances; Managed PG pinned to 16 until K2.2 | K1.5 | $0 | Low | Revert the CR | **LB** |
+| AR3 | Backups fail for PG ≠ 16 | Tool ships pg_dump 16 (K4) | No backups | Pin as AR2; the tool's PG version follows the instance's | K1.5, I6 | $0 | Low | — | **LB** |
+| AR4 | No PITR, inconsistent DB/filestore backup, global key | K5 | Data loss up to 24 h; cross-tenant key exposure | WAL-G + filestore sync + per-tenant keys (D4) | I6.1–I6.8, I6.6, C8 | B2 per GB | Medium | §15 | **LB** (already planned) |
+| AR5 | `odoo -u` on a live DB | K7 | Errors or bad writes during the update | Restore point + maintenance mode + `-u` + PITR rollback | K1.6 (D26) | $0 (+ optional rehearsal hours) | Medium | PITR to restore point | **RL** |
+| AR6 | Image change without `-u` | K7 | Views and data not updated; broken screens | Refuse when module versions changed | K1.5 | $0 | Low | Re-deploy with `-u` | **RL** |
+| AR7 | Odoo major version change by image swap | K8 | DB unusable | Refuse major change; future clone-based upgrade | K1.5, K2.1 | $0 now | Low | Revert the CR | **LB** |
+| AR8 | Base node lost | Node-local volumes (D14) | All tenants on it down; RPO ≤ 5 min | D15 runbook, restore into `elastic-prod` of the same cluster | I8.1, Q1a, K1.1 | Hourly Cloud during the event | Medium | §15.5 | **RL** (planned) |
+| AR9 | Kubernetes control plane lost | Single control plane | No scheduling, autoscaling or operator actions; running pods keep serving | Separate small control-plane server (D22) + datastore snapshots to B2 + rebuild runbook | K1.1 | €35.99/month if separate | Medium | Rebuild from snapshot | **RL** |
+| AR10 | Autoscaler removes a node with a production tenant | No safe-to-evict/PDB (K10) | Outage during move; risk with stuck volumes | §31.9 annotations + PDB guard | K1.3 | $0 | Low | Pod restarts elsewhere (Cloud Volume) | **LB** (if D20) |
+| AR11 | Autoscaler removes a node during backup/restore/migration | Jobs evictable | Interrupted job; restore half-done | `safe-to-evict: "false"` on running Jobs; Jobs idempotent (C3) | K1.3 | $0 | Low | Job re-runs | **LB** (if D20) |
+| AR12 | New node joins but the pod still does not fit | Template allocatable = full capacity (E2) | Order stays pending | Explicit kubelet reservations; ledger uses real allocatable | K1.2, K1.4 | $0 | Low | Larger pool type | **RL** |
+| AR13 | Server type out of stock / project limit / rate limit | E3 | Order pending | ≥ 2 pools per role (e.g. CPX42 and CCX33) with the priority expander; per-project limit raised in advance (needs one month and a paid invoice) | K1.2 | $0 | Low | Backoff then other pool | **RL** |
+| AR14 | Cloud node unreachable but alive | E14 | Overflow tenant down until the pod moves | Fencing: power off via API, `out-of-service` taint | K2.5 (runbook at launch) | $0 | Medium | Pod moves, volume re-attaches | RL (runbook) / FI (automation) |
+| AR15 | Volume limit 16 per node | E6 | New tenants pending | One volume per Cloud environment; ledger counts volumes | §31.6, K1.4 | $0 | Low | Another node | **RL** |
+| AR16 | Volume in a different location | E6 | Pod can never run | One location per cluster; pools only there | K1.1 | $0 | Low | — | **RL** |
+| AR17 | Deferred PG resize never triggers a node | E5, K9 | Upgrade pending | C5.4 holds + C6 escalation; moves in customer windows | C5.4, C6 | $0 | — | Capacity freed or move | RL (planned) |
+| AR18 | WAL fills the volume | Archive failure, `max_wal_size` not a hard cap (E18) | That tenant PANICs | WAL on its own LV (base) / alert on archive lag; volume grows online | C11, I6.2 | $0 | Low | Fix archiving, grow, restart | **RL** |
+| AR19 | Disk exhaustion by one tenant | Shared filesystem | Neighbours fail | Volume per tenant (exists); fence at 100% | exists | $0 | — | Grow or clean | — |
+| AR20 | Connection exhaustion | `max_connections` 100 vs Odoo pools (K2) | Errors under load | As §31.10 | K1.5, C2 | $0 | Low | Restart | **RL** |
+| AR21 | Corruption | Disk, kernel, bug | Wrong data | Checksums at initdb (I6.1), `pg_amcheck` in V1, PITR | I6.1 | $0 | Low | PITR | **RL** (planned) |
+| AR22 | Restore without matching filestore | Separate artifacts | Empty attachments | Manifest at T + V2 | I9.1 | $0 | Low | Re-run with the right manifest | **RL** (planned) |
+| AR23 | Accidental deletion by customer or staff | Human | Data loss | Object Lock + restore generations (§15.3); AR1 | I6.6 | B2 | — | PITR | **RL** (planned) |
+| AR24 | Non-production wake takes minutes when its pool is at zero | E3 | Slow first request | `elastic-nonprod` min 1 node in business hours, or accept minutes (D23) | K1.2 | ≈ €70/month for a CPX42 always on [DOC] | Low | — | D23 |
+| AR25 | Mixed-network problems (MTU, routes) | vSwitch coupling (E11) | Cross-node traffic fails | MTU 1400 in CNI; routes exposed; C12 tests | K1.1 | vSwitch fee [UNVERIFIED] | Medium | Fall back to base-only | **RL** (if D20) |
+| AR26 | Autoscaler over-spends | Unbounded pools | Cost | Max nodes per pool and an owner cap (D24); alert on node-hours | K1.2 | — | Low | Lower max | **RL** |
+| AR27 | Noisy neighbour CPU | Burst to limit | Slow pages | Requests sized (C2), PriorityClasses | K1.3, C2 | $0 | Low | — | **RL** |
+| AR28 | Build pool missing in bootstrap | K13 | Builds cannot schedule | `build` pool via autoscaler | K1.2 | Per build hour | Low | — | **RL** |
+| AR29 | Hostile tenant addon | Custom code | Data exfiltration of its own tenant; attempts on others | Existing §16 controls + Q6 on a Cloud node | C12 | $0 | — | — | **RL** (planned) |
+| AR30 | Odoo major upgrade wanted by a customer | — | Cannot upgrade | Clone-based upgrade | K2.1 | Hours of `elastic-nonprod` | Medium | Old env kept | FI |
+| AR31 | PG 16 reaches EOL | 2028-11-09 (E18) | Unsupported DB | `pg_upgrade` workflow | K2.2 | Temporary disk | Medium | Copy kept | FI (before 2028) |
+| AR32 | Filestore cost at scale, or multi-replica Odoo | Block storage per tenant | — | `fs_attachment` with a guard addon, per-version tests | K2.3 | Object storage per TB | High | Migrate back to `file` before uninstall | FI |
+| AR33 | Idle `elastic-prod` nodes | Overflow tenants left behind | Cost | Planned consolidation | K2.4 | Saves ≈ €70/node-month | Medium | — | FI |
+
+### 31.12 Failure-injection tests (all must pass before production, in addition to Q1a, Q2, Q4, ST1 and C6.8)
+
+| Test | Injection | Pass |
+|---|---|---|
+| AS1 | Order when no node fits; `elastic-prod` at 0 | Node created, environment ready, captured only at ready; time recorded |
+| AS2 | Same with the pool's server type out of stock (simulated by a non-orderable type first in priority) | Falls back to the second pool; no capture before ready |
+| AS3 | Same with the pool at its maximum | Stays pending, nothing captured, released before the authorization lapses |
+| AS4 | Image pull failure; init Job failure | Released, no capture, no volume left behind |
+| AS5 | Autoscaler scale-down with an overflow tenant and a running backup on the node | Node not removed while either exists |
+| AS6 | Delete the Cloud server of an overflow tenant | Volume detached; pod runs on another node; availability probe gap measured; 0 data loss |
+| AS7 | Freeze (not delete) a Cloud node | Fencing runbook moves the tenant; no two writers |
+| AS8 | Power off the base node | Restore into `elastic-prod` per §15.5; V1–V5 pass |
+| AS9 | Kill the Kubernetes control plane | Pods keep serving; rebuild from snapshot within the runbook time |
+| AS10 | `kubectl drain` on a base node | Blocked by the PDB; no tenant evicted |
+| AS11 | `odoo -u` failure mid-way | PITR to the restore point; old image serves; 0 customer writes lost |
+| AS12 | Change `database.version` and Odoo major on an existing CR | Rejected |
+| AS13 | Delete a tenant while its final backup fails | Volumes kept, alert raised |
+| AS14 | Fill a shared Cloud Volume with filestore data | PG of that tenant only stops; fence engages; grow restores it |
+| AS15 | 16 volumes on a node | Next tenant lands on another node; ledger agreed beforehand |
+| AS16 | Non-production wake with its pool at zero | Measured wake time recorded against D23 |
+
+All run on hourly Hetzner Cloud capacity plus the first base node, with the owner's approval (K1.7).
+
+### 31.13 Cost comparison
+
+Inputs: prices E8–E10 [DOC, 2026-10-15]. Per production tenant of the base mix [ASSUMP, derived from §9.1]: committed RAM 3.05 GiB, CPU request 1.18, sold disk 44 GB. A cloud node keeps 3 GiB for the system and 20% headroom [ASSUMP]: a CPX62 holds **7** tenants (RAM binds). An AX42 holds **9.2** (thick disk binds, §14.4). AX42 = €97.30 + €1.70 + €49/24 = **€101.04**. Same for every option and left out: control-plane droplet, B2, DNS, payment fees. EUR per month, compute and tenant storage only.
+
+| Production tenants | **A. Dedicated cells** | **B. Cloud only (CPX62 + volumes + control-plane CPX32)** | **C. Hybrid** = A + control-plane server + Cloud pool hours | B with CX53 if it returns to stock |
+|---|---|---|---|---|
+| 5 | 1 × AX42 = **€101** (€20.2/tenant) | €130 + €10–13 + €36 = **€176–179** (€35) | €101 + €36 + E | €30 + €10–13 + €36 = €76–79 |
+| 50 | 6 × AX42 = **€606** (€12.1) | 8 × €130 + €97–126 + €36 = **€1,177–1,206** (€24) | €606 + €36 + E | €373–402 |
+| 250 | 28 × AX42 = **€2,829** (€11.3) | 36 × €130 + €484–629 + €36 = **€5,218–5,363** (€21) | €2,829 + €36 + E | €1,600–1,745 (€6.4–7.0) |
+
+- **E** = Cloud pool usage, a variable that has not been measured. Each CPX42 node-hour costs €0.1114. For example, 100 / 400 / 1,500 node-hours a month [ASSUMP] cost €11 / €45 / €167. In A, the same builds and drills run on I5.2's hourly node anyway, and non-production occupies base capacity instead.
+- **Very low demand:** up to about 3 production tenants, B is cheaper than one AX42, but only when the Kubernetes control plane shares the worker (one CPX42 ≈ €70 + volumes) [ASSUMP]. Above that, A and C win.
+- **Dormant (no customers):** A = €0 for cells. B and C keep the Kubernetes control plane: €36 (separate server), or €101 when it sits on a base node.
+- **To verify before D21:** the current Cloud Volume price (€0.0440 vs €0.0572); CPX/CCX stock in the chosen location; whether CX/CAX return; vSwitch and Cloud Network fees; the per-project server limit.
+
+### 31.14 Phased implementation (maps onto §25–§26; no parallel roadmap)
+
+| Phase | Tasks | Gate |
+|---|---|---|
+| Decisions | D20–D28 (§31.16), recorded through R0.1 | Owner |
+| Independent of D20, launch blockers | **K1.5** operator safety guards (PH1) | M1 |
+| Already planned, unchanged | I6.x backups, I6.6 keys, I9.1 verifier, C5 ledger, C6, C7.2, C8, C12, ST1, Q1a, Q2, Q4 | As planned |
+| If D20 = hybrid | **K1.1** shared cluster bootstrap (PH5), **K1.2** autoscaler and pools (PH5), **K1.3** operator placement and eviction policy (PH5), **K1.4** pool-aware ledger (PH2), **K1.7** failure-injection suite AS1–AS16 (PH7). I5.1/I5.2 are then superseded by the `build` pool | M2, M3, M4 |
+| If D26 = maintenance window | **K1.6** module update workflow (PH7) | M5 |
+| Future (PH11) | K2.1 Odoo major upgrade by clone (P2) · K2.2 PostgreSQL major upgrade (P1, before 2028-11) · K2.3 filestore on object storage (P2, §14.5 trigger) · K2.4 planned consolidation (P1) · K2.5 node fencing automation (P1) · K2.6 HA Kubernetes control plane (P2) | — |
+
+### 31.15 Decisions requiring the owner's approval
+
+Listed in §29 as D20–D28. Each states what it changes.
+
+### 31.16 Sources (read 2026-10-15)
+
+- Cluster Autoscaler Hetzner provider: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/hetzner/README.md and `hetzner_manager.go`, `hetzner_node_group.go` in the same directory; FAQ: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md
+- Hetzner Cloud API errors: https://docs.hetzner.cloud/ ; servers FAQ: https://docs.hetzner.com/cloud/servers/faq
+- Volumes: https://docs.hetzner.com/cloud/volumes/overview, https://docs.hetzner.com/cloud/volumes/faq, https://www.hetzner.com/cloud/block-storage/
+- CSI driver: https://github.com/hetznercloud/csi-driver ; CCM: https://github.com/hetznercloud/hcloud-cloud-controller-manager
+- vSwitch coupling: https://docs.hetzner.com/cloud/networks/connect-dedi-vswitch, https://docs.hetzner.com/cloud/networks/faq/
+- Prices: https://docs.hetzner.com/general/infrastructure-and-availability/price-adjustment/ ; https://www.hetzner.com/cloud/ ; https://www.hetzner.com/storage/object-storage/ ; https://www.backblaze.com/cloud-storage/pricing ; https://docs.digitalocean.com/products/spaces/details/pricing/
+- Kubernetes: https://kubernetes.io/docs/concepts/workloads/pods/disruptions/ ; https://kubernetes.io/docs/tasks/run-application/configure-pdb/ ; https://kubernetes.io/docs/tasks/run-application/force-delete-stateful-set-pod/ ; https://kubernetes.io/docs/concepts/cluster-administration/node-shutdown/ ; https://kubernetes.io/docs/concepts/storage/volumes/#local ; https://kubernetes.io/docs/tasks/configure-pod-container/resize-container-resources/
+- Odoo: `odoo/addons/base/models/ir_attachment.py` (17.0, 18.0, 19.0); https://www.odoo.com/documentation/18.0/administration/upgrade.html ; https://oca.github.io/OpenUpgrade/ ; https://github.com/OCA/storage
+- PostgreSQL: https://www.postgresql.org/support/versioning/ ; https://www.postgresql.org/docs/18/pgupgrade.html ; https://www.postgresql.org/docs/18/wal-configuration.html ; WAL-G: https://github.com/wal-g/wal-g/blob/master/docs/PostgreSQL.md
+- S3 mounts: https://github.com/awslabs/mountpoint-s3/blob/main/doc/SEMANTICS.md ; https://github.com/s3fs-fuse/s3fs-fuse ; https://rclone.org/commands/rclone_mount/ ; https://juicefs.com/docs/community/posix_compatibility/
+
+---
+
 ## Appendix A — Changes
+
+### Revision 5.3 (shared-cluster autoscaling review, proposed)
+
+| Topic | Revision 5.2 | Revision 5.3 |
+|---|---|---|
+| Cluster | Single-node dedicated cells, no autoscaler | **Proposed** (D20): one shared cluster per location with a non-autoscaled dedicated base pool and autoscaled Hetzner Cloud pools (§31.4–§31.5) |
+| Findings | — | 16 repository facts (§31.1) including a shared DB/filestore PVC, a mutable PG version, deletion after a 2-minute best-effort backup, and `-u` against a live DB; 19 external facts with sources |
+| Tasks | 129 | 142: K1.1–K1.7 (P0), K2.1–K2.6 (future) |
+| Decisions | D1–D19 | D20–D28 proposed |
 
 ### Revision 5.2 (execution roadmap)
 

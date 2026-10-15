@@ -115,6 +115,49 @@ func TestTenantNetworkPolicy_TLSEnabled_AllowsAcmeSolverPort(t *testing.T) {
 	t.Errorf("gateway ingress rule does not allow port %d with TLS enabled; got ports %v", AcmeHTTP01SolverPort, ports)
 }
 
+// Every egress rule must name its destination: an empty To list means "any
+// address", which previously let tenant code reach other pods, node/VPC
+// addresses and the cloud metadata service on 443, and any resolver on 53.
+func TestTenantNetworkPolicy_EgressDestinationsAreRestricted(t *testing.T) {
+	np := TenantNetworkPolicy(testInstance(), "ingress", map[string]string{"app.kubernetes.io/name": "traefik"})
+	var dnsOK, httpsOK bool
+	for _, rule := range np.Spec.Egress {
+		if len(rule.To) == 0 {
+			t.Errorf("egress rule with ports %v has no destination restriction", rule.Ports)
+			continue
+		}
+		for _, p := range rule.Ports {
+			switch p.Port.IntVal {
+			case 53:
+				peer := rule.To[0]
+				if peer.NamespaceSelector == nil || peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] != "kube-system" ||
+					peer.PodSelector == nil || peer.PodSelector.MatchLabels["k8s-app"] != "kube-dns" {
+					t.Errorf("DNS egress not limited to cluster DNS pods: %+v", peer)
+				}
+				dnsOK = true
+			case 443:
+				block := rule.To[0].IPBlock
+				if block == nil || block.CIDR != "0.0.0.0/0" {
+					t.Fatalf("HTTPS egress peer = %+v, want an IPBlock", rule.To[0])
+				}
+				except := map[string]bool{}
+				for _, cidr := range block.Except {
+					except[cidr] = true
+				}
+				for _, cidr := range []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16", "127.0.0.0/8"} {
+					if !except[cidr] {
+						t.Errorf("HTTPS egress does not exclude %s (except=%v)", cidr, block.Except)
+					}
+				}
+				httpsOK = true
+			}
+		}
+	}
+	if !dnsOK || !httpsOK {
+		t.Errorf("missing DNS (%v) or HTTPS (%v) egress rule", dnsOK, httpsOK)
+	}
+}
+
 func TestTenantNetworkPolicy_TLSEnabled_StillAllowsOdooPorts(t *testing.T) {
 	instance := testInstance()
 	instance.Spec.Domain.TLS.Enabled = true

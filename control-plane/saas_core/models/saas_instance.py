@@ -5203,6 +5203,25 @@ END $$;
             max_attempts=max_attempts, on_error='_on_background_error',
             on_error_args=(prev_state,), transactional=True)
 
+    def _queue_resume(self, message, idempotency_key=None):
+        """Bring a suspended server back through a durable restart job
+        queued in the caller's transaction. On terminal failure it returns to
+        ``suspended`` with its ``suspension_reason`` kept, so the trigger that
+        resumed it (payment, capacity) can try again."""
+        self.ensure_one()
+        self._append_log(message)
+        self.write({'pre_provisioning_state': 'suspended',
+                    'pending_operation': 'restart', 'state': 'provisioning'})
+        return self._enqueue_lifecycle_job(
+            'resume', '_do_resume', 'suspended', idempotency_key=idempotency_key)
+
+    def _do_resume(self):
+        """Durable job body of ``_queue_resume``. A no-op once it ran (reaper
+        re-run), so it never restarts a server the customer stopped since."""
+        self.ensure_one()
+        if self._lifecycle_op_pending('restart'):
+            self._do_restart()
+
     def _lifecycle_op_pending(self, op):
         """True while this server still waits for queued *op*. A re-run of
         a finished job (reaper requeue after its commit) sees False and does
@@ -5967,8 +5986,12 @@ END $$;
         # Bounded per run (PERF-003): a large fleet must not pull every running
         # instance into one cron transaction. Least-recently-touched first so
         # coverage rotates across runs when the fleet exceeds the cap.
+        # Paused-for-capacity servers too, so one that got more room (e.g. a
+        # plan upgrade) is unpaused on the next run.
         instances = self.search([
-            ('state', '=', 'running'),
+            '|', ('state', '=', 'running'),
+                 '&', ('state', '=', 'suspended'),
+                      ('suspension_reason', '=', 'capacity'),
             ('plan_id', '!=', False),
             ('plan_id.storage_limit', '>', 0),
         ], order='write_date asc, id asc', limit=self._CRON_BATCH_SIZE)
@@ -6057,6 +6080,10 @@ END $$;
         # Enforce only at restricted, only after grace, framed as "paused".
         if new_state == 'restricted':
             self._capacity_pause()
+        elif self.state == 'suspended' and self.suspension_reason == 'capacity':
+            # More room (storage bought, plan upgraded, data freed): unpause.
+            self._queue_resume(
+                "Storage is back within the limit — resuming the server.")
         return new_state
 
     def _notify_capacity(self, state, pct):

@@ -306,7 +306,7 @@ class TestBillingLifecycleCrons(TransactionCase):
     def _resume_jobs(self, inst):
         return self.env['saas.job'].sudo().search([
             ('model', '=', 'saas.instance'), ('res_id', '=', inst.id),
-            ('method', '=', '_do_resume_after_payment')])
+            ('method', '=', '_do_resume')])
 
     def _pay_and_hook(self, inst, invoice, *still_unpaid):
         """Pay *invoice* through the payment hook, the instance owning it

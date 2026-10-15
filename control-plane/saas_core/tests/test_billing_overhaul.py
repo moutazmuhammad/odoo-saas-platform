@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from unittest.mock import MagicMock, patch
 
 from odoo import fields
 from odoo.exceptions import UserError, ValidationError
@@ -191,6 +192,88 @@ class TestBillingV47(TransactionCase):
         self.assertEqual(inst.extra_storage_blocks, 1)
         # 50 GB plan + 1 × 50 GB block = 100 GB capacity.
         self.assertAlmostEqual(inst.effective_storage_limit_gb, 100.0, 2)
+
+    # ---------- C4.2: more room lifts a capacity pause ----------
+    def _paused(self, sub, used_gb, reason='capacity'):
+        """A server paused for *reason* while *used_gb* of its 50 GB were
+        used, past the grace period."""
+        return self._inst(
+            sub, state='suspended', suspension_reason=reason,
+            total_storage_bytes=used_gb * 1024 ** 3, storage_state='restricted',
+            storage_over_since=date.today() - timedelta(days=10))
+
+    def _resume_jobs(self, inst):
+        return self.env['saas.job'].sudo().search([
+            ('model', '=', 'saas.instance'), ('res_id', '=', inst.id),
+            ('method', '=', '_do_resume')])
+
+    def _no_cluster(self, inst):
+        driver = MagicMock()
+        for target, attr, fn in (
+                (type(inst), '_compute_driver', lambda rec, connection=None: driver),
+                (type(inst), '_compute_handle', lambda rec: 'H'),
+                (type(inst), '_update_container_resources', lambda rec: None),
+                (type(inst), '_safe_refresh_usage', lambda rec: None),
+                (self.env.cr, 'commit', lambda: None)):
+            p = patch.object(target, attr, fn)
+            p.start()
+            self.addCleanup(p.stop)
+        return driver
+
+    def test_capacity_pause_records_its_reason(self):
+        inst = self._inst('v47why', total_storage_bytes=55 * 1024 ** 3,
+                          storage_over_since=date.today() - timedelta(days=8))
+        self.assertEqual(inst._evaluate_capacity(), 'restricted')
+        self.assertEqual(inst.suspension_reason, 'capacity')
+
+    def test_storage_purchase_unpauses_a_paused_server(self):
+        inst = self._paused('v47unpause', used_gb=55)
+        driver = self._no_cluster(inst)
+        inst.action_purchase_storage_block(1)
+        inst._activate_pending_storage_blocks()      # the paid invoice's hook
+        self.assertEqual(inst.storage_state, 'ok')   # 55 of 100 GB
+        job = self._resume_jobs(inst)
+        self.assertEqual(len(job), 1)
+        self.assertEqual((inst.state, inst.pending_operation), ('provisioning', 'restart'))
+        self.env.flush_all()
+        self.env['saas.job'].sudo()._run_one(job.id)
+        inst.invalidate_recordset()
+        self.assertEqual((inst.state, inst.suspension_reason), ('running', False))
+        driver.restart.assert_called_once()
+
+    def test_not_enough_room_stays_paused(self):
+        inst = self._paused('v47short', used_gb=120)
+        self._no_cluster(inst)
+        inst.action_purchase_storage_block(1)
+        inst._activate_pending_storage_blocks()      # 120 of 100 GB
+        self.assertEqual(inst.storage_state, 'restricted')
+        self.assertEqual(inst.state, 'suspended')
+        self.assertFalse(self._resume_jobs(inst))
+
+    def test_capacity_never_lifts_another_suspension(self):
+        inst = self._paused('v47other', used_gb=10, reason='nonpayment')
+        self.assertEqual(inst._evaluate_capacity(), 'ok')
+        self.assertEqual(inst.state, 'suspended')
+        self.assertFalse(self._resume_jobs(inst))
+
+    def test_storage_cron_unpauses_after_a_plan_upgrade(self):
+        inst = self._paused('v47cron', used_gb=55)
+        self._no_cluster(inst)
+        inst.plan_id.storage_limit = 100             # upgraded meanwhile
+        self.env['saas.instance']._cron_check_storage_limits()
+        inst.invalidate_recordset()
+        self.assertEqual(inst.state, 'provisioning')
+        self.assertEqual(len(self._resume_jobs(inst)), 1)
+
+    def test_paid_plan_change_unpauses_at_once(self):
+        inst = self._paused('v47upg', used_gb=55)
+        self._no_cluster(inst)
+        bigger = self.plan.copy({'name': 'V47 Big', 'storage_limit': 100})
+        inst.write({'pending_plan_id': bigger.id, 'pending_billing_period': 'monthly'})
+        inst._apply_pending_plan_change()
+        self.assertEqual(inst.plan_id, bigger)
+        self.assertEqual(inst.state, 'provisioning')
+        self.assertEqual(len(self._resume_jobs(inst)), 1)
 
     # ---------- Proration full credit (no clawback) ----------
     def test_proration_full_credit(self):

@@ -1039,10 +1039,9 @@ class SaasInstance(models.Model):
         self.message_post(body=_(
             "Storage expanded — your workspace now has more room. Thanks for "
             "scaling with us."))
-        # Re-evaluate so a paused/at-capacity workspace recovers at once.
+        # Re-evaluate so a paused/at-capacity workspace recovers at once
+        # (a capacity pause is lifted with a durable resume job).
         try:
-            if self.state == 'suspended':
-                self.action_reactivate() if hasattr(self, 'action_reactivate') else None
             self._evaluate_capacity()
         except Exception:
             _logger.exception("Capacity re-eval after block activation failed for %s",
@@ -2517,23 +2516,12 @@ class SaasInstance(models.Model):
             _logger.info("SaaS instance %s stays suspended: %s still overdue.",
                          self.subdomain, ', '.join(still_due.mapped('name')))
             return False
-        self._append_log("Payment received%s — resuming the server."
-                         % (' (invoice %s)' % invoice.name if invoice else ''))
         self.message_post(body=_("Payment received. Your server is being resumed."))
-        self.write({'pre_provisioning_state': 'suspended',
-                    'pending_operation': 'restart', 'state': 'provisioning'})
-        self._enqueue_lifecycle_job(
-            'resume', '_do_resume_after_payment', 'suspended',
+        self._queue_resume(
+            "Payment received%s — resuming the server."
+            % (' (invoice %s)' % invoice.name if invoice else ''),
             idempotency_key=invoice and 'resume:inv%s:inst%s' % (invoice.id, self.id))
         return True
-
-    def _do_resume_after_payment(self):
-        """Durable job body: restart a server whose overdue invoice was
-        paid. A no-op once it ran (reaper re-run), so it never restarts a
-        server the customer stopped afterwards."""
-        self.ensure_one()
-        if self._lifecycle_op_pending('restart'):
-            self._do_restart()
 
     def _check_dunning(self, today):
         """Check if any linked invoices are overdue and act accordingly.
@@ -3191,6 +3179,13 @@ class SaasInstance(models.Model):
                 self._append_log(
                     "WARNING: Plan updated but resource update failed: %s" % e
                 )
+        # A bigger plan lifts a capacity pause at once (the daily storage
+        # cron retries; never undo the paid change over it).
+        try:
+            self._evaluate_capacity()
+        except Exception:
+            _logger.exception("Capacity re-eval after plan change failed for %s",
+                              self.subdomain)
 
     # ---------- DOWNGRADE ----------
 

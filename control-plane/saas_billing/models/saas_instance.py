@@ -1016,7 +1016,7 @@ class SaasInstance(models.Model):
 
     def _apply_package_best_effort(self):
         """Push the changed package (here: volume sizes, quota) to the
-        cluster; the next plan change or redeploy retries on failure."""
+        cluster; a failure is retried by the reconciler (C6.1)."""
         try:
             self._update_container_resources()
         except Exception:
@@ -2764,9 +2764,9 @@ class SaasInstance(models.Model):
         ) % ('trial' if was_trial else (old_plan.name if old_plan else 'plan'),
              new_plan.name))
 
-        # Update container resources / regenerate configs (best effort —
-        # the customer is already paid and reactivated, don't roll back
-        # the upgrade if these fail; they can be retried by Redeploy).
+        # Update container resources (best effort — the customer is already
+        # paid and reactivated, don't roll back the upgrade if this fails;
+        # the reconciler retries the package, C6.1).
         if self.state in ('running', 'stopped', 'suspended'):
             try:
                 self._update_container_resources()

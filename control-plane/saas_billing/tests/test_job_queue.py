@@ -294,3 +294,63 @@ class TestPaidPlanChangeJob(_PaidJobCase):
         self.assertEqual(self.inst.state, 'running')
         self.assertEqual(self.inst.pending_plan_id, self.big, "still pending for a retry")
         self.assertIn('restart failed', self.inst.last_error)
+
+
+@tagged('post_install', '-at_install')
+class TestPaidPlanChangeConverges(_PaidJobCase):
+    """C6.1: a paid upgrade whose package patch fails stays paid and
+    desired; the reconciler applies it once the fault clears."""
+
+    def setUp(self):
+        super().setUp()
+        self.big = self._mk_plan('JQ Big', 4, 90.0)
+        server = self.env['saas.server'].sudo().create(
+            {'name': 'jq-srv', 'compute_driver': 'kubernetes'})
+        self.inst = self._mk('jqconv', state='running', docker_server_id=server.id)
+        self.invoice = self._mk_invoice(40.0)
+        self.inst.write({'pending_plan_id': self.big.id,
+                         'pending_billing_period': 'monthly',
+                         'pending_change_invoice_id': self.invoice.id})
+        self.applied = []
+        self.fault = True
+
+        def set_package(handle, res):
+            if self.fault:
+                raise RuntimeError('cluster unavailable')
+            self.applied.append(res)
+
+        driver = type('Driver', (), {'set_package': staticmethod(set_package)})()
+        Instance = type(self.inst)
+        for target, attr, fn in (
+                (Instance, '_compute_driver', lambda rec, connection=None: driver),
+                (Instance, '_compute_handle', lambda rec: rec.subdomain),
+                (type(self.Job), '_spawn_worker', lambda rec: None),
+                (type(self.Job), '_spawn_worker_after_commit', lambda rec: None)):
+            p = patch.object(target, attr, fn)
+            p.start()
+            self.addCleanup(p.stop)
+        self._no_commit()
+
+    def _run(self, job):
+        self.env.flush_all()
+        self.Job._run_one(job.id)
+        self.env.invalidate_all()
+
+    def test_failed_patch_converges_after_the_fault_clears(self):
+        self._pay(self.invoice)
+        self._run(self._jobs(self.inst, '_do_apply_paid_plan_change'))
+        self.assertEqual(self.inst.plan_id, self.big, "the paid change is kept")
+        self.assertEqual(self.inst.package_status, 'pending')
+        want = self.inst._package_key(self.inst._k8s_plan_resources())
+        self.assertEqual(self.inst.package_desired, want)
+        self.assertNotEqual(self.inst.package_applied, want)
+        self.assertFalse(self.applied)
+
+        self.fault = False
+        self.inst.package_next_retry = fields.Datetime.now() - timedelta(seconds=1)
+        self.env['saas.instance']._converge_packages()
+        self._run(self._jobs(self.inst, '_do_converge_package'))
+        self.assertEqual(self.inst.package_status, 'in_sync')
+        self.assertEqual(self.inst.package_applied, want)
+        self.assertEqual([r['workers'] for r in self.applied],
+                         [self.inst._k8s_plan_resources()['workers']])

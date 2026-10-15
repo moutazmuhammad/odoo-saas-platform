@@ -704,6 +704,21 @@ class SaasInstance(models.Model):
         readonly=True,
         help='When the last error occurred.',
     )
+    # Package convergence (C6.1): what the customer pays for vs what the
+    # cluster last accepted, as canonical JSON of _k8s_plan_resources().
+    package_desired = fields.Text(copy=False, readonly=True)
+    package_applied = fields.Text(copy=False, readonly=True)
+    package_status = fields.Selection(
+        [('in_sync', 'In sync'), ('pending', 'Not applied — retrying')],
+        string='Package', default='in_sync', copy=False, readonly=True,
+        help='Whether the cluster runs the package the customer pays for. '
+             'A failed apply is retried by the reconciler with back-off.')
+    package_attempts = fields.Integer(
+        string='Failed Package Applies', copy=False, readonly=True)
+    package_pending_since = fields.Datetime(copy=False, readonly=True)
+    package_next_retry = fields.Datetime(copy=False, readonly=True)
+    package_error = fields.Text(
+        string='Package Error', copy=False, readonly=True)
     cancellation_reason = fields.Text(
         string='Cancellation Reason',
         readonly=True,
@@ -4974,8 +4989,9 @@ END $$;
             'db_name': (self._hosting_db_full_name(self._HOSTING_INITIAL_DB_SUFFIX)
                         if self.is_hosting else ''),
             'shell': bool(self.is_hosting),
-            **self._k8s_plan_resources(),
         }
+        package = self._k8s_plan_resources()
+        env.update(package)
         spec = ComputeSpec(
             container_name=self._get_container_name(),
             image=self.odoo_version_id._get_docker_image(),
@@ -5011,6 +5027,8 @@ END $$;
         self.pending_operation = False
         self.pending_provision_since = False
         self.pending_provision_attempts = 0
+        if package:
+            self._package_applied_ok(self._package_key(package))
         self._append_log("Deployment completed successfully. State: running.")
         # A hosting Production server comes with a ready database so the
         # customer lands in Odoo, not on an empty database selector. They
@@ -5950,7 +5968,13 @@ END $$;
         an ssh_docker-only optimization) — KubernetesDriver talks to each
         instance's cluster directly via its region's kubeconfig, so there
         is no per-host connection to share across instances here.
+
+        Also re-queues failed package applies that are due (C6.1).
         """
+        try:
+            self._converge_packages()
+        except Exception:
+            _logger.exception("[reconcile] queuing package retries failed")
         instances = self.search([
             ('state', 'in', list(self._RECONCILE_RUNNING + self._RECONCILE_STOPPED)),
             ('docker_server_id', '!=', False),
@@ -6290,20 +6314,119 @@ END $$;
         the running tenant: Odoo rolls its pods (zero downtime), PostgreSQL
         is resized in place, volumes grow online. Called after a plan,
         tier or storage change. Raises if the cluster rejects the patch —
-        callers log it and leave the change in place so an admin can
-        redeploy."""
+        callers log it and leave the change in place; the package stays
+        desired and the reconciler retries it (C6.1)."""
         self.ensure_one()
         if self.docker_server_id.compute_driver != 'kubernetes':
             return
         res = self._k8s_plan_resources()
         if not res:
             return
-        self._compute_driver().set_package(self._compute_handle(), res)
+        desired = self._package_key(res)
+        if self.package_desired != desired:
+            self.package_desired = desired
+        try:
+            self._compute_driver().set_package(self._compute_handle(), res)
+        except Exception as e:
+            self._package_apply_failed(e)
+            raise
+        self._package_applied_ok(desired)
         self._append_log(
             "Package applied (%s): Odoo %s CPU / %s RAM, %d worker(s); "
             "database %s CPU / %s RAM; storage %s."
             % (self.plan_id.name, res['cpu_limit'], res['mem_limit'], res['workers'],
                res['db_cpu_limit'], res['db_mem_limit'], res['filestore_size']))
+
+    # Package convergence (C6.1): a failed apply is retried by the reconciler
+    # after 5, 10, 20 ... minutes, capped at 6 h, at most
+    # _PACKAGE_RETRIES_PER_RUN per run; the _PACKAGE_ALERT_AT-th failure alerts.
+    _PACKAGE_RETRY_BASE_MIN = 5
+    _PACKAGE_RETRY_MAX_MIN = 360
+    _PACKAGE_RETRIES_PER_RUN = 20
+    _PACKAGE_ALERT_AT = 3
+
+    @staticmethod
+    def _package_key(res):
+        return json.dumps(res, sort_keys=True, separators=(',', ':'))
+
+    def _package_apply_failed(self, error):
+        """Record a failed apply: the package stays desired, and the
+        reconciler retries it with back-off."""
+        self.ensure_one()
+        now = fields.Datetime.now()
+        attempts = self.package_attempts + 1
+        delay = min(self._PACKAGE_RETRY_BASE_MIN * 2 ** min(attempts - 1, 16),
+                    self._PACKAGE_RETRY_MAX_MIN)
+        self.write({
+            'package_status': 'pending',
+            'package_attempts': attempts,
+            'package_pending_since': self.package_pending_since or now,
+            'package_next_retry': now + datetime.timedelta(minutes=delay),
+            'package_error': str(error)[-1000:],
+        })
+        self._append_log(
+            "Package not applied (attempt %d): %s — retrying in %d min."
+            % (attempts, str(error)[-300:], delay))
+        if attempts == self._PACKAGE_ALERT_AT:
+            self.env['saas.alert']._notify(
+                'package_not_applied',
+                '%s: package failed to apply %d times' % (self.subdomain, attempts),
+                level='error', detail=str(error)[-500:])
+
+    def _package_applied_ok(self, applied):
+        """The cluster accepted ``applied`` (a ``_package_key``)."""
+        self.ensure_one()
+        if self.package_status == 'pending':
+            self._append_log(
+                "Package converged after %d failed attempt(s)." % self.package_attempts)
+        vals = {
+            'package_desired': applied,
+            'package_applied': applied,
+            'package_status': 'in_sync',
+            'package_attempts': 0,
+            'package_pending_since': False,
+            'package_next_retry': False,
+            'package_error': False,
+        }
+        self.write({k: v for k, v in vals.items() if self[k] != v})
+
+    @api.model
+    def _converge_packages(self):
+        """Queue a retry for every tenant whose package is due one. Each
+        retry is a job under the instance lock, so it never interleaves with
+        a plan change; its key carries the attempt number, so one is queued
+        per failure. Returns the number queued."""
+        due = self.search([
+            ('package_status', '=', 'pending'),
+            ('package_next_retry', '<=', fields.Datetime.now()),
+            ('state', 'in', list(self._RECONCILE_RUNNING + self._RECONCILE_STOPPED)),
+            ('pending_operation', '=', False),
+            ('docker_server_id', '!=', False),
+        ], order='package_next_retry, id', limit=self._PACKAGE_RETRIES_PER_RUN)
+        Job = self.env['saas.job'].sudo()
+        for inst in due:
+            Job.enqueue(
+                inst, '_do_converge_package', channel='deploy',
+                idempotency_key='package:inst%s:%s' % (inst.id, inst.package_attempts),
+                lock_key='instance:%s' % inst.id, idempotent=True,
+                max_attempts=1, transactional=True)
+        return len(due)
+
+    def _do_converge_package(self):
+        """Job body: apply the current package again. A failure is recorded
+        (next back-off step), never raised — the job itself succeeded."""
+        self.ensure_one()
+        if (self.package_status != 'pending' or self.pending_operation
+                or self.state not in self._RECONCILE_RUNNING + self._RECONCILE_STOPPED):
+            return
+        try:
+            self._update_container_resources()
+        except Exception:
+            _logger.warning("Package retry failed for %s", self.subdomain, exc_info=True)
+            return
+        if self.package_status == 'pending':
+            # Nothing left to apply (no longer on Kubernetes / no package).
+            self._package_applied_ok(self.package_desired)
 
     # ========== Billing hooks ==========
     # No-op defaults that saas_billing overrides. Core never reads or

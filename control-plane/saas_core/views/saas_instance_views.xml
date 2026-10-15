@@ -34,6 +34,8 @@
                 <field name="runtime_checked_at" optional="show"/>
                 <field name="last_error" optional="hide"/>
                 <field name="last_error_date" optional="hide"/>
+                <field name="package_status" widget="badge" optional="hide"
+                       decoration-warning="package_status == 'pending'"/>
             </list>
         </field>
     </record>
@@ -117,6 +119,17 @@
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
+                    </div>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="package_status != 'pending'">
+                        <strong>Package not applied.</strong>
+                        The cluster rejected the paid package; the reconciler
+                        retries it. Failed attempts:
+                        <field name="package_attempts" readonly="1" class="oe_inline"/>,
+                        since <field name="package_pending_since" readonly="1" class="oe_inline"/>,
+                        next retry <field name="package_next_retry" readonly="1" class="oe_inline"/>.
+                        <field name="package_error" readonly="1" nolabel="1"/>
+                        <field name="package_status" invisible="1"/>
                     </div>
                     <group>
                         <!-- Left Column -->
@@ -356,6 +369,8 @@
                         domain="[('state', 'in', ('pending_provision', 'provisioning', 'running', 'stopped'))]"/>
                 <filter name="needs_attention" string="Needs Attention"
                         domain="[('state', 'in', ('failed', 'suspended', 'pending_payment'))]"/>
+                <filter name="package_pending" string="Package Not Applied"
+                        domain="[('package_status', '=', 'pending')]"/>
                 <filter name="cancelled" string="Cancelled"
                         domain="[('state', 'in', ('cancelled', 'cancelled_by_client'))]"/>
                 <separator/>

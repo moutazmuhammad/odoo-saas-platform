@@ -1642,7 +1642,7 @@ This section and §26 are the **only** implementation plan. They replace revisio
 | Milestone | Exit criteria |
 |---|---|
 | **M0 Repository and CI safeguards** | R0.1 recorded; R0.2, C1.1, C1.2, C1.4 COMPLETED (a failing test demonstrably blocks deploy); C14.1–C14.4 COMPLETED (renamed CRD installs and reconciles on a fresh cluster) |
-| **M1 Billing and provisioning defects fixed** | C3.1–C3.3, C3.5, C3.7, C4.1, C4.2, C6.1–C6.5, C6.7–C6.9, C17.1 COMPLETED. The crash-safety suite (C3.7) passes: no paid order lost, each operation applied exactly once. The paid-upgrade suite (C6.8) passes, including its owner-approved live DOKS step: no charge for a known-infeasible upgrade, no upgrade reported applied before verification, a named owner on every delay, one refund per cancelled upgrade, and zero availability-probe failures while upgrades are pending (C6.9 continuity invariant). C6.6 is P1 and does not gate M1 (reasoning in §26.4 under C6) |
+| **M1 Billing and provisioning defects fixed** | C3.1–C3.3, C3.5, C3.7, C4.1, C4.2, C6.1–C6.5, C6.7–C6.10, C17.1 COMPLETED. The crash-safety suite (C3.7) passes: no paid order lost, each operation applied exactly once. The paid-upgrade suite (C6.8) passes, including its owner-approved live DOKS step: no charge for a known-infeasible upgrade, nothing captured before verified delivery (C6.D8), no upgrade reported applied before verification, a named owner on every delay, one release per undelivered upgrade, and zero availability-probe failures while upgrades are pending (C6.9 continuity invariant). C6.6 is P1 and does not gate M1 (reasoning in §26.4 under C6) |
 | **M2 Security and resource management ready** | C5.1–C5.6, C19.1, C8.1, C8.2, C9.1–C9.3, I4.1, I4.2, C16.1, C16.2, C7.1 COMPLETED. Over-capacity orders are never charged (C5.6); spoofed `X-Forwarded-For` is blocked; staff TOTP is on |
 | **M3 Hetzner cell operational** | I1.4, ST1, C12.1, I4.3, Q3, Q4, Q5, Q6, P1, C11.1, C11.2, C11.4 COMPLETED on the real cell |
 | **M4 Backup and DR verified** | I6.1–I6.8, C8.3, I9.1, B1, Q2, I8.1, C11.3, **Q1a** COMPLETED against **real B2**; DR cap entered in the ledger; I7 done |
@@ -1666,7 +1666,7 @@ flowchart LR
     C1 --> C14[C14.1–C14.4 CRD rename]
     C3[C3.1–C3.7 durable jobs] --> C4[C4.1–C4.2 resume]
     C3 --> C5[C5.1–C5.6 capacity holds]
-    C3 --> C6[C6.1–C6.9 paid upgrades]
+    C3 --> C6[C6.1–C6.10 paid upgrades]
     C5 --> C19[C19.1 reorder alert]
     C8[C8.1–C8.2 secrets] --> C9[C9.1–C9.3 access]
     C16[C16.1–C16.2 catalog]
@@ -1708,7 +1708,7 @@ flowchart LR
 | I6.6 | C8.2 | Tenant keys are stored encrypted |
 | C8.3 | I6.6 | Remove the global key only when per-tenant keys exist |
 | C7.2 | I9.1, I6.7 | Never purge without a verified final snapshot |
-| C5.5 refund via provider | C15.3 | A credit note works earlier |
+| C5.5 / C6.2 fallback refund via provider | C15.3 | A void needs no provider refund; until C15.3 the fallback path credits the wallet |
 | Q1a | C11.2, C11.3 | Detection time is part of the RTO |
 
 **What can run in parallel:**
@@ -1820,21 +1820,22 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | C4.1 | PH1 | Resume after an overdue invoice is paid | P0 | C3.3 | COMPLETED | UNIT, INTEG[TEST-SRV] | no |
 | C4.2 | PH1 | Fix resume after a storage purchase | P0 | C4.1 | COMPLETED | UNIT, INTEG[TEST-SRV] | no |
 | C6.1 | PH1 | Package convergence in reconcile | P0 | C3.2 | COMPLETED | UNIT, INTEG[TEST-SRV] | no |
-| C6.2 | PH1 | Missed deadline → customer choice and idempotent refund | P0 | C6.4, C6.5, C17.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C6.2 | PH1 | Undelivered upgrade → release, never capture | P0 | C6.4, C6.5, C6.10, C17.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C6.3 | PH1 | Verify the rollout before an upgrade counts as applied | P0 | C6.1 | NOT STARTED | UNIT, INTEG[TEST-SRV], ACCEPT[DOKS] | YES (DOKS test cluster, no new resources) |
-| C6.4 | PH1 | Paid-upgrade deadlines, fast retries and customer status | P0 | C6.3 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C6.4 | PH1 | Paid-upgrade deadlines, fast retries and customer status | P0 | C6.3, C6.10 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C6.5 | PH1 | Escalation to a named on-call user | P0 | C6.4 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C6.6 | PH1 | Automatic remediation by block reason | P1 | C6.3 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C6.7 | PH1 | Pre-payment feasibility gate for upgrades | P0 | C3.2 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
-| C6.8 | PH1 | Validation: paid-upgrade reliability suite | P0 | C6.2, C6.3, C6.4, C6.5, C6.7, C6.9 | NOT STARTED | INTEG[TEST-SRV], ACCEPT[DOKS] | YES (DOKS test cluster, no new resources) |
+| C6.8 | PH1 | Validation: paid-upgrade reliability suite | P0 | C6.2, C6.3, C6.4, C6.5, C6.7, C6.9, C6.10 | NOT STARTED | INTEG[TEST-SRV], ACCEPT[DOKS] | YES (DOKS test cluster, no new resources) |
 | C6.9 | PH1 | Service continuity during a pending upgrade | P0 | C6.3 | NOT STARTED | UNIT, INTEG[LOCAL], INTEG[TEST-SRV], ACCEPT[DOKS] | YES (operator release + live check on the DOKS test cluster) |
+| C6.10 | PH1 | Authorize at purchase, capture on verified delivery | P0 | C6.3, C3.1, C3.2 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C17.1 | PH1 | A downgrade never sends a smaller volume | P0 | — | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C18.1 | PH1 | Renewal billing for stopped and suspended tenants that hold storage | P1 | C4.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C5.1 | PH2 | Capacity ledger model and computation | P0 | — | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C5.2 | PH2 | Shadow mode at checkout | P0 | C5.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
-| C5.3 | PH2 | Hold before payment; waitlist; no charge without capacity | P0 | C5.2, C3.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C5.3 | PH2 | Hold before payment; waitlist; no charge without capacity | P0 | C5.2, C3.1, C6.10 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C5.4 | PH2 | Upgrade holds include surge | P0 | C5.3, C3.2 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
-| C5.5 | PH2 | Failed deploy after a charge → credit and release | P0 | C5.3, C3.5 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C5.5 | PH2 | Failed deploy → release, never capture | P0 | C5.3, C3.5, C6.10 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C5.6 | PH2 | Switch to enforce mode (validation) | P0 | C5.2, C5.3, C5.4, C5.5 | NOT STARTED | INTEG[TEST-SRV], ACCEPT | no |
 | C19.1 | PH2 | Capacity forecast and reorder-point alert | P0 | C5.1 | NOT STARTED | UNIT | no |
 | C8.1 | PH3 | Mandatory secret-encryption key | P0 | — | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
@@ -1927,7 +1928,7 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | G5 | PH11 | Partner portal and white-label | P2 | GATE6 | NOT STARTED | INTEG | YES |
 | G6 | PH11 | HA option for Scale/Dedicated | P2 | GATE6 | NOT STARTED | INTEG[H] | YES (cost per customer) |
 
-**Totals:** 128 tasks in 12 phases, by priority: P0 101, P1 18, P2 9. 42 need owner approval. (Rev 5.2 had 120 tasks: P0 95, P1 16, P2 9, 39 approvals. Added on 2026-10-15: C3.8 (P1), C6.3–C6.5, C6.7–C6.9 (P0), C6.6 (P1). Approvals added: C6.3 and C6.8 for the live DOKS step, and C6.9 for the operator release and live check. C6.9 was first the delay credit, then re-scoped after C6.D5.)
+**Totals:** 129 tasks in 12 phases, by priority: P0 102, P1 18, P2 9. 42 need owner approval. (Rev 5.2 had 120 tasks: P0 95, P1 16, P2 9, 39 approvals. Added on 2026-10-15: C3.8 (P1), C6.3–C6.5, C6.7–C6.9 (P0), C6.6 (P1). Approvals added: C6.3 and C6.8 for the live DOKS step, and C6.9 for the operator release and live check. C6.9 was first the delay credit, then re-scoped after C6.D5. C6.10 (P0, no approval) added for C6.D8.)
 
 ### 26.2 Baseline: capabilities that already exist (verified at `b7c0aa0`; no task needed)
 
@@ -1966,6 +1967,8 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | 2026-10-15 | C6.9 | BLOCKED | Waiting for owner decision C6.D5: approve, change or reject the recommended delay credit (only when the customer keeps waiting past T2 and the upgrade is delivered later; amount = change-invoice amount × delay ÷ remaining cycle, once, to the wallet) | — |
 | 2026-10-15 | C6.D5 | DECIDED | Owner: no additional compensation for delays. Delivered within T2 → nothing due. Cancelled after T2 because not delivered → full refund of the upgrade payment (one wallet credit for the change invoice, C6.D3). Customer keeps waiting past T2 → no delay credit, compensation or extra refund. The refund is idempotent and never reverts the existing package or interrupts the service. The C6.9 delay-credit scope is withdrawn: no delay-credit mechanism will be built. Open, non-blocking: C6.D6 (refund destination once C15.3 exists), C6.D7 (upgrade parts already in effect at cancel; default is to leave them in place) | Plan change |
 | 2026-10-15 | C6.9 | NOT STARTED | Unblocked and re-scoped to the owner's mandatory invariant: the customer's existing service stays operational while an upgrade is pending (zero interruption preferred). Read-only code review: Odoo rolls with maxUnavailable 0 / maxSurge 1, and the quota includes one surge pod; PostgreSQL resizes in place (pods/resize, NotRequired) and a non-fitting resize is left pending without a restart. Two downtime risks found and planned: R1, the database StatefulSet template takes the new size before the resize is confirmed, so a recreated database pod can stay Pending (outage); R2, reconcile's crash-loop auto-stop could stop an instance during a rollout. P0, now in M1; C6.8 depends on it. No code, deploy or DOKS operation | Plan change |
+| 2026-10-15 | C6.D8 | DECIDED | Owner: the customer is not charged until the upgrade or server creation is confirmed; if a failure other than resource unavailability happens after payment, the payment is returned; the transaction stays pending until the customer has the service. Planned as authorize → verify → capture: new task C6.10 (P0, M1); C6.2 becomes a release (void + wallet hold return) with automatic release at T2 for non-resource failures and before authorization expiry; C5.3/C5.5 apply the same to new servers; C6.D3 amended, C6.D6 resolved; C15.1 must record manual-capture support (Stripe documents it, Paddle/Lemon Squeezy unverified; otherwise fallback = immediate charge + refund). Open: C6.D9 (authorization near expiry; default release). Read-only code check at `b8cb3db`: no `authorized`/capture/void handling exists; execution triggers on invoice paid; wallet consumed at invoice creation. No code, deploy or DOKS operation | Plan change |
+| 2026-10-15 | C6.D10 | OPEN | Owner: production is Hetzner, not DOKS, with node autoscaling (Cluster Autoscaler). Recorded with its conflicts for an owner decision before PH5: §29 D1 (single-node MicroK8s cells on dedicated AX42, node-local TopoLVM) and C6.D4 (no automatic paid nodes). A new node does not complete an existing tenant's upgrade when its volumes pin it to a full node (deferred DB resize; RWO filestore co-location, `deployment.go:274`); upstream Cluster Autoscaler support for Hetzner dedicated servers not verified. New C6.9 risk R7 (scale-down eviction). I1.4 and E2E1 gain production-cluster checks. No §29 edit | Plan change |
 
 ### 26.4 Task cards
 
@@ -2286,18 +2289,24 @@ Each card carries all required fields:
 
 #### C6 · Paid package upgrades: rules for this section
 These rules apply to every C6 task. They replace the old C6.2 rule ("after N retries or 24 h, revert and credit").
-- **Before payment:** no money is collected for an upgrade that a known capacity, resource or configuration limit makes infeasible (C6.7).
+- **No capture before delivery (C6.D8, mandatory):** the customer is never charged until they have the service they paid for.
+  - From the purchase until the upgrade is verified (C6.3), the payment stays **pending**: a card authorization and/or a wallet hold.
+  - It is captured only after verification (C6.10).
+  - An upgrade that is not delivered is released, never captured.
+- **Before authorization:** no money is authorized or held for an upgrade that a known capacity, resource or configuration limit makes infeasible (C6.7).
   - Until C5.4 adds a real capacity reservation, C6.7 checks only the configured CPU/RAM limits, so capacity is **not** guaranteed.
-  - A passed check is never a guarantee, so the post-payment path below always applies.
-- **After payment:**
-  - execution starts in the payment transaction (C3.2 job);
+  - A passed check is never a guarantee, so the pending path below always applies.
+- **While pending (funds secured, nothing captured):**
+  - execution starts when the funds are secured (the C3.2 job, triggered by the C6.10 authorization instead of a paid invoice);
   - transient faults are retried by the existing job queue and reconciler (C6.1, C6.4);
   - the customer has a short, explicit completion target T1;
   - ops have an internal recovery deadline T2 (C6.D1);
   - when T1 is missed, the customer gets a clear status at once, recovery is active, and a named on-call user owns the case (C6.5);
-  - T2 is the deadline for resolving the issue operationally or making the cancel-and-credit option available (C6.2).
+  - at T2, a **resource-unavailability** block (`unschedulable`: no free CPU/RAM/node room, including a deferred or infeasible resize) stays pending, and the customer may cancel (released; nothing charged). **Any other failure** still unresolved at T2 is released automatically (C6.2, C6.D8);
+  - the authorization's expiry is a hard limit: a still-pending upgrade is released before the authorization lapses (C6.2, C6.D9).
+- **At delivery:** C6.3 verifies, then C6.10 captures once and only then switches billing (plan, cycle, surplus). A capture that fails after delivery never touches the service; the invoice goes through the normal unpaid-invoice handling.
 - **"Applied" means verified:** an upgrade is complete only when the cluster runs the new resources (C6.3), not when a patch is accepted.
-- **No automatic downgrade:** nothing is reverted or refunded just because a retry count or a time limit was reached. A cancellation or refund follows the explicit rule in C6.2, checks the real infrastructure state, and is idempotent.
+- **No automatic downgrade:** the running service is never reverted or downsized because a retry count or a time limit was reached. Releasing an undelivered upgrade's pending payment follows the explicit rules in C6.2, checks the real infrastructure state, and is idempotent.
 - **No Kubernetes words for the customer:** they see a plain status and a next step, and never need to contact support (C6.4, C6.2).
 
 **Mandatory invariant: service continuity during an upgrade** (owner, 2026-10-15; enforced by C6.9, proven by C6.8)
@@ -2309,9 +2318,22 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 - **When resources cannot be secured:**
   - the existing service is preserved;
   - the actual upgrade status is reported;
-  - the T1/T2 escalation and the cancel-and-refund policy apply (C6.4, C6.5, C6.2).
+  - the T1/T2 escalation and the release policy apply (C6.4, C6.5, C6.2): nothing is captured before delivery (C6.D8).
 - **Downtime risks documented first:** every upgrade path that could cause downtime is documented with a safe alternative before implementation. The current register is in C6.9.
 - **Reservation is not continuity:** a reservation alone does not guarantee zero downtime, neither the C6.7 limit check nor C5.4's hold.
+
+**Production runs on Hetzner, with node autoscaling** (owner, 2026-10-15: production is not on DOKS; it will be on Hetzner with Node Autoscaling, i.e. the Cluster Autoscaler). DOKS is only the test cluster. How this fits the current design is open decision C6.D10. Facts C6 relies on:
+- **What an autoscaler can fix:** the Cluster Autoscaler adds a node when a pod is Pending and unschedulable. That covers a new server's pods and any new pod that may start on another node.
+- **What it cannot fix:**
+  - **Deferred database resize:** a PostgreSQL in-place resize that is `Deferred` leaves no Pending pod; the running pod waits for room on **its own** node. Whether the autoscaler reacts to a deferred resize is not verified, and a new node would not help that pod anyway.
+  - **Node-bound volumes:** the database volume (TopoLVM in D1, node-local) and an RWO filestore pin pods to their node. The Odoo surge pod is co-located with an RWO filestore (`compute/operator/internal/resources/deployment.go:274`). For an existing tenant whose node is full, a new node therefore does not complete the upgrade; only room on that node, or a customer-chosen move, does.
+  - **Result:** autoscaling mainly protects new servers and new tenants. For upgrades, the reservation taken before authorization (C5.4) is still the main protection, and the authorization window still limits how long a payment can stay pending.
+- **Scale-down must never cause downtime:** an autoscaler's scale-down drains nodes. It must be configured so that it never evicts a tenant's single PostgreSQL pod or its last ready Odoo pod (C6.9 risk R7).
+- **Cost:** autoscaled nodes are paid resources added automatically, which C6.D4 currently forbids. C6.D10 must say what bounds (node group, server type, maximum) count as the owner's authorization.
+- **Live checks repeated on production:** every live check C6 runs on DOKS is repeated on the first Hetzner production cluster before any customer:
+  - in-place pod resize on its Kubernetes version (C6.9, at I1.4);
+  - one paid upgrade under load going authorize → verify → capture (E2E1);
+  - the autoscaler scale-up and scale-down with the C6.8 availability probe (C6.9).
 
 **How the current code behaves** (verified in the repository at `fc5da4a`, read-only):
 - **Odoo web pods:**
@@ -2327,17 +2349,21 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 
 | ID | Decision | Status | Used by |
 |---|---|---|---|
-| C6.D1 | **T1 = 15 min** is the customer-facing completion target, not a guarantee. Missing it triggers a clear customer status and active recovery. **T2 = 2 h** is the deadline for resolving the issue operationally or making the cancel-and-credit option available. Both are `ir.config_parameter` values with these defaults | DECIDED | C6.4, C6.5, C6.2 |
+| C6.D1 | **T1 = 15 min** is the customer-facing completion target, not a guarantee. Missing it triggers a clear customer status and active recovery. **T2 = 2 h** is the deadline for resolving the issue operationally or making the cancel option available (a release under C6.D8; nothing charged). Both are `ir.config_parameter` values with these defaults | DECIDED | C6.4, C6.5, C6.2 |
 | C6.D2 | Escalation goes to a **named on-call user**. Responsibility must be actionable, and must not depend on someone noticing an alert | DECIDED | C6.5 |
-| C6.D3 | After T2 the customer may cancel the upgrade and receive **one full credit of the change invoice to the wallet**. Retries, double clicks and worker crashes are handled idempotently. Nothing is reverted or refunded outside this customer-facing flow. A money refund arrives with C15.3 | DECIDED | C6.2 |
-| C6.D4 | **No paid nodes are provisioned automatically.** Any additional infrastructure cost needs explicit owner authorization | DECIDED | C6.5, C6.6 |
-| C6.D5 | **No additional compensation for delays:**<br>• Delivered (verified) within T2 → no refund or compensation.<br>• Cancelled by the customer after T2 because the upgrade was not delivered → full refund of the upgrade payment (C6.D3: one wallet credit for the change invoice).<br>• The customer keeps waiting past T2 → no delay credit, compensation or extra refund while the upgrade is pending.<br>The refund is idempotent (retries, duplicate requests, crashes). It never reverts the existing package or interrupts the current service | DECIDED | C6.2, C6.8 |
-| C6.D6 | Where a cancelled upgrade's refund goes once provider refunds exist (C15.3): wallet only, or back to the original payment method | OPEN (does not block C6.2: until C15.3 the wallet credit is the only path) | C6.2, C15.3 |
+| C6.D3 | After T2 the customer may cancel the upgrade. Retries, double clicks and worker crashes are handled idempotently.<br>**Amended by C6.D8:** nothing has been captured by then, so the cancel releases the pending payment (authorization voided, wallet hold returned). The credit of the change invoice applies only on the C6.D8 fallback path. The only automatic release is the one C6.D8 defines (non-resource failure, authorization expiry) | DECIDED (amended 2026-10-15) | C6.2 |
+| C6.D4 | **No paid nodes are provisioned automatically.** Any additional infrastructure cost needs explicit owner authorization | DECIDED; to be revised by C6.D10 (the owner plans node autoscaling in production; its owner-set bounds would be the explicit authorization) | C6.5, C6.6 |
+| C6.D5 | **No additional compensation for delays:**<br>• Delivered (verified) within T2 → no refund or compensation.<br>• Cancelled by the customer after T2 because the upgrade was not delivered → nothing is charged (C6.D8: the pending payment is released in full).<br>• The customer keeps waiting past T2 → no delay credit, compensation or extra refund while the upgrade is pending.<br>The release is idempotent (retries, duplicate requests, crashes). It never reverts the existing package or interrupts the current service | DECIDED | C6.2, C6.8 |
+| C6.D6 | Where a cancelled upgrade's refund goes once provider refunds exist (C15.3): wallet only, or back to the original payment method | RESOLVED by C6.D8 (2026-10-15). Normally there is nothing to refund: the authorization is voided and the wallet hold returned. On the fallback path (provider without manual capture) the money goes back where it came from: the card part to the original payment method (C15.3), the wallet part to the wallet. Until C15.3, the card part is credited to the wallet | C6.2, C15.3 |
 | C6.D7 | After a cancel, what happens to parts of the upgrade that already took effect (e.g. the database resize completed but the Odoo rollout did not; a volume already grown)? Recommendation:<br>• leave them in place, with no disruption and no shrink;<br>• count them in capacity;<br>• bring them back to the paid package only at the next customer-initiated change, through a zero-downtime rolling update | OPEN (C6.2 implements the recommended "leave in place" default; the decision only adds or removes the later scale-down) | C6.2 |
+| C6.D8 | **No capture before delivery** (owner, 2026-10-15): "the customer should not be charged until we confirm that the upgrade or server creation can be completed successfully … the transaction should remain pending until the customer successfully receives the service they paid for."<br>• **Scope:** upgrades, environment plans, storage blocks and **new servers**. A renewal of a running service is captured at once, because that service is already delivered.<br>• **Before:** resource unavailability that is known before purchase → nothing authorized or charged (C6.7, C5.3, C5.4).<br>• **Pending:** card authorization (manual capture) plus wallet hold; nothing captured.<br>• **Capture:** only after verified delivery (C6.3 for an upgrade; running and healthy for a new server).<br>• **Resource unavailability after authorization:** stays pending; the customer may cancel after T2; released before the authorization lapses.<br>• **Any other failure:** released automatically once it is final (a non-resource block still unresolved at T2, or a deploy's final failure).<br>• **Fallback:** a provider or payment method without manual capture is charged at once, and the same triggers issue a full refund instead of a void | DECIDED | C6.10, C6.2, C5.3, C5.5, C15.1–C15.3 |
+| C6.D9 | An upgrade or new server still pending on resource unavailability when the card authorization nears expiry. Online card authorizations commonly last about 7 days; Visa merchant-initiated ones (saved-card charges) about 4 days 18 h [DOC Stripe]. Options:<br>(a) release before expiry and tell the customer they can buy again;<br>(b) re-authorize the saved card automatically.<br>Recommendation: (a). It is simpler and never places a new hold without the customer acting | OPEN (C6.2 and C5.5 implement (a) as the default; (b) would only add a re-authorization step) | C6.2, C5.5, C6.10 |
+| C6.D10 | **Production on Hetzner with node autoscaling** (owner direction, 2026-10-15). To decide before PH5, because it touches §29 D1 (single-node MicroK8s cells on dedicated AX42 servers, TopoLVM local volumes) and C6.D4 (no automatic paid nodes):<br>• **Node source:** Hetzner Cloud servers (hourly), dedicated servers, or a mix. Upstream Cluster Autoscaler support for Hetzner dedicated (Robot) servers is not verified.<br>• **Cluster shape:** multi-node clusters instead of one-node cells; Kubernetes distribution; storage engine for multi-node (node-local TopoLVM pins every tenant to its node).<br>• **Cost bounds:** node group, server type and maximum node count, set by the owner as the standing authorization that replaces C6.D4 for autoscaled nodes.<br>• **Scale-down safety:** tenant PostgreSQL and the last ready Odoo pod are never evicted (C6.9 R7) | OPEN (does not block PH1 code: C6 treats resource unavailability the same with or without an autoscaler) | C6.D4, C6.9, C6.7, C5.1, §29 D1, I1.x |
 
 **C6 tasks and the M1 gate.**
-- **In M1:** C6.2, C6.3, C6.4, C6.5, C6.7, C6.8 and C6.9. M1 is "billing and provisioning defects fixed", and these close defects in the money path and the service path:
+- **In M1:** C6.2, C6.3, C6.4, C6.5, C6.7, C6.8, C6.9 and C6.10. M1 is "billing and provisioning defects fixed", and these close defects in the money path and the service path:
   - charging for an upgrade that cannot run (C6.7);
+  - capturing money before the customer has the service (C6.10, C6.D8);
   - calling an upgrade applied when it is not (C6.3);
   - an unbounded wait after payment (C6.4, C6.5);
   - no way out for the customer (C6.2);
@@ -2351,21 +2377,25 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 
 | # | Scenario | Handling | Task |
 |---|---|---|---|
-| F1 | Not enough capacity or resources when the upgrade is requested | No invoice, no charge; plain message | C6.7 (+ C5.4 hold) |
-| F2 | Capacity taken between the check and the payment, or by something outside the configured limits | No guarantee before C5.4: the post-payment path F4–F6 handles it; C5.4 adds the hold | C6.4, C6.5, then C5.4 |
+| F1 | Not enough capacity or resources when the upgrade is requested | No invoice, no authorization, no charge; plain message | C6.7 (+ C5.4 hold) |
+| F2 | Capacity taken between the check and the authorization, or by something outside the configured limits | No guarantee before C5.4: the pending path F4–F6 handles it, with nothing captured; C5.4 adds the hold | C6.4, C6.5, then C5.4 |
 | F3 | Known configuration limit: storage class cannot grow volumes, a pod larger than any node, cluster not ready, another package change still pending | Refused before payment | C6.7 |
-| F4 | Cluster unreachable or patch rejected after payment | Job retry, then reconciler retry at the C6.4 cadence | C6.1, C6.4 |
+| F4 | Cluster unreachable or patch rejected after authorization | Job retry, then reconciler retry at the C6.4 cadence | C6.1, C6.4 |
 | F5 | Patch accepted but pods cannot schedule, quota blocks, or volume expansion stays pending | Not "applied"; reason classified; escalation to the on-call user; safe automatic fix where one exists | C6.3, C6.5, C6.6 |
-| F6 | Worker killed during apply, verify or refund | Reaper/sweeper re-run; every step idempotent | C3.5, C6.8 |
-| F7 | Duplicate payment notice | One job (C3.2) | C3.2 |
-| F8 | Payment reversed while the upgrade is pending | Execution stops; no refund is issued on top of the reversal | C6.2 |
+| F6 | Worker killed during apply, verify, capture or release | Reaper/sweeper re-run; every step idempotent | C3.5, C6.8 |
+| F7 | Duplicate payment or authorization notice | One job (C3.2); at most one capture (C6.10) | C3.2, C6.10 |
+| F8 | Authorization voided, expired or reversed outside the platform while the upgrade is pending | Execution stops; parts not yet in effect are withdrawn; nothing to refund, and no refund on top of a reversal | C6.2, C6.10 |
 | F9 | Customer asks for another plan change while one is pending | Refused by the gate until done or cancelled | C6.7 |
-| F10 | Past T2, still not applied | Customer chooses to wait or cancel. Cancel refunds once. Waiting earns no delay credit (C6.D5) | C6.2 |
-| F11 | Upgrade gets applied while a cancel is in flight | Cancel refused; the upgrade stands | C6.2 |
+| F10 | Past T2, still not applied because of resource unavailability | Stays pending, nothing captured. Customer chooses to wait or cancel; a cancel releases the pending payment once. Waiting earns no delay credit (C6.D5) | C6.2 |
+| F11 | Upgrade gets applied while a cancel or release is in flight | Release refused; the upgrade stands and is captured (C6.10) | C6.2, C6.10 |
 | F12 | The database pod is recreated (eviction, node loss) while an upgrade is pending and its resources are not secured | Today the StatefulSet template already carries the new size, so the new pod can stay Pending and **the database goes down** (risk R1). Fix: the template takes the new size only after the in-place resize is confirmed | C6.9 |
 | F13 | The new Odoo pod crash-loops during the rollout | The old pod keeps serving. Reconcile must not use its crash-loop auto-stop on the instance (risk R2); the upgrade is `blocked:crashloop` and escalated | C6.9, C6.5 |
 | F14 | Job interrupted or worker killed mid-rollout | The existing service stays up; the reaper/sweeper and reconcile resume; nothing is reported applied until C6.3 verifies | C6.9, C6.8 |
-| F15 | Capacity freed later (after F5) | The pending rollout or deferred resize completes on its own; C6.3 verifies; the customer sees "complete" | C6.3 |
+| F15 | Capacity freed later (after F5) | The pending rollout or deferred resize completes on its own; C6.3 verifies; C6.10 captures; the customer sees "complete" | C6.3, C6.10 |
+| F16 | A non-resource failure (`crashloop`, volume expansion refused, patch rejected, `quota`, `unknown`) still unresolved at T2 | Released automatically once: authorization voided, wallet hold returned, invoice cancelled, parts not yet in effect withdrawn; the customer is told they were not charged; the service is unchanged | C6.2 |
+| F17 | The authorization nears expiry while the upgrade is still pending | Released before it lapses (C6.D9 default) | C6.2 |
+| F18 | Capture fails after verified delivery | The service stays as delivered; the invoice goes through normal unpaid-invoice handling; nothing is rolled back | C6.10 |
+| F19 | Worker killed between verification and capture, or the capture job re-runs | Capture resumes; never two captures | C6.10, C6.8 |
 
 #### C6.1 · Package convergence in reconcile
 `P0 · M · $0 · Approval: no · Status: COMPLETED · Tests: UNIT, INTEG[TEST-SRV]`
@@ -2407,7 +2437,7 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - **Read-only:** verification never acts on the workload (continuity invariant).
   - **New status values:** `package_status` gains `applying` (patch accepted, not verified) and `blocked`. Only a verified `applied` writes `package_applied` and sets `in_sync`.
   - **Polling:** the C6.1 job polls `applying` and `blocked` instances, reusing `_do_converge_package` with a verify step.
-  - **Customer messages:** the billing message becomes "Payment confirmed — applying your upgrade". "Upgrade complete" is posted only on verification.
+  - **Customer messages:** the billing message becomes "Payment authorized — applying your upgrade. You'll be charged when it's complete" (C6.D8). "Upgrade complete" is posted only on verification.
 - **Depends:** strict: C6.1.
 - **Steps:**
   1. Driver method plus fake, with unit tests from recorded CR/pod JSON.
@@ -2426,7 +2456,7 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 
 #### C6.4 · Paid-upgrade deadlines, fast retries and customer status
 `P0 · M · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
-- **Objective:** After payment, the customer sees a bounded wait with a plain status. Retries run fast inside that window.
+- **Objective:** After authorization, the customer sees a bounded wait with a plain status. Retries run fast inside that window.
 - **Current status:** NOT STARTED.
   - The paid change is queued at once (C3.2), but a failure falls back to the C6.1 back-off, which can reach 6 h.
   - Neither the customer nor ops sees a target time.
@@ -2436,20 +2466,20 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - the instance payload in `control-plane/saas_website/controllers/api.py`;
   - the SPA instance page under `frontend/veltnex/src/`.
 - **Change:**
-  - **Fields:** `upgrade_paid_at`, `upgrade_target_at` (= paid + T1, default 15 min) and `upgrade_deadline_at` (= paid + T2, default 2 h); `upgrade_invoice_id`. All are set when a paid change starts. T1 and T2 come from `saas_master.upgrade_target_minutes` / `saas_master.upgrade_deadline_minutes`.
+  - **Fields:** `upgrade_authorized_at`, `upgrade_target_at` (= authorized + T1, default 15 min) and `upgrade_deadline_at` (= authorized + T2, default 2 h); `upgrade_invoice_id`. All are set when the funds for a change are secured (C6.10). T1 and T2 come from `saas_master.upgrade_target_minutes` / `saas_master.upgrade_deadline_minutes`.
   - **Retry cadence:** while a paid change is unverified, retries run at 1, 2, 4 … min, capped so that the next retry never falls after `upgrade_target_at` or `upgrade_deadline_at`.
   - **Customer status:** computed `upgrade_customer_status` (`in_progress` / `delayed` / `action_available` / `complete`), with message keys only and no infrastructure terms. Examples:
-    - "Applying your upgrade — usually done by 14:20."
-    - "This is taking longer than usual. Our team is already on it; nothing for you to do."
-    - "Your upgrade is delayed. You can keep waiting or cancel it for a full credit."
-- **Depends:** strict: C6.3 · decision C6.D1 recorded.
+    - "Applying your upgrade — usually done by 14:20. You'll be charged when it's complete."
+    - "This is taking longer than usual. Our team is already on it; nothing for you to do. You haven't been charged."
+    - "Your upgrade is delayed. You can keep waiting or cancel it; you haven't been charged."
+- **Depends:** strict: C6.3, C6.10 · decision C6.D1 recorded.
 - **Steps:**
   1. Fields and cadence.
   2. API payload and SPA banner (Vitest).
   3. Tests.
   4. Upgrade-with-data test.
 - **Acceptance:**
-  - Payment with a healthy fake cluster → `complete` before T1, with no retry wait.
+  - Authorization with a healthy fake cluster → `complete` (and captured) before T1, with no retry wait.
   - Transient fault cleared at T1/2 → `complete` before T1.
   - Fault not cleared → `delayed` at T1 and `action_available` at T2.
   - No retry is scheduled after T2 without an escalation in place (C6.5).
@@ -2476,9 +2506,9 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - **At T1:** schedule one `mail.activity` ("Paid upgrade delayed") on the instance, assigned to the on-call user and due at T2. Odoo emails the assignee and lists it in their activity inbox, so nobody has to watch alerts.
     - The note is actionable. It gives the block reason from C6.3, the free capacity needed (e.g. "needs 2 vCPU / 4 GiB free on cluster X"), the customer's T2, and the allowed actions: free capacity, ask the owner to authorize paid nodes (C6.D4, never automatic), or contact the customer.
     - An `upgrade_delayed` alert also goes to the webhook.
-  - **At T2 unresolved:** a second activity ("Paid upgrade past deadline — customer offered cancel and credit") is assigned to the on-call user, and a critical alert is raised.
+  - **At T2 unresolved:** a second activity is assigned to the on-call user, and a critical alert is raised. It reads "Upgrade past deadline — customer offered cancel; nothing charged" for resource unavailability, or "Upgrade released automatically — nothing charged" for any other reason (C6.2).
   - **Idempotency:** one open activity per paid change invoice.
-  - **Auto-close:** activities close automatically (`action_feedback`) when C6.3 verifies the upgrade or C6.2 cancels it.
+  - **Auto-close:** activities close automatically (`action_feedback`) when C6.3 verifies the upgrade or C6.2 releases it.
 - **Depends:** strict: C6.4 · decisions C6.D2, C6.D4 recorded.
 - **Steps:** Implement; tests; upgrade-with-data test (config field, activity type).
 - **Acceptance:**
@@ -2516,7 +2546,7 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 
 #### C6.7 · Pre-payment feasibility gate for upgrades
 `P0 · M · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
-- **Objective:** Never collect money for an upgrade that a known limit makes infeasible.
+- **Objective:** Never authorize or collect money for an upgrade that a known limit makes infeasible.
 - **Current status:** NOT STARTED.
   - `_request_upgrade` creates and posts the invoice, then tries the saved card at once, with no capacity or configuration check.
   - The checkout page (`/my/instances/<id>/checkout`) and Odoo's `/invoice/transaction/<id>` collect it later, also with no check.
@@ -2527,13 +2557,13 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - a `payment.transaction` create hook for pending-change invoices;
   - `control-plane/saas_core/models/saas_server.py`;
   - `control-plane/saas_core/drivers/kubernetes_driver.py` (cached node allocatable, storage-class expansion flag).
-- **Change:** One gate `_package_change_feasible(target)` returning `(ok, reason_key)`, called by every path that creates or collects an upgrade, environment-plan or storage-block invoice. It checks:
+- **Change:** One gate `_package_change_feasible(target)` returning `(ok, reason_key)`, called by every path that creates, authorizes or collects an upgrade, environment-plan or storage-block invoice. It checks:
   - the cluster is reachable and the operator ready (`require_cluster_ready`);
   - no other package change is pending or unverified;
   - each new Odoo and PostgreSQL pod fits the largest node's allocatable;
   - a volume that must grow sits on a storage class with `allowVolumeExpansion`;
   - **Configured limits only:** the CPU/RAM delta, plus one surge Odoo pod of the new size (the rolling update runs old and new side by side), fits the cluster's **configured** caps (`max_cpu_cores`/`max_ram_gb`).
-    - This is a limit check, not a capacity reservation. Real free capacity can still be taken by other workloads or a lost node; the post-payment path covers that.
+    - This is a limit check, not a capacity reservation. Real free capacity can still be taken by other workloads or a lost node; the pending path covers that, with nothing captured.
     - A cluster with no caps set (0) gets no capacity check. The gate logs "capacity not checked" and never tells the customer capacity is reserved.
   - **Concurrent attempts within those limits:** the check runs under `SELECT … FOR UPDATE` on the `saas_server` row. It counts the delta of every upgrade still in flight on that cluster (open change invoice, or paid and not yet verified) on top of the applied packages, so two attempts cannot both pass by fitting the same remaining headroom. The same locked check runs again at every collection point.
 
@@ -2558,53 +2588,64 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - An unpaid in-flight upgrade's delta is counted until its invoice is paid, cancelled or the change is verified.
   - With no caps configured, the log says "capacity not checked", and no customer text says "reserved" or "guaranteed".
   - A pending package blocks a second upgrade.
-  - A passed check still runs the post-payment path.
+  - A passed check still runs the pending path (nothing captured before C6.3 verifies).
 - **Tests:** Unit tests per check; `INTEG[TEST-SRV]` with a two-cursor concurrency test.
 - **Risks:**
   - Stale cached node data refusing valid upgrades. Mitigation: refresh on the health cron, and the refusal is logged with its numbers.
   - Lock order deadlock. Mitigation: always lock `saas_server` before `saas_instance`.
 - **Rollback:** A config flag turns the gate into log-only.
 
-#### C6.2 · Missed deadline → customer choice and idempotent refund
+#### C6.2 · Undelivered upgrade → release, never capture
 `P0 · M · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
-- **Objective:** A customer never pays for an upgrade that is not delivered, and is never downgraded automatically.
+- **Objective:** A customer is never charged for an upgrade that is not delivered (C6.D8), and is never downgraded automatically.
 - **Current status:** NOT STARTED.
   - When the paid change applies, `plan_id`, `billing_period` and the cycle are switched and any wallet surplus is granted.
-  - Nothing records the previous state, so an undo is not possible today.
+  - There is no cancel or release path.
 - **Files:**
   - `control-plane/saas_billing/models/saas_instance.py`;
   - `control-plane/saas_billing/models/account_move.py`;
+  - the C6.10 void helper in `control-plane/saas_billing/models/saas_payment.py`;
   - the instance API and SPA (the cancel action).
 - **Change:**
-  - **Previous state:** when a paid change starts, store `plan_id`, `billing_period`, `last_invoice_date`, `next_invoice_date` and the surplus granted (`upgrade_prev_*`).
-  - **When the action appears:** only from T2 on (`action_available`, C6.4), the customer can press "Cancel upgrade". Staff can do the same from the backend at any time.
-  - **The cancel job:** a `saas.job` with key `upgrade-cancel:inv<id>` under the instance lock. It:
-    1. re-checks C6.3, and refuses the cancel if the upgrade is now verified (F11);
-    2. withdraws only the parts of the upgrade that have **not** taken effect (a pending Odoo rollout, a deferred database resize). It never stops, restarts, suspends or downsizes the running service. It never shrinks a volume (C17.1). Parts already in effect stay in place (C6.D7). The existing package is never reverted;
-    3. restores the stored fields;
-    4. reverses the surplus grant;
-    5. issues one credit note for the change invoice (`reversed_entry_id` = that invoice; an existing reversal is reused), credited to the wallet (C6.D3);
-    6. closes the C6.5 activities and tells the customer.
-  - **Payment reversal (F8):** a reversal of the change invoice while it is pending cancels execution without a credit note.
-  - **No automatic action:** neither T2 nor a retry count reverts or refunds anything.
-  - **No delay credit (C6.D5):** waiting past T2 never creates a credit, compensation or extra refund. The only financial operation is the one refund on cancel.
-- **Depends:** strict: C6.4, C6.5, C17.1 · decision C6.D3 recorded.
+  - **No previous-state restore:** under C6.10, billing (plan, cycle, surplus) switches only at capture. Until delivery it still describes the old package, so no `upgrade_prev_*` fields are needed.
+  - **Release triggers:**
+    1. **Customer cancel:** from T2 on (`action_available`, C6.4), "Cancel upgrade", for any block reason. Staff can do the same from the backend at any time.
+    2. **Automatic at T2 for a non-resource failure:** the C6.3 reason is anything other than `unschedulable` (`crashloop`, volume expansion refused, patch rejected, `quota`, `unknown`) and is still unresolved (F16).
+    3. **Automatic before the authorization lapses:** a still-pending upgrade on resource unavailability, released at the C6.10 capture deadline minus a configured margin (C6.D9, option (a)) (F17).
+    4. **Authorization voided, expired or reversed outside the platform** (F8): execution stops, and steps 2 and 4 of the release job run with nothing to void.
+  - **The release job:** a `saas.job` with key `upgrade-release:inv<id>` under the instance lock. It:
+    1. re-checks C6.3; if the upgrade is now verified it refuses the release and hands over to the C6.10 capture (F11);
+    2. withdraws only the parts of the upgrade that have **not** taken effect (a pending Odoo rollout, a deferred database resize). It never stops, restarts, suspends or downsizes the running service, and never shrinks a volume (C17.1). Parts already in effect stay in place (C6.D7);
+    3. voids the authorization, returns the wallet hold and cancels the change invoice through the C6.10 void helper. Each step is idempotent;
+    4. closes the C6.5 activities and tells the customer: "Your upgrade was cancelled. You have not been charged." For an automatic release: "We couldn't complete your upgrade. You have not been charged, and your current plan is unchanged."
+  - **Fallback path** (C6.D8; the payment was captured at once because the provider has no manual capture):
+    - instead of a void: one credit note for the change invoice (`reversed_entry_id` = that invoice; an existing reversal is reused);
+    - the card part is refunded to the original payment method (C15.3); until C15.3, it is credited to the wallet;
+    - the wallet part goes back to the wallet.
+  - **No delay credit (C6.D5):** waiting past T2 never creates a credit, compensation or extra refund.
+- **Depends:** strict: C6.4, C6.5, C6.10, C17.1 · decisions C6.D3, C6.D8 recorded.
 - **Steps:**
-  1. Previous-state fields.
-  2. Cancel job and credit.
-  3. API/SPA action.
-  4. Tests.
-  5. Upgrade-with-data test.
+  1. Release triggers and reason classification.
+  2. Release job.
+  3. Fallback credit path.
+  4. API/SPA action.
+  5. Tests.
+  6. Upgrade-with-data test.
 - **Acceptance:**
-  - Permanent fault past T2 → no automatic change.
-  - Customer cancel → plan and cycle restored, exactly one credit note equal to the change invoice, and the surplus reversed.
-  - Double click, duplicate request, or a worker killed mid-cancel → still one credit note and one wallet entry.
-  - Cancel after verification → refused, upgrade kept.
-  - Payment reversed → no credit note.
+  - Resource-unavailability block past T2 → stays pending, nothing captured, no automatic change; the customer can cancel.
+  - Non-resource block unresolved at T2 → released automatically, once: authorization voided, wallet hold returned, invoice cancelled, nothing captured.
+  - Customer cancel → the same; plan and cycle unchanged (they never switched).
+  - Authorization near expiry → released before it lapses.
+  - Double click, duplicate request, or a worker killed mid-release → one void, one wallet return, no capture.
+  - Release after verification → refused; the upgrade is captured by C6.10 instead.
+  - Authorization voided outside the platform → execution stops; nothing to refund.
+  - Fallback provider → exactly one credit note and one refund; never both a void and a refund.
   - Customer keeps waiting past T2 → no credit note, wallet entry or compensation of any kind.
-  - During a cancel, the existing service is never stopped, restarted or resized down (the fake driver records no such call, and the C6.8 availability probe sees no failure).
+  - During a release, the existing service is never stopped, restarted or resized down (the fake driver records no such call, and the C6.8 availability probe sees no failure).
 - **Tests:** `INTEG[TEST-SRV]`, including a worker-kill case with the C3.7 harness.
-- **Risks:** Accounting entries; idempotency rests on the invoice key and `reversed_entry_id`. Tested on a throwaway DB.
+- **Risks:**
+  - A void that the provider rejects. Mitigation: retried with back-off; an authorization that is never voided lapses on its own and is never captured.
+  - Accounting entries on the fallback path. Mitigation: idempotency rests on the invoice key and `reversed_entry_id`; tested on a throwaway DB.
 - **Rollback:** Revert; staff handle cases manually.
 
 #### C6.8 · Validation: paid-upgrade reliability suite
@@ -2617,15 +2658,18 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - insufficient capacity before payment;
   - the capacity reservation (once C5.4 exists);
   - concurrent upgrades;
-  - infrastructure failure after payment;
-  - failed resource allocation after payment (new Odoo pod unschedulable, database resize deferred);
-  - a worker killed and a job interrupted during apply, verify and cancel;
+  - no capture before verified delivery (C6.D8), for an upgrade and for a new server;
+  - infrastructure failure after authorization;
+  - failed resource allocation after authorization (new Odoo pod unschedulable, database resize deferred);
+  - a non-resource failure released automatically at T2 (F16), and an authorization released before it lapses (F17);
+  - a capture failure after delivery (F18) and a re-run capture (F19);
+  - a worker killed and a job interrupted during apply, verify, capture and release;
   - the database pod deleted while an upgrade is pending (F12): it comes back at its confirmed size and is schedulable;
   - recovery when capacity is freed (F15);
   - the T1/T2 deadlines and escalation;
   - real convergence;
-  - idempotent refunds, with no delay credit when the customer keeps waiting (C6.D5).
-- **Depends:** strict: C6.2, C6.3, C6.4, C6.5, C6.7, C6.9. C6.6 is tested in its own card and is not in M1.
+  - idempotent releases (and refunds on the fallback path), with no delay credit when the customer keeps waiting (C6.D5).
+- **Depends:** strict: C6.2, C6.3, C6.4, C6.5, C6.7, C6.9, C6.10. C6.6 is tested in its own card and is not in M1.
 - **Approval:** the live DOKS step runs only after explicit owner approval.
 - **Steps:**
   1. Suite on the test server.
@@ -2636,10 +2680,10 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
      - the database pod deleted while held (F12).
   4. Measured times recorded in §26.3.
 - **Acceptance:**
-  - Every scenario F1–F15 has a passing test.
+  - Every scenario F1–F19 has a passing test.
   - The availability probe recorded zero failures in every scenario, on the test server and on DOKS.
   - The DOKS run shows verified convergence.
-  - No double financial entry in any run.
+  - Nothing captured before verified delivery, and no double financial entry, in any run.
 - **Tests:** As above.
 - **Risks:** None beyond the live step.
 - **Rollback:** —
@@ -2660,6 +2704,7 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 | R4 | Volume growth on a storage class that cannot expand | The PVC stays at its old size and the service is unaffected, but the upgrade never completes | Refused before payment (C6.7); `blocked:volume_expansion` after (C6.3) |
 | R5 | Withdrawing a pending upgrade on cancel | Not implemented | C6.2 withdraws only what has not taken effect, never downsizes running parts (C6.D7) |
 | R6 | Any stop, suspend or delete triggered by a resource shortage | Upgrades do not enter `provisioning`, so the sweeper and stuck-recovery crons do not touch them. `_capacity_pause` acts on storage use only | Regression tests assert that no upgrade path calls stop/suspend/destroy |
+| R7 | Node autoscaler scale-down in production (C6.D10) drains a node that runs a tenant's single PostgreSQL pod or its last ready Odoo pod | No autoscaler today | When C6.D10 is decided: mark those pods not evictable by the autoscaler (`cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`) plus a PodDisruptionBudget; verify scale-up and scale-down with the availability probe on the production cluster |
 
 - **Files:**
   - `compute/operator/internal/controller/database.go` (`syncDatabasePod`, confirmed-resize tracking);
@@ -2686,8 +2731,65 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 - **Tests:** Go unit and envtest (`INTEG[LOCAL]`); `INTEG[TEST-SRV]` with the fake driver; `ACCEPT[DOKS]` with the probe (approval).
 - **Risks:**
   - Template and pod diverging longer than intended. Mitigation: a status condition shows it, and C6.3 treats it as not applied.
-  - Kubernetes in-place resize support on the cluster version. Mitigation: verified on DOKS before rollout; without it the task stops and reports.
+  - Kubernetes in-place resize support on the cluster version. Mitigation: verified on DOKS (test) before the release, and again on the Hetzner production cluster at I1.4; without it the task stops and reports.
+  - R7 depends on C6.D10. Its operator labels can ship with this task; its production check runs once the autoscaler exists.
 - **Rollback:** Previous operator chart version; revert the control-plane guards.
+
+#### C6.10 · Authorize at purchase, capture on verified delivery
+`P0 · M · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
+- **Objective:** Enforce C6.D8. The customer is charged only after they have the upgrade or the new server they paid for.
+- **Current status:** NOT STARTED. Verified in the repository at `b8cb3db`, read-only:
+  - **Immediate capture:** card charges are captured at once. `saas.payment.gateway.charge` (`control-plane/saas_billing/models/saas_payment.py:255-294`) creates an `offline` transaction and handles only `done` and `pending`. Nothing in the SaaS addons handles an `authorized` transaction, a capture or a void.
+  - **Execution trigger:** execution starts when the invoice becomes `paid`/`in_payment` (`account_move.py` `_compute_payment_state` → `_saas_check_instance_payment`, which queues the C3.1/C3.2 jobs).
+  - **Wallet:** wallet credit is consumed when the invoice is created (`_wallet_credit_line`, `_wallet_settle_consumption`). Cancelling an unpaid invoice returns it (`_saas_refund_wallet_credit`), but not once the invoice is paid, e.g. when the wallet covers it fully.
+  - **Billing switch:** `_apply_pending_plan_change` switches `plan_id`, cycle and wallet surplus at payment, before any infrastructure step.
+- **Files:**
+  - `control-plane/saas_billing/models/saas_payment.py` (charge → authorize, capture, void);
+  - `control-plane/saas_billing/models/account_move.py` (execution trigger; capture-time hook);
+  - `control-plane/saas_billing/models/saas_instance.py` (`_try_pay_with_saved_method`, `_apply_pending_plan_change`, `_apply_pending_upgrade`, `_apply_env_plan`, `_activate_pending_storage_blocks`, wallet helpers);
+  - `control-plane/saas_billing/models/saas_wallet.py` (hold);
+  - `control-plane/saas_website/controllers/portal.py` (checkout) and the `/invoice/transaction` path;
+  - the new-server deploy path in `control-plane/saas_core/models/saas_instance.py`.
+- **Change:**
+  - **Funds secured:**
+    - Card payments for upgrades, environment plans, storage blocks and new servers use manual capture (the provider's `capture_manually`), so the transaction stops at `authorized`.
+    - The wallet part becomes a hold, not a consumption.
+    - "Funds secured" means the authorized card part (if any) plus the held wallet part equals the invoice total. It replaces "invoice paid" as the trigger for the C3.1/C3.2 jobs.
+    - Renewals of a running service are unchanged and captured at once.
+  - **Split the paid-change handler:**
+    - on funds secured: infrastructure only (`set_package`, deploy);
+    - on verified delivery: capture, then billing (plan, cycle, surplus grant) and the "Upgrade complete" / "Your server is ready" message.
+  - **Delivered means verified:**
+    - an upgrade is delivered when C6.3 reports `applied`;
+    - a new server is delivered when its deploy job has finished and the instance is `running` and passes its health check (confirm the exact signal in the code during this task).
+  - **Capture:** one `saas.job` with key `capture:inv<id>`. It captures the authorized amount and consumes the wallet hold, and is idempotent (an already-captured transaction is a no-op). A failed capture never touches the service; the invoice stays unpaid and goes through the normal unpaid-invoice handling (F18).
+  - **Void helper** for C6.2 and C5.5: voids the authorization, returns the wallet hold and cancels the invoice; idempotent.
+  - **Capture deadline:** stores each authorization's capture deadline (from the provider when it gives one, otherwise a configured default) for the C6.2/C5.5 expiry release (C6.D9).
+  - **Fallback:** a provider or payment method without manual capture is charged at once, as today, and flagged `capture_mode = immediate`. C6.2 and C5.5 then refund instead of voiding (C6.D8).
+  - **Customer text:** "You'll be charged when your upgrade is complete." No text says "charged" before the capture.
+- **Depends:** strict: C6.3, C3.1, C3.2 · decision C6.D8 recorded. Provider sandbox behavior is proven in C15.2.
+- **Steps:**
+  1. Authorize, capture and void in the gateway, against Odoo's demo provider in manual-capture mode (confirm Odoo 18's demo provider supports it; otherwise use a transaction test double).
+  2. Wallet hold.
+  3. Trigger switch and handler split.
+  4. Capture job.
+  5. Customer text (portal and SPA, Vitest).
+  6. Tests.
+  7. Upgrade-with-data test (new fields; a change already paid but not yet applied keeps working).
+- **Acceptance:**
+  - An upgrade starts on authorization with nothing captured. The invoice stays unpaid and plan/cycle stay unchanged until C6.3 verifies; then exactly one capture, followed by the billing switch.
+  - A new server: nothing captured until it is running and healthy; then exactly one capture.
+  - A purchase fully covered by the wallet: hold only, consumed at delivery, returned on release.
+  - A duplicate authorization notice or a re-run capture job → one capture.
+  - A capture failure after delivery → service unchanged, invoice unpaid.
+  - A renewal is still captured at once.
+  - A fallback provider → the immediate charge is flagged, and C6.2 refunds instead of voiding.
+- **Tests:** Unit tests (state machine, amounts); `INTEG[TEST-SRV]` with the fake driver and the demo provider.
+- **Risks:**
+  - **Provider support:** merchant-of-record providers (Paddle, Lemon Squeezy) may not offer authorize/capture; this is not verified. The fallback covers them, but then the money leaves the customer's account until it is refunded. C15.1 records the answer.
+  - **Authorization windows:** online card authorizations commonly last about 7 days; Visa merchant-initiated ones (saved-card charges) about 4 days 18 h [DOC Stripe]. The C6.2/C5.5 expiry release covers this.
+  - **Revenue timing:** revenue is recognized at capture, after delivery.
+- **Rollback:** A config flag returns to immediate capture (the fallback path).
 
 #### C17.1 · A downgrade never sends a smaller volume
 `P0 · S · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
@@ -2762,10 +2864,10 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 - **Files:** `control-plane/saas_website/controllers/api.py:550`; `saas_capacity_hold.py`; `control-plane/saas_core/models/saas_instance.py:4035`; the SPA checkout messages under `frontend/veltnex/src/`.
 - **Change:**
   - create the hold with `SELECT … FOR UPDATE` on the cell row and a 30-min TTL;
-  - payment confirmation binds the hold to the C3.1 job;
+  - the payment authorization (C6.10) binds the hold to the C3.1 job; the charge is captured only once the new server is running and healthy (C6.D8);
   - no fit → waitlist with ETA, and no invoice or charge;
   - a waitlist processor re-checks when capacity changes (this replaces the old "re-check capacity-paused tenants" and the 24 h failure).
-- **Depends:** strict: C5.2, C3.1.
+- **Depends:** strict: C5.2, C3.1, C6.10.
 - **Steps:** Implement, add the UI message, write tests.
 - **Acceptance:**
   - two concurrent checkouts for the last slot → one hold and one waitlist entry;
@@ -2791,15 +2893,24 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - A hold does not by itself guarantee zero downtime; service continuity is enforced by C6.9.
 - **Rollback:** Flag.
 
-#### C5.5 · Failed deploy after a charge → credit and release
+#### C5.5 · Failed deploy → release, never capture
 `P0 · S · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
-- **Objective:** A failed provisioning never leaves a charge standing.
+- **Objective:** A new server that is not delivered is never charged (C6.D8).
 - **Current status:** NOT STARTED.
 - **Files:** `control-plane/saas_core/models/saas_instance.py`, `saas_capacity_hold.py`, `control-plane/saas_billing/models/account_move.py`.
-- **Change:** After the deploy job's final failure, or 24 h: issue a credit note, release the hold and notify the customer. The provider refund is added in C15.3.
-- **Depends:** strict: C5.3, C3.5.
+- **Change:**
+  - **Final failure:** after the deploy job's final failure (a non-resource failure), release automatically:
+    - void the authorization and return the wallet hold through the C6.10 helper;
+    - release the capacity hold;
+    - notify the customer: "We couldn't create your server. You have not been charged."
+  - **Resource unavailability after authorization:** the order stays pending (C5.3 waitlist). It is released before the authorization lapses (C6.D9 default), or when the customer cancels.
+  - **Fallback path** (C6.D8; captured at once): one credit note for the full amount; the card part is refunded through C15.3 (credited to the wallet until then).
+- **Depends:** strict: C5.3, C3.5, C6.10.
 - **Steps:** Implement, then test.
-- **Acceptance:** An injected permanent deploy failure produces a credit note for the full amount and a released hold.
+- **Acceptance:**
+  - An injected permanent deploy failure → authorization voided, nothing captured, capacity hold released, once.
+  - A resource-unavailability wait → nothing captured; released before the authorization lapses.
+  - Fallback provider → exactly one credit note for the full amount.
 - **Tests:** `INTEG[TEST-SRV]`.
 - **Risks:** A double credit; idempotency key on the invoice.
 - **Rollback:** Revert.
@@ -3157,8 +3268,10 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   5. Check unattended-upgrades.
   6. Induce a RAID degrade alert with `mdadm --fail` on a spare test partition, or simulate it.
   7. Register the `saas.server`.
+  8. Confirm in-place pod resize works on the cell's Kubernetes (C6.9, R1 fix).
 - **Acceptance:**
   - two clean bootstraps;
+  - an in-place PostgreSQL resize completes without a restart;
   - only 22 (admin), 80, 443 and 16443 (control-plane IP) open;
   - the alert is received.
 - **Tests:** As above.
@@ -3685,6 +3798,7 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 - **Change:** —
 - **Depends:** strict: R0.1 (D6).
 - **Steps:** The owner applies to Paddle, Lemon Squeezy or Stripe; obtains sandbox credentials; records verification status in §26.3. **Start now**, because the lead time is unknown.
+- **Requirement from C6.D8:** record whether the provider supports card authorize → capture → void, and its authorization window. Stripe documents manual capture [DOC]; support by Paddle and Lemon Squeezy is not verified. A provider without it means the C6.D8 fallback path: an immediate charge, then a provider refund when delivery fails.
 - **Acceptance:** Sandbox credentials are available and live payouts are approved, or pending with a date.
 - **Tests:** —
 - **Risks:** Rejection; keep a second provider ready.
@@ -3695,23 +3809,23 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 - **Objective:** Correct, replay-safe payment events.
 - **Current status:** NOT STARTED.
 - **Files:** `control-plane/saas_billing/models/saas_payment.py:255-294`; the provider module or configuration.
-- **Change:** Signature verification; an idempotency key per event; mapping to invoice-paid, which triggers the C3.1 job.
+- **Change:** Signature verification; an idempotency key per event; mapping of authorized, captured, voided and refunded events. An authorization triggers the C3.1/C3.2 job (C6.10); a capture marks the invoice paid.
 - **Depends:** strict: C15.1, C3.1.
 - **Steps:** Implement; sandbox tests.
-- **Acceptance:** A replayed webhook changes nothing; a bad signature is rejected; a sandbox payment deploys an instance.
+- **Acceptance:** A replayed webhook changes nothing; a bad signature is rejected; a sandbox authorization deploys an instance, and the capture happens only after it is running (C6.D8).
 - **Tests:** `INTEG[TEST-SRV][PAY-sandbox]`.
 - **Risks:** Provider-specific quirks.
 - **Rollback:** Disable the provider.
 
 #### C15.3 · Refunds through the provider
 `P0 · S · $0 · Approval: no · Status: NOT STARTED · Tests: INTEG[TEST-SRV][PAY]`
-- **Objective:** C5.5 and C6.2 can refund in money, not only by credit note.
+- **Objective:** On the C6.D8 fallback path (no manual capture) and after a capture, C5.5 and C6.2 can refund in money, not only by credit note.
 - **Current status:** NOT STARTED.
 - **Files:** `saas_payment.py`; the C5.5 and C6.2 code paths.
 - **Change:** Call the provider refund API, with an idempotency key.
 - **Depends:** strict: C15.2, C5.5, C6.2.
 - **Steps:** Implement; sandbox tests.
-- **Acceptance:** A failed deploy produces a sandbox refund of the full amount, once.
+- **Acceptance:** On the fallback path, a failed deploy produces a sandbox refund of the full amount, once. With manual capture, a failed deploy produces a void and no refund.
 - **Tests:** `[PAY-sandbox]`.
 - **Risks:** —
 - **Rollback:** Credit-note only.
@@ -3790,7 +3904,7 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 - **Files:** —
 - **Change:** —
 - **Depends:** strict: L1, Q1a, C13.3, C10.4, C12.1, I4.3, I5.2.
-- **Steps:** Sandbox order → tenant on the cell with a custom domain, mail, a Git build on an on-demand build node, mandatory backups, a monthly-style restore check (I9.1 passes), an upgrade under load, then cancel.
+- **Steps:** Sandbox order → tenant on the cell with a custom domain, mail, a Git build on an on-demand build node, mandatory backups, a monthly-style restore check (I9.1 passes), an upgrade under load (authorize → verify → capture; nothing captured earlier, C6.D8), then cancel.
 - **Acceptance:** All pass. **Critical test.**
 - **Tests:** As above.
 - **Risks:** —

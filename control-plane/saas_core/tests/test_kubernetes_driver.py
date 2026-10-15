@@ -909,6 +909,7 @@ class TestKubernetesDriver(TransactionCase):
             'saas_product_id': product.id, 'plan_id': plan.id,
             'docker_server_id': k8s_srv.id, 'billing_period': 'monthly',
             'environment': 'production', 'region_id': False, 'state': 'running'})
+        inst.write({'state': 'provisioning', 'pending_operation': 'stop'})  # queued
 
         custom_api = MagicMock()
         with patch.object(KubernetesDriver, '_custom_api', return_value=custom_api):

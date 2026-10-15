@@ -41,6 +41,7 @@ class TestComputeDriver(TransactionCase):
     # -------- god-model: _do_stop/_do_restart route to the driver --------
     def test_do_stop_routes_to_driver(self):
         inst = self._running_instance('cdstop')
+        inst.write({'state': 'provisioning', 'pending_operation': 'stop'})  # queued
         fake = MagicMock()
         with patch.object(type(inst), '_compute_driver', return_value=fake), \
              patch.object(type(inst), '_compute_handle', return_value='HANDLE'):
@@ -60,6 +61,7 @@ class TestComputeDriver(TransactionCase):
 
     def test_do_stop_wraps_driver_error_as_usererror(self):
         inst = self._running_instance('cderr')
+        inst.write({'state': 'provisioning', 'pending_operation': 'stop'})  # queued
         fake = MagicMock()
         fake.stop.side_effect = RuntimeError('boom')
         with patch.object(type(inst), '_compute_driver', return_value=fake), \

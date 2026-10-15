@@ -71,11 +71,10 @@ class TestPortalInstanceSecurity(_PortalTestBase):
     CustomerPortal._document_check_access() — plus the highest-consequence
     self-service actions (start/stop/restart).
 
-    Same standing rule as saas_core's job-queue tests: action_restart()
-    and action_portal_start() end in saas.job.enqueue(...), and
-    action_stop()/action_portal_stop() end in run_in_background() — neither
-    may be allowed to run for real inside a live HttpCase request, so their
-    success paths patch those functions directly (never _spawn_worker),
+    Same standing rule as saas_core's job-queue tests: action_restart(),
+    action_portal_start() and action_stop()/action_portal_stop() end in
+    saas.job.enqueue(...), which may not run for real inside a live HttpCase
+    request, so their success paths patch it directly (never _spawn_worker),
     exactly like test_webhook_security.py's _patched_enqueue().
     """
 
@@ -141,9 +140,9 @@ class TestPortalInstanceSecurity(_PortalTestBase):
         self.assertIn('overdue invoices', (result or {}).get('error', ''))
 
     # ---- Self-service lifecycle actions: success paths ---------------------
-    # action_restart()/action_portal_start() end in saas.job.enqueue(...);
-    # action_stop() ends in run_in_background(). Patch those directly so no
-    # real job row or background thread is ever created under HttpCase.
+    # action_restart()/action_portal_start()/action_stop() end in
+    # saas.job.enqueue(...). Patch it directly so no real job row or
+    # background thread is ever created under HttpCase.
 
     def test_restart_success_enqueues_restart_job(self):
         mock_enqueue = MagicMock(
@@ -156,16 +155,15 @@ class TestPortalInstanceSecurity(_PortalTestBase):
         self.assertEqual(mock_enqueue.call_args.args[1], '_do_restart')
         self.assertEqual(self.instance.sudo().state, 'provisioning')
 
-    def test_stop_success_runs_in_background(self):
-        mock_run = MagicMock()
+    def test_stop_success_enqueues_stop_job(self):
+        mock_enqueue = MagicMock(
+            side_effect=lambda *a, **kw: self.env['saas.job'].browse())
         self.authenticate('portalowner@example.com', 'ownerpass123')
-        with patch(
-                'odoo.addons.saas_core.models.saas_instance.run_in_background',
-                mock_run):
+        with patch.object(type(self.env['saas.job']), 'enqueue', mock_enqueue):
             result = self._json_call('/my/instances/%d/stop' % self.instance.id)
         self.assertTrue((result or {}).get('success'))
-        mock_run.assert_called_once()
-        self.assertEqual(mock_run.call_args.args[1], '_do_stop')
+        mock_enqueue.assert_called_once()
+        self.assertEqual(mock_enqueue.call_args.args[1], '_do_stop')
         self.assertEqual(self.instance.sudo().state, 'provisioning')
 
     # TestPortalDatabaseOps (the /my/instances/<id>/databases/* form-post

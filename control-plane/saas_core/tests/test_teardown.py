@@ -71,9 +71,9 @@ class TestKubernetesTeardown(TransactionCase):
 
     def test_second_cancel_click_starts_no_second_teardown(self):
         self.inst.write({'state': 'provisioning', 'pending_operation': 'cancel'})
-        with patch('odoo.addons.saas_core.models.saas_instance.run_in_background') as bg:
+        with patch.object(type(self.env['saas.job']), 'enqueue') as enqueue:
             self.inst.action_cancel()
-        bg.assert_not_called()
+        enqueue.assert_not_called()
 
     def test_late_failure_never_brings_a_cancelled_server_back(self):
         self.inst.state = 'cancelled'

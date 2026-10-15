@@ -5074,16 +5074,38 @@ END $$;
             rec.pending_operation = 'stop'
             rec.state = 'provisioning'
             rec._append_log("Stop queued. Running in background...")
-            run_in_background(
-                rec, '_do_stop',
-                error_method='_on_background_error',
-                error_args=(prev_state,),
-                thread_name='saas_stop_%s' % rec.subdomain,
-            )
+            rec._enqueue_lifecycle_job('stop', '_do_stop', prev_state)
+
+    def _enqueue_lifecycle_job(self, op, method, prev_state, args=(),
+                               max_attempts=2):
+        """Queue stop/suspend/cancel *op* as a durable job in the caller's
+        transaction: it exists only if the flip to ``provisioning`` commits,
+        a worker restart re-runs it (the reaper), and a terminal failure puts
+        the server back to *prev_state* via ``_on_background_error``."""
+        self.ensure_one()
+        return self.env['saas.job'].enqueue(
+            self, method, args=args, channel='deploy',
+            idempotency_key='%s:inst%s:%s' % (op, self.id, uuid.uuid4().hex),
+            lock_key='instance:%s' % self.id, idempotent=True,
+            max_attempts=max_attempts, on_error='_on_background_error',
+            on_error_args=(prev_state,), transactional=True)
+
+    def _lifecycle_op_pending(self, op):
+        """True while this server still waits for queued *op*. A re-run of
+        a finished job (reaper requeue after its commit) sees False and does
+        nothing, so it can never undo a later start or restart."""
+        self.invalidate_recordset(['state', 'pending_operation'])
+        if self.state == 'provisioning' and self.pending_operation == op:
+            return True
+        _logger.info("%s of %s already finished (state %s); nothing to do.",
+                     op, self.subdomain, self.state)
+        return False
 
     def _do_stop(self):
-        """Stop container (runs in background thread). Routed via ComputeDriver."""
+        """Stop container (durable job). Routed via ComputeDriver."""
         self.ensure_one()
+        if not self._lifecycle_op_pending('stop'):
+            return
         try:
             self._compute_driver().stop(self._compute_handle())
         except Exception as e:
@@ -5163,16 +5185,13 @@ END $$;
             rec.pending_operation = 'suspend'
             rec.state = 'provisioning'
             rec._append_log("Suspend queued. Running in background...")
-            run_in_background(
-                rec, '_do_suspend',
-                error_method='_on_background_error',
-                error_args=(prev_state,),
-                thread_name='saas_suspend_%s' % rec.subdomain,
-            )
+            rec._enqueue_lifecycle_job('suspend', '_do_suspend', prev_state)
 
     def _do_suspend(self):
-        """Suspend container (runs in background thread). Routed via ComputeDriver."""
+        """Suspend container (durable job). Routed via ComputeDriver."""
         self.ensure_one()
+        if not self._lifecycle_op_pending('suspend'):
+            return
         try:
             self._compute_driver().stop(self._compute_handle())
         except Exception as e:
@@ -5220,12 +5239,14 @@ END $$;
                 rec.pending_operation = 'cancel'
                 rec.state = 'provisioning'
                 rec._append_log("Cancellation queued. Cleaning up infrastructure...")
-                run_in_background(
-                    rec, '_do_delete_instance',
-                    error_method='_on_background_error',
-                    error_args=(prev_state,),
-                    thread_name='saas_cancel_%s' % rec.subdomain,
-                )
+                # Backups up to this id existed before the cancel; a re-run
+                # after a crash keeps the final snapshot taken above it.
+                Backup = self.env['saas.instance.backup'].sudo()
+                watermark = Backup.search(
+                    [('instance_id', '=', rec.id)], order='id desc', limit=1).id or 0
+                rec._enqueue_lifecycle_job(
+                    'cancel', '_do_delete_instance', prev_state,
+                    args=(watermark,), max_attempts=3)
             else:
                 # No server assigned — nothing to clean up
                 rec._void_unpaid_invoices_refund_credit()
@@ -5271,12 +5292,16 @@ END $$;
                 on_error='_on_background_error', on_error_args=(prev_state,))
         return True
 
-    def _do_delete_instance(self):
+    def _do_delete_instance(self, backup_watermark=None):
         """Tear the server down once no deploy of it is running.
 
         Waits on the deploy's operation lock: tearing down mid-deploy would
         let the deploy recreate the workload (or fail on a serialization
-        error with the infrastructure half removed)."""
+        error with the infrastructure half removed).
+
+        ``backup_watermark`` (cancel jobs): the newest backup id when the
+        cancel was requested; makes a re-run after a crash safe (see
+        ``_do_delete_instance_locked``)."""
         self.ensure_one()
         self.env.cr.execute(
             "SELECT pg_advisory_lock(%s, %s)",
@@ -5288,14 +5313,14 @@ END $$;
             if self.state in ('cancelled', 'cancelled_by_client'):
                 # Another teardown of this server finished while we waited.
                 return False
-            return self._do_delete_instance_locked()
+            return self._do_delete_instance_locked(backup_watermark)
         finally:
             self.env.cr.execute(
                 "SELECT pg_advisory_unlock(%s, %s)",
                 (self._OP_LOCK_NAMESPACE, self.id))
 
-    def _do_delete_instance_locked(self):
-        """Delete instance (runs in background thread).
+    def _do_delete_instance_locked(self, backup_watermark=None):
+        """Delete instance (durable job).
 
         Cancellation rule — every cancel drops **every** pre-existing
         snapshot. A fresh snapshot is taken immediately beforehand
@@ -5304,8 +5329,8 @@ END $$;
         retained and the old ones still get cleaned up.
 
         Order of operations:
-        1. Snapshot the IDs of all existing snapshots — these are
-           ALL slated for deletion regardless of what happens next.
+        1. Every snapshot that existed before this cancellation is
+           slated for deletion regardless of what happens next.
         2. Take a fresh full-instance snapshot (needs container
            alive). That row is the only one allowed to survive.
         3. Tear down infrastructure (container, files, nginx, PG).
@@ -5313,6 +5338,11 @@ END $$;
            run tag (or wipe everything if no fresh snapshot).
         5. Delete every backup record that isn't the fresh one.
         6. Set state = cancelled.
+
+        Re-run safe when ``backup_watermark`` is given: a final snapshot an
+        interrupted earlier run of this cancel took (id above the watermark)
+        is kept instead of taking a new one (the workload it would need may
+        already be gone). Every other step tolerates being repeated.
         """
         self.ensure_one()
         server = self.docker_server_id
@@ -5326,15 +5356,20 @@ END $$;
         self._void_unpaid_invoices_refund_credit()
         self.env.cr.commit()
 
-        # 1. Record the snapshots that existed BEFORE this cancellation.
-        # Every one of them is going away — we never keep a "most
-        # recent existing" one. The retained slot is reserved for the
-        # fresh snapshot taken in step 2 (and only that).
-        pre_existing_ids = set(Backup.search([
-            ('instance_id', '=', self.id),
-            ('is_full_instance', '=', True),
-            ('source', '!=', 'snapshot'),
-        ]).ids)
+        # 1. Every snapshot that existed BEFORE this cancellation is going
+        # away — we never keep a "most recent existing" one. The retained
+        # slot is reserved for the final snapshot of THIS cancel (step 2):
+        # one an interrupted earlier run already took, else a fresh one.
+        earlier_final = Backup.browse()
+        if backup_watermark is not None:
+            earlier_final = Backup.search([
+                ('instance_id', '=', self.id),
+                ('is_full_instance', '=', True),
+                ('format', '=', 'operator'),
+                ('state', '=', 'done'),
+                ('source', '=', 'final'),
+                ('id', '>', backup_watermark),
+            ], order='id desc', limit=1)
 
         # 2. Take a fresh snapshot if the instance was actually
         # deployed (there's a DB + filestore to capture). Best-effort
@@ -5343,15 +5378,22 @@ END $$;
         prev = self.pre_provisioning_state or self.state
         was_deployed = prev in ('running', 'stopped', 'suspended', 'failed')
         fresh_ok = False
-        if was_deployed:
+        final_backup = earlier_final
+        if earlier_final:
+            fresh_ok = True
+            self._append_log(
+                "Keeping the final snapshot taken before the interruption.")
+        elif was_deployed:
             try:
                 self._append_log(
                     "Taking a final snapshot so you can restore your "
                     "data later if you reactivate this instance..."
                 )
-                Backup._create_full_instance_backup_sync(self)
+                final_backup = Backup._create_full_instance_backup_sync(self)
                 fresh_ok = True
                 self._append_log("Final snapshot complete.")
+                # Durable before teardown, so a re-run keeps it.
+                self.env.cr.commit()
             except Exception:
                 _logger.exception(
                     "Final snapshot before cancellation failed for %s",
@@ -5368,19 +5410,10 @@ END $$;
                 "deployed. Any older snapshots will still be removed."
             )
 
-        # The retained backup is ONLY the freshly-taken one. We look
-        # for a successful full-instance restic row whose id wasn't
-        # in the pre-cancellation set. If the fresh capture failed,
-        # this is empty — and nothing gets retained.
-        retained_backup = Backup.browse()
-        if fresh_ok:
-            retained_backup = Backup.search([
-                ('instance_id', '=', self.id),
-                ('is_full_instance', '=', True),
-                ('format', '=', 'operator'),
-                ('state', '=', 'done'),
-                ('id', 'not in', list(pre_existing_ids)),
-            ], order='create_date desc', limit=1)
+        # The retained backup is ONLY the final snapshot of this cancel.
+        # If the fresh capture failed, this is empty — and nothing gets
+        # retained.
+        retained_backup = final_backup if fresh_ok else Backup.browse()
         if retained_backup:
             self._append_log(
                 "Will retain only the fresh snapshot '%s' (taken %s). "

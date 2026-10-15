@@ -4304,6 +4304,105 @@ END $$;
                     instance.subdomain,
                 )
 
+    # C3.5 orphan sweeper: provisioning operations whose durable job is safe
+    # to queue again. Restore, delete and legacy ops stay with the
+    # stuck-recovery cron (manual review / revert).
+    _SWEEPABLE_OPERATIONS = ('deploy', 'restart', 'stop', 'suspend', 'cancel')
+    _SWEEP_AFTER_MIN = 10
+    _SWEEP_ALERT_AT = 3
+
+    @api.model
+    def _cron_sweep_orphaned_operations(self):
+        """Cron: re-queue work whose durable job is gone — a ``paid``
+        instance with no live job (pre-migration data, or its deploy job
+        died before it was queued), or a ``provisioning`` operation with no
+        live job for over ``_SWEEP_AFTER_MIN`` minutes. Runs before the
+        stuck-recovery cron's 15-minute cutoff, so a re-queued job wins over
+        a revert. Returns the number of instances swept."""
+        cutoff = fields.Datetime.now() - datetime.timedelta(
+            minutes=self._SWEEP_AFTER_MIN)
+        candidates = self.search([
+            '|', ('state', '=', 'paid'),
+            '&', '&', ('state', '=', 'provisioning'),
+                      ('pending_operation', 'in', self._SWEEPABLE_OPERATIONS),
+                      ('write_date', '<', cutoff),
+        ], order='id', limit=self._CRON_BATCH_SIZE)
+        if not candidates:
+            return 0
+        live = set(self.env['saas.job'].sudo().search([
+            ('model', '=', self._name), ('res_id', 'in', candidates.ids),
+            ('state', 'in', ('pending', 'running')),
+        ]).mapped('res_id'))
+        swept = 0
+        for instance in candidates:
+            if instance.id in live:
+                continue
+            try:
+                if instance._sweep_requeue():
+                    swept += 1
+                self.env.cr.commit()
+            except Exception:
+                self.env.cr.rollback()
+                _logger.exception(
+                    "Sweeper: could not re-queue %s", instance.subdomain)
+        return swept
+
+    def _sweep_job_spec(self):
+        """``(op, method, args, max_attempts, prev_state)`` that re-queues
+        this orphan exactly as its action queued it, or None when repeating
+        it isn't safe (no previous state to restore on failure)."""
+        self.ensure_one()
+        if self.state == 'paid':
+            return 'deploy-after-payment', '_do_deploy_after_payment', (), 3, 'failed'
+        op = self.pending_operation
+        if op == 'deploy':
+            return op, '_do_deploy', (), max(1, self.max_deploy_retries + 1), 'failed'
+        prev = self.pre_provisioning_state
+        if not prev or op not in self._SWEEPABLE_OPERATIONS:
+            return None
+        if op == 'cancel':
+            # Reuse the original job's backup watermark: the re-run then keeps
+            # the final snapshot that cancel already took.
+            last = self.env['saas.job'].sudo().search([
+                ('model', '=', self._name), ('res_id', '=', self.id),
+                ('method', '=', '_do_delete_instance'),
+            ], order='id desc', limit=1)
+            args = tuple(json.loads(last.args_json or '[]')) if last else ()
+            return op, '_do_delete_instance', args, 3, prev
+        return op, '_do_%s' % op, (), 2, prev
+
+    def _sweep_requeue(self):
+        """Queue this orphan's job again; True when queued. Every sweep has
+        its own key (``sweep:inst<id>:<n>:<op>``), so sweeps are counted and
+        the ``_SWEEP_ALERT_AT``-th one alerts as a repeat offender."""
+        self.ensure_one()
+        spec = self._sweep_job_spec()
+        if not spec:
+            return False
+        if self.state == 'provisioning' and self._operation_is_alive():
+            return False  # a legacy thread still holds the operation lock
+        op, method, args, max_attempts, prev_state = spec
+        Job = self.env['saas.job'].sudo()
+        prefix = 'sweep:inst%s:' % self.id
+        n = Job.search_count([('idempotency_key', '=like', prefix + '%')]) + 1
+        Job.enqueue(
+            self, method, args=args, channel='deploy',
+            idempotency_key='%s%d:%s' % (prefix, n, op),
+            lock_key='instance:%s' % self.id, idempotent=True,
+            max_attempts=max_attempts, on_error='_on_background_error',
+            on_error_args=(prev_state,), transactional=True)
+        self._append_log(
+            "Recovery: %s had no queued job — queued it again (sweep %d)."
+            % (op, n))
+        _logger.warning("Sweeper: re-queued %s for %s (sweep %d).",
+                        op, self.subdomain, n)
+        if n == self._SWEEP_ALERT_AT:
+            self.env['saas.alert']._notify(
+                'operation_orphaned',
+                '%s re-queued by the sweeper %d times' % (self.subdomain, n),
+                level='error', detail='Last operation: %s' % op)
+        return True
+
     def _cron_verify_webhooks(self):
         """Cron: verify and re-register webhooks for all running instances.
 

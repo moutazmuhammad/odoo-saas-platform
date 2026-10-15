@@ -1820,7 +1820,13 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | C4.1 | PH1 | Resume after an overdue invoice is paid | P0 | C3.3 | COMPLETED | UNIT, INTEG[TEST-SRV] | no |
 | C4.2 | PH1 | Fix resume after a storage purchase | P0 | C4.1 | COMPLETED | UNIT, INTEG[TEST-SRV] | no |
 | C6.1 | PH1 | Package convergence in reconcile | P0 | C3.2 | COMPLETED | UNIT, INTEG[TEST-SRV] | no |
-| C6.2 | PH1 | Persistent failure → revert and credit | P0 | C6.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C6.2 | PH1 | Missed deadline → customer choice and idempotent refund | P0 | C6.4, C6.5, C17.1, C6.D3 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C6.3 | PH1 | Verify the rollout before an upgrade counts as applied | P0 | C6.1 | NOT STARTED | UNIT, INTEG[TEST-SRV], ACCEPT[DOKS] | YES (DOKS test cluster, no new resources) |
+| C6.4 | PH1 | Paid-upgrade deadlines, fast retries and customer status | P0 | C6.3, C6.D1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C6.5 | PH1 | Escalation to a named owner | P0 | C6.4, C6.D2 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C6.6 | PH1 | Automatic remediation by block reason | P0 | C6.3 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C6.7 | PH1 | Pre-payment feasibility gate for upgrades | P0 | C3.2 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C6.8 | PH1 | Validation: paid-upgrade reliability suite | P0 | C6.2, C6.3, C6.4, C6.5, C6.6, C6.7 | NOT STARTED | INTEG[TEST-SRV], ACCEPT[DOKS] | YES (DOKS test cluster, no new resources) |
 | C17.1 | PH1 | A downgrade never sends a smaller volume | P0 | — | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C18.1 | PH1 | Renewal billing for stopped and suspended tenants that hold storage | P1 | C4.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C5.1 | PH2 | Capacity ledger model and computation | P0 | — | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
@@ -2273,31 +2279,286 @@ Each card carries all required fields:
 - **Risks:** None notable.
 - **Rollback:** Revert.
 
+#### C6 · Paid package upgrades: rules for this section
+These rules apply to every C6 task. They replace the old C6.2 rule ("after N retries or 24 h, revert and credit").
+- **Before payment:** no money is collected for an upgrade that a known capacity, resource or configuration limit makes infeasible (C6.7; the capacity hold arrives with C5.4). A passed check is not a guarantee, so the post-payment path below still applies.
+- **After payment:**
+  - execution starts in the payment transaction (C3.2 job);
+  - transient faults are retried by the existing job queue and reconciler (C6.1, C6.4);
+  - the customer has a short, explicit completion target T1;
+  - ops have an internal recovery deadline T2 (C6.D1);
+  - an unresolved upgrade is escalated to a named owner before T1 is missed for long (C6.5).
+- **"Applied" means verified:** an upgrade is complete only when the cluster runs the new resources (C6.3), not when a patch is accepted.
+- **No automatic downgrade:** nothing is reverted or refunded just because a retry count or a time limit was reached. A cancellation or refund follows the explicit rule in C6.2, checks the real infrastructure state, and is idempotent.
+- **No Kubernetes words for the customer:** they see a plain status and a next step, and never need to contact support (C6.4, C6.2).
+
+**Owner decisions this section needs** (the tasks that use them stay NOT STARTED until they are recorded in §26.3):
+
+| ID | Decision | Proposal (owner to confirm) | Used by |
+|---|---|---|---|
+| C6.D1 | Customer target T1 and internal deadline T2 after payment | T1 = 15 min, T2 = 2 h, both `ir.config_parameter` values | C6.4, C6.5, C6.2 |
+| C6.D2 | Who owns an escalation and through which channel | A configured on-call user gets an Odoo activity; the existing alert webhook (`saas_master.alert_webhook`) is posted too | C6.5 |
+| C6.D3 | Compensation after T2 | The customer chooses: keep waiting, or cancel the upgrade for a full credit of the change invoice to the wallet. A money refund arrives with C15.3. Any service credit for the delay is the owner's call | C6.2 |
+| C6.D4 | May remediation add paid nodes automatically? | No. Adding nodes is an escalation to ops (C6.5); spending stays manual | C6.6 |
+
+**Failure scenarios and the task that covers each:**
+
+| # | Scenario | Handling | Task |
+|---|---|---|---|
+| F1 | Not enough capacity or resources when the upgrade is requested | No invoice, no charge; plain message | C6.7 (+ C5.4 hold) |
+| F2 | Capacity taken between the check and the payment | Hold (C5.4); until then the post-payment path F4–F6 | C5.4, C6.4 |
+| F3 | Known configuration limit: storage class cannot grow volumes, a pod larger than any node, cluster not ready, another package change still pending | Refused before payment | C6.7 |
+| F4 | Cluster unreachable or patch rejected after payment | Job retry, then reconciler retry at the C6.4 cadence | C6.1, C6.4 |
+| F5 | Patch accepted but pods cannot schedule, quota blocks, or volume expansion stays pending | Not "applied"; reason classified; safe fix or escalation | C6.3, C6.6, C6.5 |
+| F6 | Worker killed during apply, verify or refund | Reaper/sweeper re-run; every step idempotent | C3.5, C6.8 |
+| F7 | Duplicate payment notice | One job (C3.2) | C3.2 |
+| F8 | Payment reversed while the upgrade is pending | Execution stops; no refund is issued on top of the reversal | C6.2 |
+| F9 | Customer asks for another plan change while one is pending | Refused by the gate until done or cancelled | C6.7 |
+| F10 | Past T2, still not applied | Customer chooses to wait or cancel; cancel credits once | C6.2 |
+| F11 | Upgrade gets applied while a cancel is in flight | Cancel refused; the upgrade stands | C6.2 |
+
 #### C6.1 · Package convergence in reconcile
 `P0 · M · $0 · Approval: no · Status: COMPLETED · Tests: UNIT, INTEG[TEST-SRV]`
 - **Objective:** What the customer pays for and what runs never drift apart.
-- **Current status:** COMPLETED (see §26.3). A failed patch after a billing change is only logged (`control-plane/saas_billing/models/saas_instance.py:3102-3111`).
-- **Files:** That file (`:3102-3111`, `~2257`); `_cron_reconcile` in `control-plane/saas_core/models/saas_instance.py:~5757`.
-- **Change:** Store the desired package. Reconcile compares it with the applied package, retries `set_package` with backoff, and shows the status.
+- **Current status:** COMPLETED (see §26.3).
+  - `_update_container_resources` stores the desired package.
+  - A failed `set_package` is recorded (`package_status = pending`, back-off 5 min doubling to 6 h, alert at the 3rd failure).
+  - `_cron_reconcile` queues `_do_converge_package` jobs under the instance lock.
+- **Follow-ups owned by later tasks:**
+  - `in_sync` currently means "patch accepted". C6.3 changes it to "rollout verified".
+  - The 6 h back-off cap stays for unpaid drift only. A paid upgrade uses the C6.4 cadence.
+- **Files:** `control-plane/saas_core/models/saas_instance.py` (`_update_container_resources`, `_package_apply_failed`, `_converge_packages`, `_do_converge_package`); the billing callers in `control-plane/saas_billing/models/saas_instance.py`.
+- **Change:** Store the desired package. Reconcile compares it with the applied package, retries `set_package` with back-off, and shows the status.
 - **Depends:** strict: C3.2.
-- **Steps:** Implement, then test.
 - **Acceptance:** An injected patch failure converges after the fault clears.
 - **Tests:** `INTEG[TEST-SRV]` with a driver fault injected.
-- **Risks:** Retry storms; mitigated by backoff and a cap.
+- **Risks:** Retry storms; mitigated by back-off and a per-run cap of 20.
 - **Rollback:** Revert.
 
-#### C6.2 · Persistent failure → revert and credit
-`P0 · S · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
-- **Objective:** A customer never pays for an upgrade that cannot be applied.
+#### C6.3 · Verify the rollout before an upgrade counts as applied
+`P0 · M · $0 · Approval: YES (live step on the DOKS test cluster, no new resources) · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV], ACCEPT[DOKS]`
+- **Objective:** Never mark an upgrade applied until the cluster actually runs the paid resources.
 - **Current status:** NOT STARTED.
-- **Files:** `control-plane/saas_billing/models/saas_instance.py`.
-- **Change:** After N retries or 24 h, revert to the previous package and issue a prorated credit note. The provider refund comes later in C15.3.
+  - `_package_applied_ok` runs as soon as the patch is accepted.
+  - `_apply_pending_plan_change` posts "Payment confirmed. Upgraded from X to Y" before any infrastructure step (`control-plane/saas_billing/models/saas_instance.py` ~`:3150`).
+  - `KubernetesDriver.health` reads only `status.phase` and the first pod.
+- **Files:**
+  - `control-plane/saas_core/drivers/kubernetes_driver.py`: new `package_rollout(handle, res)`;
+  - `control-plane/saas_core/drivers/base.py`: interface and fake;
+  - `control-plane/saas_core/models/saas_instance.py`;
+  - `control-plane/saas_billing/models/saas_instance.py`: the apply message.
+- **Change:**
+  - **`package_rollout` result:** returns `applied`, `rolling` or `blocked:<reason>`. It compares `metadata.generation` with `status.observedGeneration` and checks `status.phase`. It reads the live Odoo and PostgreSQL pod requests/limits and the PVC `status.capacity` against `res`. The `<reason>` is one of: `unschedulable` (pod Pending with `FailedScheduling`), `quota`, `volume_expansion`, `crashloop`, `unknown`.
+  - **New status values:** `package_status` gains `applying` (patch accepted, not verified) and `blocked`. Only a verified `applied` writes `package_applied` and sets `in_sync`.
+  - **Polling:** the C6.1 job polls `applying` and `blocked` instances, reusing `_do_converge_package` with a verify step.
+  - **Customer messages:** the billing message becomes "Payment confirmed — applying your upgrade". "Upgrade complete" is posted only on verification.
 - **Depends:** strict: C6.1.
-- **Steps:** Implement, then test.
-- **Acceptance:** A permanent fault produces a revert plus a credit note equal to the prorated charge.
-- **Tests:** `INTEG[TEST-SRV]`.
-- **Risks:** Accounting entries; tested on a throwaway DB.
+- **Steps:**
+  1. Driver method plus fake, with unit tests from recorded CR/pod JSON.
+  2. Status values and the verify step.
+  3. Messages.
+  4. Upgrade-with-data test (new selection values).
+  5. Live step on DOKS.
+- **Acceptance:**
+  - A patch that is accepted but leaves pods Pending (FailedScheduling) stays `blocked:unschedulable` and is never `in_sync`.
+  - Once room exists it becomes `in_sync` without a manual step.
+  - "Upgrade complete" appears only after verification.
+  - Live on DOKS: one test tenant upgraded and verified. The measured time from patch to verified is recorded in §26.3.
+- **Tests:** Unit tests (driver parsing, state machine); `INTEG[TEST-SRV]` with the fake driver; `ACCEPT[DOKS]` with one test tenant.
+- **Risks:** Reading pods per tenant on every reconcile run. Mitigation: only `applying`/`blocked` tenants are read, and they are capped per run.
+- **Rollback:** Revert; the patch-accepted semantics return.
+
+#### C6.4 · Paid-upgrade deadlines, fast retries and customer status
+`P0 · M · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
+- **Objective:** After payment, the customer sees a bounded wait with a plain status. Retries run fast inside that window.
+- **Current status:** NOT STARTED.
+  - The paid change is queued at once (C3.2), but a failure falls back to the C6.1 back-off, which can reach 6 h.
+  - Neither the customer nor ops sees a target time.
+- **Files:**
+  - `control-plane/saas_core/models/saas_instance.py`;
+  - `control-plane/saas_billing/models/saas_instance.py` (`_apply_pending_plan_change`, `_apply_pending_upgrade`, `_apply_env_plan`, `_activate_pending_storage_blocks`);
+  - the instance payload in `control-plane/saas_website/controllers/api.py`;
+  - the SPA instance page under `frontend/veltnex/src/`.
+- **Change:**
+  - **Fields:** `upgrade_paid_at`, `upgrade_target_at` (= paid + T1), `upgrade_deadline_at` (= paid + T2) and `upgrade_invoice_id`, all set when a paid change starts.
+  - **Retry cadence:** while a paid change is unverified, retries run at 1, 2, 4 … min, capped so that the next retry never falls after `upgrade_target_at` or `upgrade_deadline_at`.
+  - **Customer status:** computed `upgrade_customer_status` (`in_progress` / `delayed` / `action_available` / `complete`), with message keys only and no infrastructure terms. Examples:
+    - "Applying your upgrade — usually done by 14:20."
+    - "This is taking longer than usual. Our team is already on it; nothing for you to do."
+    - "Your upgrade is delayed. You can keep waiting or cancel it for a full credit."
+- **Depends:** strict: C6.3, owner decision C6.D1.
+- **Steps:**
+  1. Fields and cadence.
+  2. API payload and SPA banner (Vitest).
+  3. Tests.
+  4. Upgrade-with-data test.
+- **Acceptance:**
+  - Payment with a healthy fake cluster → `complete` before T1, with no retry wait.
+  - Transient fault cleared at T1/2 → `complete` before T1.
+  - Fault not cleared → `delayed` at T1 and `action_available` at T2.
+  - No retry is scheduled after T2 without an escalation in place (C6.5).
+  - The API payload never contains cluster, node or pod words (asserted).
+- **Tests:** Unit tests (cadence, status); `INTEG[TEST-SRV]` with the fake driver and a frozen clock; Vitest for the banner.
+- **Risks:** Faster retries hitting the cluster. Mitigation: only paid, unverified upgrades get the fast cadence, and the per-run cap still applies.
+- **Rollback:** Revert; C6.1 back-off only.
+
+#### C6.5 · Escalation to a named owner
+`P0 · S · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
+- **Objective:** A delayed paid upgrade creates work that someone owns, before the customer waits long.
+- **Current status:** NOT STARTED.
+  - `saas.alert._notify` only logs and optionally posts a webhook; nobody owns it.
+  - `saas.instance` already inherits `mail.activity.mixin`.
+- **Files:**
+  - `control-plane/saas_core/models/saas_instance.py`;
+  - `control-plane/saas_core/models/res_config_settings.py` (on-call user);
+  - `control-plane/saas_core/data/` (activity type);
+  - `control-plane/saas_core/views/saas_instance_views.xml` (filter "Upgrades past target").
+- **Change:**
+  - **At T1:** schedule one `mail.activity` ("Paid upgrade delayed") on the instance, assigned to the configured on-call user (fallback: the SaaS Manager group), due at T2. Its note holds the block reason from C6.3 and what is needed (e.g. "needs 2 vCPU / 4 GiB free on cluster X"). Post an `upgrade_delayed` alert.
+  - **At T2 unresolved:** raise a critical alert and add a second activity for the manager group.
+  - **Idempotency:** one open activity per paid change invoice.
+  - **Auto-close:** activities close automatically (`action_feedback`) when C6.3 verifies the upgrade or C6.2 cancels it.
+- **Depends:** strict: C6.4, owner decision C6.D2.
+- **Steps:** Implement; tests; upgrade-with-data test (config field, activity type).
+- **Acceptance:**
+  - A permanent fault gives exactly one activity at T1, assigned to the on-call user, and one critical alert at T2.
+  - A worker restart or repeated cron runs add none.
+  - The activity closes itself on resolution.
+- **Tests:** `INTEG[TEST-SRV]` with a frozen clock and a worker-kill case.
+- **Risks:** Alert fatigue; one activity per paid change, never per retry.
 - **Rollback:** Revert.
+
+#### C6.6 · Automatic remediation by block reason
+`P0 · S · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
+- **Objective:** Fix what the platform can safely fix on its own; hand the rest to C6.5 with a precise need.
+- **Current status:** NOT STARTED.
+  - There is no automatic remediation beyond re-applying the patch (C6.1).
+  - There is no cross-cluster or cross-pool move mechanism yet. Moves need a customer-chosen time (zero-downtime rule), so none runs automatically.
+- **Files:** `control-plane/saas_core/models/saas_instance.py`; `control-plane/saas_core/drivers/kubernetes_driver.py`.
+- **Change:** One handler per C6.3 reason:
+  - **`quota`:** re-apply the tenancy quota first, then the package.
+  - **`volume_expansion` pending:** wait for the online resize; if it was refused, escalate.
+  - **`unschedulable`:** no automatic action except retry. The escalation states the free capacity needed and, where C5.1 shows another eligible cluster, that a customer-chosen move is possible. Adding paid nodes is never automatic (C6.D4).
+  - **`crashloop`:** stop retrying the package; escalate.
+- **Depends:** strict: C6.3.
+- **Steps:** Implement; tests per reason.
+- **Acceptance:**
+  - Each reason runs its handler.
+  - A `quota` block converges without a person.
+  - An `unschedulable` block escalates with the computed need.
+  - No handler evicts other tenants or changes another tenant's package.
+- **Tests:** Unit tests; `INTEG[TEST-SRV]` with the fake driver.
+- **Risks:** A wrong classification; an unknown reason falls back to retry plus escalation.
+- **Rollback:** Revert.
+
+#### C6.7 · Pre-payment feasibility gate for upgrades
+`P0 · M · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
+- **Objective:** Never collect money for an upgrade that a known limit makes infeasible.
+- **Current status:** NOT STARTED.
+  - `_request_upgrade` creates and posts the invoice, then tries the saved card at once, with no capacity or configuration check.
+  - The checkout page (`/my/instances/<id>/checkout`) and Odoo's `/invoice/transaction/<id>` collect it later, also with no check.
+  - `_has_capacity_for` covers new instances only, and its caps default to 0 = unlimited (C5.1 removes that).
+- **Files:**
+  - `control-plane/saas_billing/models/saas_instance.py` (`action_change_plan`, `_request_upgrade`, `action_change_environment_plan`, storage-block purchase, `_try_pay_with_saved_method`);
+  - `control-plane/saas_website/controllers/portal.py` (`_render_checkout`, `portal_checkout`);
+  - a `payment.transaction` create hook for pending-change invoices;
+  - `control-plane/saas_core/models/saas_server.py`;
+  - `control-plane/saas_core/drivers/kubernetes_driver.py` (cached node allocatable, storage-class expansion flag).
+- **Change:** One gate `_package_change_feasible(target)` returning `(ok, reason_key)`, called by every path that creates or collects an upgrade, environment-plan or storage-block invoice. It checks:
+  - the cluster is reachable and the operator ready (`require_cluster_ready`);
+  - no other package change is pending or unverified;
+  - each new Odoo and PostgreSQL pod fits the largest node's allocatable;
+  - a volume that must grow sits on a storage class with `allowVolumeExpansion`;
+  - the CPU/RAM delta fits the cluster's configured caps (`max_cpu_cores`/`max_ram_gb`, under `SELECT … FOR UPDATE` on the `saas_server` row so concurrent upgrades serialize). C5.4 later replaces this with the ledger hold plus surge on the same gate.
+
+  On refusal:
+  - no invoice is created; an invoice that is already unpaid is cancelled via `_cancel_pending_upgrade`, and its wallet consumption restored;
+  - the customer sees "This upgrade isn't available on your server right now. You have not been charged." plus a next step (try a smaller plan, or be notified);
+  - ops get an alert with the internal reason.
+- **Depends:** strict: C3.2 · parallel: C6.3. C5.4 plugs the hold into this gate.
+- **Steps:**
+  1. Gate and checks.
+  2. Wire every collection path.
+  3. Customer message (portal and SPA).
+  4. Tests.
+  5. Upgrade-with-data test (cached cluster fields).
+- **Acceptance:**
+  - A full cluster or an oversized pod: no invoice and no charge, through the portal, the saved card and `/invoice/transaction`.
+  - Two concurrent upgrades for the last capacity (two cursors) → one invoice and one refusal.
+  - A pending package blocks a second upgrade.
+  - A passed check still runs the post-payment path.
+- **Tests:** Unit tests per check; `INTEG[TEST-SRV]` with a two-cursor concurrency test.
+- **Risks:**
+  - Stale cached node data refusing valid upgrades. Mitigation: refresh on the health cron, and the refusal is logged with its numbers.
+  - Lock order deadlock. Mitigation: always lock `saas_server` before `saas_instance`.
+- **Rollback:** A config flag turns the gate into log-only.
+
+#### C6.2 · Missed deadline → customer choice and idempotent refund
+`P0 · M · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
+- **Objective:** A customer never pays for an upgrade that is not delivered, and is never downgraded automatically.
+- **Current status:** NOT STARTED.
+  - When the paid change applies, `plan_id`, `billing_period` and the cycle are switched and any wallet surplus is granted.
+  - Nothing records the previous state, so an undo is not possible today.
+- **Files:**
+  - `control-plane/saas_billing/models/saas_instance.py`;
+  - `control-plane/saas_billing/models/account_move.py`;
+  - the instance API and SPA (the cancel action).
+- **Change:**
+  - **Previous state:** when a paid change starts, store `plan_id`, `billing_period`, `last_invoice_date`, `next_invoice_date` and the surplus granted (`upgrade_prev_*`).
+  - **When the action appears:** only from T2 on (`action_available`, C6.4), the customer can press "Cancel upgrade". Staff can do the same from the backend at any time.
+  - **The cancel job:** a `saas.job` with key `upgrade-cancel:inv<id>` under the instance lock. It:
+    1. re-checks C6.3, and refuses the cancel if the upgrade is now verified (F11);
+    2. sets the desired package back to the stored plan, never shrinking a volume (C17.1);
+    3. restores the stored fields;
+    4. reverses the surplus grant;
+    5. issues one credit note for the change invoice (`reversed_entry_id` = that invoice; an existing reversal is reused), credited to the wallet (C6.D3);
+    6. closes the C6.5 activities and tells the customer.
+  - **Payment reversal (F8):** a reversal of the change invoice while it is pending cancels execution without a credit note.
+  - **No automatic action:** neither T2 nor a retry count reverts anything.
+- **Depends:** strict: C6.4, C6.5, C17.1, owner decision C6.D3.
+- **Steps:**
+  1. Previous-state fields.
+  2. Cancel job and credit.
+  3. API/SPA action.
+  4. Tests.
+  5. Upgrade-with-data test.
+- **Acceptance:**
+  - Permanent fault past T2 → no automatic change.
+  - Customer cancel → plan and cycle restored, exactly one credit note equal to the change invoice, and the surplus reversed.
+  - Double click, duplicate request, or a worker killed mid-cancel → still one credit note and one wallet entry.
+  - Cancel after verification → refused, upgrade kept.
+  - Payment reversed → no credit note.
+- **Tests:** `INTEG[TEST-SRV]`, including a worker-kill case with the C3.7 harness.
+- **Risks:** Accounting entries; idempotency rests on the invoice key and `reversed_entry_id`. Tested on a throwaway DB.
+- **Rollback:** Revert; staff handle cases manually.
+
+#### C6.8 · Validation: paid-upgrade reliability suite
+`P0 · S · $0 · Approval: YES (live step on the DOKS test cluster, no new resources) · Status: NOT STARTED · Tests: INTEG[TEST-SRV], ACCEPT[DOKS]`
+- **Objective:** Prove the whole path end to end.
+- **Current status:** NOT STARTED.
+- **Files:** **new** `control-plane/saas_billing/tests/test_upgrade_reliability.py`; `scripts/tests/crash_safety/` (new kill points: verify, cancel).
+- **Change:** One suite covering:
+  - insufficient capacity before payment;
+  - the capacity reservation (once C5.4 exists);
+  - concurrent upgrades;
+  - infrastructure failure after payment;
+  - a worker killed during apply, verify and cancel;
+  - the T1/T2 deadlines and escalation;
+  - real convergence;
+  - idempotent refunds.
+- **Depends:** strict: C6.2, C6.3, C6.4, C6.5, C6.6, C6.7.
+- **Steps:**
+  1. Suite on the test server.
+  2. SIGKILL harness run.
+  3. Live upgrade on DOKS: one normal upgrade, and one held at `unschedulable` with a test plan bigger than any node, then released by lowering the request.
+  4. Measured times recorded in §26.3.
+- **Acceptance:**
+  - Every scenario F1–F11 has a passing test.
+  - The DOKS run shows verified convergence.
+  - No double financial entry in any run.
+- **Tests:** As above.
+- **Risks:** None beyond the live step.
+- **Rollback:** —
 
 #### C17.1 · A downgrade never sends a smaller volume
 `P0 · S · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`

@@ -1,0 +1,81 @@
+# C3.7 crash-safety harness, last step — run inside `odoo-bin shell -d saas_tmp_*`
+# with EFFECT_LOG set. Prints one PASS/FAIL line per check and a RESULT line.
+import os
+
+assert env.cr.dbname.startswith('saas_tmp_'), env.cr.dbname
+Instance = env['saas.instance'].sudo()
+Job = env['saas.job'].sudo()
+effects = open(os.environ['EFFECT_LOG']).read().split('\n')
+failures = []
+
+
+def check(label, ok, detail=''):
+    print('%s %s %s' % ('PASS' if ok else 'FAIL', label, detail))
+    if not ok:
+        failures.append(label)
+
+
+def inst(sub):
+    return Instance.search([('subdomain', '=', sub)])
+
+
+def jobs(rec, method):
+    return Job.search([('model', '=', 'saas.instance'), ('res_id', '=', rec.id),
+                       ('method', '=', method)])
+
+
+def starts(effect, sub):
+    return sum(1 for line in effects if line.endswith(' start %s %s' % (effect, sub)))
+
+
+check('queue drained', not Job.search_count([('state', 'in', ('pending', 'running'))]))
+check('no failed job', not Job.search_count([('state', '=', 'failed')]),
+      Job.search([('state', '=', 'failed')]).mapped('error'))
+
+# A — paid order deployed exactly once; its invoice has its effect.
+a = inst('crash-deploy')
+check('deploy: running', a.state == 'running', a.state)
+check('deploy: one post-payment job, done',
+      jobs(a, '_do_deploy_after_payment').mapped('state') == ['done'])
+check('deploy: deploy job done', jobs(a, '_do_deploy').mapped('state') == ['done'])
+check('deploy: killed once, re-run once', starts('deploy', a.subdomain) == 2,
+      starts('deploy', a.subdomain))
+check('deploy: invoice paid', set(a.sale_order_id.invoice_ids.mapped('payment_state'))
+      <= {'paid', 'in_payment'})
+
+# B — paid plan change applied exactly once.
+b = inst('crash-change')
+check('change: on the new plan', b.plan_id.name == 'Crash Big', b.plan_id.name)
+check('change: nothing pending', not b.pending_plan_id and not b.pending_change_invoice_id)
+check('change: one job, done',
+      jobs(b, '_do_apply_paid_plan_change').mapped('state') == ['done'])
+audits = env['saas.audit.log'].sudo().search_count([
+    ('res_id', '=', b.id), ('model', '=', 'saas.instance'), ('action', '=', 'instance_scale')])
+check('change: one audit entry', audits == 1, audits)
+upgraded = env['mail.message'].sudo().search_count([
+    ('model', '=', 'saas.instance'), ('res_id', '=', b.id),
+    ('body', 'ilike', 'Payment confirmed. Upgraded')])
+check('change: one confirmation message', upgraded == 1, upgraded)
+check('change: killed once, re-run once', starts('resize', b.subdomain) == 2,
+      starts('resize', b.subdomain))
+
+# C — suspend completed once.
+c = inst('crash-suspend')
+check('suspend: suspended', c.state == 'suspended' and not c.pending_operation, c.state)
+check('suspend: one job, done', jobs(c, '_do_suspend').mapped('state') == ['done'])
+check('suspend: killed once, re-run once', starts('stop', c.subdomain) == 2,
+      starts('stop', c.subdomain))
+
+# D — cancel completed once, keeping the snapshot it took before the kill.
+d = inst('crash-cancel')
+check('cancel: cancelled', d.state in ('cancelled', 'cancelled_by_client'), d.state)
+check('cancel: one job, done', jobs(d, '_do_delete_instance').mapped('state') == ['done'])
+check('cancel: one final snapshot taken', starts('snapshot', d.subdomain) == 1,
+      starts('snapshot', d.subdomain))
+backups = env['saas.instance.backup'].sudo().search([('instance_id', '=', d.id)])
+check('cancel: only the fresh final snapshot kept',
+      len(backups) == 1 and backups.name != 'old-final', backups.mapped('name'))
+check('cancel: killed once, re-run once', starts('destroy', d.subdomain) == 2,
+      starts('destroy', d.subdomain))
+
+print('RESULT %s (%d failed)' % ('PASS' if not failures else 'FAIL', len(failures)))

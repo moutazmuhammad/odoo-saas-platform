@@ -285,6 +285,16 @@ class AccountMove(models.Model):
             )
             # Durable job in this transaction: applied exactly once.
             instance._enqueue_paid_plan_change(change_invoice)
+        # --- Resume servers suspended for an unpaid invoice (C4.1) ---
+        # An instance's invoices are always its own partner's.
+        suspended = self.env['saas.instance'].search([
+            ('state', '=', 'suspended'), ('suspension_reason', '=', 'nonpayment'),
+            ('parent_id', '=', False),
+            ('partner_id', 'in', paid_invoices.partner_id.ids)])
+        for instance in suspended:
+            paid_for_instance = paid_invoices & instance._get_all_invoices()
+            if paid_for_instance:
+                instance._resume_after_payment(paid_for_instance[:1])
 
     @api.model
     def _saas_start_paid_restorations(self, instances):
@@ -354,7 +364,7 @@ class AccountMove(models.Model):
                 "Payment reversed (refund/chargeback). Instance suspended."
             ))
             try:
-                instance.action_suspend()
+                instance.action_suspend('payment_reversed')
             except Exception:
                 _logger.exception(
                     "Failed to suspend instance %s after payment reversal",

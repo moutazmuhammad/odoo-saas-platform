@@ -2442,6 +2442,19 @@ class SaasInstance(models.Model):
             ('parent_id', '=', False),
             ('sale_order_id', '!=', False),
         ])
+        # Safety net for the payment hook: lift unpaid-invoice suspensions
+        # whose invoices are settled (a hook that never ran, or a resume job
+        # that failed terminally).
+        for instance in self.search([('state', '=', 'suspended'),
+                                     ('suspension_reason', '=', 'nonpayment'),
+                                     ('parent_id', '=', False)]):
+            try:
+                instance._resume_after_payment()
+                self.env.cr.commit()
+            except Exception:
+                self.env.cr.rollback()
+                _logger.exception("Resume check crashed for %s — will retry "
+                                  "next cron", instance.subdomain)
         for instance in instances:
             try:
                 instance._check_dunning(today)
@@ -2471,6 +2484,57 @@ class SaasInstance(models.Model):
             for origin in so_origins
         )
 
+    def _mandatory_overdue_invoices(self, today):
+        """Posted, unpaid, mandatory invoices of this instance (initial
+        subscription, renewals, restoration — across all its sale orders)
+        due before *today*. Optional ones (upgrades the client may decline,
+        add-ons) never suspend a server."""
+        self.ensure_one()
+        return self._get_all_invoices().filtered(
+            lambda m: m.move_type == 'out_invoice'
+            and m.payment_state not in ('paid', 'in_payment')
+            and m.state == 'posted'
+            and m.invoice_date_due
+            and m.invoice_date_due < today
+            and not self._is_optional_invoice(m)
+        )
+
+    def _resume_after_payment(self, invoice=None):
+        """Lift an unpaid-invoice suspension once nothing that suspends is
+        left: no mandatory invoice is overdue past the grace period. Queues a
+        durable resume job in the caller's (payment) transaction, keyed on the
+        paid *invoice*. Admin, trial, capacity and reversed-payment
+        suspensions are never lifted here. Returns whether a resume was
+        queued."""
+        self.ensure_one()
+        if self.state != 'suspended' or self.suspension_reason != 'nonpayment':
+            return False
+        today = fields.Date.today()
+        grace = self._grace_period_days()
+        still_due = self._mandatory_overdue_invoices(today).filtered(
+            lambda m: (today - m.invoice_date_due).days > grace)
+        if still_due:
+            _logger.info("SaaS instance %s stays suspended: %s still overdue.",
+                         self.subdomain, ', '.join(still_due.mapped('name')))
+            return False
+        self._append_log("Payment received%s — resuming the server."
+                         % (' (invoice %s)' % invoice.name if invoice else ''))
+        self.message_post(body=_("Payment received. Your server is being resumed."))
+        self.write({'pre_provisioning_state': 'suspended',
+                    'pending_operation': 'restart', 'state': 'provisioning'})
+        self._enqueue_lifecycle_job(
+            'resume', '_do_resume_after_payment', 'suspended',
+            idempotency_key=invoice and 'resume:inv%s:inst%s' % (invoice.id, self.id))
+        return True
+
+    def _do_resume_after_payment(self):
+        """Durable job body: restart a server whose overdue invoice was
+        paid. A no-op once it ran (reaper re-run), so it never restarts a
+        server the customer stopped afterwards."""
+        self.ensure_one()
+        if self._lifecycle_op_pending('restart'):
+            self._do_restart()
+
     def _check_dunning(self, today):
         """Check if any linked invoices are overdue and act accordingly.
 
@@ -2490,32 +2554,9 @@ class SaasInstance(models.Model):
         self.ensure_one()
         if not self.partner_id:
             return
-
-        # Find all invoices related to this instance (initial + renewals)
-        all_invoices = self._get_all_invoices()
-        if not all_invoices:
-            return
-
-        overdue_invoices = all_invoices.filtered(
-            lambda m: m.move_type == 'out_invoice'
-            and m.payment_state not in ('paid', 'in_payment')
-            and m.state == 'posted'
-            and m.invoice_date_due
-            and m.invoice_date_due < today
-        )
+        overdue_invoices = self._mandatory_overdue_invoices(today)
         if not overdue_invoices:
             return
-
-        # Exclude optional upgrade invoices — these are charges the
-        # client initiated but can choose not to pay (they keep their
-        # current plan).  Only mandatory invoices (initial subscription,
-        # renewals, data restoration) should trigger suspension.
-        mandatory_overdue = overdue_invoices.filtered(
-            lambda m: not self._is_optional_invoice(m)
-        )
-        if not mandatory_overdue:
-            return
-        overdue_invoices = mandatory_overdue
 
         grace_days = self._grace_period_days()
         oldest = min(overdue_invoices, key=lambda m: m.invoice_date_due)
@@ -2541,7 +2582,7 @@ class SaasInstance(models.Model):
                 # rather than re-raising into the cron loop and
                 # rolling back the whole dunning pass.
                 try:
-                    self.action_suspend()
+                    self.action_suspend('nonpayment')
                 except UserError:
                     # Lost the race — state changed between recheck
                     # and the call. Next cron pass will revisit.
@@ -2559,12 +2600,12 @@ class SaasInstance(models.Model):
                         "forcing state=suspended in DB only.",
                         self.subdomain,
                     )
-                    self.state = 'suspended'
-                    self.pending_operation = False
+                    self.write({'state': 'suspended', 'pending_operation': False,
+                                'suspension_reason': 'nonpayment'})
             elif current_state == 'stopped':
                 # Container is already stopped — just mark as suspended
                 # so the customer cannot restart without paying.
-                self.state = 'suspended'
+                self.write({'state': 'suspended', 'suspension_reason': 'nonpayment'})
             else:
                 # Provisioning, already suspended, cancelled, failed,
                 # etc. — nothing safe to do this pass.

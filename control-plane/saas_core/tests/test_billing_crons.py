@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from odoo import fields
 from odoo.tests.common import TransactionCase, tagged
@@ -294,6 +294,133 @@ class TestBillingLifecycleCrons(TransactionCase):
         self.assertEqual(applied, [])
         self.assertFalse(jobs)
 
+    # ---------------- C4.1: resume after the overdue invoice is paid ----------------
+
+    def _suspended_for(self, sub, reason, overdue_days=10):
+        """A server suspended for *reason*, with one mandatory invoice due
+        *overdue_days* ago; returns (instance, invoice)."""
+        inst = self._inst(sub, state='suspended', suspension_reason=reason)
+        invoice = self._move(invoice_date_due=date.today() - timedelta(days=overdue_days))
+        return inst, invoice
+
+    def _resume_jobs(self, inst):
+        return self.env['saas.job'].sudo().search([
+            ('model', '=', 'saas.instance'), ('res_id', '=', inst.id),
+            ('method', '=', '_do_resume_after_payment')])
+
+    def _pay_and_hook(self, inst, invoice, *still_unpaid):
+        """Pay *invoice* through the payment hook, the instance owning it
+        and *still_unpaid*."""
+        invoice.sudo().write({'payment_state': 'paid'})
+        owned = invoice | self.env['account.move'].concat(*still_unpaid)
+        with patch.object(type(inst), '_get_all_invoices', lambda self: owned), \
+                patch.object(type(inst), '_is_optional_invoice', lambda self, m: False):
+            invoice._saas_check_instance_payment()
+        inst.invalidate_recordset()
+
+    def test_dunning_records_the_nonpayment_reason(self):
+        inst = self._inst('dunreason', state='stopped')
+        overdue = self._move(invoice_date_due=date.today() - timedelta(days=10))
+        with patch.object(type(inst), '_get_all_invoices', lambda self: overdue), \
+                patch.object(type(inst), '_is_optional_invoice', lambda self, m: False):
+            inst._check_dunning(date.today())
+        self.assertEqual((inst.state, inst.suspension_reason), ('suspended', 'nonpayment'))
+
+    def test_admin_suspension_is_recorded_as_admin(self):
+        inst = self._inst('adminsus')
+        with patch.object(type(self.env['saas.job']), 'enqueue'):
+            inst.action_suspend()
+        self.assertEqual(inst.suspension_reason, 'admin')
+
+    def test_paid_overdue_invoice_queues_a_resume_in_the_payment_transaction(self):
+        inst, invoice = self._suspended_for('resume1', 'nonpayment')
+        self.env.cr.commit.side_effect = AssertionError('payment transaction committed')
+        self._pay_and_hook(inst, invoice)
+        job = self._resume_jobs(inst)
+        self.assertEqual(len(job), 1)
+        self.assertEqual(job.idempotency_key, 'resume:inv%s:inst%s' % (invoice.id, inst.id))
+        self.assertEqual(job.lock_key, 'instance:%s' % inst.id)
+        self.assertEqual(job.on_error_args_json, '["suspended"]')
+        self.assertEqual((inst.state, inst.pending_operation, inst.pre_provisioning_state),
+                         ('provisioning', 'restart', 'suspended'))
+        # A repeated payment notice queues nothing new.
+        self._pay_and_hook(inst, invoice)
+        self.assertEqual(len(self._resume_jobs(inst)), 1)
+
+    def test_resume_job_brings_the_server_back_once(self):
+        inst, invoice = self._suspended_for('resume2', 'nonpayment')
+        self._pay_and_hook(inst, invoice)
+        job = self._resume_jobs(inst)
+        driver = MagicMock()
+        with patch.object(type(inst), '_compute_driver',
+                          lambda rec, connection=None: driver), \
+                patch.object(type(inst), '_compute_handle', lambda rec: 'H'), \
+                patch.object(type(inst), '_safe_refresh_usage', lambda rec: None):
+            self.env.flush_all()
+            self.env['saas.job'].sudo()._run_one(job.id)
+            inst.invalidate_recordset()
+            job.invalidate_recordset()
+            self.assertEqual(job.state, 'done')
+            self.assertEqual((inst.state, inst.suspension_reason), ('running', False))
+            # The customer stops it; a re-run of the finished job does nothing.
+            inst.write({'state': 'stopped'})
+            job.write({'state': 'pending'})
+            self.env.flush_all()
+            self.env['saas.job'].sudo()._run_one(job.id)
+        inst.invalidate_recordset()
+        driver.restart.assert_called_once()
+        self.assertEqual(inst.state, 'stopped')
+
+    def test_failed_resume_returns_to_suspended_for_nonpayment(self):
+        inst, invoice = self._suspended_for('resume3', 'nonpayment')
+        self._pay_and_hook(inst, invoice)
+        job = self._resume_jobs(inst)
+        job.max_attempts = 1
+        driver = MagicMock()
+        driver.restart.side_effect = RuntimeError('cluster unreachable')
+        with patch.object(type(inst), '_compute_driver',
+                          lambda rec, connection=None: driver), \
+                patch.object(type(inst), '_compute_handle', lambda rec: 'H'):
+            self.env.flush_all()
+            self.env['saas.job'].sudo()._run_one(job.id)
+        inst.invalidate_recordset()
+        self.assertEqual((inst.state, inst.suspension_reason), ('suspended', 'nonpayment'))
+        self.assertIn('cluster unreachable', inst.last_error)
+
+    def test_other_suspensions_are_never_auto_resumed(self):
+        for reason in ('admin', 'payment_reversed', 'trial_expired', 'capacity'):
+            inst, invoice = self._suspended_for('keep-%s' % reason.replace('_', ''), reason)
+            self._pay_and_hook(inst, invoice)
+            self.assertEqual(inst.state, 'suspended', reason)
+            self.assertFalse(self._resume_jobs(inst), reason)
+
+    def test_stays_suspended_while_another_invoice_is_overdue_past_grace(self):
+        inst, invoice = self._suspended_for('resume4', 'nonpayment')
+        older = self._move(invoice_date_due=date.today() - timedelta(days=30))
+        self._pay_and_hook(inst, invoice, older)
+        self.assertEqual(inst.state, 'suspended')
+        self.assertFalse(self._resume_jobs(inst))
+
+    def test_invoice_still_within_grace_does_not_block_the_resume(self):
+        inst, invoice = self._suspended_for('resume5', 'nonpayment')
+        recent = self._move(invoice_date_due=date.today() - timedelta(days=1))
+        self._pay_and_hook(inst, invoice, recent)
+        self.assertEqual(len(self._resume_jobs(inst)), 1)
+
+    def test_overdue_cron_resumes_a_settled_nonpayment_suspension(self):
+        inst, invoice = self._suspended_for('resume6', 'nonpayment')
+        reversed_ = self._inst('resume6r', state='suspended',
+                               suspension_reason='payment_reversed')
+        invoice.sudo().write({'payment_state': 'paid'})
+        with patch.object(type(inst), '_get_all_invoices', lambda self: invoice), \
+                patch.object(type(inst), '_is_optional_invoice', lambda self, m: False):
+            self.Instance._cron_check_overdue_invoices()
+        inst.invalidate_recordset()
+        reversed_.invalidate_recordset()
+        self.assertEqual(inst.state, 'provisioning')
+        self.assertEqual(len(self._resume_jobs(inst)), 1)
+        self.assertEqual(reversed_.state, 'suspended')
+
     # ---------------- _cron_check_trial_expiry ----------------
 
     def test_trial_expiry_suspends_and_clears_pending_upgrade(self):
@@ -308,9 +435,10 @@ class TestBillingLifecycleCrons(TransactionCase):
         })
         suspend_calls = []
         with patch.object(type(inst), 'action_suspend',
-                           lambda self: suspend_calls.append(self.subdomain)):
+                           lambda self, reason='admin': suspend_calls.append(
+                               (self.subdomain, reason))):
             self.Instance._cron_check_trial_expiry()
-        self.assertEqual(suspend_calls, ['trial1'])
+        self.assertEqual(suspend_calls, [('trial1', 'trial_expired')])
         inst.invalidate_recordset()
         self.assertFalse(inst.pending_plan_id)
         self.assertFalse(inst.pending_billing_period)
@@ -323,7 +451,7 @@ class TestBillingLifecycleCrons(TransactionCase):
         })
         suspend_calls = []
         with patch.object(type(self.Instance), 'action_suspend',
-                           lambda self: suspend_calls.append(self.subdomain)):
+                           lambda self, reason='admin': suspend_calls.append(self.subdomain)):
             self.Instance._cron_check_trial_expiry()
         self.assertEqual(suspend_calls, [])
 
@@ -335,6 +463,6 @@ class TestBillingLifecycleCrons(TransactionCase):
         self._inst('trial3', is_trial=True, state='running')
         suspend_calls = []
         with patch.object(type(self.Instance), 'action_suspend',
-                           lambda self: suspend_calls.append(self.subdomain)):
+                           lambda self, reason='admin': suspend_calls.append(self.subdomain)):
             self.Instance._cron_check_trial_expiry()
         self.assertEqual(suspend_calls, [])

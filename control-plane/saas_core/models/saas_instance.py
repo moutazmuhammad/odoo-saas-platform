@@ -258,6 +258,18 @@ class SaasInstance(models.Model):
         help='State before entering provisioning. Used to recover instances '
              'stuck in provisioning after a server restart.',
     )
+    suspension_reason = fields.Selection(
+        selection=[
+            ('nonpayment', 'Unpaid invoice'),
+            ('payment_reversed', 'Payment reversed'),
+            ('trial_expired', 'Trial expired'),
+            ('capacity', 'Storage full'),
+            ('admin', 'Administrator'),
+        ],
+        readonly=True, copy=False,
+        help='Why the server was last suspended. Only an unpaid-invoice '
+             'suspension is lifted automatically once the invoice is paid.',
+    )
     pending_operation = fields.Selection(
         selection=[
             ('deploy', 'Deploy'),
@@ -5176,15 +5188,17 @@ END $$;
             rec._enqueue_lifecycle_job('stop', '_do_stop', prev_state)
 
     def _enqueue_lifecycle_job(self, op, method, prev_state, args=(),
-                               max_attempts=2):
-        """Queue stop/suspend/cancel *op* as a durable job in the caller's
-        transaction: it exists only if the flip to ``provisioning`` commits,
-        a worker restart re-runs it (the reaper), and a terminal failure puts
-        the server back to *prev_state* via ``_on_background_error``."""
+                               max_attempts=2, idempotency_key=None):
+        """Queue lifecycle *op* (stop/suspend/cancel/resume) as a durable
+        job in the caller's transaction: it exists only if the flip to
+        ``provisioning`` commits, a worker restart re-runs it (the reaper),
+        and a terminal failure puts the server back to *prev_state* via
+        ``_on_background_error``."""
         self.ensure_one()
         return self.env['saas.job'].enqueue(
             self, method, args=args, channel='deploy',
-            idempotency_key='%s:inst%s:%s' % (op, self.id, uuid.uuid4().hex),
+            idempotency_key=idempotency_key
+            or '%s:inst%s:%s' % (op, self.id, uuid.uuid4().hex),
             lock_key='instance:%s' % self.id, idempotent=True,
             max_attempts=max_attempts, on_error='_on_background_error',
             on_error_args=(prev_state,), transactional=True)
@@ -5247,8 +5261,8 @@ END $$;
                 _("Failed to restart container '%s':\n%s")
                 % (self._get_container_name(), e)
             )
-        self.state = 'running'
-        self.pending_operation = False
+        self.write({'state': 'running', 'pending_operation': False,
+                    'suspension_reason': False})
         self._append_log("Instance restarted successfully.")
         self._safe_refresh_usage()
         # Resume suspended Staging/Development servers when the project (which
@@ -5264,15 +5278,17 @@ END $$;
                         "Failed to resume child environments for %s",
                         self.subdomain)
 
-    def action_suspend(self):
-        """Stop container and set state to suspended (async)."""
+    def action_suspend(self, reason='admin'):
+        """Stop container and set state to suspended (async). *reason* is
+        recorded in ``suspension_reason``; a button press is an admin
+        suspension, which is never lifted automatically."""
         # Cascade: suspending a Production project also suspends its running
         # Staging/Development servers (they share the project's billing fate).
         cascade = self.filtered(
             lambda r: r.environment == 'production'
         ).child_env_ids.filtered(lambda c: c.state == 'running')
         if cascade:
-            cascade.action_suspend()
+            cascade.action_suspend(reason)
         for rec in self:
             if rec.state != 'running':
                 raise UserError(
@@ -5282,6 +5298,7 @@ END $$;
             prev_state = rec.state
             rec.pre_provisioning_state = prev_state
             rec.pending_operation = 'suspend'
+            rec.suspension_reason = reason
             rec.state = 'provisioning'
             rec._append_log("Suspend queued. Running in background...")
             rec._enqueue_lifecycle_job('suspend', '_do_suspend', prev_state)
@@ -6078,14 +6095,14 @@ END $$;
         self.ensure_one()
         if self.state == 'running':
             try:
-                self.action_suspend()
+                self.action_suspend('capacity')
             except Exception:
                 _logger.exception(
                     "Capacity pause: suspend failed for %s; marking suspended.",
                     self.subdomain)
-                self.state = 'suspended'
+                self.write({'state': 'suspended', 'suspension_reason': 'capacity'})
         elif self.state == 'stopped':
-            self.state = 'suspended'
+            self.write({'state': 'suspended', 'suspension_reason': 'capacity'})
 
     def _capacity_summary(self):
         """Customer-facing capacity view — POSITIVE framing only, two clear
@@ -6164,7 +6181,7 @@ END $$;
         for instance in expired_instances:
             try:
                 instance._on_trial_expired()
-                instance.action_suspend()
+                instance.action_suspend('trial_expired')
                 instance._append_log(
                     "AUTO-SUSPENDED: Client free trial expired on %s. "
                     "Please subscribe to a paid plan to reactivate."

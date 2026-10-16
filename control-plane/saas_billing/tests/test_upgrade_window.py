@@ -9,6 +9,7 @@ from odoo.tests.common import TransactionCase, tagged
 
 from .test_upgrade_gate import _GatePatches, _mk_instance, _setup_fixture
 
+T1, T2 = 10, 30      # C6.D11 defaults (minutes)
 INFRA = ('cluster', 'node', 'pod', 'kubernetes', 'operator', 'namespace')
 
 
@@ -55,8 +56,8 @@ class TestUpgradeWindow(_GatePatches, TransactionCase):
     def test_window_is_set_when_funds_are_secured(self):
         at = self._fund()
         self.assertEqual(self.inst.upgrade_invoice_id, self.invoice)
-        self.assertEqual(self.inst.upgrade_target_at, at + timedelta(minutes=15))
-        self.assertEqual(self.inst.upgrade_deadline_at, at + timedelta(minutes=120))
+        self.assertEqual(self.inst.upgrade_target_at, at + timedelta(minutes=T1))
+        self.assertEqual(self.inst.upgrade_deadline_at, at + timedelta(minutes=T2))
         self.assertEqual(self.inst.upgrade_customer_status, 'in_progress')
 
     def test_window_follows_settings_and_ignores_bad_values(self):
@@ -66,17 +67,17 @@ class TestUpgradeWindow(_GatePatches, TransactionCase):
         self.assertEqual(self.inst._upgrade_window_minutes(), (5, 30))
         icp.set_param('saas_master.upgrade_target_minutes', 'soon')
         icp.set_param('saas_master.upgrade_deadline_minutes', '-1')
-        self.assertEqual(self.inst._upgrade_window_minutes(), (15, 120))
+        self.assertEqual(self.inst._upgrade_window_minutes(), (T1, T2))
         icp.set_param('saas_master.upgrade_target_minutes', '200')
         self.assertEqual(self.inst._upgrade_window_minutes(), (200, 200), "T2 never before T1")
 
     def test_status_follows_the_clock(self):
         at = self._fund()
         status = self.inst._upgrade_status_at
-        self.assertEqual(status(at + timedelta(minutes=14)), 'in_progress')
-        self.assertEqual(status(at + timedelta(minutes=15)), 'delayed')
-        self.assertEqual(status(at + timedelta(minutes=119)), 'delayed')
-        self.assertEqual(status(at + timedelta(minutes=120)), 'action_available')
+        self.assertEqual(status(at + timedelta(minutes=T1 - 1)), 'in_progress')
+        self.assertEqual(status(at + timedelta(minutes=T1)), 'delayed')
+        self.assertEqual(status(at + timedelta(minutes=T2 - 1)), 'delayed')
+        self.assertEqual(status(at + timedelta(minutes=T2)), 'action_available')
 
     def test_healthy_upgrade_completes_before_t1_without_retry_waits(self):
         self._fund()
@@ -91,22 +92,22 @@ class TestUpgradeWindow(_GatePatches, TransactionCase):
         plan = self.inst._package_retry_plan
         self.assertEqual(plan(1, at), (at + timedelta(minutes=1), True))
         self.assertEqual(plan(2, at), (at + timedelta(minutes=2), True))
-        self.assertEqual(plan(3, at), (at + timedelta(minutes=3.75), True), "a quarter of T1 apart at most")
-        near_t1 = at + timedelta(minutes=14)
+        self.assertEqual(plan(3, at), (at + timedelta(minutes=T1 / 4), True), "a quarter of T1 apart at most")
+        near_t1 = at + timedelta(minutes=T1 - 1)
         self.assertEqual(plan(5, near_t1), (self.inst.upgrade_target_at, True), "never after T1")
-        near_t2 = at + timedelta(minutes=118)
+        near_t2 = at + timedelta(minutes=T2 - 2)
         self.assertEqual(plan(9, near_t2), (self.inst.upgrade_deadline_at, True), "never after T2")
-        self.assertEqual(plan(9, at + timedelta(minutes=121)), (False, False),
+        self.assertEqual(plan(9, at + timedelta(minutes=T2 + 1)), (False, False),
                          "no retry after T2 without an escalation")
         with patch.object(type(self.inst), '_upgrade_escalated', lambda rec: True):
-            retry, scheduled = plan(9, at + timedelta(minutes=121))
+            retry, scheduled = plan(9, at + timedelta(minutes=T2 + 1))
             self.assertTrue(retry)
             self.assertFalse(scheduled, "escalated: the normal back-off")
 
     def test_a_fault_cleared_at_half_t1_is_retried_before_t1(self):
         at = self._fund()
         now, attempts = at, 0
-        while now < at + timedelta(minutes=7.5):     # still failing
+        while now < at + timedelta(minutes=T1 / 2):   # still failing
             attempts += 1
             now, _scheduled = self.inst._package_retry_plan(attempts, now)
         self.assertLess(now, self.inst.upgrade_target_at, "the next retry, after the fault, is before T1")
@@ -152,8 +153,8 @@ class TestUpgradeWindow(_GatePatches, TransactionCase):
         now = fields.Datetime.now()
         invoice.sudo().write({'saas_funds_secured_at': now, 'saas_capture_mode': 'manual'})
         self.inst.write({'pending_change_invoice_id': invoice.id, 'upgrade_invoice_id': invoice.id,
-                         'upgrade_target_at': now + timedelta(minutes=15),
-                         'upgrade_deadline_at': now + timedelta(minutes=120)})
+                         'upgrade_target_at': now + timedelta(minutes=T1),
+                         'upgrade_deadline_at': now + timedelta(minutes=T2)})
         self.assertEqual(self.inst.upgrade_customer_status, 'in_progress')
         self.assertTrue(self.inst._release_change_funds(invoice))
         self.inst.invalidate_recordset(['upgrade_customer_status'])

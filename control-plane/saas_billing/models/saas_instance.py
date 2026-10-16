@@ -3211,7 +3211,7 @@ class SaasInstance(models.Model):
     @api.model
     def _upgrade_window_minutes(self):
         """(T1, T2) in minutes from saas_master.upgrade_target_minutes /
-        upgrade_deadline_minutes (C6.D1 defaults 15 and 120)."""
+        upgrade_deadline_minutes (C6.D11 defaults 10 and 30)."""
         icp = self.env['ir.config_parameter'].sudo()
 
         def minutes(key, default):
@@ -3220,8 +3220,8 @@ class SaasInstance(models.Model):
             except (TypeError, ValueError):
                 return default
             return value if value > 0 else default
-        target = minutes('saas_master.upgrade_target_minutes', 15)
-        return target, max(minutes('saas_master.upgrade_deadline_minutes', 120), target)
+        target = minutes('saas_master.upgrade_target_minutes', 10)
+        return target, max(minutes('saas_master.upgrade_deadline_minutes', 30), target)
 
     def _compute_upgrade_customer_status(self):
         now = fields.Datetime.now()

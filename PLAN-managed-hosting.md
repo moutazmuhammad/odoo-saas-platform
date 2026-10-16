@@ -1644,7 +1644,7 @@ This section and §26 are the **only** implementation plan. They replace revisio
 | Milestone | Exit criteria |
 |---|---|
 | **M0 Repository and CI safeguards** | R0.1 recorded; R0.2, C1.1, C1.2, C1.4 COMPLETED (a failing test demonstrably blocks deploy); C14.1–C14.4 COMPLETED (renamed CRD installs and reconciles on a fresh cluster) |
-| **M1 Billing and provisioning defects fixed** | C3.1–C3.3, C3.5, C3.7, C4.1, C4.2, C6.1–C6.5, C6.7–C6.10, C17.1, K1.5 COMPLETED. The crash-safety suite (C3.7) passes: no paid order lost, each operation applied exactly once. The paid-upgrade suite (C6.8) passes, including its owner-approved live DOKS step: no charge for a known-infeasible upgrade, nothing captured before verified delivery (C6.D8), no upgrade reported applied before verification, a named owner on every delay, one release per undelivered upgrade, and zero availability-probe failures while upgrades are pending (C6.9 continuity invariant). C6.6 is P1 and does not gate M1 (reasoning in §26.4 under C6) |
+| **M1 Billing and provisioning defects fixed** | C3.1–C3.3, C3.5, C3.7, C4.1, C4.2, C6.1–C6.5, C6.7–C6.11, C17.1, K1.5 COMPLETED. The crash-safety suite (C3.7) passes: no paid order lost, each operation applied exactly once. The paid-upgrade suite (C6.8) passes, including its owner-approved live DOKS step: no charge for a known-infeasible upgrade, nothing captured before verified delivery (C6.D8) and storage, database and application checked on every delivery (C6.11), no upgrade reported applied before verification, a named owner on every delay, one release per undelivered upgrade, and zero availability-probe failures while upgrades are pending (C6.9 continuity invariant). C6.6 is P1 and does not gate M1 (reasoning in §26.4 under C6) |
 | **M2 Security and resource management ready** | C5.1–C5.6, K1.4 (if D20), C19.1, C8.1, C8.2, C9.1–C9.3, I4.1, I4.2, C16.1, C16.2, C7.1 COMPLETED. Over-capacity orders are never charged (C5.6); spoofed `X-Forwarded-For` is blocked; staff TOTP is on |
 | **M3 Hetzner cell operational** | I1.4, K1.1–K1.3 (if D20), ST1, C12.1, I4.3, Q3, Q4, Q5, Q6, P1, C11.1, C11.2, C11.4 COMPLETED on the real cell |
 | **M4 Backup and DR verified** | I6.1–I6.8, K1.7 (if D20), C8.3, I9.1, B1, Q2, I8.1, C11.3, **Q1a** COMPLETED against **real B2**; DR cap entered in the ledger; I7 done |
@@ -1668,7 +1668,7 @@ flowchart LR
     C1 --> C14[C14.1–C14.4 CRD rename]
     C3[C3.1–C3.7 durable jobs] --> C4[C4.1–C4.2 resume]
     C3 --> C5[C5.1–C5.6 capacity holds]
-    C3 --> C6[C6.1–C6.10 paid upgrades]
+    C3 --> C6[C6.1–C6.11 paid upgrades]
     C5 --> C19[C19.1 reorder alert]
     C8[C8.1–C8.2 secrets] --> C9[C9.1–C9.3 access]
     C16[C16.1–C16.2 catalog]
@@ -1824,14 +1824,15 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | C4.2 | PH1 | Fix resume after a storage purchase | P0 | C4.1 | COMPLETED | UNIT, INTEG[TEST-SRV] | no |
 | C6.1 | PH1 | Package convergence in reconcile | P0 | C3.2 | COMPLETED | UNIT, INTEG[TEST-SRV] | no |
 | C6.2 | PH1 | Undelivered upgrade → release, never capture | P0 | C6.4, C6.5, C6.10, C17.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
-| C6.3 | PH1 | Verify the rollout before an upgrade counts as applied | P0 | C6.1 | NOT STARTED | UNIT, INTEG[TEST-SRV], ACCEPT[DOKS] | YES (DOKS test cluster, no new resources) |
+| C6.3 | PH1 | Verify the rollout before an upgrade counts as applied | P0 | C6.1, C6.11 | NOT STARTED | UNIT, INTEG[TEST-SRV], ACCEPT[DOKS] | YES (DOKS test cluster, no new resources) |
 | C6.4 | PH1 | Paid-upgrade deadlines, fast retries and customer status | P0 | C6.3, C6.10 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C6.5 | PH1 | Escalation to a named on-call user | P0 | C6.4 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C6.6 | PH1 | Automatic remediation by block reason | P1 | C6.3 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C6.7 | PH1 | Pre-payment feasibility gate for upgrades | P0 | C3.2 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
-| C6.8 | PH1 | Validation: paid-upgrade reliability suite | P0 | C6.2, C6.3, C6.4, C6.5, C6.7, C6.9, C6.10 | NOT STARTED | INTEG[TEST-SRV], ACCEPT[DOKS] | YES (DOKS test cluster, no new resources) |
+| C6.8 | PH1 | Validation: paid-upgrade reliability suite | P0 | C6.2, C6.3, C6.4, C6.5, C6.7, C6.9, C6.10, C6.11 | NOT STARTED | INTEG[TEST-SRV], ACCEPT[DOKS] | YES (DOKS test cluster, no new resources) |
 | C6.9 | PH1 | Service continuity during a pending upgrade | P0 | C6.3 | NOT STARTED | UNIT, INTEG[LOCAL], INTEG[TEST-SRV], ACCEPT[DOKS] | YES (operator release + live check on the DOKS test cluster) |
-| C6.10 | PH1 | Authorize at purchase, capture on verified delivery | P0 | C6.3, C3.1, C3.2 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C6.10 | PH1 | Authorize at purchase, capture on verified delivery | P0 | C6.3, C6.11, C3.1, C3.2 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
+| C6.11 | PH1 | Delivery verification: storage, database and application | P0 | — | NOT STARTED | UNIT, INTEG[LOCAL], INTEG[TEST-SRV], ACCEPT[DOKS] | YES (operator release + live check on the DOKS test cluster) |
 | C17.1 | PH1 | A downgrade never sends a smaller volume | P0 | — | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | K1.5 | PH1 | Operator safety guards (versions, deletion, connections, module versions) | P0 | — | NOT STARTED | UNIT, INTEG[LOCAL], INTEG[TEST-SRV] | no |
 | C18.1 | PH1 | Renewal billing for stopped and suspended tenants that hold storage | P1 | C4.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
@@ -1944,7 +1945,7 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | G5 | PH11 | Partner portal and white-label | P2 | GATE6 | NOT STARTED | INTEG | YES |
 | G6 | PH11 | HA option for Scale/Dedicated | P2 | GATE6 | NOT STARTED | INTEG[H] | YES (cost per customer) |
 
-**Totals:** 142 tasks in 12 phases, by priority: P0 109, P1 21, P2 12. 45 need owner approval. (Rev 5.2 had 120 tasks: P0 95, P1 16, P2 9, 39 approvals. Added on 2026-10-15: C3.8 (P1), C6.3–C6.5, C6.7–C6.9 (P0), C6.6 (P1). Approvals added: C6.3 and C6.8 for the live DOKS step, and C6.9 for the operator release and live check. C6.9 was first the delay credit, then re-scoped after C6.D5. C6.10 (P0, no approval) added for C6.D8. Revision 5.3 (§31): K1.1–K1.7 (P0; K1.1, K1.2, K1.7 need approval) and K2.1–K2.6 (P1: K2.2, K2.4, K2.5; P2: K2.1, K2.3, K2.6).)
+**Totals:** 143 tasks in 12 phases, by priority: P0 110, P1 21, P2 12. 46 need owner approval. (Rev 5.2 had 120 tasks: P0 95, P1 16, P2 9, 39 approvals. Added on 2026-10-15: C3.8 (P1), C6.3–C6.5, C6.7–C6.9 (P0), C6.6 (P1). Approvals added: C6.3 and C6.8 for the live DOKS step, and C6.9 for the operator release and live check. C6.9 was first the delay credit, then re-scoped after C6.D5. C6.10 (P0, no approval) added for C6.D8. Revision 5.3 (§31): K1.1–K1.7 (P0; K1.1, K1.2, K1.7 need approval) and K2.1–K2.6 (P1: K2.2, K2.4, K2.5; P2: K2.1, K2.3, K2.6). Added on 2026-10-16: C6.11 (P0; approval for the operator release and live DOKS check).)
 
 ### 26.2 Baseline: capabilities that already exist (verified at `b7c0aa0`; no task needed)
 
@@ -1987,6 +1988,7 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | 2026-10-15 | C6.D10 | OPEN | Owner: production is Hetzner, not DOKS, with node autoscaling (Cluster Autoscaler). Recorded with its conflicts for an owner decision before PH5: §29 D1 (single-node MicroK8s cells on dedicated AX42, node-local TopoLVM) and C6.D4 (no automatic paid nodes). A new node does not complete an existing tenant's upgrade when its volumes pin it to a full node (deferred DB resize; RWO filestore co-location, `deployment.go:274`); upstream Cluster Autoscaler support for Hetzner dedicated servers not verified. New C6.9 risk R7 (scale-down eviction). I1.4 and E2E1 gain production-cluster checks. No §29 edit | Plan change |
 | 2026-10-15 | C6.D10 | PARTLY DECIDED | Owner: the Go operator and `saas-jobs` own the Odoo environment lifecycle; the Cluster Autoscaler alone provides worker nodes; environments run on a shared cluster and nothing creates a server per customer. Still open: node source (Hetzner Cloud / dedicated / mix), multi-node cluster shape, Kubernetes distribution and storage engine (vs §29 D1), cost bounds replacing C6.D4, scale-down safety (R7). Question raised: whether I5.2's on-demand build node becomes an autoscaled build node group | Plan change |
 | 2026-10-15 | §31 review | PROPOSED | Architecture review of shared multi-node clusters with Hetzner Cloud autoscaling (owner request). Read-only: repository inspected at `c72b1fa`; external facts from primary sources (§31.16). Main findings: the Cluster Autoscaler scales Hetzner Cloud servers only; current CPX/CCX cost ≈ 2.6× an AX42 per GB RAM and CX/CAX are not available; node-local storage pins tenants, Cloud Volumes move but cap at 16 per server. Recommended option C (dedicated base pool + autoscaled Cloud pools). Launch blockers found in code: PG version mutable, deletion after a 2-minute best-effort backup, `-u` on a live DB, image change without `-u`. Added D20–D28 and K1.1–K1.7, K2.1–K2.6. No code, image, deploy or cluster operation | Plan change |
+| 2026-10-16 | C6.11 | NOT STARTED | Owner requirement: on every upgrade and new instance, verify that the pod can use its storage and that the application starts and works. Read-only review at `aea69d5`: operator `Ready` = PVC Bound + DB ready + Deployment ready (probes GET `/web/login`) + route; nothing proves the volume is mounted and writable, that PostgreSQL commits a write, that `base` is installed, or that the public URL works. New task C6.11 (in-pod exec startup self-check + public URL check → delivery verdict); C6.3, C6.8 and C6.10 now depend on it | — |
 
 ### 26.4 Task cards
 
@@ -2379,10 +2381,11 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 | C6.D10 | **Production on Hetzner with node autoscaling** (owner direction, 2026-10-15).<br>**Decided (owner, 2026-10-15): split of responsibilities.**<br>• The Go operator and `saas-jobs` own the lifecycle of each Odoo environment (create, package, upgrade, stop, restore, delete).<br>• The Cluster Autoscaler alone provides worker nodes.<br>• Many environments share one cluster; nothing creates a server per customer, and neither the operator nor `saas-jobs` provisions nodes for a tenant.<br>• The C6 code therefore never calls a cloud API to add capacity: resource unavailability remains a Pending pod or deferred resize that the autoscaler may resolve.<br>**Still open, to decide before PH5**, because it touches §29 D1 (single-node MicroK8s cells on dedicated AX42 servers, TopoLVM local volumes) and C6.D4 (no automatic paid nodes):<br>• **Node source:** Hetzner Cloud servers (hourly), dedicated servers, or a mix. Upstream Cluster Autoscaler support for Hetzner dedicated (Robot) servers is not verified.<br>• **Cluster shape:** multi-node clusters instead of one-node cells; Kubernetes distribution; storage engine for multi-node (node-local TopoLVM pins every tenant to its node).<br>• **Cost bounds:** node group, server type and maximum node count, set by the owner as the standing authorization that replaces C6.D4 for autoscaled nodes.<br>• **Scale-down safety:** tenant PostgreSQL and the last ready Odoo pod are never evicted (C6.9 R7) | PARTLY DECIDED (responsibility split); the rest is reviewed in §31 and proposed as D20–D24, D27. Not blocking PH1 code: C6 treats resource unavailability the same with or without an autoscaler | C6.D4, C6.9, C6.7, C5.1, §29 D1, I1.x |
 
 **C6 tasks and the M1 gate.**
-- **In M1:** C6.2, C6.3, C6.4, C6.5, C6.7, C6.8, C6.9 and C6.10. M1 is "billing and provisioning defects fixed", and these close defects in the money path and the service path:
+- **In M1:** C6.2, C6.3, C6.4, C6.5, C6.7, C6.8, C6.9, C6.10 and C6.11. M1 is "billing and provisioning defects fixed", and these close defects in the money path and the service path:
   - charging for an upgrade that cannot run (C6.7);
   - capturing money before the customer has the service (C6.10, C6.D8);
   - calling an upgrade applied when it is not (C6.3);
+  - delivering a pod that cannot use its storage or database, or an Odoo that does not work (C6.11);
   - an unbounded wait after payment (C6.4, C6.5);
   - no way out for the customer (C6.2);
   - a paid upgrade that can take the existing service down (C6.9, the mandatory continuity invariant);
@@ -2449,14 +2452,15 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - **`package_rollout` result:** returns `applied`, `rolling` or `blocked:<reason>`. It compares `metadata.generation` with `status.observedGeneration` and checks `status.phase`. It counts as `applied` only when all of these hold:
     - the Odoo Deployment's updated replicas are ready with the new requests/limits, and no old-ReplicaSet pod remains;
     - the PostgreSQL pod's allocated resources equal the new ones, with no `PodResizePending`/`PodResizeInProgress` condition;
-    - every PVC's `status.capacity` is at least the requested size.
+    - every PVC's `status.capacity` is at least the requested size;
+    - the C6.11 delivery verdict is `delivered` (storage, database, application and public URL checked).
 
-    The `<reason>` is one of: `unschedulable` (pod Pending with `FailedScheduling`, or a resize `Deferred`/`Infeasible`), `quota`, `volume_expansion`, `crashloop`, `unknown`.
+    The `<reason>` is one of: `unschedulable` (pod Pending with `FailedScheduling`, or a resize `Deferred`/`Infeasible`), `quota`, `volume_expansion`, `crashloop`, `storage`, `database`, `app`, `route` (C6.11), `unknown`.
   - **Read-only:** verification never acts on the workload (continuity invariant).
   - **New status values:** `package_status` gains `applying` (patch accepted, not verified) and `blocked`. Only a verified `applied` writes `package_applied` and sets `in_sync`.
   - **Polling:** the C6.1 job polls `applying` and `blocked` instances, reusing `_do_converge_package` with a verify step.
   - **Customer messages:** the billing message becomes "Payment authorized — applying your upgrade. You'll be charged when it's complete" (C6.D8). "Upgrade complete" is posted only on verification.
-- **Depends:** strict: C6.1.
+- **Depends:** strict: C6.1, C6.11.
 - **Steps:**
   1. Driver method plus fake, with unit tests from recorded CR/pod JSON.
   2. Status values and the verify step.
@@ -2687,7 +2691,7 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - the T1/T2 deadlines and escalation;
   - real convergence;
   - idempotent releases (and refunds on the fallback path), with no delay credit when the customer keeps waiting (C6.D5).
-- **Depends:** strict: C6.2, C6.3, C6.4, C6.5, C6.7, C6.9, C6.10. C6.6 is tested in its own card and is not in M1.
+- **Depends:** strict: C6.2, C6.3, C6.4, C6.5, C6.7, C6.9, C6.10, C6.11. C6.6 is tested in its own card and is not in M1.
 - **Approval:** the live DOKS step runs only after explicit owner approval.
 - **Steps:**
   1. Suite on the test server.
@@ -2779,13 +2783,13 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
     - on verified delivery: capture, then billing (plan, cycle, surplus grant) and the "Upgrade complete" / "Your server is ready" message.
   - **Delivered means verified:**
     - an upgrade is delivered when C6.3 reports `applied`;
-    - a new server is delivered when its deploy job has finished and the instance is `running` and passes its health check (confirm the exact signal in the code during this task).
+    - a new server is delivered when its deploy job has finished and the C6.11 delivery verdict is `delivered`.
   - **Capture:** one `saas.job` with key `capture:inv<id>`. It captures the authorized amount and consumes the wallet hold, and is idempotent (an already-captured transaction is a no-op). A failed capture never touches the service; the invoice stays unpaid and goes through the normal unpaid-invoice handling (F18).
   - **Void helper** for C6.2 and C5.5: voids the authorization, returns the wallet hold and cancels the invoice; idempotent.
   - **Capture deadline:** stores each authorization's capture deadline (from the provider when it gives one, otherwise a configured default) for the C6.2/C5.5 expiry release (C6.D9).
   - **Fallback:** a provider or payment method without manual capture is charged at once, as today, and flagged `capture_mode = immediate`. C6.2 and C5.5 then refund instead of voiding (C6.D8).
   - **Customer text:** "You'll be charged when your upgrade is complete." No text says "charged" before the capture.
-- **Depends:** strict: C6.3, C3.1, C3.2 · decision C6.D8 recorded. Provider sandbox behavior is proven in C15.2.
+- **Depends:** strict: C6.3, C6.11, C3.1, C3.2 · decision C6.D8 recorded. Provider sandbox behavior is proven in C15.2.
 - **Steps:**
   1. Authorize, capture and void in the gateway, against Odoo's demo provider in manual-capture mode (confirm Odoo 18's demo provider supports it; otherwise use a transaction test double).
   2. Wallet hold.
@@ -2808,6 +2812,54 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - **Authorization windows:** online card authorizations commonly last about 7 days; Visa merchant-initiated ones (saved-card charges) about 4 days 18 h [DOC Stripe]. The C6.2/C5.5 expiry release covers this.
   - **Revenue timing:** revenue is recognized at capture, after delivery.
 - **Rollback:** A config flag returns to immediate capture (the fallback path).
+
+#### C6.11 · Delivery verification: storage, database and application
+`P0 · M · $0 · Approval: YES (operator release + live check on the DOKS test cluster, no new resources) · Status: NOT STARTED · Tests: UNIT, INTEG[LOCAL], INTEG[TEST-SRV], ACCEPT[DOKS]`
+- **Objective (owner requirement, 2026-10-16):** for every new instance and every upgrade, prove that the pod can use its storage and that Odoo starts and works, before the service counts as delivered (C6.3 `applied`, C6.10 capture). A pod that cannot do this never takes traffic.
+- **Current status:** NOT STARTED. What "ready" proves today [CODE, read 2026-10-16 at `aea69d5`]:
+  - The operator's `Ready` condition (`compute/operator/internal/controller/odooinstance_controller.go:359`) is PVC `Bound` + database ready + web Deployment ready + route/certificate accepted.
+  - Deployment readiness comes from the probes in `compute/operator/internal/resources/deployment.go:466-516`: an HTTP GET of `/web/login` (startup, readiness and liveness). `/web/login` answers without writing anything, so it does not prove:
+    - that `/var/lib/odoo` is the tenant volume, not the container's own filesystem;
+    - that the filestore is writable (permissions, full volume, no inodes left, read-only remount);
+    - that PostgreSQL accepts a committed write (full or read-only data volume);
+    - that the tenant database is initialized (`base` installed).
+  - Nothing checks the public URL end to end (DNS, load balancer, TLS, Odoo).
+  - The control plane reads `status.phase` and the first pod only (`control-plane/saas_core/drivers/kubernetes_driver.py:1336`).
+- **Files:**
+  - `compute/operator/internal/resources/deployment.go` (startup probe of the web and cron containers);
+  - a new self-check script embedded next to the platform addons and mounted read-only (`compute/operator/internal/resources/platformaddons*`);
+  - `compute/operator/internal/resources/resources_test.go`;
+  - `control-plane/saas_core/drivers/kubernetes_driver.py` and `drivers/base.py` (public URL check + fake);
+  - `control-plane/saas_core/models/saas_instance.py` (delivery verdict used by C6.3 and the new-server path).
+- **Change:**
+  - **In-pod self-check as the startup probe (exec, not HTTP):** it runs once per pod start, exposes no endpoint and puts no secret in the pod spec. It passes only if all of these hold:
+    1. **Storage:** `/var/lib/odoo` is a mount point (the tenant volume); a small file is written, fsynced, read back and removed in the filestore directory as the Odoo user; free space and free inodes are above a configured floor.
+    2. **Database:** a connection with the credentials from `odoo.conf` succeeds, a committed write succeeds (it reaches WAL, so a full or read-only PostgreSQL volume fails it), and the tenant database has `base` installed. Instances with the database manager and no database yet skip only the `base` check.
+    3. **Application (web container):** `GET http://127.0.0.1:8069/web/login` returns 200.
+  - **Zero downtime:** readiness and liveness stay as they are. During an upgrade, a new pod that fails the self-check never becomes ready; `maxUnavailable 0` keeps the old pod serving (continuity invariant, C6.9), and C6.3 reports `blocked:<reason>`.
+  - **New block reasons for C6.3:** `storage`, `database`, `app`, read from the probe's failure message in the pod events.
+  - **Public check (control plane):** after the operator reports `Ready` for the current generation, one HTTPS request to the tenant's public URL with certificate validation must return 200 from Odoo. Otherwise the reason is `route`.
+  - **Delivery verdict:** `delivered` = operator `Ready` for the current generation + self-check passed on every current pod + public check passed. C6.3 `applied` and the C6.10 new-server capture both require it; nothing is captured on any failure (C6.D8). A failure on a new server goes to the C3 retries, then the C5.5 release.
+  - **Read-only toward the workload:** the check never restarts, patches or deletes anything. Its only side effects are the probe file and the committed probe write.
+- **Depends:** strict: — · used by C6.3 and C6.10.
+- **Steps:**
+  1. Self-check script with unit tests for each failure: no mount, read-only directory, full volume, database refusing writes, `base` missing, HTTP not 200.
+  2. Startup probe in the operator plus envtest; confirm the script on Odoo 14–20 images (Python version, how `psycopg2` and `odoo.conf` are found).
+  3. Public URL check plus fake in the driver.
+  4. Delivery verdict in the control plane; wire into C6.3 and C6.10 when those land.
+  5. Live step on DOKS.
+- **Acceptance:**
+  - New instance whose filestore is not writable → never `Ready`, never delivered, nothing captured.
+  - Upgrade whose new pod cannot write the filestore or the database → old pod keeps serving with zero probe failures; status `blocked:storage` or `blocked:database`; not `applied`.
+  - Tenant database without `base` → `blocked:database`.
+  - Public URL failing (TLS or route) → `blocked:route`; not delivered.
+  - Healthy path → delivered; the measured extra pod start time from the self-check is recorded in §26.3.
+  - Live on DOKS: one new instance and one upgrade verified, and one forced failure (read-only filestore) shown blocked with the old pod still serving.
+- **Tests:** Unit (script, probe builder, verdict); `INTEG[LOCAL]` envtest; `INTEG[TEST-SRV]` with the fake driver; `ACCEPT[DOKS]`.
+- **Risks:**
+  - A transient database blip during start fails the probe and restarts the container. Mitigation: the probe's failure threshold allows retries within the existing 5-minute startup window.
+  - An Odoo image without `psycopg2` on the default Python path. Mitigation: step 2 checks every supported version before the release.
+- **Rollback:** Revert the probe to `/web/login`; the verdict falls back to operator `Ready`.
 
 #### C17.1 · A downgrade never sends a smaller volume
 `P0 · S · $0 · Approval: no · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV]`
@@ -4722,7 +4774,7 @@ flowchart TB
 | Node provisioning | The autoscaler emitted `TriggeredScaleUp`; Hetzner creates the server (≤ 5 min timeout), cloud-init joins it, CNI and CSI become ready (≤ 15 min `max-node-provision-time`) | Event on the pod; new Node not yet Ready |
 | Storage provisioning | CSI creates and attaches the volume, or TopoLVM creates the LV | PVC `Pending` → `Bound` |
 | Starting | Image pull, PG init, `odoo-init` (`-i base`) | Init Job running |
-| **Ready** | PG accepts connections, init Job succeeded, Odoo answers its health check, the route serves | Only this state lets C6.10 capture |
+| **Ready** | PG accepts connections, init Job succeeded, the C6.11 self-check passed (volume mounted and writable, committed database write, `base` installed, Odoo answers), the public URL serves | Only this state lets C6.10 capture |
 
 Steps:
 1. Checkout: the C5 ledger checks a base node by dominant resource; else `elastic-prod` within its configured maximum (D24) using **real** allocatable, not the autoscaler template (E2); else no charge (waitlist).

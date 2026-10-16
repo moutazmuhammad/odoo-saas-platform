@@ -337,6 +337,84 @@ class TestKubernetesDriver(TransactionCase):
             self.assertIsNone(driver.cluster_facts()['volume_expansion'],
                               "no default StorageClass: unknown")
 
+    # -------- C6.11: delivery status and the public URL --------
+    def _delivery_driver(self, phase='Ready', generation=2, observed=2, pods=(), events=()):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={
+            'metadata': {'generation': generation},
+            'status': {'phase': phase, 'observedGeneration': observed}})
+        core = MagicMock()
+        core.list_namespaced_pod.return_value.items = list(pods)
+        core.list_namespaced_event.return_value.items = list(events)
+        driver._core_api = MagicMock(return_value=core)
+        return driver
+
+    @staticmethod
+    def _pod(started=True, ready=True, restarts=0, name='odoo-acme-1'):
+        pod = _fake_pod(name=name)
+        pod.status.conditions = [MagicMock(type='Ready', status='True' if ready else 'False')]
+        for cs in pod.status.container_statuses:
+            cs.started, cs.ready, cs.restart_count = started, ready, restarts
+        return pod
+
+    @staticmethod
+    def _event(message, minute):
+        import datetime
+        e = MagicMock()
+        e.message = message
+        e.last_timestamp = datetime.datetime(2026, 10, 16, 12, minute, tzinfo=datetime.timezone.utc)
+        return e
+
+    def test_delivery_ready_needs_current_generation_and_started_pods(self):
+        self.assertEqual(self._delivery_driver(pods=[self._pod()]).delivery_status(_handle()),
+                         {'ready': True, 'failure': None, 'detail': ''})
+        stale = self._delivery_driver(observed=1, pods=[self._pod()]).delivery_status(_handle())
+        self.assertFalse(stale['ready'], "Ready of the previous spec is not delivery")
+        self.assertIn('current spec', stale['detail'])
+        none = self._delivery_driver(pods=[]).delivery_status(_handle())
+        self.assertFalse(none['ready'])
+
+    def test_delivery_reports_storage_and_database_failures_at_once(self):
+        events = [self._event('Startup probe failed: SELFCHECK database: cannot connect: x', 1),
+                  self._event('Startup probe failed: SELFCHECK storage: cannot write to /var/lib/odoo: '
+                              'Read-only file system', 2)]
+        status = self._delivery_driver(pods=[self._pod(started=False, ready=False)],
+                                       events=events).delivery_status(_handle())
+        self.assertFalse(status['ready'])
+        self.assertEqual(status['failure'],
+                         ('storage', 'cannot write to /var/lib/odoo: Read-only file system'),
+                         "the newest event wins")
+
+    def test_delivery_app_failure_only_after_a_restart(self):
+        events = [self._event('Startup probe failed: SELFCHECK app: Odoo is not answering', 1)]
+        booting = self._delivery_driver(pods=[self._pod(started=False, ready=False)],
+                                        events=events).delivery_status(_handle())
+        self.assertIsNone(booting['failure'], "Odoo still booting is not a failure")
+        stuck = self._delivery_driver(pods=[self._pod(started=False, ready=False, restarts=1)],
+                                      events=events).delivery_status(_handle())
+        self.assertEqual(stuck['failure'], ('app', 'Odoo is not answering'))
+
+    def test_delivery_ignores_old_failures_of_a_started_pod(self):
+        events = [self._event('Startup probe failed: SELFCHECK storage: transient', 1)]
+        status = self._delivery_driver(pods=[self._pod()], events=events).delivery_status(_handle())
+        self.assertEqual(status, {'ready': True, 'failure': None, 'detail': ''})
+
+    def test_public_url_check(self):
+        from odoo.addons.saas_core.drivers.kubernetes_driver import KubernetesDriver
+        import requests
+        with patch('requests.get', return_value=MagicMock(status_code=303)) as get:
+            self.assertEqual(KubernetesDriver.check_public_url('acme.example.com'), (True, ''))
+        self.assertEqual(get.call_args.args[0], 'https://acme.example.com/web/login')
+        self.assertFalse(get.call_args.kwargs['allow_redirects'])
+        with patch('requests.get', return_value=MagicMock(status_code=502)):
+            ok, detail = KubernetesDriver.check_public_url('acme.example.com')
+        self.assertFalse(ok)
+        self.assertIn('HTTP 502', detail)
+        with patch('requests.get', side_effect=requests.exceptions.SSLError('certificate verify failed')):
+            ok, detail = KubernetesDriver.check_public_url('acme.example.com')
+        self.assertFalse(ok)
+        self.assertIn('certificate verify failed', detail)
+
     def test_set_resources_patches_resources_and_workers(self):
         driver, _server = _make_driver()
         custom_api = MagicMock()

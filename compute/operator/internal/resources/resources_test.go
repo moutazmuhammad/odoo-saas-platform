@@ -2,6 +2,7 @@ package resources
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -231,6 +232,48 @@ func TestOdooDeployment_CronHasNoReadinessProbe(t *testing.T) {
 		return
 	}
 	t.Fatal("no cron container")
+}
+
+func TestOdooDeployment_StartupProbeRunsTheSelfCheck(t *testing.T) {
+	dep := OdooDeployment(testInstance(), Platform{})
+	want := map[string][]string{
+		"odoo": {"python3", SelfCheckScript, "--web"},
+		"cron": {"python3", SelfCheckScript},
+	}
+	seen := 0
+	for _, c := range dep.Spec.Template.Spec.Containers {
+		cmd, ok := want[c.Name]
+		if !ok {
+			continue
+		}
+		seen++
+		p := c.StartupProbe
+		if p == nil || p.Exec == nil || !reflect.DeepEqual(p.Exec.Command, cmd) {
+			t.Fatalf("%s startup probe = %+v, want exec %v", c.Name, p, cmd)
+		}
+		if p.TimeoutSeconds < 10 || p.PeriodSeconds*p.FailureThreshold < 300 {
+			t.Errorf("%s startup probe too tight: %+v", c.Name, p)
+		}
+		hasAddons := false
+		for _, m := range c.VolumeMounts {
+			hasAddons = hasAddons || (m.Name == "platform-addons" && m.MountPath == PlatformAddonsPath)
+		}
+		if !hasAddons {
+			t.Errorf("%s does not mount the self-check script", c.Name)
+		}
+	}
+	if seen != 2 {
+		t.Fatalf("checked %d containers, want web and cron", seen)
+	}
+	// Readiness and liveness are unchanged: cheap, read-only HTTP checks.
+	web := dep.Spec.Template.Spec.Containers[0]
+	if web.ReadinessProbe.HTTPGet == nil || web.LivenessProbe.HTTPGet == nil {
+		t.Error("web readiness/liveness must stay HTTP probes")
+	}
+	_, data := platformAddonFiles()
+	if !strings.Contains(data["saas_selfcheck.py"], "SELFCHECK %s: %s") {
+		t.Error("the self-check script is not shipped with the platform addons")
+	}
 }
 
 func TestOdooDeployment_PinsVerifiedNonRootUser(t *testing.T) {

@@ -503,13 +503,26 @@ func odooLivenessProbe(exposesHTTP bool) *corev1.Probe {
 // HTTP worker is occupied by a legitimate long request.
 const livenessFailureThreshold = 121
 
-// odooStartupProbe allows generously for first-boot database
-// initialization (Odoo creates/migrates schema on first connection to an
-// empty database) before liveness/readiness probes start being enforced.
+// SelfCheckScript is the pod self-check shipped with the platform addons
+// (platformaddons/saas_selfcheck.py).
+const SelfCheckScript = PlatformAddonsPath + "/saas_selfcheck.py"
+
+// odooStartupProbe runs the pod self-check (C6.11): the tenant volume is
+// mounted and writable, PostgreSQL commits a write, the database is
+// initialized and, for the web container, Odoo answers. A pod failing it
+// never becomes ready, so a rolling update keeps the old pod serving. It
+// allows generously for first-boot database initialization before liveness
+// and readiness start being enforced.
 func odooStartupProbe(exposesHTTP bool) *corev1.Probe {
-	p := odooProbe(exposesHTTP)
-	p.PeriodSeconds = 10
-	p.FailureThreshold = 30 // up to 5 minutes
-	p.InitialDelaySeconds = 5
-	return p
+	command := []string{"python3", SelfCheckScript}
+	if exposesHTTP {
+		command = append(command, "--web")
+	}
+	return &corev1.Probe{
+		ProbeHandler:        corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: command}},
+		InitialDelaySeconds: 5,
+		PeriodSeconds:       10,
+		TimeoutSeconds:      10,
+		FailureThreshold:    30, // up to 5 minutes
+	}
 }

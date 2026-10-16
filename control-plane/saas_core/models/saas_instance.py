@@ -6396,6 +6396,28 @@ END $$;
                 '%s: package failed to apply %d times' % (self.subdomain, attempts),
                 level='error', detail=str(error)[-500:])
 
+    def _delivery_verdict(self):
+        """C6.11: whether this instance is delivered, as ``(verdict, reason,
+        detail)``. ``delivered``: the operator reports Ready for the current
+        spec, every current pod passed the self-check (volume mounted and
+        writable, committed database write, database initialized, Odoo
+        answers) and the public URL answers over valid TLS. ``blocked``: a
+        self-check failure (reason ``storage``, ``database`` or ``app``) or
+        the public URL (``route``). ``pending``: still rolling out or
+        starting. Read-only: it never acts on the workload."""
+        self.ensure_one()
+        driver = self._compute_driver()
+        status = driver.delivery_status(self._compute_handle())
+        if status['failure']:
+            reason, detail = status['failure']
+            return 'blocked', reason, detail
+        if not status['ready']:
+            return 'pending', None, status['detail']
+        ok, detail = driver.check_public_url(self.name)
+        if not ok:
+            return 'blocked', 'route', detail
+        return 'delivered', None, ''
+
     def _package_applied_ok(self, applied):
         """The cluster accepted ``applied`` (a ``_package_key``)."""
         self.ensure_one()

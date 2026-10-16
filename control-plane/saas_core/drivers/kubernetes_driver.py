@@ -38,6 +38,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 import shlex
 import time
 import datetime
@@ -394,6 +395,78 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 break
         return {'node_max_cpu_m': cpu_m, 'node_max_mem_mi': mem_mi,
                 'volume_expansion': expansion}
+
+    # The pod self-check's probe message (operator platformaddons/saas_selfcheck.py).
+    _SELFCHECK_RE = re.compile(r'SELFCHECK (storage|database|app): (.+)')
+
+    def delivery_status(self, handle: ComputeHandle) -> dict:
+        """What the C6.11 delivery verdict reads from the cluster:
+        ``ready``: the operator reports Ready for the current spec generation
+        and every current Odoo pod is ready with all containers started (each
+        passed the self-check); ``failure``: ``(reason, detail)`` from the
+        self-check of a pod that has not started, or None; ``detail``."""
+        name = self._cr_name(handle)
+        cr = self._get_cr(name)
+        if cr is None:
+            return {'ready': False, 'failure': None, 'detail': 'OdooInstance not found'}
+        status, meta = cr.get('status') or {}, cr.get('metadata') or {}
+        cr_ready = (status.get('phase') == 'Ready'
+                    and status.get('observedGeneration') == meta.get('generation'))
+        namespace = handle.instance_path or self._namespace_for(handle)
+        core = self._core_api()
+        pods = [p for p in core.list_namespaced_pod(
+            namespace, label_selector=_POD_LABEL_SELECTOR % name, _request_timeout=10).items
+            if not p.metadata.deletion_timestamp]
+        failure = None
+        for pod in pods:
+            statuses = pod.status.container_statuses or []
+            if statuses and all(cs.started for cs in statuses):
+                continue
+            failure = failure or self._selfcheck_failure(core, namespace, pod)
+        pods_ready = bool(pods) and all(
+            self._pod_ready(p) and all(cs.started for cs in (p.status.container_statuses or []))
+            for p in pods)
+        if failure:
+            detail = '%s: %s' % failure
+        elif not cr_ready:
+            detail = 'operator not Ready for the current spec (phase %s)' % (status.get('phase') or '-')
+        elif not pods_ready:
+            detail = 'Odoo pods not all ready'
+        else:
+            detail = ''
+        return {'ready': cr_ready and pods_ready, 'failure': failure, 'detail': detail}
+
+    def _selfcheck_failure(self, core, namespace, pod):
+        """``(reason, detail)`` of the newest self-check failure of ``pod``.
+        Odoo still booting fails the ``app`` check by design, so ``app``
+        counts only once a container restarted (the probe gave up)."""
+        events = core.list_namespaced_event(
+            namespace, field_selector='involvedObject.name=%s,reason=Unhealthy' % pod.metadata.name,
+            _request_timeout=10).items
+
+        def when(e):
+            return e.last_timestamp or e.event_time or e.first_timestamp \
+                or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+        restarted = any((cs.restart_count or 0) > 0 for cs in (pod.status.container_statuses or []))
+        for event in sorted(events, key=when, reverse=True):
+            match = self._SELFCHECK_RE.search(event.message or '')
+            if match and (match.group(1) != 'app' or restarted):
+                return match.group(1), match.group(2).strip()
+        return None
+
+    @staticmethod
+    def check_public_url(hostname, timeout=10):
+        """``(ok, detail)``: the tenant's public URL answers through DNS, the
+        load balancer and a valid TLS certificate (2xx/3xx, no redirect followed)."""
+        import requests
+        url = 'https://%s/web/login' % hostname
+        try:
+            response = requests.get(url, timeout=timeout, allow_redirects=False)
+        except requests.RequestException as e:
+            return False, '%s: %s' % (url, e)
+        if 200 <= response.status_code < 400:
+            return True, ''
+        return False, '%s returned HTTP %d' % (url, response.status_code)
 
     @staticmethod
     def _cr_name(handle_or_spec) -> str:

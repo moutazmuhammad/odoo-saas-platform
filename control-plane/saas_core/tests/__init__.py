@@ -47,3 +47,4 @@ from . import test_customer_alerts
 from . import test_snapshots
 from . import test_env_seed
 from . import test_package_convergence
+from . import test_delivery_verdict

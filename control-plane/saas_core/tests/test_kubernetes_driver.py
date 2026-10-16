@@ -366,8 +366,12 @@ class TestKubernetesDriver(TransactionCase):
         return e
 
     def test_delivery_ready_needs_current_generation_and_started_pods(self):
-        self.assertEqual(self._delivery_driver(pods=[self._pod()]).delivery_status(_handle()),
+        driver = self._delivery_driver(pods=[self._pod()])
+        self.assertEqual(driver.delivery_status(_handle()),
                          {'ready': True, 'failure': None, 'detail': ''})
+        selector = driver._core_api().list_namespaced_pod.call_args.kwargs['label_selector']
+        self.assertIn('saas.odoo.example.com/role=web', selector,
+                      "only Odoo pods count, not PostgreSQL or completed Job pods")
         stale = self._delivery_driver(observed=1, pods=[self._pod()]).delivery_status(_handle())
         self.assertFalse(stale['ready'], "Ready of the previous spec is not delivery")
         self.assertIn('current spec', stale['detail'])

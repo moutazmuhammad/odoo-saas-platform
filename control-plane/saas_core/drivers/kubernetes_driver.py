@@ -414,8 +414,10 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                     and status.get('observedGeneration') == meta.get('generation'))
         namespace = handle.instance_path or self._namespace_for(handle)
         core = self._core_api()
+        # The Odoo pods only: the instance label also matches PostgreSQL and
+        # the completed init/database Job pods.
         pods = [p for p in core.list_namespaced_pod(
-            namespace, label_selector=_POD_LABEL_SELECTOR % name, _request_timeout=10).items
+            namespace, label_selector=_WEB_POD_LABEL_SELECTOR % name, _request_timeout=10).items
             if not p.metadata.deletion_timestamp]
         failure = None
         for pod in pods:

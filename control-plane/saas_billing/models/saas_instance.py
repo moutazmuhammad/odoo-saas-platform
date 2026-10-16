@@ -296,6 +296,11 @@ class SaasInstance(models.Model):
     # servers freely — deleting frees a slot for reuse, it never refunds or
     # lowers the count. These hold a reservation purchase until its invoice
     # is paid, at which point the slots are granted (mirrors storage blocks).
+    order_invoice_id = fields.Many2one(
+        'account.move', string='Order Invoice', copy=False, ondelete='set null',
+        help='The initial order invoice of a new server, until it is captured '
+             'and the billing cycle starts (C6.12): funds secured start the '
+             'deploy, a verified delivery captures it.')
     env_pending_invoice_id = fields.Many2one(
         'account.move', string='Environment Activation Invoice', copy=False,
         ondelete='set null',
@@ -1655,21 +1660,18 @@ class SaasInstance(models.Model):
         invoice = order._create_invoices()
         invoice.action_post()
         self._wallet_settle_consumption(invoice, wallet_amount)
+        self.order_invoice_id = invoice[:1]
 
         # -- Transition state & auto-deploy --
         if invoice.amount_total <= 0:
-            self.state = 'paid'
-            self._set_next_invoice_date()
-            # Wallet-covered orders bypass the invoice payment callback.
-            self._spawn_pending_environments()
+            self.state = 'pending_payment'
             self._append_log(
                 "Sale order %s confirmed. Zero-amount invoice — deploying automatically."
                 % order.name
             )
-            self.message_post(body=_(
-                "Sale order %s confirmed. No payment required — deploying now."
-            ) % order.name)
-            self.action_deploy()
+            # Wallet-covered: funds secured at once; the server deploys, and
+            # its billing cycle starts once it is delivered (C6.12).
+            self._advance_change(invoice[:1])
             return True
         else:
             self.state = 'pending_payment'
@@ -2067,12 +2069,14 @@ class SaasInstance(models.Model):
         funds of a paid or authorized invoice, deliver, capture, switch
         billing). Each step is a keyed job, so a queued or finished one is
         never repeated; a missed notice or a terminally failed job is."""
-        instances = self.search(['|', ('pending_plan_id', '!=', False),
-                                 ('pending_storage_blocks', '>', 0)])
+        instances = self.search(['|', '|', ('pending_plan_id', '!=', False),
+                                 ('pending_storage_blocks', '>', 0),
+                                 ('order_invoice_id', '!=', False)])
         for instance in instances:
             try:
                 for invoice in (instance.pending_change_invoice_id
-                                | instance.storage_block_pending_invoice_id):
+                                | instance.storage_block_pending_invoice_id
+                                | instance.order_invoice_id):
                     instance._advance_change(invoice)
                 self.env.cr.commit()
             except Exception:
@@ -2466,6 +2470,8 @@ class SaasInstance(models.Model):
         the client can back out of without losing their current service."""
         if invoice.saas_delivered_at:
             return False  # the customer has what it paid for (C6.10, F18)
+        if invoice.saas_funds_secured_at:
+            return True   # funds secured, awaiting delivery: never dunned
         so_origins = invoice.line_ids.sale_line_ids.order_id.mapped('origin')
         return any(
             origin and any(
@@ -3146,8 +3152,9 @@ class SaasInstance(models.Model):
             return
         invoices = self.env['account.move'].sudo().browse(invoice_ids)
         for inst in self.sudo().search([
-                '|', ('pending_change_invoice_id', 'in', invoices.ids),
-                ('storage_block_pending_invoice_id', 'in', invoices.ids)]):
+                '|', '|', ('pending_change_invoice_id', 'in', invoices.ids),
+                ('storage_block_pending_invoice_id', 'in', invoices.ids),
+                ('order_invoice_id', 'in', invoices.ids)]):
             for invoice in invoices:
                 if inst._change_invoice_kind(invoice) and invoice.saas_funds_secured_at:
                     raise UserError(_("This change is already paid for and being applied."))
@@ -3197,7 +3204,11 @@ class SaasInstance(models.Model):
             return 'plan'
         if self.pending_storage_blocks and self.storage_block_pending_invoice_id == invoice:
             return 'storage'
+        if self.order_invoice_id == invoice:
+            return 'order'
         return None
+
+    _CHANGE_KINDS = ('plan', 'storage', 'order')
 
     def _funded_change_invoice(self, kind):
         """The invoice of the pending ``kind`` change once its funds are
@@ -3205,15 +3216,17 @@ class SaasInstance(models.Model):
         self.ensure_one()
         if kind == 'plan':
             invoice = self.pending_change_invoice_id if self.pending_plan_id else None
-        else:
+        elif kind == 'storage':
             invoice = self.storage_block_pending_invoice_id if self.pending_storage_blocks else None
+        else:
+            invoice = self.order_invoice_id
         if invoice and invoice.saas_funds_secured_at and not invoice.saas_released_at \
                 and invoice.state == 'posted':
             return invoice
         return self.env['account.move']
 
     def _has_funded_change(self):
-        return bool(self._funded_change_invoice('plan') or self._funded_change_invoice('storage'))
+        return any(self._funded_change_invoice(kind) for kind in self._CHANGE_KINDS)
 
     def _package_plan(self):
         if self._funded_change_invoice('plan'):
@@ -3238,6 +3251,8 @@ class SaasInstance(models.Model):
         self.ensure_one()
         if kind == 'plan':
             return self.pending_plan_id.name or ''
+        if kind == 'order':
+            return _('your new server (%s)') % (self.plan_id.name or self.subdomain)
         block_gb, _bp = self.env['saas.pricing.engine'].storage_block_config()
         return _('%d GB more storage') % ((self.pending_storage_blocks or 0) * (block_gb or 0))
 
@@ -3260,13 +3275,18 @@ class SaasInstance(models.Model):
                 return
             self._secure_change(invoice, kind, mode)
         if not invoice.saas_delivered_at:
-            self._enqueue_change_step('_do_deliver_change', 'deliver', invoice)
+            if kind == 'order':
+                self._start_paid_order(invoice)
+            else:
+                self._enqueue_change_step('_do_deliver_change', 'deliver', invoice)
         elif not paid:
             self._enqueue_change_step('_do_capture_change', 'capture', invoice)
         elif kind == 'plan':
             self._enqueue_paid_plan_change(invoice)
-        else:
+        elif kind == 'storage':
             self._enqueue_change_step('_do_activate_paid_storage', 'storage', invoice)
+        else:
+            self._enqueue_change_step('_do_start_paid_billing', 'billing', invoice)
 
     def _enqueue_change_step(self, method, step, invoice):
         self.ensure_one()
@@ -3283,7 +3303,13 @@ class SaasInstance(models.Model):
         invoice.sudo().write(vals)
         label = self._change_label(kind)
         self._append_log("Funds secured for %s (invoice %s, %s)." % (label, invoice.name, mode))
-        if mode == 'manual':
+        if kind == 'order' and mode == 'manual':
+            body = _("Payment authorized. We're creating your server now; you'll be "
+                     "charged when it's ready.")
+        elif kind == 'order':
+            body = _("Payment received. We're creating your server now; we'll let "
+                     "you know when it's ready.")
+        elif mode == 'manual':
             body = _("Payment authorized for %s. We're applying it now; you'll be "
                      "charged when it's complete.") % label
         else:
@@ -3322,9 +3348,37 @@ class SaasInstance(models.Model):
             # verification then delivers it.
             _logger.warning("Delivering %s failed; it is retried", invoice.name, exc_info=True)
 
+    def _start_paid_order(self, invoice):
+        """Funds of a new server's order are secured: deploy it (the C3.1
+        job, in this transaction). Idempotent: only a server still waiting
+        for payment moves on."""
+        self.ensure_one()
+        if self.state not in ('draft', 'pending_payment'):
+            return
+        self.state = 'paid'
+        # Grant checkout capacity before queuing the deploy (idempotent).
+        self._spawn_pending_environments()
+        self._capture_payment_token_from_invoice(invoice)
+        self._append_log("Order %s funded — deploying." % invoice.name)
+        _logger.info("SaaS instance %s: order funded, queuing auto-deploy.", self.subdomain)
+        self._enqueue_deploy_after_payment(invoice)
+
+    def _do_start_paid_billing(self, invoice_id):
+        """Job: a delivered, paid new server starts its billing cycle."""
+        self.ensure_one()
+        invoice = self.env['account.move'].browse(invoice_id)
+        if self._change_invoice_kind(invoice) != 'order' or not invoice.saas_delivered_at \
+                or invoice.payment_state not in ('paid', 'in_payment'):
+            return
+        self._set_next_invoice_date()
+        self.order_invoice_id = False
+        self._append_log("Order %s captured; billing cycle started." % invoice.name)
+        self.message_post(body=_("Your server is ready. %s") % self._charged_text(
+            invoice, self.plan_id.name or self.subdomain))
+
     def _on_package_verified(self):
         super()._on_package_verified()
-        for kind in ('plan', 'storage'):
+        for kind in self._CHANGE_KINDS:
             invoice = self._funded_change_invoice(kind)
             if invoice and not invoice.saas_delivered_at:
                 self._mark_change_delivered(invoice)
@@ -3407,6 +3461,8 @@ class SaasInstance(models.Model):
                         'pending_change_invoice_id': False, 'pending_wallet_credit': 0.0})
         elif kind == 'storage':
             self.write({'pending_storage_blocks': 0, 'storage_block_pending_invoice_id': False})
+        elif kind == 'order':
+            self.order_invoice_id = False
         invoice.sudo().saas_released_at = fields.Datetime.now()
         self._append_log("Released invoice %s: authorization voided, nothing charged." % invoice.name)
         return True

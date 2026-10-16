@@ -245,7 +245,7 @@ class TestPackageConvergence(TransactionCase):
         self.Instance._cron_reconcile()
         self.assertEqual(len(self._jobs()), 1)
 
-    def test_deploy_marks_package_in_sync(self):
+    def test_deploy_is_verified_before_in_sync(self):
         self._fault()
         self._fail_once()
         self.inst.write({'state': 'provisioning', 'pending_operation': 'deploy'})
@@ -260,5 +260,7 @@ class TestPackageConvergence(TransactionCase):
                 patch.object(type(self.inst), '_send_notification', lambda rec, t: None):
             self.inst._do_deploy_locked_kubernetes()
         self.assertEqual(self.inst.state, 'running')
+        self.assertEqual(self.inst.package_status, 'applying', "healthy is not yet delivered (C6.12)")
+        self.inst._verify_package()
         self.assertEqual(self.inst.package_status, 'in_sync')
         self.assertEqual(self.inst.package_applied, self._key())

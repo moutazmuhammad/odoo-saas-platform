@@ -11,8 +11,9 @@ from odoo.tests.common import TransactionCase, tagged
 from .test_upgrade_gate import _mk_instance, _setup_fixture
 
 
-@tagged('post_install', '-at_install')
-class TestCaptureOnDelivery(TransactionCase):
+class _CaptureCase(TransactionCase):
+    """Demo provider in manual-capture mode, a saved demo card, a fake
+    cluster driver and step-by-step job running. No tests of its own."""
 
     def setUp(self):
         super().setUp()
@@ -84,6 +85,10 @@ class TestCaptureOnDelivery(TransactionCase):
     def _deliver(self):
         self._run('_do_deliver_change')
         self._run('_do_verify_package')
+
+
+@tagged('post_install', '-at_install')
+class TestCaptureOnDelivery(_CaptureCase):
 
     # ------------------------------------------------------------ tests
     def test_authorized_then_delivered_then_captured_once(self):
@@ -248,3 +253,90 @@ class TestCaptureOnDelivery(TransactionCase):
         self._run('_do_activate_paid_storage')
         self.assertEqual(self.inst.extra_storage_blocks, 1)
         self.assertEqual(self.inst.effective_storage_limit_gb, 20)
+
+
+@tagged('post_install', '-at_install')
+class TestOrderCaptureOnDelivery(_CaptureCase):
+    """C6.12: a new server's order is authorized at payment, deployed,
+    verified (C6.3/C6.11) and only then captured; its billing cycle starts
+    at delivery."""
+
+    def setUp(self):
+        super().setUp()
+        self.order = _mk_instance(self.env, self.fx, 'ordtest', state='draft',
+                                  saas_payment_method_id=self.method.id)
+        self.inst = self.order   # the helpers act on self.inst
+
+    def _bill_and_pay(self):
+        self.order.action_confirm_and_bill()
+        invoice = self.order.order_invoice_id
+        self.assertTrue(invoice, "the order invoice is linked")
+        state, _m = self.env['saas.payment.gateway'].charge(self.method, invoice)
+        return invoice, state
+
+    def _deployed(self):
+        """The deploy job's end, as _do_deploy_locked_kubernetes does it."""
+        self.order.state = 'running'
+        self.order._package_patch_accepted(
+            self.order._package_key(self.order._k8s_plan_resources()))
+
+    def test_order_authorized_deployed_verified_then_captured(self):
+        invoice, state = self._bill_and_pay()
+        self.assertEqual(state, 'authorized')
+        self.assertEqual(invoice.saas_capture_mode, 'manual')
+        self.assertEqual(self.order.state, 'paid', "funds secured: the server deploys")
+        self.assertEqual(len(self._jobs('_do_deploy_after_payment')), 1)
+        self.assertFalse(self.order.next_invoice_date, "no cycle before delivery")
+        self.assertIn("you'll be charged when it's ready", self._bodies())
+        self.assertTrue(self.order._is_optional_invoice(invoice),
+                        "secured, undelivered: never dunned")
+        self._deployed()
+        self.assertEqual(self.order.package_status, 'applying')
+        self.assertEqual(invoice.transaction_ids.state, 'authorized', "healthy is not delivered")
+        self._run('_do_verify_package')
+        self.assertTrue(invoice.saas_delivered_at)
+        self._run('_do_capture_change')
+        self.assertEqual(invoice.transaction_ids.state, 'done')
+        self.assertIn(invoice.payment_state, ('paid', 'in_payment'))
+        self._run('_do_start_paid_billing')
+        self.assertTrue(self.order.next_invoice_date, "the cycle starts at delivery")
+        self.assertFalse(self.order.order_invoice_id)
+        self.assertIn('Your server is ready', self._bodies())
+        self.assertEqual(len(invoice.transaction_ids.payment_id), 1)
+
+    def test_wallet_covered_order_deploys_through_the_job(self):
+        self.order._grant_wallet_credit(10000.0, origin='manual', reason='test')
+        self.order.action_confirm_and_bill()
+        invoice = self.order.order_invoice_id
+        self.assertEqual(invoice.amount_total, 0)
+        self.assertEqual(invoice.saas_capture_mode, 'immediate')
+        self.assertEqual(self.order.state, 'paid')
+        self.assertEqual(len(self._jobs('_do_deploy_after_payment')), 1)
+        self._deployed()
+        self._run('_do_verify_package')
+        self._run('_do_start_paid_billing')
+        self.assertTrue(self.order.next_invoice_date)
+
+    def test_provider_without_manual_capture_still_starts_the_cycle_on_delivery(self):
+        self.provider.capture_manually = False
+        invoice, state = self._bill_and_pay()
+        self.assertEqual(state, 'done')
+        invoice.transaction_ids._post_process()
+        self.assertEqual(invoice.saas_capture_mode, 'immediate')
+        self.assertEqual(self.order.state, 'paid')
+        self.assertFalse(self.order.next_invoice_date)
+        self._deployed()
+        self._run('_do_verify_package')
+        self._run('_do_start_paid_billing')
+        self.assertTrue(self.order.next_invoice_date)
+
+    def test_secured_order_is_not_payable_again(self):
+        invoice, _state = self._bill_and_pay()
+        with self.assertRaises(UserError):
+            self.env['saas.instance']._gate_collection([invoice.id])
+
+    def test_released_order_voids_and_unlinks(self):
+        invoice, _state = self._bill_and_pay()
+        self.assertTrue(self.order._release_change_funds(invoice))
+        self.assertEqual(invoice.transaction_ids.state, 'cancel')
+        self.assertFalse(self.order.order_invoice_id)

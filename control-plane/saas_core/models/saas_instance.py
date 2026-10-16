@@ -5035,7 +5035,9 @@ END $$;
         self.pending_provision_since = False
         self.pending_provision_attempts = 0
         if package:
-            self._package_applied_ok(self._package_key(package))
+            # Healthy is not delivered: C6.3/C6.11 verify the rollout, the
+            # self-check and the public URL, then a paid order is captured (C6.12).
+            self._package_patch_accepted(self._package_key(package))
         self._append_log("Deployment completed successfully. State: running.")
         # A hosting Production server comes with a ready database so the
         # customer lands in Odoo, not on an empty database selector. They

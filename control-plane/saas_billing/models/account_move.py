@@ -236,37 +236,25 @@ class AccountMove(models.Model):
         ])
 
         # --- Handle new instance deployment (pending_payment → paid) ---
+        # C6.12: the order's funds are secured → the server deploys; its
+        # billing cycle starts once it is delivered (and captured).
         instances = self.env['saas.instance'].search([
             ('sale_order_id', 'in', sale_orders.ids),
-            ('state', '=', 'pending_payment'),
+            ('state', 'in', ('pending_payment', 'paid', 'provisioning', 'running')),
             ('pending_plan_id', '=', False),
         ]) if sale_orders else self.env['saas.instance']
         for instance in instances:
-            instance.state = 'paid'
-            instance._set_next_invoice_date()
-            # Grant checkout capacity in the payment transaction before
-            # queuing deployment. Pending counters make this idempotent.
-            instance._spawn_pending_environments()
-            # Save the card (if customer ticked "Save my card") so
-            # the recurring-billing cron can auto-renew.
-            paid_for_instance = paid_invoices.filtered(
-                lambda inv: inv.line_ids.sale_line_ids.order_id.id
-                in instance.sale_order_id.ids
-            )
-            if paid_for_instance:
-                instance._capture_payment_token_from_invoice(paid_for_instance[:1])
-            order_invoice = (paid_invoices
-                             & instance.sale_order_id.invoice_ids)[:1]
-            instance._append_log("Payment received.")
-            instance.message_post(
-                body=_("Payment received. Deploying instance automatically."),
-            )
+            order_invoice = instance.order_invoice_id & paid_invoices
+            if not order_invoice and instance.state == 'pending_payment':
+                # Ordered before C6.12 linked the invoice.
+                order_invoice = (paid_invoices & instance.sale_order_id.invoice_ids)[:1]
+                instance.order_invoice_id = order_invoice
+            if not order_invoice:
+                continue
             _logger.info(
-                "SaaS instance %s: payment received, queuing auto-deploy.",
-                instance.subdomain,
-            )
-            # Durable job in this transaction: no paid order is lost on restart.
-            instance._enqueue_deploy_after_payment(order_invoice)
+                "SaaS instance %s: order invoice %s paid, advancing the order.",
+                instance.subdomain, order_invoice.name)
+            instance._advance_change(order_invoice)
         # --- Handle pending plan changes (trial upgrade or paid plan change) ---
         # Match by the explicit invoice link first (exact — survives
         # sale_order_id being overwritten between request and payment),

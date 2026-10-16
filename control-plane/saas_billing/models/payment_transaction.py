@@ -32,18 +32,20 @@ class PaymentTransaction(models.Model):
         return super().create(vals_list)
 
     def _set_authorized(self, state_message=None, extra_allowed_states=()):
-        """C6.10: an authorization for an upgrade or storage purchase secures
-        its funds and starts delivery; it is captured once delivered. Any
-        other authorized payment (renewals, add-ons, new orders) is captured
-        at once, as before, because nothing waits for delivery."""
+        """C6.10/C6.12: an authorization for an upgrade, a storage purchase or
+        a new server's order secures its funds and starts delivery; it is
+        captured once delivered. Any other authorized payment (renewals,
+        add-ons, slot reservations) is captured at once, as before, because
+        nothing waits for delivery."""
         txs = super()._set_authorized(state_message=state_message,
                                       extra_allowed_states=extra_allowed_states)
         Instance = self.env['saas.instance'].sudo()
         for tx in txs:
             invoices = tx.invoice_ids
             changes = Instance.search([
-                '|', ('pending_change_invoice_id', 'in', invoices.ids),
-                ('storage_block_pending_invoice_id', 'in', invoices.ids)]) if invoices else Instance
+                '|', '|', ('pending_change_invoice_id', 'in', invoices.ids),
+                ('storage_block_pending_invoice_id', 'in', invoices.ids),
+                ('order_invoice_id', 'in', invoices.ids)]) if invoices else Instance
             pending = [(inst, inv) for inst in changes for inv in invoices
                        if inst._change_invoice_kind(inv)]
             if pending:

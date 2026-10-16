@@ -1994,6 +1994,7 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | 2026-10-16 | C6.11 | NOT STARTED | Owner requirement: on every upgrade and new instance, verify that the pod can use its storage and that the application starts and works. Read-only review at `aea69d5`: operator `Ready` = PVC Bound + DB ready + Deployment ready (probes GET `/web/login`) + route; nothing proves the volume is mounted and writable, that PostgreSQL commits a write, that `base` is installed, or that the public URL works. New task C6.11 (in-pod exec startup self-check + public URL check → delivery verdict); C6.3, C6.8 and C6.10 now depend on it | — |
 | 2026-10-16 | C20.1, C20.2 | NOT STARTED | Owner requirement: a customer must not exceed the plan's resource limits on production. Read-only review at `27e5664`: CPU, RAM and workers are hard limits already (pod limits, namespace quota, operator-owned `odoo.conf`); storage is soft (100% → 7-day grace → pause; evaluated daily); filestore and DB volumes each sized to the full purchase (2× physical); tenant emptyDirs and containers have no ephemeral-storage limits; plan-less namespaces get a large default quota | — |
 | 2026-10-16 | C20.D1 | DECIDED | Owner: at 100% of purchased storage the tenant becomes read-only immediately, no grace; site stays up (login, read, export); lifts at once on purchase, upgrade or freeing space | — |
+| 2026-10-16 | C6.3, C6.8, C20.1, C20.2 | Scope | Owner: staging and development must be upgradable and held to their package limits like production. Code at `1f1c1de`: resize exists (`action_change_environment_plan`, API `/environments/<id>/plan-preview` and `/change-plan`, SPA `Environments.tsx`); it runs through the C3.2 job (`_apply_pending_plan_change` → `_apply_env_plan`); environment count is capped by paid slots (`_env_slots_for`); limits come from each environment's own plan. Cards now state the non-production scope and add staging/dev cases to C6.8 and the C20 acceptance | — |
 
 ### 26.4 Task cards
 
@@ -2444,6 +2445,7 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 #### C6.3 · Verify the rollout before an upgrade counts as applied
 `P0 · M · $0 · Approval: YES (live step on the DOKS test cluster, no new resources) · Status: NOT STARTED · Tests: UNIT, INTEG[TEST-SRV], ACCEPT[DOKS]`
 - **Objective:** Never mark an upgrade applied until the cluster actually runs the paid resources.
+- **Scope (owner, 2026-10-16):** production plan changes, storage purchases and staging/development resizes (`action_change_environment_plan` → `_apply_env_plan`) all go through this verification, and through C6.2, C6.4, C6.7, C6.10 and C6.11, with no shortcut for non-production.
 - **Current status:** NOT STARTED.
   - `_package_applied_ok` runs as soon as the patch is accepted.
   - `_apply_pending_plan_change` posts "Payment confirmed. Upgraded from X to Y" before any infrastructure step (`control-plane/saas_billing/models/saas_instance.py` ~`:3150`).
@@ -2695,7 +2697,8 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - recovery when capacity is freed (F15);
   - the T1/T2 deadlines and escalation;
   - real convergence;
-  - idempotent releases (and refunds on the fallback path), with no delay credit when the customer keeps waiting (C6.D5).
+  - idempotent releases (and refunds on the fallback path), with no delay credit when the customer keeps waiting (C6.D5);
+  - **staging and development resizes:** a paid resize of each, plus one refused by the C6.7 gate and one held at `unschedulable`, with the same guarantees (verified before applied, nothing captured before delivery, released if undelivered).
 - **Depends:** strict: C6.2, C6.3, C6.4, C6.5, C6.7, C6.9, C6.10, C6.11. C6.6 is tested in its own card and is not in M1.
 - **Approval:** the live DOKS step runs only after explicit owner approval.
 - **Steps:**
@@ -2704,10 +2707,11 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   3. Live upgrade on DOKS, with the availability probe running throughout:
      - one normal upgrade;
      - one held at `unschedulable` with a test plan bigger than any node, then released by lowering the request;
-     - the database pod deleted while held (F12).
+     - the database pod deleted while held (F12);
+     - one staging and one development resize, verified.
   4. Measured times recorded in §26.3.
 - **Acceptance:**
-  - Every scenario F1–F19 has a passing test.
+  - Every scenario F1–F19 has a passing test, for a production upgrade and for a staging/development resize.
   - The availability probe recorded zero failures in every scenario, on the test server and on DOKS.
   - The DOKS run shows verified convergence.
   - Nothing captured before verified delivery, and no double financial entry, in any run.
@@ -3045,7 +3049,9 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - **Freeing space while locked:** the portal offers buying storage and upgrading without unlocking first; deleting data needs a short, logged unlock window started by the customer from the portal, closed by the next measurement if usage is still ≥ 100%.
   - **Lifting:** a storage purchase or upgrade (via C4.2's `_queue_resume` path) or a measurement below 100% clears the lock at once.
   - **Physical headroom:** each volume is sized at the purchased storage plus a configured headroom, so PostgreSQL never fills its volume (a full PostgreSQL volume PANICs) between two measurements. The headroom value comes from the growth rate measured in Q4, not from an estimate. It is not sellable and not counted as customer storage; the C5 ledger counts it as reserved.
-  - **Scope:** production plans. Trials and staging/dev environments follow the same rule against their own limits.
+  - **Scope (owner, 2026-10-16):** production, staging and development alike, each against its own package (staging/dev are sized by their own plan, `_get_env_plan` or the customer's resize). Trials follow the same rule against the trial plan.
+    - For staging/dev the fix offered under the lock is a resize of that server (`action_change_environment_plan`; storage never shrinks), not storage blocks.
+    - A sleeping environment writes nothing; it is measured again on its first refresh after waking.
 - **Depends:** strict: C4.2 · the spec field goes into the current CRD group if C14.1 is still blocked and is carried over by the rename · decision C20.D1 recorded.
 - **Steps:**
   1. Per-version check (Odoo 14–20) of what writes during login and reading; addon changes with tests.
@@ -3060,7 +3066,8 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
   - No path keeps a tenant above 100% for more than one measurement interval (no grace).
   - A tenant in `grace` or `restricted` before the upgrade ends up `locked` and running.
   - Database volume never full during a fill test (Q4): the lock lands before the headroom is used up; the measured overshoot is recorded in §26.3.
-  - Live on DOKS: one test tenant filled to 100%, locked, shown working read-only, then unlocked by a storage purchase.
+  - The same holds for one staging and one development environment: locked at 100%, production unaffected, unlocked at once by a paid resize.
+  - Live on DOKS: one test tenant filled to 100%, locked, shown working read-only, then unlocked by a storage purchase; one staging environment the same, unlocked by a resize.
 - **Tests:** Unit (state machine, driver, addon); `INTEG[LOCAL]` envtest; `INTEG[TEST-SRV]` with the fake driver; `ACCEPT[DOKS]`.
 - **Risks:**
   - An Odoo version writes on a path the addon misses, which breaks login under the lock. Mitigation: step 1 covers each supported version with a test.
@@ -3070,7 +3077,7 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 
 #### C20.2 · Hard limits for temporary storage and plan-less tenants
 `P0 · S · $0 · Approval: YES (operator release + live check on the DOKS test cluster, no new resources) · Status: NOT STARTED · Tests: UNIT, INTEG[LOCAL], ACCEPT[DOKS]`
-- **Objective (owner requirement, 2026-10-16):** no tenant can use resources outside its plan through temporary storage or a missing package.
+- **Objective (owner requirement, 2026-10-16):** no tenant (production, staging or development) can use resources outside its plan through temporary storage or a missing package.
 - **Current status:** NOT STARTED. Verified [CODE, read 2026-10-16 at `27e5664`]:
   - The Odoo pod's `tmp`, `etc-odoo` and `shell-tmp` emptyDirs have no `sizeLimit` (`compute/operator/internal/resources/deployment.go:105,187,199`), and the containers set no ephemeral-storage requests or limits. Custom code can fill the node's disk and affect other tenants.
   - With no `spec.tenancy.resourceQuota`, the namespace gets `defaultTenantQuota` (8 CPU / 16 GiB requests, 16 CPU / 32 GiB limits, 500 GiB storage; `compute/operator/internal/resources/tenancy.go`), and `_k8s_plan_resources` returns nothing for an instance without a plan.
@@ -3085,7 +3092,8 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 - **Acceptance:**
   - Writing past the `/tmp` limit evicts only that tenant's pod; other tenants are unaffected; a production tenant rolls back in with zero probe failures on the others.
   - A namespace without a package gets the smallest package's quota.
-  - Creating a production instance without a plan fails with a clear error.
+  - Creating a production instance without a plan fails with a clear error; a staging/development server always carries its own package (never the large default quota).
+  - The temporary-storage limits apply to staging and development pods too.
 - **Tests:** Unit, `INTEG[LOCAL]` envtest, `ACCEPT[DOKS]`.
 - **Risks:** A limit too small for a legitimate import or report evicts the pod. Mitigation: sizes from the package, checked with the P1 profiles.
 - **Rollback:** Revert.

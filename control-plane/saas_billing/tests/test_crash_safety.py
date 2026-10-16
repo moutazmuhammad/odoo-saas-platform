@@ -190,6 +190,15 @@ class TestCrashSafety(TransactionCase):
         inst.write({'pending_plan_id': self.big.id, 'pending_billing_period': 'monthly',
                     'pending_change_invoice_id': invoice.id})
         self._pay(invoice)
+        # C6.10: delivery first (killed mid-resize, then restarted) ...
+        deliver = self._job(inst, '_do_deliver_change')
+        self._run_and_kill(deliver, 'resize')
+        self.assertFalse(invoice.saas_delivered_at, "the killed run rolled back")
+        self._restart(deliver)
+        self.assertEqual(inst.plan_id, self.small, "billing waits for verified delivery")
+        inst._on_package_verified()               # C6.3 verified the rollout
+        self.assertTrue(invoice.saas_delivered_at)
+        # ... then the billing switch (killed once too), applied exactly once.
         job = self._job(inst, '_do_apply_paid_plan_change')
         self._run_and_kill(job, 'resize')
         self.assertEqual(inst.plan_id, self.small, "the killed run rolled back")
@@ -199,7 +208,7 @@ class TestCrashSafety(TransactionCase):
         self.assertEqual(self.env['saas.audit.log'].sudo().search_count([
             ('model', '=', 'saas.instance'), ('res_id', '=', inst.id),
             ('action', '=', 'instance_scale')]), 1)
-        self.assertEqual(self._count('resize', inst), 2)
+        self.assertEqual(self._count('resize', inst), 4, "2 delivery + 2 billing runs")
 
     def test_suspend_completes_once_after_a_crash(self):
         inst = self._mk('cssuspend', 'running')

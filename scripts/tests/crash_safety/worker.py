@@ -93,8 +93,10 @@ def install_fakes(registry, block_dir, effect_log):
         (Instance, '_compute_driver'): lambda self, connection=None: FakeDriver(self.subdomain),
         (Instance, '_compute_handle'): lambda self: self.subdomain,
         (Instance, '_do_deploy_locked'): fake_deploy_locked,
+        # A resize that the cluster runs at once: C6.3 verified it, so a
+        # paid-for change it delivers moves on to its billing switch (C6.10).
         (Instance, '_update_container_resources'):
-            lambda self: effect('resize', self.subdomain),
+            lambda self: (effect('resize', self.subdomain), self._on_package_verified()),
         (Backup, '_create_full_instance_backup_sync'): fake_snapshot,
         (Backup, '_delete_bucket_prefix'): lambda self, prefix: None,
         (Backup, '_delete_from_bucket'): lambda self: None,

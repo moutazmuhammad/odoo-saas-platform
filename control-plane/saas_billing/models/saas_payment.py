@@ -289,6 +289,9 @@ class SaasPaymentGateway(models.AbstractModel):
             return 'failed', _("Charge could not be initiated: %s") % exc
         if tx.state == 'done':
             return 'done', _("Charged %s.") % invoice.name
+        if tx.state == 'authorized':
+            # Manual capture: captured once what it pays for is delivered (C6.10).
+            return 'authorized', _("Authorized %s.") % invoice.name
         if tx.state == 'pending':
             return 'pending', _("Awaiting bank confirmation.")
         return 'failed', _("The charge did not go through.")

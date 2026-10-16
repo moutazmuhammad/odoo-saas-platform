@@ -238,27 +238,37 @@ class TestBillingLifecycleCrons(TransactionCase):
     # ---------------- _cron_apply_paid_pending_changes ----------------
 
     def _run_cron_and_jobs(self, inst, paid_inv):
-        """Run the safety net, then the jobs it queued; return the applied
-        methods in order and the queued jobs."""
+        """Run the safety net, then the jobs it queued (delivery first, then
+        the billing switch, C6.10); return the applied methods in order and
+        the billing jobs."""
         applied = []
         Job = self.env['saas.job'].sudo()
-        with patch.object(type(inst), '_paid_pending_change_invoice',
-                           lambda self: paid_inv), \
-                patch.object(type(inst), '_apply_pending_upgrade',
-                             lambda self: applied.append('upgrade')), \
+        if paid_inv:
+            inst.pending_change_invoice_id = paid_inv
+        with patch.object(type(inst), '_apply_pending_upgrade',
+                          lambda self: applied.append('upgrade')), \
                 patch.object(type(inst), '_apply_pending_plan_change',
                              lambda self: applied.append('change')):
             self.Instance._cron_apply_paid_pending_changes()
+            for method in ('_do_deliver_change', '_do_apply_paid_plan_change'):
+                for job in Job.search([('model', '=', 'saas.instance'), ('res_id', '=', inst.id),
+                                       ('method', '=', method), ('state', '=', 'pending')]):
+                    self.env.flush_all()
+                    Job._run_one(job.id)
             jobs = Job.search([('model', '=', 'saas.instance'),
                                ('res_id', '=', inst.id),
                                ('method', '=', '_do_apply_paid_plan_change')])
-            for job in jobs:
-                Job._run_one(job.id)
         return applied, jobs
+
+    def _paid_move(self):
+        """A genuinely paid invoice: a zero total is paid as soon as it is
+        posted (a forced payment_state could be recomputed back)."""
+        return self._move(payment_state='paid', invoice_line_ids=[(0, 0, {
+            'name': 'Paid change', 'quantity': 1, 'price_unit': 0.0})])
 
     def test_paid_pending_change_applies_for_trial(self):
         inst = self._inst('pend1', is_trial=True, pending_plan_id=self.plan.id)
-        paid_inv = self._move(payment_state='paid')
+        paid_inv = self._paid_move()
         applied, jobs = self._run_cron_and_jobs(inst, paid_inv)
         self.assertEqual(applied, ['upgrade'])
         self.assertEqual(jobs.idempotency_key,
@@ -266,20 +276,18 @@ class TestBillingLifecycleCrons(TransactionCase):
 
     def test_paid_pending_change_applies_for_non_trial(self):
         inst = self._inst('pend2', is_trial=False, pending_plan_id=self.plan.id)
-        paid_inv = self._move(payment_state='paid')
+        paid_inv = self._paid_move()
         applied, jobs = self._run_cron_and_jobs(inst, paid_inv)
         self.assertEqual(applied, ['change'])
         self.assertEqual(jobs.state, 'done')
 
     def test_paid_pending_change_not_requeued_while_queued(self):
         inst = self._inst('pend2b', is_trial=False, pending_plan_id=self.plan.id)
-        paid_inv = self._move(payment_state='paid')
-        with patch.object(type(inst), '_paid_pending_change_invoice',
-                           lambda self: paid_inv):
-            self.Instance._cron_apply_paid_pending_changes()
-            self.Instance._cron_apply_paid_pending_changes()
+        inst.pending_change_invoice_id = self._paid_move()
+        self.Instance._cron_apply_paid_pending_changes()
+        self.Instance._cron_apply_paid_pending_changes()
         self.assertEqual(self.env['saas.job'].sudo().search_count([
-            ('method', '=', '_do_apply_paid_plan_change'),
+            ('method', '=', '_do_deliver_change'),
             ('res_id', '=', inst.id)]), 1)
 
     def test_paid_pending_change_left_alone_when_unpaid(self):

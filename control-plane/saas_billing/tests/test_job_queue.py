@@ -200,6 +200,17 @@ class TestPaidPlanChangeJob(_PaidJobCase):
     def _change_jobs(self):
         return self._jobs(self.inst, '_do_apply_paid_plan_change')
 
+    def _deliver_jobs(self):
+        return self._jobs(self.inst, '_do_deliver_change')
+
+    def _pay_and_deliver(self):
+        """Pay, then run the delivery step (C6.10): this instance has no
+        cluster, so it is delivered at once and the billing switch is queued."""
+        self._pay(self.invoice)
+        self._no_commit()
+        self._run(self._deliver_jobs())
+        return self._change_jobs()
+
     def _run(self, job):
         # _run_one claims with raw SQL: flush ORM writes (requeues) first.
         self.env.flush_all()
@@ -211,26 +222,33 @@ class TestPaidPlanChangeJob(_PaidJobCase):
     def test_payment_queues_one_job_in_the_payment_transaction(self):
         self._forbid_commit()
         self._pay(self.invoice)
-        job = self._change_jobs()
+        job = self._deliver_jobs()
+        self.assertEqual(len(job), 1, "delivery first; billing switches on delivery (C6.10)")
+        self.assertEqual(job.idempotency_key,
+                         'deliver:inv%s:inst%s' % (self.invoice.id, self.inst.id))
+        self.assertEqual(job.args_json, '[%d]' % self.invoice.id)
+        self.assertEqual(job.lock_key, 'instance:%s' % self.inst.id)
+        self.assertFalse(self._change_jobs())
+        self.assertEqual(self.invoice.saas_capture_mode, 'immediate')
+        self.assertEqual(self.inst.plan_id, self.plan, "applied by the jobs, not inline")
+
+    def test_delivery_queues_the_billing_switch(self):
+        job = self._pay_and_deliver()
         self.assertEqual(len(job), 1)
         self.assertEqual(job.idempotency_key,
                          'planchange:inv%s:inst%s' % (self.invoice.id, self.inst.id))
-        self.assertEqual(job.args_json, '[%d]' % self.invoice.id)
-        self.assertEqual(job.lock_key, 'instance:%s' % self.inst.id)
         self.assertEqual(job.on_error, '_on_plan_change_job_error')
-        self.assertEqual(self.inst.plan_id, self.plan, "applied by the job, not inline")
+        self.assertTrue(self.invoice.saas_delivered_at)
 
     def test_duplicate_paid_webhook_queues_one_job(self):
         self._forbid_commit()
         self._pay(self.invoice)
         self._pay(self.invoice)
-        self.assertEqual(len(self._change_jobs()), 1)
+        self.assertEqual(len(self._deliver_jobs()), 1)
 
     # ----------------------------------------------------------------- run
     def test_job_applies_the_change_exactly_once(self):
-        self._pay(self.invoice)
-        job = self._change_jobs()
-        self._no_commit()
+        job = self._pay_and_deliver()
         self._run(job)
         self.assertEqual(job.state, 'done')
         self.assertEqual(self.inst.plan_id, self.big)
@@ -244,10 +262,8 @@ class TestPaidPlanChangeJob(_PaidJobCase):
 
     def test_trial_upgrade_runs_the_upgrade_method(self):
         self.inst.is_trial = True
-        self._pay(self.invoice)
-        job = self._change_jobs()
+        job = self._pay_and_deliver()
         calls = []
-        self._no_commit()
         with patch.object(type(self.inst), '_apply_pending_upgrade',
                           lambda rec: calls.append('upgrade')), \
                 patch.object(type(self.inst), '_apply_pending_plan_change',
@@ -256,19 +272,16 @@ class TestPaidPlanChangeJob(_PaidJobCase):
         self.assertEqual(calls, ['upgrade'])
 
     def test_superseded_change_is_not_applied(self):
-        self._pay(self.invoice)
-        job = self._change_jobs()
+        job = self._pay_and_deliver()
         # The customer replaced the request before the job ran.
         self.inst.pending_change_invoice_id = self._mk_invoice(60.0)
-        self._no_commit()
         self._run(job)
         self.assertEqual(job.state, 'done')
         self.assertEqual(self.inst.plan_id, self.plan)
         self.assertEqual(self.inst.pending_plan_id, self.big)
 
     def test_worker_killed_mid_apply_completes_after_restart(self):
-        self._pay(self.invoice)
-        job = self._change_jobs()
+        job = self._pay_and_deliver()
         # The worker claimed the job and died: no heartbeat since.
         job.write({'state': 'running', 'attempts': 1,
                    'last_heartbeat': fields.Datetime.now() - timedelta(hours=1)})
@@ -280,8 +293,7 @@ class TestPaidPlanChangeJob(_PaidJobCase):
         self.assertEqual(self.inst.plan_id, self.big)
 
     def test_terminal_failure_keeps_state_and_is_visible(self):
-        self._pay(self.invoice)
-        job = self._change_jobs()
+        job = self._pay_and_deliver()
         job.max_attempts = 1
 
         def boom(rec):
@@ -344,8 +356,9 @@ class TestPaidPlanChangeConverges(_PaidJobCase):
 
     def test_failed_patch_converges_after_the_fault_clears(self):
         self._pay(self.invoice)
-        self._run(self._jobs(self.inst, '_do_apply_paid_plan_change'))
-        self.assertEqual(self.inst.plan_id, self.big, "the paid change is kept")
+        self._run(self._jobs(self.inst, '_do_deliver_change'))
+        self.assertEqual(self.inst.pending_plan_id, self.big, "the paid change is kept")
+        self.assertEqual(self.inst._package_plan(), self.big, "and is the cluster's target")
         self.assertEqual(self.inst.package_status, 'pending')
         want = self.inst._package_key(self.inst._k8s_plan_resources())
         self.assertEqual(self.inst.package_desired, want)
@@ -362,3 +375,8 @@ class TestPaidPlanChangeConverges(_PaidJobCase):
         self.assertEqual(self.inst.package_applied, want)
         self.assertEqual([r['workers'] for r in self.applied],
                          [self.inst._k8s_plan_resources()['workers']])
+        # Delivered (C6.10): the billing switch follows; nothing to re-apply.
+        self.assertTrue(self.invoice.saas_delivered_at)
+        self._run(self._jobs(self.inst, '_do_apply_paid_plan_change'))
+        self.assertEqual(self.inst.plan_id, self.big)
+        self.assertEqual(self.inst.package_status, 'in_sync')

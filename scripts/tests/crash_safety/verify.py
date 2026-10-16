@@ -47,16 +47,19 @@ check('deploy: invoice paid', set(a.sale_order_id.invoice_ids.mapped('payment_st
 b = inst('crash-change')
 check('change: on the new plan', b.plan_id.name == 'Crash Big', b.plan_id.name)
 check('change: nothing pending', not b.pending_plan_id and not b.pending_change_invoice_id)
-check('change: one job, done',
+check('change: delivered first (C6.10), one job, done',
+      jobs(b, '_do_deliver_change').mapped('state') == ['done'])
+check('change: billing switched by one job, done',
       jobs(b, '_do_apply_paid_plan_change').mapped('state') == ['done'])
 audits = env['saas.audit.log'].sudo().search_count([
     ('res_id', '=', b.id), ('model', '=', 'saas.instance'), ('action', '=', 'instance_scale')])
 check('change: one audit entry', audits == 1, audits)
 upgraded = env['mail.message'].sudo().search_count([
     ('model', '=', 'saas.instance'), ('res_id', '=', b.id),
-    ('body', 'ilike', 'Payment confirmed. Upgraded')])
+    ('body', 'ilike', 'Payment complete')])
 check('change: one confirmation message', upgraded == 1, upgraded)
-check('change: killed once, re-run once', starts('resize', b.subdomain) == 2,
+# delivery killed once + re-run once, then the billing switch's re-apply
+check('change: killed once, re-run once', starts('resize', b.subdomain) == 3,
       starts('resize', b.subdomain))
 
 # C — suspend completed once.

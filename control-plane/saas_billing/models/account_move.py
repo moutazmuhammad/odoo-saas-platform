@@ -8,6 +8,24 @@ _logger = logging.getLogger(__name__)
 class AccountMove(models.Model):
     _inherit = 'account.move'
 
+    # C6.10: a paid-for upgrade or storage purchase is captured only once it
+    # is delivered. These record where its invoice stands.
+    saas_funds_secured_at = fields.Datetime(
+        string='Funds Secured', copy=False, readonly=True,
+        help='When the card authorization (or payment) covering this change '
+             'invoice was received; delivery starts then.')
+    saas_capture_mode = fields.Selection(
+        [('manual', 'Authorized; captured on delivery'),
+         ('immediate', 'Charged at payment')],
+        string='Capture Mode', copy=False, readonly=True)
+    saas_capture_deadline = fields.Datetime(
+        string='Capture Deadline', copy=False, readonly=True,
+        help='The authorization must be captured or released before this.')
+    saas_delivered_at = fields.Datetime(
+        string='Delivered', copy=False, readonly=True,
+        help='When the cluster verifiably ran what this invoice paid for.')
+    saas_released_at = fields.Datetime(string='Released', copy=False, readonly=True)
+
     def write(self, vals):
         result = super().write(vals)
         if 'payment_state' in vals and vals['payment_state'] in ('paid', 'in_payment'):
@@ -147,9 +165,8 @@ class AccountMove(models.Model):
                 "SaaS instance %s: storage-block purchase paid (invoice %s), "
                 "expanding capacity.", instance.subdomain,
                 instance.storage_block_pending_invoice_id.name)
-            instance._capture_payment_token_from_invoice(
-                instance.storage_block_pending_invoice_id)
-            instance._activate_pending_storage_blocks()
+            # Funds secured → delivered → switched (C6.10).
+            instance._advance_change(instance.storage_block_pending_invoice_id)
 
         # --- Handle Staging/Development slot RESERVATIONS (capacity buy) ---
         # The customer reserved more env slots (no server created); grant them
@@ -280,11 +297,14 @@ class AccountMove(models.Model):
                 )
                 continue
             _logger.info(
-                "SaaS instance %s: payment received, queuing plan change "
-                "(invoice %s).", instance.subdomain, change_invoice.name,
+                "SaaS instance %s: invoice %s paid, advancing the plan change.",
+                instance.subdomain, change_invoice.name,
             )
-            # Durable job in this transaction: applied exactly once.
-            instance._enqueue_paid_plan_change(change_invoice)
+            if instance.pending_change_invoice_id != change_invoice:
+                instance.pending_change_invoice_id = change_invoice  # legacy link
+            # Durable keyed jobs in this transaction: funds secured → delivered
+            # → billing switched, each exactly once (C3.2, C6.10).
+            instance._advance_change(change_invoice)
         # --- Resume servers suspended for an unpaid invoice (C4.1) ---
         # An instance's invoices are always its own partner's.
         suspended = self.env['saas.instance'].search([

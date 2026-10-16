@@ -6237,6 +6237,8 @@ END $$;
             ('partner_id', 'in', expired_partners.ids),
         ])
         for instance in expired_instances:
+            if instance._has_funded_change():
+                continue  # paid for: the upgrade is being delivered (C6.10)
             try:
                 instance._on_trial_expired()
                 instance.action_suspend('trial_expired')
@@ -6288,10 +6290,33 @@ END $$;
         Odoo pods, PostgreSQL, volumes and quota. Empty without a plan.
         Capacity grows by changing the resource limits of this instance."""
         self.ensure_one()
-        if not self.plan_id:
+        plan = self._package_plan()
+        if not plan:
             return {}
-        return self.plan_id._package(
-            storage_gb=self.effective_storage_limit_gb)
+        return plan._package(storage_gb=self._package_storage_gb())
+
+    def _package_plan(self):
+        """The plan the cluster package follows: the billed plan. Billing
+        overrides it with a paid-for change that is being delivered and not
+        yet captured (C6.10): the cluster runs the new package while billing
+        still describes the old one."""
+        self.ensure_one()
+        return self.plan_id
+
+    def _package_storage_gb(self):
+        """Storage (GB) of the package; billing adds funded storage blocks."""
+        self.ensure_one()
+        return self.effective_storage_limit_gb
+
+    def _has_funded_change(self):
+        """Hook (saas_billing): a paid-for change is being delivered."""
+        return False
+
+    def _on_package_verified(self):
+        """Hook (saas_billing): the cluster verifiably runs the desired
+        package (C6.3), so a paid-for change waiting for delivery is
+        delivered (C6.10)."""
+        return
 
     def _k8s_plan_resources(self):
         """The package as KubernetesDriver keys: Odoo requests/limits and
@@ -6367,9 +6392,9 @@ END $$;
         self._append_log(
             "Package applied (%s): Odoo %s CPU / %s RAM, %d worker(s); "
             "database %s CPU / %s RAM; storage %g GB (volume %s)."
-            % (self.plan_id.name, res['cpu_limit'], res['mem_limit'], res['workers'],
+            % (self._package_plan().name, res['cpu_limit'], res['mem_limit'], res['workers'],
                res['db_cpu_limit'], res['db_mem_limit'],
-               self.effective_storage_limit_gb or 0, res['filestore_size']))
+               self._package_storage_gb() or 0, res['filestore_size']))
 
     # Package convergence (C6.1): a failed apply is retried by the reconciler
     # after 5, 10, 20 ... minutes, capped at 6 h, at most
@@ -6455,6 +6480,7 @@ END $$;
         self.ensure_one()
         if desired == self.package_applied and self.package_status in ('in_sync', 'pending'):
             self._package_applied_ok(desired)
+            self._on_package_verified()
             return
         verifying = self.package_status in ('applying', 'blocked')  # a verify chain exists
         if self.package_status == 'pending':
@@ -6538,6 +6564,7 @@ END $$;
             self._append_log("Package verified on the cluster.")
             if previous and previous != desired:
                 self._notify_package_live()
+            self._on_package_verified()
         elif state == 'blocked':
             if self.package_status != 'blocked' or self.package_block_reason != reason:
                 self._append_log("Package rollout blocked (%s): %s" % (reason, detail))
@@ -6556,7 +6583,7 @@ END $$;
         self.message_post(body=_(
             "Upgrade complete: your server now runs its new resources "
             "(%(plan)s, %(storage)g GB storage).",
-            plan=self.plan_id.name or '-', storage=self.effective_storage_limit_gb or 0))
+            plan=self._package_plan().name or '-', storage=self._package_storage_gb() or 0))
 
     @api.model
     def _converge_packages(self):

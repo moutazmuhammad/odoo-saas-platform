@@ -1,4 +1,8 @@
+import logging
+
 from odoo import api, models
+
+_logger = logging.getLogger(__name__)
 
 
 class PaymentTransaction(models.Model):
@@ -26,3 +30,31 @@ class PaymentTransaction(models.Model):
         if invoice_ids:
             self.env['saas.instance']._gate_collection(list(invoice_ids))
         return super().create(vals_list)
+
+    def _set_authorized(self, state_message=None, extra_allowed_states=()):
+        """C6.10: an authorization for an upgrade or storage purchase secures
+        its funds and starts delivery; it is captured once delivered. Any
+        other authorized payment (renewals, add-ons, new orders) is captured
+        at once, as before, because nothing waits for delivery."""
+        txs = super()._set_authorized(state_message=state_message,
+                                      extra_allowed_states=extra_allowed_states)
+        Instance = self.env['saas.instance'].sudo()
+        for tx in txs:
+            invoices = tx.invoice_ids
+            changes = Instance.search([
+                '|', ('pending_change_invoice_id', 'in', invoices.ids),
+                ('storage_block_pending_invoice_id', 'in', invoices.ids)]) if invoices else Instance
+            pending = [(inst, inv) for inst in changes for inv in invoices
+                       if inst._change_invoice_kind(inv)]
+            if pending:
+                for inst, inv in pending:
+                    inst._advance_change(inv)
+                continue
+            try:
+                tx.sudo()._send_capture_request()
+            except Exception as e:  # never break the provider's notification handling
+                _logger.exception("Immediate capture of transaction %s failed", tx.reference)
+                self.env['saas.alert']._notify(
+                    'capture_failed', 'transaction %s: immediate capture failed' % tx.reference,
+                    level='error', detail=str(e)[:500])
+        return txs

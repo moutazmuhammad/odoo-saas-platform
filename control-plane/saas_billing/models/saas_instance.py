@@ -1,6 +1,8 @@
 import logging
 import math
 
+from datetime import timedelta
+
 from dateutil.relativedelta import relativedelta
 
 from odoo import api, fields, models, _
@@ -1012,7 +1014,7 @@ class SaasInstance(models.Model):
             "Storage block purchase: %d × %d GB, activation invoice %s (%.2f)."
             % (qty, block_gb, invoice.name, charge))
         if invoice.amount_total <= 0:
-            self._activate_pending_storage_blocks()
+            self._advance_change(invoice)
         else:
             self._try_pay_with_saved_method(invoice)
         return invoice
@@ -1251,7 +1253,7 @@ class SaasInstance(models.Model):
             "%s server resize to %s — invoice %s (%.2f)."
             % (label, new_plan.name, invoice.name, quote['charge_now']))
         if invoice.amount_total <= 0:
-            self._apply_pending_plan_change()
+            self._advance_change(invoice)
             return {'applied': True, 'charge': quote['charge_now']}
         if anchor._auto_renew_method() and anchor._try_auto_charge_invoice(
                 invoice, kind='subscription'):
@@ -1863,6 +1865,12 @@ class SaasInstance(models.Model):
                     method.display_label or 'saved method', invoice.name,
                     invoice.amount_total, invoice.currency_id.name))
             return True
+        if state == 'authorized':
+            # Manual capture (C6.10): funds secured, captured on delivery.
+            self._append_log(
+                "Card authorized for invoice %s (%.2f %s); captured once delivered."
+                % (invoice.name, invoice.amount_total, invoice.currency_id.name))
+            return True
         if state == 'pending':
             # In-flight (3DS / async gateway). Suppress the payment-due
             # email; the dunning + retry crons revisit a stuck pending.
@@ -2054,50 +2062,25 @@ class SaasInstance(models.Model):
 
     @api.model
     def _cron_apply_paid_pending_changes(self):
-        """Safety net for the payment hook: apply pending plan changes
-        whose invoice is already paid.
-
-        The normal path is ``_saas_check_instance_payment()`` queuing a
-        durable job in the payment transaction. If that is ever missed
-        (payment post-processed while the module was upgrading, or a job
-        that failed terminally), the customer has paid but stays on the old
-        plan. This cron queues the same keyed job again, so it never races
-        or duplicates a queued one.
-        """
-        instances = self.search([('pending_plan_id', '!=', False)])
-        Job = self.env['saas.job'].sudo()
+        """Safety net for the payment and delivery hooks (C3.2, C6.10): move
+        every pending plan change or storage purchase one step on (secure the
+        funds of a paid or authorized invoice, deliver, capture, switch
+        billing). Each step is a keyed job, so a queued or finished one is
+        never repeated; a missed notice or a terminally failed job is."""
+        instances = self.search(['|', ('pending_plan_id', '!=', False),
+                                 ('pending_storage_blocks', '>', 0)])
         for instance in instances:
             try:
-                invoice = instance._paid_pending_change_invoice()
-                if not invoice:
-                    continue
-                key = 'planchange:inv%s:inst%s' % (invoice.id, instance.id)
-                if Job.search_count([
-                        ('idempotency_key', '=', key),
-                        ('state', 'in', ('pending', 'running', 'done'))]):
-                    continue  # queued or applied: enqueue would dedupe it
-                _logger.info(
-                    "SaaS instance %s: invoice %s for pending change to %s "
-                    "is paid but the change was never applied — queuing it "
-                    "(safety-net cron).",
-                    instance.subdomain, invoice.name,
-                    instance.pending_plan_id.name,
-                )
-                instance._append_log(
-                    "Pending plan change invoice %s is paid but the change "
-                    "was never applied — queued again (safety-net cron)."
-                    % invoice.name
-                )
-                instance._enqueue_paid_plan_change(invoice)
+                for invoice in (instance.pending_change_invoice_id
+                                | instance.storage_block_pending_invoice_id):
+                    instance._advance_change(invoice)
                 self.env.cr.commit()
             except Exception:
                 self.env.cr.rollback()
                 _logger.exception(
-                    "Safety-net cron failed to queue paid pending plan "
-                    "change for %s", instance.subdomain,
-                )
+                    "Safety-net cron failed to advance the pending change of %s",
+                    instance.subdomain)
 
-    @api.model
     def _daily_backup_unpaid_invoices(self):
         """Posted, still-unpaid invoices that cover this instance's daily
         backups, newest first. Two sources:
@@ -2481,6 +2464,8 @@ class SaasInstance(models.Model):
     def _is_optional_invoice(self, invoice):
         """Return True if the invoice is for an optional upgrade that
         the client can back out of without losing their current service."""
+        if invoice.saas_delivered_at:
+            return False  # the customer has what it paid for (C6.10, F18)
         so_origins = invoice.line_ids.sale_line_ids.order_id.mapped('origin')
         return any(
             origin and any(
@@ -2710,9 +2695,9 @@ class SaasInstance(models.Model):
             "Upgrade to %s (%s) requested. Awaiting payment."
         ) % (new_plan.name, period_label))
 
-        # Zero-amount plan: apply immediately
+        # Zero-amount (wallet-covered): funds are secured; deliver, then switch.
         if invoice.amount_total <= 0:
-            self._apply_pending_upgrade()
+            self._advance_change(invoice)
             return True
 
         return invoice
@@ -2723,10 +2708,10 @@ class SaasInstance(models.Model):
         new_plan = self.pending_plan_id
         if not new_plan:
             return
+        charged = self._charged_text(self.pending_change_invoice_id, new_plan.name)
 
         old_plan = self.plan_id
         was_suspended = self.state == 'suspended'
-        was_trial = self.is_trial
         billing_period = self.pending_billing_period or 'monthly'
 
         # Reactivate FIRST if suspended. If the restart fails we don't
@@ -2768,12 +2753,8 @@ class SaasInstance(models.Model):
             "Payment received. Plan upgraded: %s → %s"
             % (old_plan.name if old_plan else 'Trial', new_plan.name)
         )
-        # "Upgrade complete" is posted only once the rollout is verified (C6.3).
-        self.message_post(body=_(
-            "Payment confirmed. Applying your upgrade from %s to the paid plan %s; "
-            "we'll let you know when it's complete."
-        ) % ('trial' if was_trial else (old_plan.name if old_plan else 'plan'),
-             new_plan.name))
+        # Billing switches after delivery (C6.10): the service is already live.
+        self.message_post(body=charged)
 
         # Update container resources (best effort — the customer is already
         # paid and reactivated, don't roll back the upgrade if this fails;
@@ -2911,6 +2892,11 @@ class SaasInstance(models.Model):
         from earlier upgrade rounds whose SO has already been replaced.
         """
         self.ensure_one()
+        if self._funded_change_invoice('plan'):
+            # Paid for and being delivered (C6.10): only a release (C6.2) can
+            # undo it, never a plain cancel that would strand the funds.
+            self._append_log("Pending upgrade not cancelled: its payment is being delivered.")
+            return
         old_plan_name = (
             self.pending_plan_id.name if self.pending_plan_id else 'Unknown'
         )
@@ -2974,6 +2960,8 @@ class SaasInstance(models.Model):
         yet verified on the cluster (C6.3 applying/blocked)."""
         self.ensure_one()
         if self.package_status != 'in_sync':  # retrying, applying or blocked
+            return True
+        if self._has_funded_change():  # authorized or paid, being delivered (C6.10)
             return True
         if self.pending_plan_id and self._paid_pending_change_invoice():
             return True
@@ -3161,6 +3149,8 @@ class SaasInstance(models.Model):
                 '|', ('pending_change_invoice_id', 'in', invoices.ids),
                 ('storage_block_pending_invoice_id', 'in', invoices.ids)]):
             for invoice in invoices:
+                if inst._change_invoice_kind(invoice) and invoice.saas_funds_secured_at:
+                    raise UserError(_("This change is already paid for and being applied."))
                 change = inst._gate_change_invoice(invoice)
                 if change:
                     inst._require_package_change(*change)
@@ -3186,6 +3176,240 @@ class SaasInstance(models.Model):
         self._append_log("Pending change withdrawn before payment (%s): %s; invoice %s cancelled."
                          % (reason, detail, invoice.name))
         return self._gate_refusal_text(reason)
+
+    # ---------- Authorize at purchase, capture on verified delivery (C6.10) ----------
+    # A paid-for plan change (upgrade, trial to paid, staging/dev resize) or
+    # storage purchase moves through: funds secured (card authorized, or paid
+    # at once when the provider cannot capture later) -> delivered (C6.3
+    # verified the cluster runs it) -> captured -> billing switched (plan,
+    # cycle, surplus, storage blocks). Each step is a keyed job, so a repeated
+    # notice or a crash never repeats one. Until delivery the cluster runs the
+    # new package while billing still describes the old plan.
+    _CAPTURE_WINDOW_HOURS = 108  # under Visa's merchant-initiated 4 d 18 h [DOC Stripe]
+
+    def _change_invoice_kind(self, invoice):
+        """'plan' or 'storage' when ``invoice`` pays for this instance's
+        pending plan change or storage purchase, else None."""
+        self.ensure_one()
+        if not invoice:
+            return None
+        if self.pending_plan_id and self.pending_change_invoice_id == invoice:
+            return 'plan'
+        if self.pending_storage_blocks and self.storage_block_pending_invoice_id == invoice:
+            return 'storage'
+        return None
+
+    def _funded_change_invoice(self, kind):
+        """The invoice of the pending ``kind`` change once its funds are
+        secured and until it is released, else an empty recordset."""
+        self.ensure_one()
+        if kind == 'plan':
+            invoice = self.pending_change_invoice_id if self.pending_plan_id else None
+        else:
+            invoice = self.storage_block_pending_invoice_id if self.pending_storage_blocks else None
+        if invoice and invoice.saas_funds_secured_at and not invoice.saas_released_at \
+                and invoice.state == 'posted':
+            return invoice
+        return self.env['account.move']
+
+    def _has_funded_change(self):
+        return bool(self._funded_change_invoice('plan') or self._funded_change_invoice('storage'))
+
+    def _package_plan(self):
+        if self._funded_change_invoice('plan'):
+            return self.pending_plan_id
+        return super()._package_plan()
+
+    def _package_storage_gb(self):
+        if self._funded_change_invoice('plan'):
+            gb = self._storage_gb_for_plan(self.pending_plan_id)
+        else:
+            gb = super()._package_storage_gb()
+        if self._funded_change_invoice('storage'):
+            block_gb, _bp = self.env['saas.pricing.engine'].storage_block_config()
+            gb += (self.pending_storage_blocks or 0) * (block_gb or 0)
+        return gb
+
+    @staticmethod
+    def _authorized_amount(invoice):
+        return sum(invoice.transaction_ids.filtered(lambda t: t.state == 'authorized').mapped('amount'))
+
+    def _change_label(self, kind):
+        self.ensure_one()
+        if kind == 'plan':
+            return self.pending_plan_id.name or ''
+        block_gb, _bp = self.env['saas.pricing.engine'].storage_block_config()
+        return _('%d GB more storage') % ((self.pending_storage_blocks or 0) * (block_gb or 0))
+
+    def _advance_change(self, invoice):
+        """Move the paid-for change ``invoice`` one step forward; idempotent.
+        Called on authorization, on payment, on delivery and by the
+        safety-net cron."""
+        self.ensure_one()
+        kind = self._change_invoice_kind(invoice)
+        if not kind or invoice.saas_released_at or invoice.state != 'posted':
+            return
+        paid = invoice.payment_state in ('paid', 'in_payment')
+        if not invoice.saas_funds_secured_at:
+            if paid:
+                mode = 'immediate'
+            elif invoice.amount_residual > 0 and \
+                    self._authorized_amount(invoice) >= invoice.amount_residual:
+                mode = 'manual'
+            else:
+                return
+            self._secure_change(invoice, kind, mode)
+        if not invoice.saas_delivered_at:
+            self._enqueue_change_step('_do_deliver_change', 'deliver', invoice)
+        elif not paid:
+            self._enqueue_change_step('_do_capture_change', 'capture', invoice)
+        elif kind == 'plan':
+            self._enqueue_paid_plan_change(invoice)
+        else:
+            self._enqueue_change_step('_do_activate_paid_storage', 'storage', invoice)
+
+    def _enqueue_change_step(self, method, step, invoice):
+        self.ensure_one()
+        return self.env['saas.job'].sudo().enqueue(
+            self, method, args=(invoice.id,), channel='deploy',
+            idempotency_key='%s:inv%s:inst%s' % (step, invoice.id, self.id),
+            lock_key='instance:%s' % self.id, idempotent=True, transactional=True)
+
+    def _secure_change(self, invoice, kind, mode):
+        now = fields.Datetime.now()
+        vals = {'saas_funds_secured_at': now, 'saas_capture_mode': mode}
+        if mode == 'manual':
+            vals['saas_capture_deadline'] = now + timedelta(hours=self._CAPTURE_WINDOW_HOURS)
+        invoice.sudo().write(vals)
+        label = self._change_label(kind)
+        self._append_log("Funds secured for %s (invoice %s, %s)." % (label, invoice.name, mode))
+        if mode == 'manual':
+            body = _("Payment authorized for %s. We're applying it now; you'll be "
+                     "charged when it's complete.") % label
+        else:
+            body = _("Payment received for %s. We're applying it now; we'll let you "
+                     "know when it's complete.") % label
+        self.message_post(body=body)
+
+    def _charged_text(self, invoice, what):
+        """Customer text once a delivered change is paid for."""
+        amount = invoice.amount_total if invoice else 0.0
+        currency = invoice.currency_id if invoice else self.env.company.currency_id
+        return _("Payment complete: %(amount)s %(currency)s for %(what)s.",
+                 amount='%.2f' % amount, currency=currency.name, what=what)
+
+    def _do_deliver_change(self, invoice_id):
+        """Job: put the paid-for package on the cluster. Billing is untouched
+        until delivery is verified (C6.3 calls ``_on_package_verified``)."""
+        self.ensure_one()
+        invoice = self.env['account.move'].browse(invoice_id)
+        kind = self._change_invoice_kind(invoice)
+        if not kind or self._funded_change_invoice(kind) != invoice or invoice.saas_delivered_at:
+            return
+        if kind == 'plan' and self.is_trial and self.state == 'suspended':
+            # A trial paused at expiry comes back first (as the old flow did).
+            self._append_log("Reactivating the trial for its paid upgrade.")
+            self._do_restart()
+        if self.state not in ('running', 'stopped', 'suspended') \
+                or self.docker_server_id.compute_driver != 'kubernetes':
+            # Nothing on a cluster to change: delivered as soon as funded.
+            self._mark_change_delivered(invoice)
+            return
+        try:
+            self._update_container_resources()
+        except Exception:
+            # Recorded as pending; the reconciler retries it (C6.1), and the
+            # verification then delivers it.
+            _logger.warning("Delivering %s failed; it is retried", invoice.name, exc_info=True)
+
+    def _on_package_verified(self):
+        super()._on_package_verified()
+        for kind in ('plan', 'storage'):
+            invoice = self._funded_change_invoice(kind)
+            if invoice and not invoice.saas_delivered_at:
+                self._mark_change_delivered(invoice)
+
+    def _mark_change_delivered(self, invoice):
+        invoice.sudo().saas_delivered_at = fields.Datetime.now()
+        self._append_log("Delivered what invoice %s paid for." % invoice.name)
+        self._advance_change(invoice)
+
+    def _do_capture_change(self, invoice_id):
+        """Job: capture the authorization of a delivered change, once. The
+        invoice is paid by Odoo's post-processing of the captured
+        transaction, which moves the change on to its billing switch. A
+        failure never touches the service: the delivered invoice stays
+        unpaid and is now a normal (mandatory) invoice."""
+        self.ensure_one()
+        invoice = self.env['account.move'].browse(invoice_id)
+        if not invoice.saas_delivered_at or invoice.saas_released_at \
+                or invoice.payment_state in ('paid', 'in_payment'):
+            if invoice.saas_delivered_at:
+                self._advance_change(invoice)
+            return
+        authorized = invoice.transaction_ids.filtered(lambda t: t.state == 'authorized').sorted('id')
+        # Exactly one authorization covering the invoice is captured; any
+        # other one (a duplicate attempt) is voided, so nothing is charged twice.
+        cover = authorized.filtered(lambda t: t.amount >= invoice.amount_residual)[:1]
+        txs = cover or authorized
+        extra = authorized - txs
+        if not txs:
+            message = 'nothing authorized to capture for delivered invoice %s' % invoice.name
+            self._append_log("Capture skipped: %s." % message)
+            self.env['saas.alert']._notify('capture_failed', '%s: %s' % (self.subdomain, message),
+                                           level='error')
+            return
+        try:
+            for tx in txs:
+                tx.sudo()._send_capture_request()
+            for tx in extra:
+                tx.sudo()._send_void_request()
+            txs.filtered(lambda t: t.state == 'done' and not t.is_post_processed)._post_process()
+        except Exception as e:
+            _logger.exception("Capture failed for invoice %s", invoice.name)
+            self._append_log("Capture of invoice %s failed: %s" % (invoice.name, e))
+            self.env['saas.alert']._notify(
+                'capture_failed', '%s: capture of %s failed' % (self.subdomain, invoice.name),
+                level='error', detail=str(e)[:500])
+            return
+        self._append_log("Captured invoice %s." % invoice.name)
+        if invoice.payment_state in ('paid', 'in_payment'):
+            self._advance_change(invoice)
+
+    def _do_activate_paid_storage(self, invoice_id):
+        """Job: billing switch of a delivered, paid storage purchase."""
+        self.ensure_one()
+        invoice = self.env['account.move'].browse(invoice_id)
+        if self._change_invoice_kind(invoice) != 'storage' or not invoice.saas_delivered_at:
+            return
+        self._capture_payment_token_from_invoice(invoice)
+        self._activate_pending_storage_blocks()
+
+    def _release_change_funds(self, invoice):
+        """Release an undelivered change (C6.2 / C5.5 call it): void the
+        authorization, cancel the invoice (its wallet part goes back) and drop
+        the pending change. Idempotent. Returns False when the money was
+        already charged (fallback providers): that needs a refund instead."""
+        self.ensure_one()
+        if invoice.saas_released_at:
+            return True
+        kind = self._change_invoice_kind(invoice)
+        if invoice.saas_delivered_at:
+            raise UserError(_("A delivered change is captured, never released."))
+        if invoice.payment_state in ('paid', 'in_payment'):
+            return False
+        for tx in invoice.transaction_ids.filtered(lambda t: t.state == 'authorized'):
+            tx.sudo()._send_void_request()
+        if invoice.state == 'posted':
+            invoice.button_cancel()
+        if kind == 'plan':
+            self.write({'pending_plan_id': False, 'pending_billing_period': False,
+                        'pending_change_invoice_id': False, 'pending_wallet_credit': 0.0})
+        elif kind == 'storage':
+            self.write({'pending_storage_blocks': 0, 'storage_block_pending_invoice_id': False})
+        invoice.sudo().saas_released_at = fields.Datetime.now()
+        self._append_log("Released invoice %s: authorization voided, nothing charged." % invoice.name)
+        return True
 
     # ---------- UPGRADE ----------
 
@@ -3319,9 +3543,9 @@ class SaasInstance(models.Model):
             "Upgrade to %s (%s) requested. Invoice %s (%.2f) — awaiting payment."
         ) % (new_plan.name, period_label, invoice.name, invoice.amount_total))
 
-        # Zero charge: apply immediately
+        # Zero charge (wallet-covered): funds are secured; deliver, then switch.
         if invoice.amount_total <= 0:
-            self._apply_pending_plan_change()
+            self._advance_change(invoice)
             return True
         if self._try_pay_with_saved_method(invoice):
             # Paid on the spot: the account.move hook applies the change.
@@ -3353,6 +3577,11 @@ class SaasInstance(models.Model):
                 "applied or superseded; nothing to do.",
                 self.subdomain, invoice_id)
             return
+        invoice = self.env['account.move'].browse(invoice_id)
+        if not invoice.saas_delivered_at:
+            # C6.10: billing switches only once the change is delivered.
+            self._advance_change(invoice)
+            return
         if self.is_trial:
             self._apply_pending_upgrade()
         else:
@@ -3376,12 +3605,11 @@ class SaasInstance(models.Model):
         new_plan = self.pending_plan_id
         if not new_plan:
             return
+        charged = self._charged_text(self.pending_change_invoice_id, new_plan.name)
         if self.parent_id and self.environment in ('staging', 'development'):
             # A Staging/Development server: no cycle of its own to keep or
             # reset — just switch the plan and resize the workload.
-            self.message_post(body=_(
-                "Payment confirmed. Resizing the server to %s; we'll let you "
-                "know when it's complete.") % new_plan.name)
+            self.message_post(body=charged)
             return self._apply_env_plan(new_plan, 'payment received')
 
         billing_period = self.pending_billing_period or self.billing_period or 'monthly'
@@ -3422,11 +3650,8 @@ class SaasInstance(models.Model):
             "Payment received. Plan upgraded: %s → %s. Billing cycle %s."
             % (old_plan.name if old_plan else 'None', new_plan.name, cycle_msg)
         )
-        # "Upgrade complete" is posted only once the rollout is verified (C6.3).
-        self.message_post(body=_(
-            "Payment confirmed. Applying your upgrade from %s to %s; "
-            "we'll let you know when it's complete."
-        ) % (old_plan.name if old_plan else '—', new_plan.name))
+        # Billing switches after delivery (C6.10): the service is already live.
+        self.message_post(body=charged)
         self.env['saas.audit.log'].saas_audit(
             'instance_scale', model='saas.instance', res_id=self.id,
             res_name=self.subdomain,

@@ -463,8 +463,11 @@ class SaasPortal(CustomerPortal):
 
     @staticmethod
     def _invoice_is_open(inv):
+        # An authorized change invoice is not open: its funds are secured and
+        # captured on delivery (C6.10), so it must never be paid twice.
         return bool(inv) and inv.state == 'posted' \
-            and inv.payment_state not in ('paid', 'in_payment') and inv.amount_residual > 0
+            and inv.payment_state not in ('paid', 'in_payment') and inv.amount_residual > 0 \
+            and not inv.saas_funds_secured_at
 
     def _checkout_invoice_for(self, instance_sudo, invoice_id=None):
         """The invoice to pay for an instance: an explicit one (``?invoice=``)

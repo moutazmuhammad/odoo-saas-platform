@@ -801,7 +801,7 @@ Thin filestore pools raise the disk limit, but they turn pool exhaustion into a 
 
 **Quota enforcement:**
 - Hard: LV size.
-- Soft: the existing storage state machine (warn80 → full → 7-day grace → restricted) [CODE], and `default_transaction_read_only` at 100%.
+- Plan limit (C20.1, owner decision C20.D1, 2026-10-16): warn at 80%; at 100% the tenant is read-only at once (`default_transaction_read_only`, login and reading keep working), with no grace and no pause. This replaces the earlier warn80 → full → 7-day grace → restricted machine [CODE].
 - Growth: grow-only expansion through billing; volumes never shrink (C17).
 
 **S3 filestore** (OCA `fs_attachment_s3`, 16–19, Beta [DOC]): only when filestore exceeds 40% of cell disk or a customer needs multi-replica Odoo. It needs per-version tests. Not before.
@@ -1645,7 +1645,7 @@ This section and §26 are the **only** implementation plan. They replace revisio
 |---|---|
 | **M0 Repository and CI safeguards** | R0.1 recorded; R0.2, C1.1, C1.2, C1.4 COMPLETED (a failing test demonstrably blocks deploy); C14.1–C14.4 COMPLETED (renamed CRD installs and reconciles on a fresh cluster) |
 | **M1 Billing and provisioning defects fixed** | C3.1–C3.3, C3.5, C3.7, C4.1, C4.2, C6.1–C6.5, C6.7–C6.11, C17.1, K1.5 COMPLETED. The crash-safety suite (C3.7) passes: no paid order lost, each operation applied exactly once. The paid-upgrade suite (C6.8) passes, including its owner-approved live DOKS step: no charge for a known-infeasible upgrade, nothing captured before verified delivery (C6.D8) and storage, database and application checked on every delivery (C6.11), no upgrade reported applied before verification, a named owner on every delay, one release per undelivered upgrade, and zero availability-probe failures while upgrades are pending (C6.9 continuity invariant). C6.6 is P1 and does not gate M1 (reasoning in §26.4 under C6) |
-| **M2 Security and resource management ready** | C5.1–C5.6, K1.4 (if D20), C19.1, C8.1, C8.2, C9.1–C9.3, I4.1, I4.2, C16.1, C16.2, C7.1 COMPLETED. Over-capacity orders are never charged (C5.6); spoofed `X-Forwarded-For` is blocked; staff TOTP is on |
+| **M2 Security and resource management ready** | C5.1–C5.6, K1.4 (if D20), C19.1, C20.1, C20.2, C8.1, C8.2, C9.1–C9.3, I4.1, I4.2, C16.1, C16.2, C7.1 COMPLETED. Over-capacity orders are never charged (C5.6); spoofed `X-Forwarded-For` is blocked; staff TOTP is on |
 | **M3 Hetzner cell operational** | I1.4, K1.1–K1.3 (if D20), ST1, C12.1, I4.3, Q3, Q4, Q5, Q6, P1, C11.1, C11.2, C11.4 COMPLETED on the real cell |
 | **M4 Backup and DR verified** | I6.1–I6.8, K1.7 (if D20), C8.3, I9.1, B1, Q2, I8.1, C11.3, **Q1a** COMPLETED against **real B2**; DR cap entered in the ledger; I7 done |
 | **M5 Full customer lifecycle verified** | K1.6 (if D26), C13.1–C13.3, C10.1–C10.4, C15.1–C15.3, C7.2, L1, E2E1 COMPLETED |
@@ -1670,6 +1670,7 @@ flowchart LR
     C3 --> C5[C5.1–C5.6 capacity holds]
     C3 --> C6[C6.1–C6.11 paid upgrades]
     C5 --> C19[C19.1 reorder alert]
+    C4 --> C20[C20.1–C20.2 hard plan limits]
     C8[C8.1–C8.2 secrets] --> C9[C9.1–C9.3 access]
     C16[C16.1–C16.2 catalog]
     C7a[C7.1 retention dry-run]
@@ -1844,6 +1845,8 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | C5.6 | PH2 | Switch to enforce mode (validation) | P0 | C5.2, C5.3, C5.4, C5.5 | NOT STARTED | INTEG[TEST-SRV], ACCEPT | no |
 | K1.4 | PH2 | Pool-aware capacity ledger | P0 | C5.1, K1.2 | BLOCKED | UNIT, INTEG[TEST-SRV] | no |
 | C19.1 | PH2 | Capacity forecast and reorder-point alert | P0 | C5.1 | NOT STARTED | UNIT | no |
+| C20.1 | PH2 | Storage hard limit: read-only at 100%, no grace | P0 | C4.2 | NOT STARTED | UNIT, INTEG[LOCAL], INTEG[TEST-SRV], ACCEPT[DOKS] | YES (operator release + live check on the DOKS test cluster) |
+| C20.2 | PH2 | Hard limits for temporary storage and plan-less tenants | P0 | — | NOT STARTED | UNIT, INTEG[LOCAL], ACCEPT[DOKS] | YES (operator release + live check on the DOKS test cluster) |
 | C8.1 | PH3 | Mandatory secret-encryption key | P0 | — | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C8.2 | PH3 | Encrypt bucket keys and migrate existing values | P0 | C8.1 | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
 | C9.1 | PH3 | Rate limit on the real client IP | P0 | — | NOT STARTED | UNIT, INTEG[TEST-SRV] | no |
@@ -1912,7 +1915,7 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | O1 | PH8 | Legal and commercial pages | P0 | R0.1 | BLOCKED | ACCEPT | YES |
 | O2 | PH8 | Onboarding documentation (EN/AR) | P0 | C13.2, C16.1 | NOT STARTED | ACCEPT | YES |
 | C7.2 | PH9 | Enable purge after a verified final snapshot | P0 | C7.1, I6.7, I9.1, I4.1 | NOT STARTED | INTEG[TEST-SRV][B2] | no |
-| L1 | PH9 | Full billing lifecycle | P0 | C3.7, C4.2, C5.6, C6.2, C16.2, C17.1, C7.2, C15.3 | NOT STARTED | INTEG[TEST-SRV][PAY-sandbox], ACCEPT | no |
+| L1 | PH9 | Full billing lifecycle | P0 | C3.7, C4.2, C5.6, C6.2, C16.2, C17.1, C20.1, C7.2, C15.3 | NOT STARTED | INTEG[TEST-SRV][PAY-sandbox], ACCEPT | no |
 | E2E1 | PH9 | End-to-end on the Hetzner cell | P0 | L1, Q1a, C13.3, C10.4, C12.1, I4.3, I5.2 | NOT STARTED | INTEG[H][B2][PAY-sandbox], ACCEPT | no |
 | GATE6 | PH9 | Go/no-go review (§30) | P0 | E2E1, C15.4, O1, O2, LA1, P1, Q3, Q5, Q6, C11.4, I7 | NOT STARTED | ACCEPT | YES |
 | LA1 | PH10 | Evidence ledger and time log | P0 | — | NOT STARTED | ACCEPT | no |
@@ -1945,7 +1948,7 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | G5 | PH11 | Partner portal and white-label | P2 | GATE6 | NOT STARTED | INTEG | YES |
 | G6 | PH11 | HA option for Scale/Dedicated | P2 | GATE6 | NOT STARTED | INTEG[H] | YES (cost per customer) |
 
-**Totals:** 143 tasks in 12 phases, by priority: P0 110, P1 21, P2 12. 46 need owner approval. (Rev 5.2 had 120 tasks: P0 95, P1 16, P2 9, 39 approvals. Added on 2026-10-15: C3.8 (P1), C6.3–C6.5, C6.7–C6.9 (P0), C6.6 (P1). Approvals added: C6.3 and C6.8 for the live DOKS step, and C6.9 for the operator release and live check. C6.9 was first the delay credit, then re-scoped after C6.D5. C6.10 (P0, no approval) added for C6.D8. Revision 5.3 (§31): K1.1–K1.7 (P0; K1.1, K1.2, K1.7 need approval) and K2.1–K2.6 (P1: K2.2, K2.4, K2.5; P2: K2.1, K2.3, K2.6). Added on 2026-10-16: C6.11 (P0; approval for the operator release and live DOKS check).)
+**Totals:** 145 tasks in 12 phases, by priority: P0 112, P1 21, P2 12. 48 need owner approval. (Rev 5.2 had 120 tasks: P0 95, P1 16, P2 9, 39 approvals. Added on 2026-10-15: C3.8 (P1), C6.3–C6.5, C6.7–C6.9 (P0), C6.6 (P1). Approvals added: C6.3 and C6.8 for the live DOKS step, and C6.9 for the operator release and live check. C6.9 was first the delay credit, then re-scoped after C6.D5. C6.10 (P0, no approval) added for C6.D8. Revision 5.3 (§31): K1.1–K1.7 (P0; K1.1, K1.2, K1.7 need approval) and K2.1–K2.6 (P1: K2.2, K2.4, K2.5; P2: K2.1, K2.3, K2.6). Added on 2026-10-16: C6.11 (P0; approval for the operator release and live DOKS check); C20.1 and C20.2 (P0; same approval) for the owner rule that a customer never exceeds the plan.)
 
 ### 26.2 Baseline: capabilities that already exist (verified at `b7c0aa0`; no task needed)
 
@@ -1989,6 +1992,8 @@ Nothing is COMPLETED yet. Capabilities that already exist are listed in §26.2, 
 | 2026-10-15 | C6.D10 | PARTLY DECIDED | Owner: the Go operator and `saas-jobs` own the Odoo environment lifecycle; the Cluster Autoscaler alone provides worker nodes; environments run on a shared cluster and nothing creates a server per customer. Still open: node source (Hetzner Cloud / dedicated / mix), multi-node cluster shape, Kubernetes distribution and storage engine (vs §29 D1), cost bounds replacing C6.D4, scale-down safety (R7). Question raised: whether I5.2's on-demand build node becomes an autoscaled build node group | Plan change |
 | 2026-10-15 | §31 review | PROPOSED | Architecture review of shared multi-node clusters with Hetzner Cloud autoscaling (owner request). Read-only: repository inspected at `c72b1fa`; external facts from primary sources (§31.16). Main findings: the Cluster Autoscaler scales Hetzner Cloud servers only; current CPX/CCX cost ≈ 2.6× an AX42 per GB RAM and CX/CAX are not available; node-local storage pins tenants, Cloud Volumes move but cap at 16 per server. Recommended option C (dedicated base pool + autoscaled Cloud pools). Launch blockers found in code: PG version mutable, deletion after a 2-minute best-effort backup, `-u` on a live DB, image change without `-u`. Added D20–D28 and K1.1–K1.7, K2.1–K2.6. No code, image, deploy or cluster operation | Plan change |
 | 2026-10-16 | C6.11 | NOT STARTED | Owner requirement: on every upgrade and new instance, verify that the pod can use its storage and that the application starts and works. Read-only review at `aea69d5`: operator `Ready` = PVC Bound + DB ready + Deployment ready (probes GET `/web/login`) + route; nothing proves the volume is mounted and writable, that PostgreSQL commits a write, that `base` is installed, or that the public URL works. New task C6.11 (in-pod exec startup self-check + public URL check → delivery verdict); C6.3, C6.8 and C6.10 now depend on it | — |
+| 2026-10-16 | C20.1, C20.2 | NOT STARTED | Owner requirement: a customer must not exceed the plan's resource limits on production. Read-only review at `27e5664`: CPU, RAM and workers are hard limits already (pod limits, namespace quota, operator-owned `odoo.conf`); storage is soft (100% → 7-day grace → pause; evaluated daily); filestore and DB volumes each sized to the full purchase (2× physical); tenant emptyDirs and containers have no ephemeral-storage limits; plan-less namespaces get a large default quota | — |
+| 2026-10-16 | C20.D1 | DECIDED | Owner: at 100% of purchased storage the tenant becomes read-only immediately, no grace; site stays up (login, read, export); lifts at once on purchase, upgrade or freeing space | — |
 
 ### 26.4 Task cards
 
@@ -3016,6 +3021,74 @@ These rules apply to every C6 task. They replace the old C6.2 rule ("after N ret
 - **Tests:** Unit tests with synthetic histories.
 - **Risks:** Noise at tiny volumes; the safety stock floor handles it.
 - **Rollback:** Disable the cron.
+
+#### C20.1 · Storage hard limit: read-only at 100%, no grace
+`P0 · M · $0 · Approval: YES (operator release + live check on the DOKS test cluster, no new resources) · Status: NOT STARTED · Tests: UNIT, INTEG[LOCAL], INTEG[TEST-SRV], ACCEPT[DOKS]`
+- **Objective (owner requirement, 2026-10-16):** a production customer can never use more storage than their plan plus purchased storage blocks. **Decision C20.D1 (owner, 2026-10-16):** at 100% the tenant becomes read-only at once, with no grace period. The site stays up; the customer can log in, read and export; nothing new is saved until they buy storage, upgrade or free space, and the lock lifts at once when they do. CPU, RAM and workers are already hard limits (pod limits, namespace ResourceQuota, operator-owned `odoo.conf`) [CODE].
+- **Current status:** NOT STARTED. Verified [CODE, read 2026-10-16 at `27e5664`]:
+  - `_evaluate_capacity` (`control-plane/saas_core/models/saas_instance.py:~6050-6110`): warn at 80%, `full` at 100%, then 7 days of grace (`saas_master.storage_grace_days`) before `restricted`, which pauses the workspace (`_capacity_pause`). The customer keeps writing during the grace.
+  - The evaluation runs once a day (`saas_storage_check_cron.xml`); usage is measured every 10 minutes (`saas_usage_refresh_cron.xml`).
+  - The filestore and the database volume are each sized to the whole purchased storage (`saas_instance.py:6307-6308`), so the physical ceiling is twice the purchase.
+  - The `default_transaction_read_only` step at 100% in §14 is not implemented.
+- **Files:**
+  - `control-plane/saas_core/models/saas_instance.py` (`_evaluate_capacity`, `_capacity_pause`, `_queue_resume`, `_k8s_plan_resources`, the usage-refresh cron);
+  - `control-plane/saas_core/data/saas_storage_check_cron.xml`, mail templates for the capacity notices;
+  - `control-plane/saas_core/drivers/kubernetes_driver.py`, `drivers/base.py` (`set_write_lock` + fake);
+  - `compute/operator/api/v1alpha1/odooinstance_types.go` (new spec field), the controller, `compute/operator/internal/resources/database_roles*.{go,sh}`;
+  - the platform addon (`compute/operator/internal/resources/platformaddons/`) for the read-only banner and login;
+  - portal and SPA capacity texts.
+- **Change:**
+  - **Measure and decide together:** every usage refresh (10 min) runs `_evaluate_capacity` for the measured tenants; the daily cron stays as a safety net.
+  - **New states:** `ok` (< 80%), `warn80` (≥ 80%, notice), `locked` (≥ 100%, read-only). `grace` and `restricted` go; the `saas_master.storage_grace_days` setting is removed. Tenants already paused for capacity move to `locked` and are resumed (the service comes back read-only).
+  - **Write lock (operator):** a spec field (e.g. `spec.writeLock: true`) makes the operator set `default_transaction_read_only = on` for the tenant's databases and end the tenant role's open sessions so pooled connections pick it up. Odoo reconnects; no pod restart, no downtime. Clearing the field reverses it.
+  - **Login and reading keep working:** the platform addon (server-wide) lets login through under the lock (the last-login write is skipped) and shows a banner with the fix: buy storage, upgrade, or free space. Confirm per Odoo version (14–20) which login and read paths write to the database, and cover each.
+  - **Freeing space while locked:** the portal offers buying storage and upgrading without unlocking first; deleting data needs a short, logged unlock window started by the customer from the portal, closed by the next measurement if usage is still ≥ 100%.
+  - **Lifting:** a storage purchase or upgrade (via C4.2's `_queue_resume` path) or a measurement below 100% clears the lock at once.
+  - **Physical headroom:** each volume is sized at the purchased storage plus a configured headroom, so PostgreSQL never fills its volume (a full PostgreSQL volume PANICs) between two measurements. The headroom value comes from the growth rate measured in Q4, not from an estimate. It is not sellable and not counted as customer storage; the C5 ledger counts it as reserved.
+  - **Scope:** production plans. Trials and staging/dev environments follow the same rule against their own limits.
+- **Depends:** strict: C4.2 · the spec field goes into the current CRD group if C14.1 is still blocked and is carried over by the rename · decision C20.D1 recorded.
+- **Steps:**
+  1. Per-version check (Odoo 14–20) of what writes during login and reading; addon changes with tests.
+  2. Operator spec field, write lock and session reset, envtest.
+  3. Control-plane state machine, driver method, crons, migration of existing `grace`/`restricted` tenants.
+  4. Portal and SPA texts (Vitest), mail templates.
+  5. Upgrade-with-data test (selection values change; tenants in `grace`/`restricted` exist).
+  6. Live step on DOKS.
+- **Acceptance:**
+  - Usage reaches 100% → within one measurement interval the tenant is read-only: login, browsing and export work; creating a record or uploading a file fails with the storage message; the service never goes down.
+  - Buying storage or upgrading → the lock lifts at once, with no restart.
+  - No path keeps a tenant above 100% for more than one measurement interval (no grace).
+  - A tenant in `grace` or `restricted` before the upgrade ends up `locked` and running.
+  - Database volume never full during a fill test (Q4): the lock lands before the headroom is used up; the measured overshoot is recorded in §26.3.
+  - Live on DOKS: one test tenant filled to 100%, locked, shown working read-only, then unlocked by a storage purchase.
+- **Tests:** Unit (state machine, driver, addon); `INTEG[LOCAL]` envtest; `INTEG[TEST-SRV]` with the fake driver; `ACCEPT[DOKS]`.
+- **Risks:**
+  - An Odoo version writes on a path the addon misses, which breaks login under the lock. Mitigation: step 1 covers each supported version with a test.
+  - A burst of uploads between two measurements. Mitigation: the headroom, sized from Q4.
+  - Thick volumes at purchased + headroom per volume cost disk. Mitigation: the C5 ledger counts it; thin pools (X3) are the later fix.
+- **Rollback:** Clear every write lock (one control-plane action), revert; the soft state machine returns.
+
+#### C20.2 · Hard limits for temporary storage and plan-less tenants
+`P0 · S · $0 · Approval: YES (operator release + live check on the DOKS test cluster, no new resources) · Status: NOT STARTED · Tests: UNIT, INTEG[LOCAL], ACCEPT[DOKS]`
+- **Objective (owner requirement, 2026-10-16):** no tenant can use resources outside its plan through temporary storage or a missing package.
+- **Current status:** NOT STARTED. Verified [CODE, read 2026-10-16 at `27e5664`]:
+  - The Odoo pod's `tmp`, `etc-odoo` and `shell-tmp` emptyDirs have no `sizeLimit` (`compute/operator/internal/resources/deployment.go:105,187,199`), and the containers set no ephemeral-storage requests or limits. Custom code can fill the node's disk and affect other tenants.
+  - With no `spec.tenancy.resourceQuota`, the namespace gets `defaultTenantQuota` (8 CPU / 16 GiB requests, 16 CPU / 32 GiB limits, 500 GiB storage; `compute/operator/internal/resources/tenancy.go`), and `_k8s_plan_resources` returns nothing for an instance without a plan.
+- **Files:** `compute/operator/internal/resources/deployment.go`, `init_job.go`, `restore.go`, `tenancy.go`, `resources_test.go`; `control-plane/saas_core/models/saas_instance.py`.
+- **Change:**
+  - `sizeLimit` on every tenant emptyDir, ephemeral-storage requests and limits on every tenant container, and `requests.ephemeral-storage` / `limits.ephemeral-storage` in the tenant ResourceQuota, all from the package.
+  - `defaultTenantQuota` becomes the smallest production package, not a large ceiling.
+  - The control plane refuses to create or start a production instance without a package.
+  - Node-level PID limit (`podPidsLimit`) goes into the bootstrap host hardening (I1.2).
+- **Depends:** strict: — .
+- **Steps:** Operator changes and envtest; control-plane guard and tests; live step on DOKS.
+- **Acceptance:**
+  - Writing past the `/tmp` limit evicts only that tenant's pod; other tenants are unaffected; a production tenant rolls back in with zero probe failures on the others.
+  - A namespace without a package gets the smallest package's quota.
+  - Creating a production instance without a plan fails with a clear error.
+- **Tests:** Unit, `INTEG[LOCAL]` envtest, `ACCEPT[DOKS]`.
+- **Risks:** A limit too small for a legitimate import or report evicts the pod. Mitigation: sizes from the package, checked with the P1 profiles.
+- **Rollback:** Revert.
 
 ### PH3 — Security fixes and secret isolation (code)
 

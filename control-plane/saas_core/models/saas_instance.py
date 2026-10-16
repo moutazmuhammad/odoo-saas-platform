@@ -6294,6 +6294,12 @@ END $$;
         pkg = self._package_resources()
         if not pkg:
             return {}
+        # Volumes never shrink (C17.1): a downgrade or a released storage
+        # block lowers what is billed, never the volume the cluster holds.
+        volume_gb = max(pkg['storage_gb'], self._volume_floor_gb())
+        quota = dict(pkg['quota'])
+        if volume_gb > pkg['storage_gb']:
+            quota['requests.storage'] = '%dGi' % (volume_gb + 1)
         return {
             'cpu_limit': '%dm' % pkg['odoo_cpu_m'],
             'cpu_request': '%dm' % pkg['odoo_cpu_req_m'],
@@ -6304,10 +6310,26 @@ END $$;
             'db_cpu_request': '%dm' % pkg['db_cpu_req_m'],
             'db_mem_limit': '%dMi' % pkg['db_mem_mi'],
             'db_mem_request': '%dMi' % pkg['db_mem_req_mi'],
-            'filestore_size': '%dGi' % pkg['storage_gb'],
-            'db_storage_size': '%dGi' % pkg['storage_gb'],
-            'quota': pkg['quota'],
+            'filestore_size': '%dGi' % volume_gb,
+            'db_storage_size': '%dGi' % volume_gb,
+            'quota': quota,
         }
+
+    _VOLUME_SIZE_RE = re.compile(r'^(\d+)Gi$')
+
+    def _volume_floor_gb(self):
+        """Largest volume size (GiB) in the package the cluster last
+        accepted, 0 when unknown. Packages never ask for less (C17.1), so
+        this only grows."""
+        self.ensure_one()
+        try:
+            applied = json.loads(self.package_applied or '{}')
+        except ValueError:
+            return 0
+        sizes = [applied.get(k) for k in ('filestore_size', 'db_storage_size')] \
+            if isinstance(applied, dict) else []
+        return max([int(m.group(1)) for m in (
+            self._VOLUME_SIZE_RE.match(v) for v in sizes if isinstance(v, str)) if m] or [0])
 
     def _update_container_resources(self):
         """Apply the current package (plan and storage blocks) to
@@ -6333,9 +6355,10 @@ END $$;
         self._package_applied_ok(desired)
         self._append_log(
             "Package applied (%s): Odoo %s CPU / %s RAM, %d worker(s); "
-            "database %s CPU / %s RAM; storage %s."
+            "database %s CPU / %s RAM; storage %g GB (volume %s)."
             % (self.plan_id.name, res['cpu_limit'], res['mem_limit'], res['workers'],
-               res['db_cpu_limit'], res['db_mem_limit'], res['filestore_size']))
+               res['db_cpu_limit'], res['db_mem_limit'],
+               self.effective_storage_limit_gb or 0, res['filestore_size']))
 
     # Package convergence (C6.1): a failed apply is retried by the reconciler
     # after 5, 10, 20 ... minutes, capped at 6 h, at most

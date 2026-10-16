@@ -3063,7 +3063,9 @@ class SaasInstance(models.Model):
         else:
             notes.append('node fit not checked (node sizes unknown)')
 
-        if storage_gb > (rec.effective_storage_limit_gb or 0.0):
+        # The volume never shrinks (C17.1): after a downgrade it may already
+        # be big enough, and then nothing has to grow.
+        if storage_gb > max(rec.effective_storage_limit_gb or 0.0, rec._volume_floor_gb()):
             if server.volume_expansion == 'no':
                 return False, 'volume_expansion', (
                     'volume must grow to %s GB; the default StorageClass does '

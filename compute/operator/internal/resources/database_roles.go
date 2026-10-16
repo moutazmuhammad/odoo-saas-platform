@@ -2,6 +2,8 @@ package resources
 
 import (
 	_ "embed"
+	"strings"
+
 	saasv1alpha1 "github.com/freightright/odoo-saas-platform/operator/api/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -56,7 +58,7 @@ func DatabaseAccessJob(instance *saasv1alpha1.OdooInstance, platform Platform, n
 					SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: ptr.To(true), RunAsUser: ptr.To(int64(999)),
 						SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
 					Containers: []corev1.Container{{Name: "database-access", Image: platform.postgresImage(instance.Spec.Database.Version),
-						Command: []string{"sh", "-c", script}, Env: env,
+						Command: []string{"sh", "-c", literalCommand(script)}, Env: env,
 						SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptr.To(false), ReadOnlyRootFilesystem: ptr.To(true),
 							Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
 						Resources: corev1.ResourceRequirements{
@@ -68,4 +70,12 @@ func DatabaseAccessJob(instance *saasv1alpha1.OdooInstance, platform Platform, n
 			},
 		},
 	}
+}
+
+// literalCommand makes a script reach the container exactly as written.
+// Kubernetes rewrites "$$" to "$" (and expands "$(NAME)") in command and
+// args, which broke the PL/pgSQL "DO $$ ... $$" blocks; "$$" is its escape
+// for a literal "$".
+func literalCommand(script string) string {
+	return strings.ReplaceAll(script, "$", "$$")
 }

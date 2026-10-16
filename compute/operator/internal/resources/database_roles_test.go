@@ -69,3 +69,35 @@ func TestDatabaseAccessJobUsesOnlyPlatformImageAndNoCustomerVolumes(t *testing.T
 		}
 	}
 }
+
+// kubeletExpand mimics how Kubernetes treats a container command: "$$"
+// becomes "$" (and "$(NAME)" of a defined variable would be expanded).
+func kubeletExpand(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '$' && i+1 < len(s) && s[i+1] == '$' {
+			b.WriteByte('$')
+			i++
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+func TestDatabaseAccessJobScriptReachesTheContainerVerbatim(t *testing.T) {
+	for _, managed := range []bool{true, false} {
+		want := databaseAuditScript
+		if managed {
+			want = databaseRolesScript
+		}
+		job := DatabaseAccessJob(testInstance(), Platform{}, DatabaseRolesJobName, managed)
+		got := kubeletExpand(job.Spec.Template.Spec.Containers[0].Command[2])
+		if got != want {
+			t.Fatalf("managed=%v: the container would run a different script", managed)
+		}
+	}
+	if !strings.Contains(databaseRolesScript, "DO $$ BEGIN") {
+		t.Fatal("expected the PL/pgSQL DO block this test guards")
+	}
+}

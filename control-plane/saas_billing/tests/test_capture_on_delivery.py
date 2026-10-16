@@ -167,7 +167,8 @@ class TestCaptureOnDelivery(_CaptureCase):
         invoice = self._upgrade()
         tx = invoice.transaction_ids
         self.assertEqual(tx.state, 'done')
-        tx._post_process()                       # Odoo's post-processing cron
+        self.assertIn(invoice.payment_state, ('paid', 'in_payment'),
+                      "paid at the charge, not at the next post-processing run")
         self.assertEqual(invoice.saas_capture_mode, 'immediate')
         self.assertEqual(self.inst.plan_id, self.small, "still waits for delivery")
         self._deliver()
@@ -321,7 +322,7 @@ class TestOrderCaptureOnDelivery(_CaptureCase):
         self.provider.capture_manually = False
         invoice, state = self._bill_and_pay()
         self.assertEqual(state, 'done')
-        invoice.transaction_ids._post_process()
+        self.assertIn(invoice.payment_state, ('paid', 'in_payment'))
         self.assertEqual(invoice.saas_capture_mode, 'immediate')
         self.assertEqual(self.order.state, 'paid')
         self.assertFalse(self.order.next_invoice_date)

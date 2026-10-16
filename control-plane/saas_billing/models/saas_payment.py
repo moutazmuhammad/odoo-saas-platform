@@ -288,6 +288,14 @@ class SaasPaymentGateway(models.AbstractModel):
             _logger.exception("Auto-charge crashed for invoice %s", invoice.name)
             return 'failed', _("Charge could not be initiated: %s") % exc
         if tx.state == 'done':
+            # Pay the invoice now rather than at Odoo's next post-processing
+            # run (up to ~10 min later): what it pays for starts at once and
+            # a paid upgrade's window (C6.4) starts at the charge.
+            try:
+                with self.env.cr.savepoint():
+                    tx._post_process()
+            except Exception:  # noqa: BLE001 - the post-processing cron retries it
+                _logger.exception("Post-processing transaction %s failed", tx.reference)
             return 'done', _("Charged %s.") % invoice.name
         if tx.state == 'authorized':
             # Manual capture: captured once what it pays for is delivered (C6.10).

@@ -35,7 +35,8 @@
                 <field name="last_error" optional="hide"/>
                 <field name="last_error_date" optional="hide"/>
                 <field name="package_status" widget="badge" optional="hide"
-                       decoration-warning="package_status == 'pending'"/>
+                       decoration-warning="package_status in ('pending', 'blocked')"
+                       decoration-info="package_status == 'applying'"/>
             </list>
         </field>
     </record>
@@ -130,6 +131,21 @@
                         next retry <field name="package_next_retry" readonly="1" class="oe_inline"/>.
                         <field name="package_error" readonly="1" nolabel="1"/>
                         <field name="package_status" invisible="1"/>
+                    </div>
+                    <div class="alert alert-info" role="alert"
+                         invisible="package_status != 'applying'">
+                        <strong>Package applied, verifying.</strong>
+                        The cluster accepted the new package; it counts as applied
+                        once the rollout is verified. Since
+                        <field name="package_pending_since" readonly="1" class="oe_inline"/>.
+                    </div>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="package_status != 'blocked'">
+                        <strong>Package rollout blocked:</strong>
+                        <field name="package_block_reason" readonly="1" class="oe_inline"/>.
+                        The running service is unchanged; verification keeps polling.
+                        Since <field name="package_pending_since" readonly="1" class="oe_inline"/>.
+                        <field name="package_error" readonly="1" nolabel="1"/>
                     </div>
                     <group>
                         <!-- Left Column -->
@@ -370,7 +386,7 @@
                 <filter name="needs_attention" string="Needs Attention"
                         domain="[('state', 'in', ('failed', 'suspended', 'pending_payment'))]"/>
                 <filter name="package_pending" string="Package Not Applied"
-                        domain="[('package_status', '=', 'pending')]"/>
+                        domain="[('package_status', '!=', 'in_sync')]"/>
                 <filter name="cancelled" string="Cancelled"
                         domain="[('state', 'in', ('cancelled', 'cancelled_by_client'))]"/>
                 <separator/>

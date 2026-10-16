@@ -66,6 +66,9 @@ class _GatePatches:
         self.driver = MagicMock()
         self.driver.cluster_facts.return_value = {
             'node_max_cpu_m': 16000, 'node_max_mem_mi': 65536, 'volume_expansion': True}
+        self.driver.package_rollout.return_value = ('applied', None, '')
+        self.driver.delivery_status.return_value = {'ready': True, 'failure': None, 'detail': ''}
+        self.driver.check_public_url.return_value = (True, '')
         self.alerts = []
         Job = type(inst_model.env['saas.job'])
         for target, attr, value in (

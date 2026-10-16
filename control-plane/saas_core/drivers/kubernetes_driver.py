@@ -457,6 +457,138 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         return None
 
     @staticmethod
+    def _same_resources(actual, want):
+        """Container resources ``actual`` (a V1ResourceRequirements or None)
+        equal ``want`` = {'requests': {...}, 'limits': {...}} as quantities."""
+        from kubernetes.utils import parse_quantity
+        for kind in ('requests', 'limits'):
+            have = (getattr(actual, kind, None) or {}) if actual else {}
+            for name, value in want[kind].items():
+                if name not in have or parse_quantity(have[name]) != parse_quantity(value):
+                    return False
+        return True
+
+    def package_rollout(self, handle: ComputeHandle, res: dict, since=None) -> tuple:
+        """C6.3: whether the cluster runs package ``res`` (the
+        ``_k8s_plan_resources`` keys), as ``(state, reason, detail)``:
+        ``applied``; ``rolling`` (still converging); ``blocked`` with reason
+        ``unschedulable``, ``quota``, ``volume_expansion``, ``crashloop``,
+        ``storage``, ``database``, ``app`` or ``unknown``. ``since`` (UTC)
+        limits the operator events considered to this change. Read-only."""
+        from kubernetes.utils import parse_quantity
+        name = self._cr_name(handle)
+        cr = self._get_cr(name)
+        if cr is None:
+            return 'blocked', 'unknown', 'OdooInstance not found'
+        meta, status, spec = cr.get('metadata') or {}, cr.get('status') or {}, cr.get('spec') or {}
+        if status.get('observedGeneration') != meta.get('generation'):
+            return 'rolling', None, 'the operator has not reconciled the change yet'
+        namespace = handle.instance_path or self._namespace_for(handle)
+        core, apps = self._core_api(), self._apps_api()
+        running = not spec.get('suspended')
+        odoo_want = {'requests': {'cpu': res['cpu_request'], 'memory': res['mem_request']},
+                     'limits': {'cpu': res['cpu_limit'], 'memory': res['mem_limit']}}
+        db_want = {'requests': {'cpu': res['db_cpu_request'], 'memory': res['db_mem_request']},
+                   'limits': {'cpu': res['db_cpu_limit'], 'memory': res['db_mem_limit']}}
+
+        # Odoo: the new pod template is rolled out and ready, no old pod left.
+        dep = apps.read_namespaced_deployment('odoo', namespace, _request_timeout=10)
+        web = next((c for c in dep.spec.template.spec.containers if c.name == _CONTAINER_NAME), None)
+        workers = '--workers=%d' % res['workers'] if res.get('workers') is not None else None
+        if web is None or not self._same_resources(web.resources, odoo_want) \
+                or (workers and workers not in (web.args or [])):
+            return 'rolling', None, 'the Odoo pod template does not carry the new package yet'
+        if running:
+            ds = dep.status
+            want = dep.spec.replicas or 0
+            done = (ds.observed_generation == dep.metadata.generation
+                    and (ds.updated_replicas or 0) == want and (ds.replicas or 0) == want
+                    and (ds.ready_replicas or 0) == want and not ds.unavailable_replicas)
+            if not done:
+                return self._rollout_blocker(core, dep, namespace, name) or (
+                    'rolling', None, 'Odoo is rolling out the new package')
+
+        # PostgreSQL: resized in place to the new resources.
+        sts = apps.read_namespaced_stateful_set('postgresql', namespace, _request_timeout=10)
+        pg = next((c for c in sts.spec.template.spec.containers if c.name == 'postgresql'), None)
+        if pg is None or not self._same_resources(pg.resources, db_want):
+            return 'rolling', None, 'the PostgreSQL template does not carry the new package yet'
+        if running:
+            try:
+                pod = core.read_namespaced_pod('postgresql-0', namespace, _request_timeout=10)
+            except ApiException as e:
+                if e.status == 404:
+                    return 'rolling', None, 'PostgreSQL pod is being recreated'
+                raise
+            for cond in pod.status.conditions or []:
+                if cond.status != 'True':
+                    continue
+                if cond.type == 'PodResizePending':
+                    return 'blocked', 'unschedulable', 'PostgreSQL resize %s: %s' % (
+                        cond.reason or 'pending', cond.message or '')
+                if cond.type == 'PodResizeInProgress':
+                    return 'rolling', None, 'PostgreSQL resize in progress'
+            container = next((c for c in pod.spec.containers if c.name == 'postgresql'), None)
+            actual = next((cs.resources for cs in (pod.status.container_statuses or [])
+                           if cs.name == 'postgresql' and cs.resources), None)
+            if container is None or not self._same_resources(container.resources, db_want) \
+                    or (actual is not None and not self._same_resources(actual, db_want)):
+                return 'rolling', None, 'PostgreSQL is being resized'
+
+        # Volumes: every claim holds at least what it asks for, and the data
+        # volume asks for at least the package's size (it never shrinks).
+        claims = core.list_namespaced_persistent_volume_claim(
+            namespace, label_selector='app.kubernetes.io/instance=%s' % name,
+            _request_timeout=10).items
+        wanted = parse_quantity(res['filestore_size'])
+        for pvc in claims:
+            request = parse_quantity((pvc.spec.resources.requests or {}).get('storage', '0'))
+            capacity = parse_quantity((pvc.status.capacity or {}).get('storage', '0'))
+            short = capacity < request or (pvc.metadata.name == 'odoo-filestore' and request < wanted)
+            if short:
+                refused = self._volume_not_grown(core, namespace, name, since)
+                if refused:
+                    return 'blocked', 'volume_expansion', refused
+                return 'rolling', None, 'volume %s is growing' % pvc.metadata.name
+        return 'applied', None, ''
+
+    def _rollout_blocker(self, core, dep, namespace, name):
+        """Why an Odoo rollout is stuck, as a ``package_rollout`` tuple, or None."""
+        for cond in dep.status.conditions or []:
+            if cond.type == 'ReplicaFailure' and cond.status == 'True':
+                reason = 'quota' if 'exceeded quota' in (cond.message or '') else 'unknown'
+                return 'blocked', reason, cond.message or cond.reason or 'replica failure'
+        pods = [p for p in core.list_namespaced_pod(
+            namespace, label_selector=_WEB_POD_LABEL_SELECTOR % name, _request_timeout=10).items
+            if not p.metadata.deletion_timestamp]
+        for pod in pods:
+            for cond in pod.status.conditions or []:
+                if cond.type == 'PodScheduled' and cond.status == 'False' \
+                        and cond.reason == 'Unschedulable':
+                    return 'blocked', 'unschedulable', cond.message or 'no node has room'
+            statuses = pod.status.container_statuses or []
+            failure = None if statuses and all(cs.started for cs in statuses) \
+                else self._selfcheck_failure(core, namespace, pod)
+            if failure:
+                return ('blocked',) + failure
+            for cs in pod.status.container_statuses or []:
+                waiting = cs.state.waiting if cs.state else None
+                if waiting and waiting.reason == 'CrashLoopBackOff':
+                    return 'blocked', 'crashloop', '%s: %s' % (cs.name, waiting.message or 'restarting')
+        return None
+
+    def _volume_not_grown(self, core, namespace, name, since):
+        """The operator's newest refused-expansion message for this change, or ''."""
+        events = core.list_namespaced_event(
+            namespace, field_selector='involvedObject.name=%s,reason=VolumeNotGrown' % name,
+            _request_timeout=10).items
+        for event in events:
+            when = event.last_timestamp or event.event_time or event.first_timestamp
+            if since is None or (when and when.replace(tzinfo=None) >= since):
+                return event.message or 'volume expansion refused'
+        return ''
+
+    @staticmethod
     def check_public_url(hostname, timeout=10):
         """``(ok, detail)``: the tenant's public URL answers through DNS, the
         load balancer and a valid TLS certificate (2xx/3xx, no redirect followed)."""

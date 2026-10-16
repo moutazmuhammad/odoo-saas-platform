@@ -35,6 +35,10 @@ class TestPackageConvergence(TransactionCase):
                 {'name': 'Pk 18', 'docker_image': 'odoo', 'docker_image_tag': '18.0'})
         self.inst = self._mk('pktest', partner, product, domain)
         self.driver = MagicMock()
+        # C6.3: the rollout verifies, and the C6.11 delivery verdict passes.
+        self.driver.package_rollout.return_value = ('applied', None, '')
+        self.driver.delivery_status.return_value = {'ready': True, 'failure': None, 'detail': ''}
+        self.driver.check_public_url.return_value = (True, '')
         self.alerts = []
         for target, attr, value in (
                 (type(self.inst), '_compute_driver',
@@ -98,10 +102,13 @@ class TestPackageConvergence(TransactionCase):
     # ------------------------------------------------------------- tests
     def test_apply_records_desired_and_applied(self):
         self.inst._update_container_resources()
-        self.assertEqual(self.inst.package_status, 'in_sync')
+        self.assertEqual(self.inst.package_status, 'applying', "accepted, not yet verified (C6.3)")
         self.assertEqual(self.inst.package_desired, self._key())
-        self.assertEqual(self.inst.package_applied, self._key())
+        self.assertFalse(self.inst.package_applied)
         self.driver.set_package.assert_called_once()
+        self.inst._verify_package()
+        self.assertEqual(self.inst.package_status, 'in_sync')
+        self.assertEqual(self.inst.package_applied, self._key())
 
     def test_failure_keeps_package_desired_with_backoff(self):
         self.inst._update_container_resources()
@@ -153,6 +160,8 @@ class TestPackageConvergence(TransactionCase):
         jobs = self._jobs()
         self.assertEqual(len(jobs), 2)
         self._run(jobs[-1])
+        self.assertEqual(self.inst.package_status, 'applying')
+        self.inst._verify_package()
         self.assertEqual(self.inst.package_status, 'in_sync')
         self.assertEqual(self.inst.package_applied, self._key())
         self.assertEqual(self.inst.package_attempts, 0)

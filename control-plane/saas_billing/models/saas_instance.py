@@ -2768,8 +2768,10 @@ class SaasInstance(models.Model):
             "Payment received. Plan upgraded: %s → %s"
             % (old_plan.name if old_plan else 'Trial', new_plan.name)
         )
+        # "Upgrade complete" is posted only once the rollout is verified (C6.3).
         self.message_post(body=_(
-            "Payment confirmed. Upgraded from %s to paid plan: %s."
+            "Payment confirmed. Applying your upgrade from %s to the paid plan %s; "
+            "we'll let you know when it's complete."
         ) % ('trial' if was_trial else (old_plan.name if old_plan else 'plan'),
              new_plan.name))
 
@@ -2968,9 +2970,10 @@ class SaasInstance(models.Model):
 
     def _change_in_flight(self):
         """A package change of this instance that is paid but not applied,
-        or applied but not yet accepted by the cluster (C6.1 retrying)."""
+        not yet accepted by the cluster (C6.1 retrying), or accepted but not
+        yet verified on the cluster (C6.3 applying/blocked)."""
         self.ensure_one()
-        if self.package_status == 'pending':
+        if self.package_status != 'in_sync':  # retrying, applying or blocked
             return True
         if self.pending_plan_id and self._paid_pending_change_invoice():
             return True
@@ -3377,7 +3380,8 @@ class SaasInstance(models.Model):
             # A Staging/Development server: no cycle of its own to keep or
             # reset — just switch the plan and resize the workload.
             self.message_post(body=_(
-                "Payment confirmed. Server resized to %s.") % new_plan.name)
+                "Payment confirmed. Resizing the server to %s; we'll let you "
+                "know when it's complete.") % new_plan.name)
             return self._apply_env_plan(new_plan, 'payment received')
 
         billing_period = self.pending_billing_period or self.billing_period or 'monthly'
@@ -3418,8 +3422,10 @@ class SaasInstance(models.Model):
             "Payment received. Plan upgraded: %s → %s. Billing cycle %s."
             % (old_plan.name if old_plan else 'None', new_plan.name, cycle_msg)
         )
+        # "Upgrade complete" is posted only once the rollout is verified (C6.3).
         self.message_post(body=_(
-            "Payment confirmed. Upgraded from %s to %s."
+            "Payment confirmed. Applying your upgrade from %s to %s; "
+            "we'll let you know when it's complete."
         ) % (old_plan.name if old_plan else '—', new_plan.name))
         self.env['saas.audit.log'].saas_audit(
             'instance_scale', model='saas.instance', res_id=self.id,

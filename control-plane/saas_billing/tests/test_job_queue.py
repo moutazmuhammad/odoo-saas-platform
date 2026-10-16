@@ -319,7 +319,13 @@ class TestPaidPlanChangeConverges(_PaidJobCase):
                 raise RuntimeError('cluster unavailable')
             self.applied.append(res)
 
-        driver = type('Driver', (), {'set_package': staticmethod(set_package)})()
+        driver = type('Driver', (), {
+            'set_package': staticmethod(set_package),
+            # C6.3: the rollout verifies and the delivery verdict passes.
+            'package_rollout': staticmethod(lambda handle, res, since=None: ('applied', None, '')),
+            'delivery_status': staticmethod(lambda handle: {'ready': True, 'failure': None, 'detail': ''}),
+            'check_public_url': staticmethod(lambda hostname: (True, '')),
+        })()
         Instance = type(self.inst)
         for target, attr, fn in (
                 (Instance, '_compute_driver', lambda rec, connection=None: driver),
@@ -350,6 +356,8 @@ class TestPaidPlanChangeConverges(_PaidJobCase):
         self.inst.package_next_retry = fields.Datetime.now() - timedelta(seconds=1)
         self.env['saas.instance']._converge_packages()
         self._run(self._jobs(self.inst, '_do_converge_package'))
+        self.assertEqual(self.inst.package_status, 'applying', "accepted, then verified (C6.3)")
+        self.inst._verify_package()
         self.assertEqual(self.inst.package_status, 'in_sync')
         self.assertEqual(self.inst.package_applied, want)
         self.assertEqual([r['workers'] for r in self.applied],

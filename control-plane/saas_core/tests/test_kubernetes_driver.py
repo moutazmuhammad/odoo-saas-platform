@@ -403,6 +403,168 @@ class TestKubernetesDriver(TransactionCase):
         status = self._delivery_driver(pods=[self._pod()], events=events).delivery_status(_handle())
         self.assertEqual(status, {'ready': True, 'failure': None, 'detail': ''})
 
+    # -------- C6.3: package rollout verification --------
+    RES = {'cpu_request': '250m', 'cpu_limit': '1000m', 'mem_request': '256Mi',
+           'mem_limit': '1024Mi', 'workers': 2, 'db_cpu_request': '125m',
+           'db_cpu_limit': '500m', 'db_mem_request': '128Mi', 'db_mem_limit': '512Mi',
+           'filestore_size': '10Gi', 'db_storage_size': '10Gi'}
+
+    @staticmethod
+    def _resources(cpu_req, mem_req, cpu_lim, mem_lim):
+        r = MagicMock()
+        r.requests = {'cpu': cpu_req, 'memory': mem_req}
+        r.limits = {'cpu': cpu_lim, 'memory': mem_lim}
+        return r
+
+    def _rollout_driver(self, *, generation=3, observed=3, odoo_res=None, workers=2,
+                        dep_status=None, dep_conditions=(), web_pods=(), pg_res=None,
+                        pg_actual='same', pg_conditions=(), claims=None, events=(),
+                        suspended=False):
+        driver, _server = _make_driver()
+        driver._get_cr = MagicMock(return_value={
+            'metadata': {'generation': generation},
+            'status': {'phase': 'Ready', 'observedGeneration': observed},
+            'spec': {'suspended': suspended}})
+        odoo_res = odoo_res or self._resources('250m', '256Mi', '1', '1Gi')   # normalized forms
+        pg_res = pg_res or self._resources('125m', '128Mi', '500m', '512Mi')
+        web = MagicMock()
+        web.name, web.resources, web.args = 'odoo', odoo_res, ['--workers=%d' % workers]
+        dep = MagicMock()
+        dep.spec.template.spec.containers = [web]
+        dep.spec.replicas = 1
+        dep.metadata.generation = 5
+        st = dep_status or dict(observed_generation=5, updated_replicas=1, replicas=1,
+                                ready_replicas=1, unavailable_replicas=None)
+        for k, v in st.items():
+            setattr(dep.status, k, v)
+        dep.status.conditions = list(dep_conditions)
+        pgc = MagicMock()
+        pgc.name, pgc.resources = 'postgresql', pg_res
+        sts = MagicMock()
+        sts.spec.template.spec.containers = [pgc]
+        pod = MagicMock()
+        pod.spec.containers = [pgc]
+        pod.status.conditions = list(pg_conditions)
+        cs = MagicMock()
+        cs.name = 'postgresql'
+        cs.resources = pg_res if pg_actual == 'same' else pg_actual
+        pod.status.container_statuses = [cs]
+        apps = MagicMock()
+        apps.read_namespaced_deployment.return_value = dep
+        apps.read_namespaced_stateful_set.return_value = sts
+        core = MagicMock()
+        core.read_namespaced_pod.return_value = pod
+        core.list_namespaced_pod.return_value.items = list(web_pods)
+        core.list_namespaced_event.return_value.items = list(events)
+        if claims is None:
+            claims = [self._claim('odoo-filestore', '10Gi', '10Gi')]
+        core.list_namespaced_persistent_volume_claim.return_value.items = claims
+        driver._apps_api = MagicMock(return_value=apps)
+        driver._core_api = MagicMock(return_value=core)
+        return driver
+
+    @staticmethod
+    def _claim(name, request, capacity):
+        c = MagicMock()
+        c.metadata.name = name
+        c.spec.resources.requests = {'storage': request}
+        c.status.capacity = {'storage': capacity}
+        return c
+
+    @staticmethod
+    def _cond(type_, status='True', reason='', message=''):
+        return MagicMock(type=type_, status=status, reason=reason, message=message)
+
+    def _rollout(self, driver, since=None):
+        return driver.package_rollout(_handle(), self.RES, since=since)
+
+    def test_rollout_applied_when_everything_matches(self):
+        self.assertEqual(self._rollout(self._rollout_driver()), ('applied', None, ''))
+
+    def test_rollout_waits_for_the_operator(self):
+        state, _r, detail = self._rollout(self._rollout_driver(observed=2))
+        self.assertEqual(state, 'rolling')
+        self.assertIn('not reconciled', detail)
+
+    def test_rollout_waits_for_the_new_template(self):
+        old = self._resources('100m', '128Mi', '500m', '512Mi')
+        self.assertEqual(self._rollout(self._rollout_driver(odoo_res=old))[0], 'rolling')
+        self.assertEqual(self._rollout(self._rollout_driver(workers=1))[0], 'rolling')
+
+    def test_rollout_in_progress_is_rolling(self):
+        driver = self._rollout_driver(dep_status=dict(
+            observed_generation=5, updated_replicas=1, replicas=2, ready_replicas=1,
+            unavailable_replicas=1))
+        self.assertEqual(self._rollout(driver)[0], 'rolling', "old pod still there")
+
+    def _stuck(self, **kw):
+        return self._rollout_driver(dep_status=dict(
+            observed_generation=5, updated_replicas=1, replicas=2, ready_replicas=1,
+            unavailable_replicas=1), **kw)
+
+    def test_rollout_unschedulable_is_blocked(self):
+        pod = self._pod(started=False, ready=False)
+        pod.status.conditions = [self._cond('PodScheduled', 'False', 'Unschedulable',
+                                            '0/1 nodes are available: Insufficient memory')]
+        self.assertEqual(self._rollout(self._stuck(web_pods=[pod])),
+                         ('blocked', 'unschedulable', '0/1 nodes are available: Insufficient memory'))
+
+    def test_rollout_quota_is_blocked(self):
+        cond = self._cond('ReplicaFailure', reason='FailedCreate',
+                          message='pods "odoo-x" is forbidden: exceeded quota: odoo-quota')
+        state, reason, _d = self._rollout(self._stuck(dep_conditions=[cond]))
+        self.assertEqual((state, reason), ('blocked', 'quota'))
+
+    def test_rollout_crashloop_is_blocked(self):
+        pod = self._pod(started=False, ready=False, restarts=3)
+        pod.status.container_statuses[0].state.waiting = MagicMock(
+            reason='CrashLoopBackOff', message='back-off restarting')
+        self.assertEqual(self._rollout(self._stuck(web_pods=[pod]))[:2], ('blocked', 'crashloop'))
+
+    def test_rollout_self_check_failure_is_blocked_with_its_reason(self):
+        pod = self._pod(started=False, ready=False)
+        event = self._event('Startup probe failed: SELFCHECK storage: cannot write', 1)
+        self.assertEqual(self._rollout(self._stuck(web_pods=[pod], events=[event])),
+                         ('blocked', 'storage', 'cannot write'))
+
+    def test_postgres_resize_pending_is_blocked(self):
+        cond = self._cond('PodResizePending', reason='Infeasible', message='Node didn\'t have enough capacity')
+        state, reason, detail = self._rollout(self._rollout_driver(pg_conditions=[cond]))
+        self.assertEqual((state, reason), ('blocked', 'unschedulable'))
+        self.assertIn('Infeasible', detail)
+
+    def test_postgres_resize_in_progress_or_not_actual_is_rolling(self):
+        cond = self._cond('PodResizeInProgress')
+        self.assertEqual(self._rollout(self._rollout_driver(pg_conditions=[cond]))[0], 'rolling')
+        old = self._resources('100m', '128Mi', '250m', '512Mi')
+        self.assertEqual(self._rollout(self._rollout_driver(pg_actual=old))[0], 'rolling')
+        self.assertEqual(self._rollout(self._rollout_driver(pg_actual=None))[0], 'applied',
+                         "clusters that report no actual resources rely on the spec")
+
+    def test_volume_growing_then_refused(self):
+        import datetime
+        short = [self._claim('odoo-filestore', '10Gi', '5Gi')]
+        self.assertEqual(self._rollout(self._rollout_driver(claims=short))[0], 'rolling')
+        event = self._event('growing odoo-filestore to 10Gi: exceeded quota', 5)
+        state, reason, detail = self._rollout(
+            self._rollout_driver(claims=short, events=[event]),
+            since=datetime.datetime(2026, 10, 16, 12, 0))
+        self.assertEqual((state, reason), ('blocked', 'volume_expansion'))
+        self.assertIn('exceeded quota', detail)
+        stale = self._rollout(self._rollout_driver(claims=short, events=[event]),
+                              since=datetime.datetime(2026, 10, 16, 13, 0))
+        self.assertEqual(stale[0], 'rolling', "a refusal from before this change does not count")
+        asked_less = [self._claim('odoo-filestore', '5Gi', '5Gi')]
+        self.assertEqual(self._rollout(self._rollout_driver(claims=asked_less))[0], 'rolling',
+                         "the claim must ask for the package size")
+
+    def test_stopped_tenant_checks_templates_and_volumes_only(self):
+        driver = self._rollout_driver(suspended=True, dep_status=dict(
+            observed_generation=5, updated_replicas=0, replicas=0, ready_replicas=0,
+            unavailable_replicas=None))
+        self.assertEqual(self._rollout(driver), ('applied', None, ''))
+        driver._core_api().read_namespaced_pod.assert_not_called()
+
     def test_public_url_check(self):
         from odoo.addons.saas_core.drivers.kubernetes_driver import KubernetesDriver
         import requests

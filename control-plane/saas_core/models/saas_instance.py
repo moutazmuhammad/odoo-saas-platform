@@ -709,10 +709,17 @@ class SaasInstance(models.Model):
     package_desired = fields.Text(copy=False, readonly=True)
     package_applied = fields.Text(copy=False, readonly=True)
     package_status = fields.Selection(
-        [('in_sync', 'In sync'), ('pending', 'Not applied — retrying')],
+        [('in_sync', 'In sync'), ('pending', 'Not applied — retrying'),
+         ('applying', 'Applied — verifying'), ('blocked', 'Blocked — waiting')],
         string='Package', default='in_sync', copy=False, readonly=True,
         help='Whether the cluster runs the package the customer pays for. '
-             'A failed apply is retried by the reconciler with back-off.')
+             'A failed apply is retried by the reconciler with back-off; an '
+             'accepted one counts only once the rollout is verified (C6.3).')
+    package_block_reason = fields.Char(
+        string='Package Block Reason', copy=False, readonly=True,
+        help='Why a verified rollout is stuck: unschedulable, quota, '
+             'volume_expansion, crashloop, storage, database, app, route or unknown.')
+    package_verify_count = fields.Integer(copy=False, readonly=True)
     package_attempts = fields.Integer(
         string='Failed Package Applies', copy=False, readonly=True)
     package_pending_since = fields.Datetime(copy=False, readonly=True)
@@ -6322,12 +6329,16 @@ END $$;
         accepted, 0 when unknown. Packages never ask for less (C17.1), so
         this only grows."""
         self.ensure_one()
-        try:
-            applied = json.loads(self.package_applied or '{}')
-        except ValueError:
-            return 0
-        sizes = [applied.get(k) for k in ('filestore_size', 'db_storage_size')] \
-            if isinstance(applied, dict) else []
+        sizes = []
+        # The desired package may already be on the cluster while it is being
+        # verified (C6.3), so both count.
+        for key in (self.package_applied, self.package_desired):
+            try:
+                package = json.loads(key or '{}')
+            except ValueError:
+                continue
+            if isinstance(package, dict):
+                sizes += [package.get(k) for k in ('filestore_size', 'db_storage_size')]
         return max([int(m.group(1)) for m in (
             self._VOLUME_SIZE_RE.match(v) for v in sizes if isinstance(v, str)) if m] or [0])
 
@@ -6352,7 +6363,7 @@ END $$;
         except Exception as e:
             self._package_apply_failed(e)
             raise
-        self._package_applied_ok(desired)
+        self._package_patch_accepted(desired)
         self._append_log(
             "Package applied (%s): Odoo %s CPU / %s RAM, %d worker(s); "
             "database %s CPU / %s RAM; storage %g GB (volume %s)."
@@ -6419,7 +6430,8 @@ END $$;
         return 'delivered', None, ''
 
     def _package_applied_ok(self, applied):
-        """The cluster accepted ``applied`` (a ``_package_key``)."""
+        """The cluster runs ``applied`` (a ``_package_key``): verified (C6.3),
+        or known to be there (a fresh deploy that passed its health wait)."""
         self.ensure_one()
         if self.package_status == 'pending':
             self._append_log(
@@ -6432,8 +6444,119 @@ END $$;
             'package_pending_since': False,
             'package_next_retry': False,
             'package_error': False,
+            'package_block_reason': False,
         }
         self.write({k: v for k, v in vals.items() if self[k] != v})
+
+    def _package_patch_accepted(self, desired):
+        """The cluster accepted the patch for ``desired``. It counts as
+        applied only once the rollout is verified (C6.3): until then the
+        package is ``applying`` and a verify job follows it."""
+        self.ensure_one()
+        if desired == self.package_applied and self.package_status in ('in_sync', 'pending'):
+            self._package_applied_ok(desired)
+            return
+        verifying = self.package_status in ('applying', 'blocked')  # a verify chain exists
+        if self.package_status == 'pending':
+            self._append_log(
+                "Package converged after %d failed attempt(s)." % self.package_attempts)
+        vals = {
+            'package_desired': desired,
+            'package_status': 'applying',
+            'package_attempts': 0,
+            'package_pending_since': self.package_pending_since or fields.Datetime.now(),
+            'package_next_retry': False,
+            'package_error': False,
+            'package_block_reason': False,
+        }
+        self.write({k: v for k, v in vals.items() if self[k] != v})
+        if not verifying:
+            self.package_verify_count = 0
+            self._schedule_package_verify()
+
+    # Verification polls at 30 s, 60 s, 120 s ... capped at 5 min, until the
+    # rollout is verified; the reconciler re-queues a lost chain.
+    _PACKAGE_VERIFY_FIRST_S = 30
+    _PACKAGE_VERIFY_MAX_S = 300
+
+    def _schedule_package_verify(self):
+        self.ensure_one()
+        delay = min(self._PACKAGE_VERIFY_FIRST_S * 2 ** min(self.package_verify_count, 8),
+                    self._PACKAGE_VERIFY_MAX_S)
+        self.package_verify_count += 1
+        self._enqueue_package_verify(
+            eta=fields.Datetime.now() + datetime.timedelta(seconds=delay))
+
+    def _enqueue_package_verify(self, eta=None):
+        self.ensure_one()
+        return self.env['saas.job'].sudo().enqueue(
+            self, '_do_verify_package', channel='deploy',
+            # Per change (start time + package) and per poll: never an old job's key.
+            idempotency_key='pkgverify:inst%s:%s:%s:%s' % (
+                self.id, fields.Datetime.to_string(self.package_pending_since) or '-',
+                hashlib.sha256((self.package_desired or '').encode()).hexdigest()[:12],
+                self.package_verify_count),
+            lock_key='instance:%s' % self.id, idempotent=True, max_attempts=1,
+            eta=eta, transactional=True)
+
+    def _do_verify_package(self):
+        """Job body: verify the rollout; keep polling until it is verified."""
+        self.ensure_one()
+        if self.package_status not in ('applying', 'blocked'):
+            return
+        try:
+            self._verify_package()
+        except Exception as e:
+            _logger.warning("Package verification failed for %s", self.subdomain, exc_info=True)
+            self.package_error = str(e)[-1000:]
+        if self.package_status in ('applying', 'blocked'):
+            self._schedule_package_verify()
+
+    def _verify_package(self):
+        """C6.3: compare what the cluster runs with the desired package and
+        the C6.11 delivery verdict. Only a verified rollout writes
+        ``package_applied`` and ``in_sync``; a stuck one is ``blocked`` with
+        its reason and keeps being polled. Read-only toward the workload."""
+        self.ensure_one()
+        res = self._k8s_plan_resources()
+        if not res or self.docker_server_id.compute_driver != 'kubernetes':
+            self._package_applied_ok(self.package_desired)
+            return
+        desired = self._package_key(res)
+        if desired != self.package_desired:
+            # The package changed again since the patch: apply it first.
+            self._update_container_resources()
+            return
+        state, reason, detail = self._compute_driver().package_rollout(
+            self._compute_handle(), res, since=self.package_pending_since)
+        if state == 'applied' and self.state in self._RECONCILE_RUNNING:
+            verdict, reason, detail = self._delivery_verdict()
+            state = {'delivered': 'applied', 'pending': 'rolling'}.get(verdict, verdict)
+        if state == 'applied':
+            previous = self.package_applied
+            self._package_applied_ok(desired)
+            self._append_log("Package verified on the cluster.")
+            if previous and previous != desired:
+                self._notify_package_live()
+        elif state == 'blocked':
+            if self.package_status != 'blocked' or self.package_block_reason != reason:
+                self._append_log("Package rollout blocked (%s): %s" % (reason, detail))
+                self.env['saas.alert']._notify(
+                    'package_blocked', '%s: rollout blocked (%s)' % (self.subdomain, reason),
+                    level='warning', detail=detail)
+            self.write({'package_status': 'blocked', 'package_block_reason': reason,
+                        'package_error': (detail or '')[-1000:]})
+        elif self.package_status != 'applying':
+            self.write({'package_status': 'applying', 'package_block_reason': False,
+                        'package_error': False})
+
+    def _notify_package_live(self):
+        """Tell the customer the new package is live (only after verification)."""
+        self.ensure_one()
+        self.message_post(body=_(
+            "Upgrade complete: your server now runs its new resources "
+            "(%(plan)s, %(storage)g GB storage).",
+            plan=self.plan_id.name or '-', storage=self.effective_storage_limit_gb or 0))
 
     @api.model
     def _converge_packages(self):
@@ -6441,12 +6564,20 @@ END $$;
         retry is a job under the instance lock, so it never interleaves with
         a plan change; its key carries the attempt number, so one is queued
         per failure. Returns the number queued."""
-        due = self.search([
-            ('package_status', '=', 'pending'),
-            ('package_next_retry', '<=', fields.Datetime.now()),
+        base = [
             ('state', 'in', list(self._RECONCILE_RUNNING + self._RECONCILE_STOPPED)),
             ('pending_operation', '=', False),
             ('docker_server_id', '!=', False),
+        ]
+        # Rollouts awaiting verification (C6.3): re-queue the verify chain if
+        # it was lost; an existing pending job with the same key is kept.
+        verifying = self.search(base + [('package_status', 'in', ('applying', 'blocked'))],
+                                order='id', limit=self._PACKAGE_RETRIES_PER_RUN)
+        for inst in verifying:
+            inst._enqueue_package_verify()
+        due = self.search(base + [
+            ('package_status', '=', 'pending'),
+            ('package_next_retry', '<=', fields.Datetime.now()),
         ], order='package_next_retry, id', limit=self._PACKAGE_RETRIES_PER_RUN)
         Job = self.env['saas.job'].sudo()
         for inst in due:

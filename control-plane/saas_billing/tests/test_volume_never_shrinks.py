@@ -18,6 +18,7 @@ class TestVolumeNeverShrinks(_GatePatches, TransactionCase):
         self.inst = _mk_instance(self.env, self.fx, 'voltest', plan=self.big)
         self.start_gate_patches(self.inst)
         self.inst._update_container_resources()
+        self.inst._verify_package()                  # C6.3: verified, in sync
 
     def _sent(self):
         return self.driver.set_package.call_args.args[1]
@@ -36,6 +37,8 @@ class TestVolumeNeverShrinks(_GatePatches, TransactionCase):
         small = self.small._package()
         self.assertEqual(sent['workers'], small['workers'], "CPU/RAM/workers do go down")
         self.assertEqual(sent['cpu_limit'], '%dm' % small['odoo_cpu_m'])
+        self.assertEqual(self.inst.package_status, 'applying')
+        self.inst._verify_package()
         self.assertEqual(self.inst.package_status, 'in_sync')
 
     def test_released_storage_block_keeps_the_volume(self):
@@ -67,13 +70,17 @@ class TestVolumeNeverShrinks(_GatePatches, TransactionCase):
         for applied, floor in (
                 (False, 0), ('not json', 0), ('[]', 0), ('{"filestore_size": "5G"}', 0),
                 ('{"filestore_size": "7Gi", "db_storage_size": "9Gi"}', 9)):
-            self.inst.package_applied = applied
+            self.inst.write({'package_applied': applied, 'package_desired': False})
             self.assertEqual(self.inst._volume_floor_gb(), floor, applied)
+        self.inst.write({'package_applied': '{"filestore_size": "10Gi"}',
+                         'package_desired': '{"filestore_size": "30Gi"}'})
+        self.assertEqual(self.inst._volume_floor_gb(), 30, "a package being verified counts")
 
     def test_upgrade_back_needs_no_volume_growth(self):
         self.inst.plan_id = self.small               # downgraded; volume still 20 GiB
         self.inst._update_container_resources()
         self.assertEqual(self._sent()['filestore_size'], '20Gi')
+        self.inst._verify_package()
         self.fx['server'].volume_expansion = 'no'
         inv = self.inst.action_request_plan_change(self.big.id)
         self.assertTrue(inv.exists(), "20 GB fits the existing volume: nothing to grow")

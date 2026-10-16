@@ -43,6 +43,7 @@ class TestUpgradeStatusApi(TransactionCase):
         self.assertEqual(payload['status'], 'in_progress')
         self.assertTrue(payload['target_at'].endswith('Z'))
         self.assertEqual(payload['completed_at'], '')
+        self.assertEqual(payload['released_at'], '')
         self.assertFalse(payload['charged'])
         text = repr(payload).lower()
         for word in INFRA:

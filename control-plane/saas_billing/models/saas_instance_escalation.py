@@ -1,13 +1,15 @@
 """C6.5: a delayed paid upgrade is owned by a named on-call user (C6.D2).
 
 At T1 one "Paid upgrade delayed" activity is assigned to the on-call user,
-due at T2. At T2 it is replaced by a "past deadline" activity and a critical
-alert. Odoo emails the assignee, so nobody has to watch alerts. Both close
+due at T2. At T2 the upgrade is released (C6.2) and the activity is replaced
+by a "released" one and a critical alert; a "past deadline" activity is the
+fallback when the release itself has not happened. Odoo emails the assignee, so nobody has to watch alerts. Both close
 themselves once the upgrade is delivered or released. Each stage happens
 once per change invoice: the jobs are keyed and the stage is stored on the
 invoice, in the same transaction as the activity.
 """
 import logging
+from datetime import timedelta
 
 from markupsafe import Markup, escape
 
@@ -18,7 +20,11 @@ _logger = logging.getLogger(__name__)
 _ACTIVITY_TYPES = {
     'target': 'saas_billing.mail_act_upgrade_delayed',
     'deadline': 'saas_billing.mail_act_upgrade_past_deadline',
+    'released': 'saas_billing.mail_act_upgrade_released',
 }
+# The T2 check runs just after the T2 release (C6.2): it only fires when the
+# release itself did not happen.
+_DEADLINE_CHECK_DELAY = timedelta(minutes=2)
 
 
 class SaasInstance(models.Model):
@@ -51,7 +57,8 @@ class SaasInstance(models.Model):
         exact times. Idempotent: a queued or finished check is kept."""
         self.ensure_one()
         Job = self.env['saas.job'].sudo()
-        for stage, at in (('target', self.upgrade_target_at), ('deadline', self.upgrade_deadline_at)):
+        deadline = self.upgrade_deadline_at and self.upgrade_deadline_at + _DEADLINE_CHECK_DELAY
+        for stage, at in (('target', self.upgrade_target_at), ('deadline', deadline)):
             if at:
                 Job.enqueue(self, '_do_escalate_upgrade', args=(invoice.id, stage),
                             idempotency_key='upgrade-escalate:%s:inv%s' % (stage, invoice.id),
@@ -68,7 +75,7 @@ class SaasInstance(models.Model):
         undelivered upgrade to the on-call user."""
         self.ensure_one()
         invoice = self.env['account.move'].sudo().browse(invoice_id).exists()
-        if stage not in _ACTIVITY_TYPES or not self._upgrade_undelivered(invoice):
+        if stage not in ('target', 'deadline') or not self._upgrade_undelivered(invoice):
             return
         if invoice.saas_escalation == 'deadline' or invoice.saas_escalation == stage:
             return
@@ -144,20 +151,52 @@ class SaasInstance(models.Model):
         if self.package_error:
             lines.append(_("Last error: %s") % self.package_error[-300:])
         lines.append(_("Capacity: %s.") % self._upgrade_capacity_need(invoice))
-        if stage == 'deadline':
-            lines.append(_("Not delivered by the deadline. Find the cause, then close this "
-                           "activity; it also closes itself if the upgrade is delivered or released."))
+        if stage == 'released':
+            lines.append(_("Released automatically; the customer was told and was not charged "
+                           "(or was refunded to the wallet). Find the cause, then close this activity."))
+        elif stage == 'deadline':
+            lines.append(_("Not delivered by the deadline and not released yet: the release "
+                           "retries while the cluster is unreachable. Find the cause; this closes "
+                           "itself once the upgrade is delivered or released."))
         else:
             lines.append(_("To do before the deadline: free capacity on the cluster, or find why "
                            "the autoscaler did not add a node. The customer sees \"taking longer "
                            "than usual\". This closes itself once the upgrade is delivered."))
         return Markup('<br/>').join(escape(line) for line in lines)
 
+    _RELEASE_REASON_TEXT = {
+        'deadline': 'not delivered by its deadline',
+        'capture_deadline': 'the card authorization was about to lapse',
+        'authorization_lost': 'the card authorization was cancelled outside the platform',
+    }
+
+    def _escalate_released_upgrade(self, invoice, reason):
+        """An automatic release (C6.2) hands the case to the on-call user:
+        one "released" activity and a critical alert, once per invoice."""
+        self.ensure_one()
+        if invoice.saas_escalation == 'released':
+            return
+        user, named = self._upgrade_oncall_user()
+        summary = _("Paid upgrade released automatically — nothing charged")
+        activity = self.sudo().with_context(mail_activity_quick_update=True).activity_schedule(
+            _ACTIVITY_TYPES['released'], date_deadline=fields.Date.context_today(self),
+            summary=summary, note=self._upgrade_escalation_note(invoice, 'released'),
+            user_id=user.id)
+        activity.action_notify()
+        invoice.saas_escalation = 'released'
+        Alert = self.env['saas.alert']
+        if not named:
+            Alert._notify('oncall_missing', '%s: no on-call user set; %s assigned to %s'
+                          % (self.subdomain, summary, user.login), level='critical')
+        Alert._notify('upgrade_released', '%s: upgrade %s released: %s'
+                      % (self.subdomain, invoice.name, self._RELEASE_REASON_TEXT.get(reason, reason)),
+                      level='critical', detail=self.package_error or self.package_block_reason or None)
+
     def _close_upgrade_escalation(self, feedback):
         """Mark this instance's open upgrade escalations done."""
         self.ensure_one()
         types = self.env['mail.activity.type']
-        for xmlid in _ACTIVITY_TYPES.values():
+        for xmlid in (_ACTIVITY_TYPES['target'], _ACTIVITY_TYPES['deadline']):
             types |= self.env.ref(xmlid, raise_if_not_found=False) or types
         activities = self.env['mail.activity'].sudo().search([
             ('res_model', '=', self._name), ('res_id', '=', self.id),

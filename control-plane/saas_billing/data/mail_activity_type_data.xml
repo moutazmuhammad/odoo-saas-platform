@@ -19,5 +19,14 @@
             <field name="delay_count">0</field>
             <field name="sequence">41</field>
         </record>
+        <record id="mail_act_upgrade_released" model="mail.activity.type">
+            <field name="name">Paid upgrade released</field>
+            <field name="res_model">saas.instance</field>
+            <field name="icon">fa-undo</field>
+            <field name="category">default</field>
+            <field name="decoration_type">danger</field>
+            <field name="delay_count">0</field>
+            <field name="sequence">42</field>
+        </record>
     </data>
 </odoo>

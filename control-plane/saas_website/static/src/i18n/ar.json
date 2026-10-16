@@ -2660,5 +2660,8 @@
   "Your upgrade is delayed": "تأخرت ترقيتك",
   "You can keep waiting or cancel it.": "يمكنك الانتظار أو إلغاؤها.",
   "Our team is on it; we'll let you know as soon as it's done.": "فريقنا يعمل على ذلك؛ سنبلغك فور اكتمالها.",
-  "Your server now runs its new resources.": "أصبح خادمك يعمل الآن بموارده الجديدة."
+  "Your server now runs its new resources.": "أصبح خادمك يعمل الآن بموارده الجديدة.",
+  "We couldn't complete your upgrade": "تعذّر علينا إكمال ترقيتك",
+  "The amount you paid is back in your wallet.": "أُعيد المبلغ الذي دفعته إلى محفظتك.",
+  "Your current plan is unchanged, and you can try again.": "خطتك الحالية لم تتغير، ويمكنك المحاولة مرة أخرى."
 }

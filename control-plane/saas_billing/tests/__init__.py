@@ -11,3 +11,4 @@ from . import test_package_messages
 from . import test_capture_on_delivery
 from . import test_upgrade_window
 from . import test_upgrade_escalation
+from . import test_upgrade_release

@@ -6,7 +6,7 @@ import type { ApiUpgradeStatus } from "@/lib/api";
 
 const base: ApiUpgradeStatus = {
   status: "in_progress", target_at: "2026-10-16T14:20:00Z", deadline_at: "2026-10-16T16:05:00Z",
-  completed_at: "", charged: false, can_cancel: false,
+  completed_at: "", released_at: "", charged: false, refunded: false, can_cancel: false,
 };
 const INFRA = /cluster|node|pod|kubernetes|operator/i;
 
@@ -40,6 +40,19 @@ describe("Upgrade status banner (C6.4)", () => {
     const at = (iso: string) => new Date(iso).getTime();
     expect(upgradeMessage(done, at("2026-10-16T14:30:00Z"))!.title).toBe("Upgrade complete");
     expect(upgradeMessage(done, at("2026-10-16T15:30:00Z"))).toBeNull();
+  });
+
+  it("explains a released upgrade for a day: not charged, or refunded to the wallet", () => {
+    const released = { ...base, status: "released" as const, released_at: "2026-10-16T16:05:00Z" };
+    const at = (iso: string) => new Date(iso).getTime();
+    const m = upgradeMessage(released, at("2026-10-16T17:00:00Z"))!;
+    expect(m.title).toBe("We couldn't complete your upgrade");
+    expect(m.description).toBe(
+      "You haven't been charged. Your current plan is unchanged, and you can try again.");
+    expect(m.title + " " + m.description).not.toMatch(INFRA);
+    expect(upgradeMessage({ ...released, refunded: true }, at("2026-10-16T17:00:00Z"))!.description)
+      .toMatch(/^The amount you paid is back in your wallet\./);
+    expect(upgradeMessage(released, at("2026-10-17T17:00:00Z"))).toBeNull();
   });
 
   it("renders nothing without an upgrade", () => {

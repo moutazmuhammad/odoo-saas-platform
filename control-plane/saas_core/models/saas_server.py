@@ -485,6 +485,14 @@ class SaasServer(models.Model):
             pkg = plan._package()
             cpu_map[server.id] += pkg['total_cpu_m'] / 1000.0 * count
             ram_map[server.id] += pkg['total_mem_mi'] / 1024.0 * count
+        # Parts of released upgrades kept in place (C6.2 / C6.D7).
+        retained = Instance._read_group(
+            [('docker_server_id', 'in', self.ids), ('state', 'in', active_states),
+             ('package_retained', '!=', False)],
+            ['docker_server_id'], ['package_retained_cpu_m:sum', 'package_retained_mem_mi:sum'])
+        for server, cpu_m, mem_mi in retained:
+            cpu_map[server.id] += (cpu_m or 0) / 1000.0
+            ram_map[server.id] += (mem_mi or 0) / 1024.0
 
         for rec in self:
             rec.instance_count = count_map.get(rec.id, 0)

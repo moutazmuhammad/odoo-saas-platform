@@ -558,6 +558,35 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(self._rollout(self._rollout_driver(claims=asked_less))[0], 'rolling',
                          "the claim must ask for the package size")
 
+    # -------- C6.2: what a release must keep --------
+    def _in_effect(self, driver):
+        return driver.package_in_effect(_handle(), self.RES)
+
+    def test_in_effect_when_everything_runs_the_package(self):
+        self.assertEqual(self._in_effect(self._rollout_driver()),
+                         {'odoo': True, 'database': True, 'volume_gi': 10})
+
+    def test_a_stuck_odoo_rollout_is_not_in_effect(self):
+        found = self._in_effect(self._stuck())
+        self.assertFalse(found['odoo'], "the old pod still serves")
+        self.assertTrue(found['database'])
+        old = self._resources('100m', '128Mi', '500m', '512Mi')
+        self.assertFalse(self._in_effect(self._rollout_driver(odoo_res=old))['odoo'])
+        self.assertFalse(self._in_effect(self._rollout_driver(workers=1))['odoo'])
+
+    def test_a_deferred_database_resize_is_not_in_effect(self):
+        cond = self._cond('PodResizePending', reason='Deferred')
+        self.assertFalse(self._in_effect(self._rollout_driver(pg_conditions=[cond]))['database'])
+        old = self._resources('100m', '128Mi', '250m', '512Mi')
+        self.assertFalse(self._in_effect(self._rollout_driver(pg_actual=old))['database'])
+        self.assertTrue(self._in_effect(self._rollout_driver(pg_actual=None))['database'],
+                        "no actual resources reported: the spec counts")
+
+    def test_volume_size_asked_of_the_cluster_counts(self):
+        claims = [self._claim('odoo-filestore', '20Gi', '10Gi'), self._claim('pgdata', '10Gi', '10Gi')]
+        self.assertEqual(self._in_effect(self._rollout_driver(claims=claims))['volume_gi'], 20,
+                         "a claim asked to grow cannot shrink again")
+
     def test_stopped_tenant_checks_templates_and_volumes_only(self):
         driver = self._rollout_driver(suspended=True, dep_status=dict(
             observed_generation=5, updated_replicas=0, replicas=0, ready_replicas=0,

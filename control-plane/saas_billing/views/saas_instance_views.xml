@@ -47,6 +47,17 @@
                         icon="fa-check"
                         invisible="state != 'draft' or not plan_id or is_trial"/>
 
+                <!-- C6.2: release an undelivered paid upgrade now (it is
+                     released automatically at its deadline anyway). -->
+                <field name="upgrade_customer_status" invisible="1"/>
+                <button name="action_release_upgrade"
+                        string="Release Upgrade"
+                        type="object" class="btn-secondary"
+                        icon="fa-undo"
+                        confirm="Release this paid upgrade now? Nothing is charged, the authorization is voided and the current plan stays unchanged."
+                        invisible="upgrade_customer_status not in ('in_progress', 'delayed', 'action_available')"
+                        groups="saas_core.group_saas_manager"/>
+
                 <!-- Mark as Paid: manual fallback (wire transfers, trials) -->
                 <button name="action_mark_as_paid"
                         string="Mark as Paid"

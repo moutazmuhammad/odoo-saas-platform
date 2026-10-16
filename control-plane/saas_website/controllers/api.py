@@ -2263,7 +2263,7 @@ class SaasApi(http.Controller):
         if not status:
             return False
         return dict(status, **{key: _utc_datetime(status[key]) if status[key] else ''
-                               for key in ('target_at', 'deadline_at', 'completed_at')})
+                               for key in ('target_at', 'deadline_at', 'completed_at', 'released_at')})
 
     def _serialize_instance(self, instance, detail=False):
         if detail:

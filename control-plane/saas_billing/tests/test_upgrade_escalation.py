@@ -92,7 +92,9 @@ class TestUpgradeEscalation(_GatePatches, TransactionCase):
     def test_funding_queues_t1_and_t2_checks_at_their_times(self):
         self._fund()
         self.assertEqual(self._jobs('target').run_after, self.inst.upgrade_target_at)
-        self.assertEqual(self._jobs('deadline').run_after, self.inst.upgrade_deadline_at)
+        self.assertEqual(self._jobs('deadline').run_after,
+                         self.inst.upgrade_deadline_at + timedelta(minutes=2),
+                         "just after the T2 release, as its fallback")
         self.inst._advance_change(self.invoice)
         self.env['saas.instance']._cron_apply_paid_pending_changes()
         self.assertEqual(len(self._jobs('target')), 1)

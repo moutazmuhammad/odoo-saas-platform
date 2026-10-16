@@ -720,6 +720,13 @@ class SaasInstance(models.Model):
         help='Why a verified rollout is stuck: unschedulable, quota, '
              'volume_expansion, crashloop, storage, database, app, route or unknown.')
     package_verify_count = fields.Integer(copy=False, readonly=True)
+    # C6.2 / C6.D7: parts of a released upgrade that were already in effect
+    # stay in place (never downsized): JSON {"plan", "storage_gb", "res"}
+    # overlaid on the package while plan and storage are unchanged, and what
+    # they add on the cluster beyond the plan (counted in capacity).
+    package_retained = fields.Text(copy=False, readonly=True)
+    package_retained_cpu_m = fields.Integer(copy=False, readonly=True)
+    package_retained_mem_mi = fields.Integer(copy=False, readonly=True)
     package_attempts = fields.Integer(
         string='Failed Package Applies', copy=False, readonly=True)
     package_pending_since = fields.Datetime(copy=False, readonly=True)
@@ -6334,7 +6341,7 @@ END $$;
         quota = dict(pkg['quota'])
         if volume_gb > pkg['storage_gb']:
             quota['requests.storage'] = '%dGi' % (volume_gb + 1)
-        return {
+        res = {
             'cpu_limit': '%dm' % pkg['odoo_cpu_m'],
             'cpu_request': '%dm' % pkg['odoo_cpu_req_m'],
             'mem_limit': '%dMi' % pkg['odoo_mem_mi'],
@@ -6348,6 +6355,23 @@ END $$;
             'db_storage_size': '%dGi' % volume_gb,
             'quota': quota,
         }
+        retained = self._package_retained_overlay()
+        if retained:
+            res.update(retained)
+        return res
+
+    def _package_retained_overlay(self):
+        """The kept parts of a released upgrade (C6.2), or {} once the plan
+        or storage changed (the next change brings the package back)."""
+        self.ensure_one()
+        try:
+            kept = json.loads(self.package_retained or '{}')
+        except ValueError:
+            return {}
+        if not isinstance(kept, dict) or kept.get('plan') != self._package_plan().id \
+                or round(kept.get('storage_gb') or 0.0, 3) != round(self._package_storage_gb() or 0.0, 3):
+            return {}
+        return kept.get('res') or {}
 
     _VOLUME_SIZE_RE = re.compile(r'^(\d+)Gi$')
 
@@ -6495,6 +6519,10 @@ END $$;
             'package_error': False,
             'package_block_reason': False,
         }
+        if self.package_retained and not self._package_retained_overlay():
+            # A later change replaced the kept parts: nothing extra any more.
+            vals.update(package_retained=False, package_retained_cpu_m=0,
+                        package_retained_mem_mi=0)
         self.write({k: v for k, v in vals.items() if self[k] != v})
 
     def _package_patch_accepted(self, desired):

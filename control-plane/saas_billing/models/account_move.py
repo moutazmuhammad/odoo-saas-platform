@@ -27,7 +27,8 @@ class AccountMove(models.Model):
     saas_released_at = fields.Datetime(string='Released', copy=False, readonly=True)
     # C6.5: how far an undelivered upgrade has been escalated to the on-call user.
     saas_escalation = fields.Selection(
-        [('target', 'Past target (T1)'), ('deadline', 'Past deadline (T2)')],
+        [('target', 'Past target (T1)'), ('deadline', 'Past deadline (T2)'),
+         ('released', 'Released automatically')],
         string='Upgrade Escalation', copy=False, readonly=True)
 
     def write(self, vals):

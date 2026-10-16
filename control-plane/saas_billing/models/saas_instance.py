@@ -307,7 +307,8 @@ class SaasInstance(models.Model):
     upgrade_deadline_at = fields.Datetime(string='Upgrade Deadline (T2)', copy=False, readonly=True)
     upgrade_customer_status = fields.Selection(
         [('in_progress', 'In progress'), ('delayed', 'Delayed'),
-         ('action_available', 'Action available'), ('complete', 'Complete')],
+         ('action_available', 'Action available'), ('complete', 'Complete'),
+         ('released', 'Released')],
         string='Upgrade Status', compute='_compute_upgrade_customer_status',
         help='What the customer is told about the latest paid-for upgrade.')
     order_invoice_id = fields.Many2one(
@@ -2093,8 +2094,9 @@ class SaasInstance(models.Model):
                                 | instance.order_invoice_id):
                     instance._advance_change(invoice)
                     if instance._upgrade_undelivered(invoice):
-                        # A failed or missing T1/T2 check is queued again (C6.5).
+                        # A failed or missing T1/T2 check or release is queued again.
                         instance._schedule_upgrade_escalation(invoice)
+                        instance._schedule_upgrade_release(invoice)
                 self.env.cr.commit()
             except Exception:
                 self.env.cr.rollback()
@@ -3234,8 +3236,11 @@ class SaasInstance(models.Model):
     def _upgrade_status_at(self, now):
         self.ensure_one()
         invoice = self.upgrade_invoice_id
-        if not invoice or invoice.saas_released_at or invoice.state == 'cancel' \
-                or not self.upgrade_target_at:
+        if not invoice or not self.upgrade_target_at:
+            return False
+        if invoice.saas_released_at:
+            return 'released'
+        if invoice.state == 'cancel':
             return False
         if invoice.saas_delivered_at:
             return 'complete'
@@ -3258,20 +3263,22 @@ class SaasInstance(models.Model):
             'target_at': self.upgrade_target_at,
             'deadline_at': self.upgrade_deadline_at,
             'completed_at': invoice.saas_delivered_at,
-            'charged': invoice.saas_capture_mode == 'immediate'
-                or invoice.payment_state in ('paid', 'in_payment'),
-            'can_cancel': False,  # the customer cancel arrives with C6.2
+            'released_at': invoice.saas_released_at,
+            'charged': not invoice.saas_released_at and (
+                invoice.saas_capture_mode == 'immediate'
+                or invoice.payment_state in ('paid', 'in_payment')),
+            # A release that gave taken money back to the wallet (C6.D8 fallback).
+            'refunded': bool(invoice.saas_released_at
+                             and invoice.payment_state in ('paid', 'in_payment')),
+            # Undelivered upgrades are released automatically at T2 (C6.D11).
+            'can_cancel': False,
         }
-
-    def _upgrade_escalated(self):
-        """Hook (C6.5): a named on-call user owns this delayed upgrade."""
-        return False
 
     def _package_retry_plan(self, attempts, now):
         """A paid, undelivered change is retried fast (C6.4): 1, 2, 4 ...
         min, at most a quarter of T1 apart so a fault cleared halfway still
         completes before T1, never later than T1 or T2, and not at all after
-        T2 unless it is escalated (C6.5)."""
+        T2, when the upgrade is released (C6.2, C6.D11)."""
         invoice = self.upgrade_invoice_id
         if not (invoice and invoice.saas_funds_secured_at and not invoice.saas_delivered_at
                 and not invoice.saas_released_at and self.upgrade_target_at):
@@ -3283,8 +3290,6 @@ class SaasInstance(models.Model):
             return min(retry_at, self.upgrade_target_at), True
         if now < self.upgrade_deadline_at:
             return min(retry_at, self.upgrade_deadline_at), True
-        if self._upgrade_escalated():
-            return super()._package_retry_plan(attempts, now)
         return False, False
 
     def _change_invoice_kind(self, invoice):

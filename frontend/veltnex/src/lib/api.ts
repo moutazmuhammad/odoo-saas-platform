@@ -415,12 +415,16 @@ export interface ProjectPriceResult extends PriceResult {
 
 /** A paid-for upgrade's progress, in customer terms only (C6.4). */
 export interface ApiUpgradeStatus {
-  status: "in_progress" | "delayed" | "action_available" | "complete";
+  status: "in_progress" | "delayed" | "action_available" | "complete" | "released";
   target_at: string;
   deadline_at: string;
   completed_at: string;
+  /** set when an undelivered upgrade was released (automatically at the deadline) */
+  released_at: string;
   /** false while the payment is only authorized (captured on delivery) */
   charged: boolean;
+  /** a release gave money already taken back to the wallet */
+  refunded: boolean;
   can_cancel: boolean;
 }
 

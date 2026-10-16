@@ -4,6 +4,8 @@ import type { ApiInstance, ApiUpgradeStatus } from "@/lib/api";
 
 /** "Complete" stays visible this long after delivery, then the banner goes. */
 const COMPLETE_VISIBLE_MS = 60 * 60 * 1000;
+/** A released upgrade is explained for a day. */
+const RELEASED_VISIBLE_MS = 24 * 60 * 60 * 1000;
 
 function clock(value: string) {
   const d = new Date(value);
@@ -13,7 +15,8 @@ function clock(value: string) {
 }
 
 /** The customer's view of a paid-for upgrade (C6.4): a bounded wait, said
- *  plainly, and whether they have been charged. */
+ *  plainly, and whether they have been charged. An upgrade not delivered by
+ *  its deadline is released, never charged (C6.2). */
 export function upgradeMessage(upgrade: ApiUpgradeStatus, now = Date.now()) {
   const notCharged = upgrade.charged ? "" : " " + i18nText("You haven't been charged.");
   switch (upgrade.status) {
@@ -45,6 +48,18 @@ export function upgradeMessage(upgrade: ApiUpgradeStatus, now = Date.now()) {
         variant: "success" as const,
         title: i18nText("Upgrade complete"),
         description: i18nText("Your server now runs its new resources."),
+      };
+    }
+    case "released": {
+      const at = new Date(upgrade.released_at).getTime();
+      if (Number.isNaN(at) || now - at > RELEASED_VISIBLE_MS) return null;
+      return {
+        variant: "warning" as const,
+        title: i18nText("We couldn't complete your upgrade"),
+        description: (upgrade.refunded
+          ? i18nText("The amount you paid is back in your wallet.")
+          : i18nText("You haven't been charged."))
+          + " " + i18nText("Your current plan is unchanged, and you can try again."),
       };
     }
     default:

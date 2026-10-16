@@ -60,3 +60,29 @@ class PaymentTransaction(models.Model):
                     'capture_failed', 'transaction %s: immediate capture failed' % tx.reference,
                     level='error', detail=str(e)[:500])
         return txs
+
+    def _set_canceled(self, state_message=None, extra_allowed_states=()):
+        authorized = self.filtered(lambda t: t.state == 'authorized')
+        txs = super()._set_canceled(state_message=state_message,
+                                    extra_allowed_states=extra_allowed_states)
+        (txs & authorized)._saas_authorization_lost()
+        return txs
+
+    def _set_error(self, state_message, extra_allowed_states=()):
+        authorized = self.filtered(lambda t: t.state == 'authorized')
+        txs = super()._set_error(state_message, extra_allowed_states=extra_allowed_states)
+        (txs & authorized)._saas_authorization_lost()
+        return txs
+
+    def _saas_authorization_lost(self):
+        """C6.2 (F8): an upgrade's authorization was voided, expired or
+        failed outside a release: the upgrade stops, nothing is charged."""
+        if not self or self.env.context.get('saas_releasing'):
+            return
+        Instance = self.env['saas.instance'].sudo()
+        for tx in self:
+            invoices = tx.invoice_ids
+            if not invoices:
+                continue
+            for inst in Instance.search([('upgrade_invoice_id', 'in', invoices.ids)]):
+                inst._authorization_lost(inst.upgrade_invoice_id)

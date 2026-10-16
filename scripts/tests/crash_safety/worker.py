@@ -71,6 +71,9 @@ def install_fakes(registry, block_dir, effect_log):
         def exists(self, handle):
             return False
 
+        def package_in_effect(self, handle, res):
+            return {'odoo': False, 'database': False, 'volume_gi': 0}
+
     Instance = registry['saas.instance']  # the model class itself
     Backup = registry['saas.instance.backup']
     Alert = registry['saas.alert']

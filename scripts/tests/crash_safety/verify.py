@@ -103,4 +103,26 @@ check('escalate: stage recorded', e.upgrade_invoice_id.saas_escalation == 'targe
 check('escalate: killed once, re-run once', starts('escalate', e.subdomain) == 2,
       starts('escalate', e.subdomain))
 
+# F — the T2 release killed mid-withdrawal: released once (C6.2).
+f = inst('crash-release')
+inv = env['account.move'].sudo().search([('partner_id', '=', f.partner_id.id),
+                                         ('invoice_line_ids.price_unit', '=', -10.0)], limit=1)
+check('release: invoice cancelled and released', inv.state == 'cancel' and bool(inv.saas_released_at),
+      inv.state)
+check('release: plan unchanged, nothing pending', f.plan_id.name == 'Crash Small'
+      and not f.pending_plan_id, f.plan_id.name)
+refunds = env['saas.wallet.transaction'].sudo().search_count([('move_id', '=', inv.id), ('kind', '=', 'refund')])
+check('release: one wallet return', refunds == 1, refunds)
+check('release: one release job, done', jobs(f, '_do_release_upgrade').mapped('state') == ['done'])
+told = env['mail.message'].sudo().search_count([
+    ('model', '=', 'saas.instance'), ('res_id', '=', f.id),
+    ('body', 'ilike', "couldn't complete your upgrade")])
+check('release: customer told once', told == 1, told)
+released = env['mail.activity'].sudo().search_count([
+    ('res_model', '=', 'saas.instance'), ('res_id', '=', f.id),
+    ('activity_type_id', '=', env.ref('saas_billing.mail_act_upgrade_released').id)])
+check('release: one hand-over activity', released == 1, released)
+check('release: killed once, re-run once', starts('resize', f.subdomain) == 2,
+      starts('resize', f.subdomain))
+
 print('RESULT %s (%d failed)' % ('PASS' if not failures else 'FAIL', len(failures)))

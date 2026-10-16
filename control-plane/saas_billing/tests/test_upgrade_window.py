@@ -98,11 +98,7 @@ class TestUpgradeWindow(_GatePatches, TransactionCase):
         near_t2 = at + timedelta(minutes=T2 - 2)
         self.assertEqual(plan(9, near_t2), (self.inst.upgrade_deadline_at, True), "never after T2")
         self.assertEqual(plan(9, at + timedelta(minutes=T2 + 1)), (False, False),
-                         "no retry after T2 without an escalation")
-        with patch.object(type(self.inst), '_upgrade_escalated', lambda rec: True):
-            retry, scheduled = plan(9, at + timedelta(minutes=T2 + 1))
-            self.assertTrue(retry)
-            self.assertFalse(scheduled, "escalated: the normal back-off")
+                         "no retry after T2: the upgrade is released (C6.2)")
 
     def test_a_fault_cleared_at_half_t1_is_retried_before_t1(self):
         at = self._fund()
@@ -139,13 +135,13 @@ class TestUpgradeWindow(_GatePatches, TransactionCase):
         self._fund()
         payload = self.inst._upgrade_status()
         self.assertEqual(set(payload), {'status', 'target_at', 'deadline_at', 'completed_at',
-                                        'charged', 'can_cancel'})
-        self.assertFalse(payload['can_cancel'], "cancel arrives with C6.2")
+                                        'released_at', 'charged', 'refunded', 'can_cancel'})
+        self.assertFalse(payload['can_cancel'], "released automatically at T2 (C6.D11)")
         text = repr(payload).lower()
         for word in INFRA:
             self.assertNotIn(word, text)
 
-    def test_released_upgrade_has_no_status(self):
+    def test_released_upgrade_says_released(self):
         invoice = self.env['account.move'].sudo().create({
             'move_type': 'out_invoice', 'partner_id': self.fx['partner'].id,
             'invoice_line_ids': [(0, 0, {'name': 'up', 'quantity': 1, 'price_unit': 5.0})]})
@@ -158,5 +154,8 @@ class TestUpgradeWindow(_GatePatches, TransactionCase):
         self.assertEqual(self.inst.upgrade_customer_status, 'in_progress')
         self.assertTrue(self.inst._release_change_funds(invoice))
         self.inst.invalidate_recordset(['upgrade_customer_status'])
-        self.assertFalse(self.inst.upgrade_customer_status)
-        self.assertIsNone(self.inst._upgrade_status())
+        self.assertEqual(self.inst.upgrade_customer_status, 'released')
+        payload = self.inst._upgrade_status()
+        self.assertTrue(payload['released_at'])
+        self.assertFalse(payload['charged'])
+        self.assertFalse(payload['refunded'])

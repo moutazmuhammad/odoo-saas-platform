@@ -4,8 +4,8 @@
 #   run.sh <control-plane dir> [<harness dir>]
 #
 # Installs the addons into a throwaway database, queues a paid deploy, a paid
-# plan change, a suspend, a cancel and a T1 upgrade escalation, runs them on a separate harness worker
-# (worker.py, faked cluster effects), SIGKILLs that worker while all five are
+# plan change, a suspend, a cancel, a T1 upgrade escalation and a T2 release, runs them on a separate harness worker
+# (worker.py, faked cluster effects), SIGKILLs that worker while all six are
 # mid-operation, lets the reaper requeue them, restarts the worker and checks
 # that every operation completed exactly once (verify.py). The database is
 # dropped afterwards unless KEEP=1.
@@ -43,7 +43,7 @@ wait_for() {  # wait_for <seconds> <description> <command...>
     for _ in $(seq "$limit"); do "$@" && return 0; sleep 1; done
     echo "TIMEOUT waiting for $what" >&2; return 1
 }
-all_blocked() { [[ $(grep -c ' blocked ' "$WORK/effects.log" 2>/dev/null) -ge 5 ]]; }
+all_blocked() { [[ $(grep -c ' blocked ' "$WORK/effects.log" 2>/dev/null) -ge 6 ]]; }
 # Jobs due later (the C6.5 T1/T2 checks of a delivered change) are not the queue.
 queue_drained() { [[ $(psql_db "select count(*) from saas_job where state in ('pending','running') and run_after <= now() at time zone 'utc'") == 0 ]]; }
 cleanup() {
@@ -60,13 +60,13 @@ sudo -u odoo "$PY" "$ODOO" "${odoo_args[@]}" -i saas_core,saas_billing,saas_webs
     --stop-after-init --http-port=18999 --gevent-port=18998 --workers=0 --max-cron-threads=0 \
     --logfile="$WORK/install.log"
 
-echo "== queue the five operations"
+echo "== queue the six operations"
 for effect in deploy resize stop destroy escalate; do sudo -u odoo touch "$WORK/block-$effect"; done
 odoo_shell "$HERE/setup.py"
 
-echo "== run them; SIGKILL the worker once all five are mid-operation"
+echo "== run them; SIGKILL the worker once all six are mid-operation"
 start_worker worker1
-wait_for 300 "five blocked operations" all_blocked
+wait_for 300 "six blocked operations" all_blocked
 grep ' blocked ' "$WORK/effects.log"
 pid=$(worker_pid)
 kill -9 "$pid"

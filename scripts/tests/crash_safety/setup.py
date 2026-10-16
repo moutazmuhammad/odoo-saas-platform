@@ -1,5 +1,5 @@
 # C3.7 crash-safety harness, step 1 — run inside `odoo-bin shell -d saas_tmp_*`.
-# Queues the five operations through their real entry points (payment hook,
+# Queues the six operations through their real entry points (payment hook,
 # actions) and commits; the harness worker then runs them.
 assert env.cr.dbname.startswith('saas_tmp_'), env.cr.dbname
 
@@ -102,7 +102,26 @@ escalate._schedule_upgrade_escalation(esc_inv)
 env['saas.job'].sudo().search([('idempotency_key', '=', 'upgrade-escalate:deadline:inv%s' % esc_inv.id)]) \
     .write({'state': 'cancelled'})
 
+# F — an undelivered upgrade at T2 (C6.2): the release is due now. It is
+# killed while withdrawing the package, after the invoice was cancelled and
+# the wallet hold returned in the same (rolled-back) transaction.
+release = mk('crash-release', 'running')
+release._grant_wallet_credit(10.0, origin='manual', reason='crash test')
+rel_inv = env['account.move'].sudo().create({
+    'move_type': 'out_invoice', 'partner_id': partner.id,
+    'invoice_line_ids': [(0, 0, {'name': 'upgrade', 'quantity': 1, 'price_unit': 40.0}),
+                         (0, 0, {'name': 'wallet', 'quantity': 1, 'price_unit': -10.0})]})
+rel_inv.action_post()
+release._wallet_settle_consumption(rel_inv, 10.0)
+rel_inv.write({'saas_funds_secured_at': now - timedelta(minutes=31), 'saas_capture_mode': 'manual'})
+release.write({'pending_plan_id': big.id, 'pending_billing_period': 'monthly',
+               'pending_change_invoice_id': rel_inv.id, 'upgrade_invoice_id': rel_inv.id,
+               'upgrade_authorized_at': now - timedelta(minutes=31),
+               'upgrade_target_at': now - timedelta(minutes=21),
+               'upgrade_deadline_at': now - timedelta(minutes=1)})
+release._schedule_upgrade_release(rel_inv)
+
 env.cr.commit()
-for inst in (deploy, change, suspend, cancel, escalate):
+for inst in (deploy, change, suspend, cancel, escalate, release):
     print('SETUP %s state=%s op=%s' % (inst.subdomain, inst.state, inst.pending_operation))
 print('SETUP jobs=%s' % env['saas.job'].sudo().search_count([('state', '=', 'pending')]))

@@ -552,6 +552,60 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
                 return 'rolling', None, 'volume %s is growing' % pvc.metadata.name
         return 'applied', None, ''
 
+    def package_in_effect(self, handle: ComputeHandle, res: dict) -> dict:
+        """C6.2 / C6.D7: which parts of package ``res`` the cluster already
+        runs, so a release withdraws only the rest: ``{'odoo': bool,
+        'database': bool, 'volume_gi': int}``. ``odoo``: every running Odoo
+        pod carries ``res``; ``database``: PostgreSQL was resized in place to
+        it; ``volume_gi``: the largest volume size asked of the cluster (a
+        claim never shrinks). Read-only."""
+        from kubernetes.utils import parse_quantity
+        name = self._cr_name(handle)
+        namespace = handle.instance_path or self._namespace_for(handle)
+        core, apps = self._core_api(), self._apps_api()
+        odoo_want = {'requests': {'cpu': res['cpu_request'], 'memory': res['mem_request']},
+                     'limits': {'cpu': res['cpu_limit'], 'memory': res['mem_limit']}}
+        db_want = {'requests': {'cpu': res['db_cpu_request'], 'memory': res['db_mem_request']},
+                   'limits': {'cpu': res['db_cpu_limit'], 'memory': res['db_mem_limit']}}
+        found = {'odoo': False, 'database': False, 'volume_gi': 0}
+
+        dep = apps.read_namespaced_deployment('odoo', namespace, _request_timeout=10)
+        web = next((c for c in dep.spec.template.spec.containers if c.name == _CONTAINER_NAME), None)
+        workers = '--workers=%d' % res['workers'] if res.get('workers') is not None else None
+        if web is not None and self._same_resources(web.resources, odoo_want) \
+                and not (workers and workers not in (web.args or [])):
+            ds, want = dep.status, dep.spec.replicas or 0
+            found['odoo'] = bool(
+                want and ds.observed_generation == dep.metadata.generation
+                and (ds.updated_replicas or 0) == want and (ds.replicas or 0) == want
+                and (ds.ready_replicas or 0) == want and not ds.unavailable_replicas)
+
+        try:
+            pod = core.read_namespaced_pod('postgresql-0', namespace, _request_timeout=10)
+        except ApiException as e:
+            if e.status != 404:
+                raise
+            pod = None
+        if pod is not None:
+            resizing = any(c.status == 'True' and c.type in ('PodResizePending', 'PodResizeInProgress')
+                           for c in pod.status.conditions or [])
+            container = next((c for c in pod.spec.containers if c.name == 'postgresql'), None)
+            actual = next((cs.resources for cs in (pod.status.container_statuses or [])
+                           if cs.name == 'postgresql' and cs.resources), None)
+            # Clusters that report no actual resources rely on the spec (as C6.3 does).
+            found['database'] = bool(
+                container is not None and not resizing
+                and self._same_resources(container.resources, db_want)
+                and (actual is None or self._same_resources(actual, db_want)))
+
+        claims = core.list_namespaced_persistent_volume_claim(
+            namespace, label_selector='app.kubernetes.io/instance=%s' % name,
+            _request_timeout=10).items
+        for pvc in claims:
+            request = parse_quantity((pvc.spec.resources.requests or {}).get('storage', '0'))
+            found['volume_gi'] = max(found['volume_gi'], -(-int(request) // (1024 ** 3)))
+        return found
+
     def _rollout_blocker(self, core, dep, namespace, name):
         """Why an Odoo rollout is stuck, as a ``package_rollout`` tuple, or None."""
         for cond in dep.status.conditions or []:

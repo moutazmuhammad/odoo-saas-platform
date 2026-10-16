@@ -582,7 +582,26 @@ class SaasPortal(CustomerPortal):
         inv = self._checkout_invoice_for(instance_sudo, invoice)
         if not inv:
             return request.redirect('/my/instances/%s' % instance_id)
+        refused = self._withdraw_infeasible_change(instance_sudo, inv)
+        if refused:
+            return refused
         return self._render_checkout(inv, instance_sudo)
+
+    def _withdraw_infeasible_change(self, instance_sudo, invoice):
+        """C6.7 at the checkout: an upgrade or storage purchase that is no
+        longer feasible is withdrawn (invoice cancelled, nothing charged) and
+        the customer is told why, instead of being offered the payment form."""
+        message = instance_sudo._withdraw_infeasible_change(invoice) if instance_sudo else None
+        if not message:
+            return None
+        values = self._prepare_portal_layout_values()
+        values.update({
+            'instance': instance_sudo,
+            'message': message,
+            'back_url': '/my/instances/%s' % instance_sudo.id,
+            'page_name': 'saas_checkout',
+        })
+        return request.render('saas_website.portal_upgrade_unavailable', values)
 
     @http.route('/my/pay/<int:invoice_id>', type='http', auth='user', website=True)
     def portal_pay_invoice(self, invoice_id, **kw):
@@ -604,6 +623,9 @@ class SaasPortal(CustomerPortal):
                     break
             except Exception:
                 continue
+        refused = self._withdraw_infeasible_change(instance, inv)
+        if refused:
+            return refused
         return self._render_checkout(inv, instance or None, back_url='/my/billing/%s' % inv.id)
 
     # ==================== Change Plan (Paid → Paid) ====================

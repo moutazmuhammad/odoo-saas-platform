@@ -1,5 +1,6 @@
 import base64
 import logging
+from datetime import timedelta
 
 from odoo import api, fields, models, _
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -169,6 +170,24 @@ class SaasServer(models.Model):
         help='When enabled, this server can accept instances beyond its '
              'capacity limits as a fallback when no ideal server is available.',
     )
+    # Cluster facts the upgrade gate (C6.7) checks: one tenant pod must fit
+    # the largest node, and a volume can only grow on an expandable class.
+    # Refreshed by the health cron and when older than _CLUSTER_FACTS_MAX_AGE.
+    node_max_cpu_m = fields.Integer(
+        string='Largest Node CPU (m)', readonly=True,
+        help='Allocatable CPU (millicores) of the largest schedulable node. '
+             '0 = not known yet.')
+    node_max_mem_mi = fields.Integer(
+        string='Largest Node RAM (MiB)', readonly=True,
+        help='Allocatable memory (MiB) of the largest schedulable node. '
+             '0 = not known yet.')
+    volume_expansion = fields.Selection(
+        [('unknown', 'Unknown'), ('yes', 'Allowed'), ('no', 'Not allowed')],
+        string='Volume Expansion', default='unknown', required=True, readonly=True,
+        help='Whether the default StorageClass lets tenant volumes grow.')
+    cluster_facts_at = fields.Datetime(string='Cluster Facts Read', readonly=True)
+    # Bumped by every capacity decision (_capacity_lock); not shown.
+    capacity_version = fields.Integer(readonly=True, copy=False)
     instance_count = fields.Integer(
         string='Running Instances',
         compute='_compute_capacity_usage',
@@ -374,11 +393,58 @@ class SaasServer(models.Model):
 
         Keeps ``health_state`` current so allocation and region capacity can
         cheaply exclude dead clusters without probing on the hot path."""
+        from ..drivers.kubernetes_driver import KubernetesDriver
         for server in self.search([]):
             ok, err = server._probe_reachable()
             server._update_health(ok, err)
+            if ok:
+                server._refresh_cluster_facts(KubernetesDriver(server))
             # Commit per server so one slow probe can't lose the rest.
             self.env.cr.commit()
+
+    _CLUSTER_FACTS_MAX_AGE = timedelta(minutes=10)
+
+    def _cluster_facts_stale(self):
+        self.ensure_one()
+        return (not self.cluster_facts_at
+                or fields.Datetime.now() - self.cluster_facts_at > self._CLUSTER_FACTS_MAX_AGE)
+
+    def _refresh_cluster_facts(self, driver):
+        """Cache ``driver.cluster_facts()``; best effort (False on failure,
+        the previous values stay)."""
+        self.ensure_one()
+        try:
+            facts = driver.cluster_facts()
+            cpu_m, mem_mi = facts['node_max_cpu_m'], facts['node_max_mem_mi']
+            expansion = facts['volume_expansion']
+            if not (isinstance(cpu_m, int) and isinstance(mem_mi, int)
+                    and expansion in (True, False, None)):
+                raise TypeError('unexpected cluster facts: %r' % (facts,))
+        except Exception:
+            _logger.warning("Could not read cluster facts of %s", self.name, exc_info=True)
+            return False
+        self.sudo().write({
+            'node_max_cpu_m': max(cpu_m, 0),
+            'node_max_mem_mi': max(mem_mi, 0),
+            'volume_expansion': {True: 'yes', False: 'no'}.get(expansion, 'unknown'),
+            'cluster_facts_at': fields.Datetime.now(),
+        })
+        return True
+
+    def _capacity_lock(self):
+        """Serialize capacity decisions on these clusters until commit
+        (C6.7). Take it before any saas_instance row lock, and never hold it
+        across a network call.
+
+        It UPDATEs the rows rather than only locking them: Odoo runs at
+        REPEATABLE READ, so a transaction whose snapshot predates another
+        decision's commit would otherwise wait for the lock and then decide
+        on stale data. With a row update it gets a serialization failure
+        instead, and Odoo retries the request on a fresh snapshot."""
+        if self.ids:
+            self.env.cr.execute(
+                "UPDATE saas_server SET capacity_version = COALESCE(capacity_version, 0) + 1 "
+                "WHERE id IN %s", (tuple(sorted(self.ids)),))
 
     # ========== Capacity ==========
 

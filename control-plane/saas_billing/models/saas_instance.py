@@ -966,6 +966,9 @@ class SaasInstance(models.Model):
             raise UserError(_(
                 "Storage blocks aren't available yet. Please contact support "
                 "or upgrade your plan to expand capacity."))
+        self._require_package_change(
+            storage_gb=(self.effective_storage_limit_gb or 0.0)
+            + ((self.pending_storage_blocks or 0) + qty) * block_gb)
         # Prorate the first charge over the days left in the current cycle so
         # the customer only pays for what's left until it joins the renewal.
         months = self.env['saas.pricing.engine'].period_months(
@@ -1192,6 +1195,9 @@ class SaasInstance(models.Model):
         new_plan = self.env['saas.plan'].sudo().browse(int(new_plan_id))
         if not new_plan.exists() or new_plan.is_trial_plan:
             raise UserError(_("Invalid plan."))
+        # Feasibility gate (C6.7): network first, cluster row before instance row.
+        probe = self._gate_probe_cluster()
+        self.docker_server_id._capacity_lock()
         self.env.cr.execute(
             "SELECT id FROM saas_instance WHERE id = %s FOR UPDATE NOWAIT", (self.id,))
         if self.pending_plan_id:
@@ -1202,6 +1208,7 @@ class SaasInstance(models.Model):
             raise UserError(_("Storage cannot be reduced."))
         if old_plan == new_plan:
             raise UserError(_("That is already this server's plan."))
+        self._require_package_change(new_plan, probe=probe)
         quote = self._env_plan_change_quote(new_plan.workers, new_plan.storage_limit)
         label = dict(self._fields['environment'].selection).get(
             self.environment, self.environment)
@@ -2653,6 +2660,8 @@ class SaasInstance(models.Model):
         if billing_period == 'yearly' and not new_plan.yearly_price:
             billing_period = 'monthly'
 
+        self._require_package_change(new_plan)
+
         price = new_plan.get_price_for_period(billing_period)
         period_label = 'Monthly' if billing_period == 'monthly' else 'Yearly'
 
@@ -2811,6 +2820,10 @@ class SaasInstance(models.Model):
           - 'scheduled' (downgrade scheduled)
         """
         self.ensure_one()
+        # Feasibility gate (C6.7): network checks first, then the cluster
+        # row lock, which always comes before the instance row lock.
+        probe = self._gate_probe_cluster()
+        self.docker_server_id._capacity_lock()
         # Lock the instance row to prevent concurrent plan changes
         # (two browser tabs submitting at the same time).
         self.env.cr.execute(
@@ -2824,6 +2837,10 @@ class SaasInstance(models.Model):
             raise UserError(
                 _("Can only change plan on running, stopped, or suspended instances.")
             )
+        # A paid change still being applied must never be replaced (the
+        # auto-cancel below would drop it).
+        if self._change_in_flight():
+            raise UserError(self._gate_refusal_text('change_in_progress'))
 
         # Auto-cancel existing pending upgrade if client changes their mind.
         # This allows switching to a different plan without manual cancellation.
@@ -2875,6 +2892,7 @@ class SaasInstance(models.Model):
         old_monthly = self._to_monthly_equivalent(old_price, old_period)
 
         if new_monthly > old_monthly:
+            self._require_package_change(new_plan, probe=probe)
             return self._request_upgrade(new_plan, billing_period, new_price, old_price)
         else:
             return self._request_downgrade(new_plan, billing_period)
@@ -2925,6 +2943,244 @@ class SaasInstance(models.Model):
             'pending_billing_period': False,
             'pending_change_invoice_id': False,
         })
+
+    # ---------- Pre-payment feasibility gate (C6.7) ----------
+    # Refuses, before an invoice exists and again whenever money is collected
+    # for it, an upgrade that a KNOWN limit makes infeasible: cluster or
+    # operator down, a change still in flight, a pod bigger than any node, a
+    # volume that cannot grow, or the cluster's configured CPU/RAM caps. It
+    # reserves nothing: free capacity can still go before the change runs
+    # (capacity holds come with C5.4; the running service is protected by
+    # C6.9, not by this check).
+    _GATE_ACTIVE_STATES = ('provisioning', 'running')
+
+    def _upgrade_gate_mode(self):
+        """'enforce' (default) or 'log' (refusals are only logged)."""
+        mode = self.env['ir.config_parameter'].sudo().get_param(
+            'saas_master.upgrade_gate', 'enforce')
+        return 'log' if mode == 'log' else 'enforce'
+
+    def _storage_gb_for_plan(self, plan):
+        """Total storage of this instance on ``plan``, with its purchased blocks."""
+        self.ensure_one()
+        blocks_gb = (self.effective_storage_limit_gb or 0.0) - (self.plan_id.storage_limit or 0.0)
+        return (plan.storage_limit or 0.0) + max(blocks_gb, 0.0)
+
+    def _change_in_flight(self):
+        """A package change of this instance that is paid but not applied,
+        or applied but not yet accepted by the cluster (C6.1 retrying)."""
+        self.ensure_one()
+        if self.package_status == 'pending':
+            return True
+        if self.pending_plan_id and self._paid_pending_change_invoice():
+            return True
+        block_inv = self.storage_block_pending_invoice_id
+        return bool(self.pending_storage_blocks and block_inv
+                    and block_inv.payment_state in ('paid', 'in_payment'))
+
+    _GATE_PROBE_CACHE = 'saas_gate_probe'
+
+    def _gate_probe_cluster(self):
+        """The gate's network part, ``(ok, detail)``. Run it before taking any
+        row lock: it can take seconds. Reused for the rest of the transaction
+        (the saved-card charge re-checks right after the request did)."""
+        self.ensure_one()
+        server = self.docker_server_id
+        if not server:
+            return True, ''
+        cr = self.env.cr
+        cache = cr.cache.setdefault(self._GATE_PROBE_CACHE, {})
+        if server.id in cache:
+            return cache[server.id]
+        driver = self._compute_driver()
+        try:
+            driver.require_cluster_ready()
+            result = (True, '')
+        except Exception as e:
+            result = (False, str(e))
+        if result[0] and server._cluster_facts_stale():
+            server._refresh_cluster_facts(driver)
+        if not cache:
+            cr.postcommit.add(cache.clear)
+            cr.postrollback.add(cache.clear)
+        cache[server.id] = result
+        return result
+
+    @staticmethod
+    def _package_change_need(current, target):
+        """CPU (m) and RAM (MiB) a change from package ``current`` (or None)
+        to ``target`` adds on the cluster: the package delta, plus one surge
+        Odoo pod of the new size when the pod rolls (old and new run side by
+        side during the rolling update)."""
+        cpu = target['total_cpu_m'] - (current['total_cpu_m'] if current else 0)
+        mem = target['total_mem_mi'] - (current['total_mem_mi'] if current else 0)
+        cpu, mem = max(cpu, 0), max(mem, 0)
+        if not current or any(target[k] != current[k]
+                               for k in ('odoo_cpu_m', 'odoo_mem_mi', 'workers')):
+            cpu += target['odoo_cpu_m'] + target['cron_cpu_m']
+            mem += target['odoo_mem_mi'] + target['cron_mem_mi']
+        return cpu, mem
+
+    def _package_change_feasible(self, plan=None, storage_gb=None, probe=None):
+        """Whether moving this instance to ``plan`` (default: its plan) with
+        ``storage_gb`` GB (default: that plan with its purchased blocks) is
+        feasible: ``(ok, reason_key, detail)``. ``probe`` is a result of
+        ``_gate_probe_cluster`` already taken by the caller. Locks the cluster
+        row until commit, so concurrent attempts are decided one at a time
+        and each one counts the others' unfinished changes."""
+        self.ensure_one()
+        rec = self.sudo()
+        plan = plan or rec.plan_id
+        server = rec.docker_server_id
+        if not (plan and server):
+            return True, None, 'nothing deployed to check'
+        if storage_gb is None:
+            storage_gb = rec._storage_gb_for_plan(plan)
+        if rec._change_in_flight():
+            return False, 'change_in_progress', 'a paid or unapplied package change is in flight'
+        ok, detail = probe if probe is not None else rec._gate_probe_cluster()
+        if not ok:
+            return False, 'cluster_unavailable', detail
+        server._capacity_lock()
+        notes = []
+        target = plan._package(storage_gb=storage_gb)
+        current = (rec.plan_id._package(storage_gb=rec.effective_storage_limit_gb)
+                   if rec.plan_id else None)
+
+        # Each pod must fit one node; only pods that grow are checked.
+        if server.node_max_cpu_m and server.node_max_mem_mi:
+            pods = (('Odoo', ('odoo_cpu_m', 'cron_cpu_m'), ('odoo_mem_mi', 'cron_mem_mi')),
+                    ('PostgreSQL', ('db_cpu_m',), ('db_mem_mi',)))
+            for label, cpu_keys, mem_keys in pods:
+                cpu = sum(target[k] for k in cpu_keys)
+                mem = sum(target[k] for k in mem_keys)
+                grows = not current or cpu > sum(current[k] for k in cpu_keys) \
+                    or mem > sum(current[k] for k in mem_keys)
+                if grows and (cpu > server.node_max_cpu_m or mem > server.node_max_mem_mi):
+                    return False, 'node_too_small', (
+                        '%s pod %dm CPU / %d MiB exceeds the largest node (%dm / %d MiB)'
+                        % (label, cpu, mem, server.node_max_cpu_m, server.node_max_mem_mi))
+        else:
+            notes.append('node fit not checked (node sizes unknown)')
+
+        if storage_gb > (rec.effective_storage_limit_gb or 0.0):
+            if server.volume_expansion == 'no':
+                return False, 'volume_expansion', (
+                    'volume must grow to %s GB; the default StorageClass does '
+                    'not allow expansion' % storage_gb)
+            if server.volume_expansion == 'unknown':
+                notes.append('volume expansion not checked')
+
+        if not (server.max_cpu_cores or server.max_ram_gb):
+            notes.append('capacity not checked (no caps configured)')
+        elif rec.state not in self._GATE_ACTIVE_STATES:
+            notes.append('capacity not checked (instance not running)')
+        else:
+            need_cpu, need_mem = self._package_change_need(current, target)
+            others = rec.search([
+                ('docker_server_id', '=', server.id), ('id', '!=', rec.id),
+                ('state', 'in', self._GATE_ACTIVE_STATES),
+                ('pending_plan_id', '!=', False),
+                ('pending_change_invoice_id.state', '=', 'posted'),
+            ])
+            for other in others:
+                o_cur = other.plan_id._package() if other.plan_id else None
+                cpu, mem = self._package_change_need(o_cur, other.pending_plan_id._package())
+                need_cpu += cpu
+                need_mem += mem
+            server.invalidate_recordset(['allocated_cpu', 'allocated_ram_gb'])
+            cpu_after = server.allocated_cpu + need_cpu / 1000.0
+            ram_after = server.allocated_ram_gb + need_mem / 1024.0
+            if server.max_cpu_cores and cpu_after > server.max_cpu_cores:
+                return False, 'capacity_limit', (
+                    'CPU %.2f of %.2f cores after this change and %d other(s) in flight'
+                    % (cpu_after, server.max_cpu_cores, len(others)))
+            if server.max_ram_gb and ram_after > server.max_ram_gb:
+                return False, 'capacity_limit', (
+                    'RAM %.2f of %.2f GB after this change and %d other(s) in flight'
+                    % (ram_after, server.max_ram_gb, len(others)))
+        return True, None, '; '.join(notes)
+
+    def _gate_refusal_text(self, reason):
+        if reason == 'change_in_progress':
+            return _("Your previous change is still being applied. Please try "
+                     "again in a few minutes. You have not been charged.")
+        return _("This upgrade isn't available on your server right now. You "
+                 "have not been charged. Try a smaller plan, or contact support "
+                 "and we'll let you know when it's available.")
+
+    def _gate_refused(self, reason, detail):
+        """Tell ops about a refusal. True when it must be enforced (False
+        in log-only mode)."""
+        self.ensure_one()
+        message = 'Upgrade refused for %s (%s): %s' % (self.subdomain, reason, detail)
+        # The alert is a log line plus a webhook: it survives the rollback
+        # that follows the customer-facing UserError.
+        self.env['saas.alert']._notify('upgrade_refused', message, level='warning')
+        if self._upgrade_gate_mode() == 'log':
+            _logger.warning("Upgrade gate is log-only; %s may proceed.", self.subdomain)
+            return False
+        return True
+
+    def _require_package_change(self, plan=None, storage_gb=None, probe=None):
+        """Raise UserError (the customer text) unless the change is feasible."""
+        self.ensure_one()
+        ok, reason, detail = self._package_change_feasible(plan, storage_gb, probe)
+        if ok:
+            if detail:
+                _logger.info("Upgrade gate for %s passed: %s", self.subdomain, detail)
+            return
+        if self._gate_refused(reason, detail):
+            raise UserError(self._gate_refusal_text(reason))
+
+    def _gate_change_invoice(self, invoice):
+        """The change ``invoice`` pays for, as ``(plan, storage_gb)``, or None
+        when it is not this instance's pending change or storage purchase."""
+        self.ensure_one()
+        if self.pending_plan_id and self.pending_change_invoice_id == invoice:
+            return self.pending_plan_id, self._storage_gb_for_plan(self.pending_plan_id)
+        if self.pending_storage_blocks and self.storage_block_pending_invoice_id == invoice:
+            block_gb, _bp = self.env['saas.pricing.engine'].storage_block_config()
+            return self.plan_id, ((self.effective_storage_limit_gb or 0.0)
+                                  + self.pending_storage_blocks * (block_gb or 0))
+        return None
+
+    @api.model
+    def _gate_collection(self, invoice_ids):
+        """Collection-point check (payment transaction creation): raise
+        before any money moves for a change that is no longer feasible."""
+        if not invoice_ids:
+            return
+        invoices = self.env['account.move'].sudo().browse(invoice_ids)
+        for inst in self.sudo().search([
+                '|', ('pending_change_invoice_id', 'in', invoices.ids),
+                ('storage_block_pending_invoice_id', 'in', invoices.ids)]):
+            for invoice in invoices:
+                change = inst._gate_change_invoice(invoice)
+                if change:
+                    inst._require_package_change(*change)
+
+    def _withdraw_infeasible_change(self, invoice):
+        """Checkout: when the change ``invoice`` pays for is no longer
+        feasible, cancel that invoice (its wallet part is returned) and drop
+        the pending change. Returns the customer text, or None."""
+        self.ensure_one()
+        change = self._gate_change_invoice(invoice)
+        if not change:
+            return None
+        ok, reason, detail = self._package_change_feasible(*change)
+        if ok or not self._gate_refused(reason, detail):
+            return None
+        if invoice.state == 'posted' and invoice.payment_state not in ('paid', 'in_payment'):
+            invoice.button_cancel()
+        if self.pending_change_invoice_id == invoice:
+            self.write({'pending_plan_id': False, 'pending_billing_period': False,
+                        'pending_change_invoice_id': False, 'pending_wallet_credit': 0.0})
+        else:
+            self.write({'pending_storage_blocks': 0, 'storage_block_pending_invoice_id': False})
+        self._append_log("Pending change withdrawn before payment (%s): %s; invoice %s cancelled."
+                         % (reason, detail, invoice.name))
+        return self._gate_refusal_text(reason)
 
     # ---------- UPGRADE ----------
 

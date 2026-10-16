@@ -367,6 +367,34 @@ class KubernetesDriver(ImageBuildMixin, ComputeDriver):
         for name in ('kube-scheduler', 'kube-controller-manager'):
             check_lease('kube-system', name, False)
 
+    def cluster_facts(self, timeout=4) -> dict:
+        """What limits the size of one tenant pod and its volume growth:
+        the largest Ready, schedulable, untainted node's allocatable CPU
+        (millicores) and memory (MiB), and whether the default StorageClass
+        (which tenant volumes use) allows expansion (None: no default)."""
+        from kubernetes.utils import parse_quantity
+        cpu_m = mem_mi = 0
+        for node in self._core_api().list_node(_request_timeout=timeout).items:
+            spec, status = node.spec, node.status
+            if spec.unschedulable or any(
+                    t.effect in ('NoSchedule', 'NoExecute') for t in (spec.taints or [])):
+                continue
+            if not any(c.type == 'Ready' and c.status == 'True'
+                       for c in (status.conditions or [])):
+                continue
+            alloc = status.allocatable or {}
+            cpu_m = max(cpu_m, int(parse_quantity(alloc.get('cpu', '0')) * 1000))
+            mem_mi = max(mem_mi, int(parse_quantity(alloc.get('memory', '0')) / 2 ** 20))
+        expansion = None
+        storage_api = k8s_client.StorageV1Api(self._client())
+        for sc in storage_api.list_storage_class(_request_timeout=timeout).items:
+            annotations = sc.metadata.annotations or {}
+            if annotations.get('storageclass.kubernetes.io/is-default-class') == 'true':
+                expansion = bool(sc.allow_volume_expansion)
+                break
+        return {'node_max_cpu_m': cpu_m, 'node_max_mem_mi': mem_mi,
+                'volume_expansion': expansion}
+
     @staticmethod
     def _cr_name(handle_or_spec) -> str:
         # Same normalization the old stub used (container_name is always

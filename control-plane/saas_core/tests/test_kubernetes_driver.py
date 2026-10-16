@@ -296,6 +296,47 @@ class TestKubernetesDriver(TransactionCase):
         self.assertEqual(spec['storage'], {'filestore': {'size': '10Gi'}})
         self.assertEqual(spec['tenancy'], {'resourceQuota': {'limits.cpu': '5000m'}})
 
+    def test_cluster_facts_use_the_largest_schedulable_node(self):
+        driver, _server = _make_driver()
+
+        def node(cpu, memory, ready='True', unschedulable=False, taints=None):
+            n = MagicMock()
+            n.spec.unschedulable = unschedulable
+            n.spec.taints = [MagicMock(effect=e) for e in (taints or [])]
+            n.status.conditions = [MagicMock(type='Ready', status=ready)]
+            n.status.allocatable = {'cpu': cpu, 'memory': memory}
+            return n
+
+        core = MagicMock()
+        core.list_node.return_value.items = [
+            node('3920m', '7Gi'),
+            node('15', '60Gi', taints=['NoSchedule']),   # control plane
+            node('31', '120Gi', ready='False'),
+            node('63', '250Gi', unschedulable=True),
+            node('7900m', '15993736Ki'),
+        ]
+        driver._core_api = MagicMock(return_value=core)
+
+        def sc(name, default, expand):
+            s = MagicMock()
+            s.metadata.name = name
+            s.metadata.annotations = (
+                {'storageclass.kubernetes.io/is-default-class': 'true'} if default else {})
+            s.allow_volume_expansion = expand
+            return s
+
+        with patch('kubernetes.client.StorageV1Api') as storage:
+            storage.return_value.list_storage_class.return_value.items = [
+                sc('slow', False, False), sc('fast', True, True)]
+            facts = driver.cluster_facts()
+        self.assertEqual(facts, {'node_max_cpu_m': 7900, 'node_max_mem_mi': 15618,
+                                 'volume_expansion': True})
+
+        with patch('kubernetes.client.StorageV1Api') as storage:
+            storage.return_value.list_storage_class.return_value.items = [sc('slow', False, True)]
+            self.assertIsNone(driver.cluster_facts()['volume_expansion'],
+                              "no default StorageClass: unknown")
+
     def test_set_resources_patches_resources_and_workers(self):
         driver, _server = _make_driver()
         custom_api = MagicMock()

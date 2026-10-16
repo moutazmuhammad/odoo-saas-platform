@@ -59,6 +59,12 @@
                             <field name="allocated_cpu"/>
                             <field name="allocated_ram_gb"/>
                         </group>
+                        <group>
+                            <field name="node_max_cpu_m"/>
+                            <field name="node_max_mem_mi"/>
+                            <field name="volume_expansion"/>
+                            <field name="cluster_facts_at"/>
+                        </group>
                     </group>
                     <notebook>
                         <page string="Image Builds" name="image_builds">

@@ -5,3 +5,4 @@ from . import test_one_click_payments
 from . import test_project_status
 from . import test_job_queue
 from . import test_crash_safety
+from . import test_upgrade_gate

@@ -620,6 +620,22 @@
         </t>
     </template>
 
+    <!-- C6.7: an upgrade that is no longer feasible was withdrawn at checkout. -->
+    <template id="portal_upgrade_unavailable" name="Upgrade Unavailable">
+        <t t-call="saas_website.cloudodoo_layout">
+            <section class="py-4 vx-checkout">
+                <div class="container">
+                    <h1 class="h4 mb-3">Upgrade unavailable</h1>
+                    <div class="alert-banner alert-warning mb-4">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div t-esc="message"/>
+                    </div>
+                    <a t-att-href="back_url" class="btn btn-primary">Back to your project</a>
+                </div>
+            </section>
+        </t>
+    </template>
+
     <!-- ============================================================
          Change Plan (Paid to Paid)  —  /my/instances/<id>/change-plan
          ============================================================ -->

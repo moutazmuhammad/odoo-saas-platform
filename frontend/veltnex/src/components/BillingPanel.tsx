@@ -5,7 +5,7 @@ import { RefreshCw, Wallet, HardDrive, CreditCard, ArrowUpCircle, Plus } from "l
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { api, type ApiInstance } from "@/lib/api";
+import { api, ApiError, type ApiInstance } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 
 function money(amount: number, currency = "USD") {
@@ -83,8 +83,9 @@ export function BillingPanel({
       } else if (res.checkout_url) {
         window.location.href = res.checkout_url;
       }
-    } catch {
-      toast.error(i18nText("Couldn't add storage"), i18nText("Please try again."));
+    } catch (e) {
+      toast.error(i18nText("Couldn't add storage"),
+        e instanceof ApiError ? e.message : i18nText("Please try again."));
     } finally {
       setSaving(false);
     }

@@ -1,5 +1,5 @@
 # C3.7 crash-safety harness, step 1 — run inside `odoo-bin shell -d saas_tmp_*`.
-# Queues the four operations through their real entry points (payment hook,
+# Queues the five operations through their real entry points (payment hook,
 # actions) and commits; the harness worker then runs them.
 assert env.cr.dbname.startswith('saas_tmp_'), env.cr.dbname
 
@@ -78,7 +78,31 @@ env['saas.instance.backup'].sudo().create({
     'bucket_path': 'backups/crash-cancel/old-final'})
 cancel.action_cancel()
 
+# E — a funded upgrade past its target (C6.5): the T1 escalation is due now.
+from datetime import timedelta
+from odoo import fields
+oncall = env['res.users'].sudo().create({
+    'name': 'Crash On Call', 'login': 'crash-oncall', 'email': 'crash-oncall@example.com',
+    'groups_id': [(6, 0, [env.ref('base.group_user').id])]})
+icp.set_param('saas_master.upgrade_oncall_user_id', str(oncall.id))
+escalate = mk('crash-escalate', 'running')
+esc_inv = env['account.move'].sudo().create({
+    'move_type': 'out_invoice', 'partner_id': partner.id,
+    'invoice_line_ids': [(0, 0, {'name': 'upgrade', 'quantity': 1, 'price_unit': 40.0})]})
+esc_inv.action_post()
+now = fields.Datetime.now()
+esc_inv.write({'saas_funds_secured_at': now, 'saas_capture_mode': 'manual'})
+escalate.write({'pending_plan_id': big.id, 'pending_billing_period': 'monthly',
+                'pending_change_invoice_id': esc_inv.id, 'upgrade_invoice_id': esc_inv.id,
+                'upgrade_authorized_at': now - timedelta(minutes=11),
+                'upgrade_target_at': now - timedelta(minutes=1),
+                'upgrade_deadline_at': now + timedelta(hours=1)})
+escalate._schedule_upgrade_escalation(esc_inv)
+# Only the T1 check is under test; the T2 one would wait an hour.
+env['saas.job'].sudo().search([('idempotency_key', '=', 'upgrade-escalate:deadline:inv%s' % esc_inv.id)]) \
+    .write({'state': 'cancelled'})
+
 env.cr.commit()
-for inst in (deploy, change, suspend, cancel):
+for inst in (deploy, change, suspend, cancel, escalate):
     print('SETUP %s state=%s op=%s' % (inst.subdomain, inst.state, inst.pending_operation))
 print('SETUP jobs=%s' % env['saas.job'].sudo().search_count([('state', '=', 'pending')]))

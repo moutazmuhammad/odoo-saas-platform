@@ -73,6 +73,15 @@ def install_fakes(registry, block_dir, effect_log):
 
     Instance = registry['saas.instance']  # the model class itself
     Backup = registry['saas.instance.backup']
+    Alert = registry['saas.alert']
+    real_notify = Alert._notify
+
+    def fake_notify(self, event, message, **kw):
+        # C6.5: the T1 escalation's alert is sent after its activity is
+        # created, so a kill here must leave no activity behind.
+        if event == 'upgrade_delayed':
+            effect('escalate', message.split(':')[0])
+        return real_notify(self, event, message, **kw)
 
     def fake_deploy_locked(self):
         effect('deploy', self.subdomain)
@@ -97,6 +106,7 @@ def install_fakes(registry, block_dir, effect_log):
         # paid-for change it delivers moves on to its billing switch (C6.10).
         (Instance, '_update_container_resources'):
             lambda self: (effect('resize', self.subdomain), self._on_package_verified()),
+        (Alert, '_notify'): fake_notify,
         (Backup, '_create_full_instance_backup_sync'): fake_snapshot,
         (Backup, '_delete_bucket_prefix'): lambda self, prefix: None,
         (Backup, '_delete_from_bucket'): lambda self: None,

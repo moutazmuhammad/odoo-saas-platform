@@ -4,6 +4,7 @@ from . import saas_payment
 from . import saas_support_plan
 from . import saas_addon
 from . import saas_instance
+from . import saas_instance_escalation
 from . import res_config_settings
 from . import res_partner
 from . import saas_plan

@@ -26,6 +26,7 @@ purchases, margin) and of `saas.plan`, added via `_inherit`.
         'data/saas_support_plan_data.xml',
         'data/saas_billing_cron.xml',
         'data/mail_templates.xml',
+        'data/mail_activity_type_data.xml',
         'wizards/saas_restore_retained_views.xml',
         'views/saas_wallet_views.xml',
         'views/saas_support_plan_views.xml',

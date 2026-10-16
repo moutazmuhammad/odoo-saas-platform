@@ -25,6 +25,10 @@ class AccountMove(models.Model):
         string='Delivered', copy=False, readonly=True,
         help='When the cluster verifiably ran what this invoice paid for.')
     saas_released_at = fields.Datetime(string='Released', copy=False, readonly=True)
+    # C6.5: how far an undelivered upgrade has been escalated to the on-call user.
+    saas_escalation = fields.Selection(
+        [('target', 'Past target (T1)'), ('deadline', 'Past deadline (T2)')],
+        string='Upgrade Escalation', copy=False, readonly=True)
 
     def write(self, vals):
         result = super().write(vals)

@@ -17,6 +17,21 @@
         </field>
     </record>
 
+    <!-- C6.5: paid upgrades escalated to the on-call user and still open. -->
+    <record id="saas_instance_view_search_billing" model="ir.ui.view">
+        <field name="name">saas.instance.search.billing</field>
+        <field name="model">saas.instance</field>
+        <field name="inherit_id" ref="saas_core.saas_instance_view_search"/>
+        <field name="arch" type="xml">
+            <xpath expr="//filter[@name='package_pending']" position="after">
+                <filter name="upgrade_past_target" string="Upgrades Past Target"
+                        domain="[('upgrade_invoice_id.saas_escalation', '!=', False),
+                                 ('upgrade_invoice_id.saas_delivered_at', '=', False),
+                                 ('upgrade_invoice_id.saas_released_at', '=', False)]"/>
+            </xpath>
+        </field>
+    </record>
+
     <record id="saas_instance_view_form_billing" model="ir.ui.view">
         <field name="name">saas.instance.form.billing</field>
         <field name="model">saas.instance</field>

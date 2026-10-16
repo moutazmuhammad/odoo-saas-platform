@@ -28,7 +28,9 @@ def starts(effect, sub):
     return sum(1 for line in effects if line.endswith(' start %s %s' % (effect, sub)))
 
 
-check('queue drained', not Job.search_count([('state', 'in', ('pending', 'running'))]))
+from odoo import fields
+due = [('state', 'in', ('pending', 'running')), ('run_after', '<=', fields.Datetime.now())]
+check('queue drained', not Job.search_count(due))
 check('no failed job', not Job.search_count([('state', '=', 'failed')]),
       Job.search([('state', '=', 'failed')]).mapped('error'))
 
@@ -80,5 +82,25 @@ check('cancel: only the fresh final snapshot kept',
       len(backups) == 1 and backups.name != 'old-final', backups.mapped('name'))
 check('cancel: killed once, re-run once', starts('destroy', d.subdomain) == 2,
       starts('destroy', d.subdomain))
+
+# E — the T1 escalation killed after its activity was created: exactly one
+# activity, one assignment email, once the re-run finished (C6.5).
+e = inst('crash-escalate')
+acts = env['mail.activity'].sudo().search([('res_model', '=', 'saas.instance'), ('res_id', '=', e.id)])
+oncall = env['res.users'].sudo().search([('login', '=', 'crash-oncall')])
+check('escalate: one activity, to the on-call user',
+      len(acts) == 1 and acts.user_id == oncall
+      and acts.activity_type_id == env.ref('saas_billing.mail_act_upgrade_delayed'),
+      acts.mapped('user_id.login'))
+emails = env['mail.message'].sudo().search_count([
+    ('model', '=', 'saas.instance'), ('res_id', '=', e.id),
+    ('message_type', '=', 'user_notification'), ('partner_ids', 'in', oncall.partner_id.ids)])
+check('escalate: one assignment email', emails == 1, emails)
+check('escalate: one T1 job, done', jobs(e, '_do_escalate_upgrade').filtered(
+    lambda j: j.state != 'cancelled').mapped('state') == ['done'])
+check('escalate: stage recorded', e.upgrade_invoice_id.saas_escalation == 'target',
+      e.upgrade_invoice_id.saas_escalation)
+check('escalate: killed once, re-run once', starts('escalate', e.subdomain) == 2,
+      starts('escalate', e.subdomain))
 
 print('RESULT %s (%d failed)' % ('PASS' if not failures else 'FAIL', len(failures)))

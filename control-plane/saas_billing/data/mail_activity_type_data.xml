@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- C6.5: escalations of a paid upgrade that misses its target. -->
+    <data noupdate="1">
+        <record id="mail_act_upgrade_delayed" model="mail.activity.type">
+            <field name="name">Paid upgrade delayed</field>
+            <field name="res_model">saas.instance</field>
+            <field name="icon">fa-clock-o</field>
+            <field name="category">default</field>
+            <field name="delay_count">0</field>
+            <field name="sequence">40</field>
+        </record>
+        <record id="mail_act_upgrade_past_deadline" model="mail.activity.type">
+            <field name="name">Paid upgrade past deadline</field>
+            <field name="res_model">saas.instance</field>
+            <field name="icon">fa-exclamation-triangle</field>
+            <field name="category">default</field>
+            <field name="decoration_type">danger</field>
+            <field name="delay_count">0</field>
+            <field name="sequence">41</field>
+        </record>
+    </data>
+</odoo>

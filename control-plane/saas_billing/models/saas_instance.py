@@ -2092,6 +2092,9 @@ class SaasInstance(models.Model):
                                 | instance.storage_block_pending_invoice_id
                                 | instance.order_invoice_id):
                     instance._advance_change(invoice)
+                    if instance._upgrade_undelivered(invoice):
+                        # A failed or missing T1/T2 check is queued again (C6.5).
+                        instance._schedule_upgrade_escalation(invoice)
                 self.env.cr.commit()
             except Exception:
                 self.env.cr.rollback()

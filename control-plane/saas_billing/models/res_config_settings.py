@@ -4,6 +4,17 @@ from odoo import api, fields, models
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
+    # ========== Paid upgrades (C6.5) ==========
+    saas_upgrade_oncall_user_id = fields.Many2one(
+        'res.users', string='Upgrade On-call User',
+        config_parameter='saas_master.upgrade_oncall_user_id',
+        domain=[('share', '=', False)],
+        help='Internal user who owns a paid upgrade that misses its target: '
+             'an activity is assigned to them (and emailed) at T1, and again '
+             'at T2. While empty, the administrator gets it and a critical '
+             'oncall_missing alert is raised.',
+    )
+
     # ========== Sizing recommendation (display only) ==========
     saas_custom_plan_users_per_worker_min = fields.Integer(
         string='Min Users per Worker',

@@ -285,6 +285,19 @@
                     </setting>
                 </block>
 
+                <!-- C6.5: who owns a paid upgrade that misses its target. -->
+                <block title="Paid Upgrades" name="saas_paid_upgrades_container">
+                    <setting id="saas_upgrade_oncall_setting"
+                             string="On-call user"
+                             help="Gets an activity, by email and in their activity inbox, when a paid upgrade misses its target (T1), and again at its deadline (T2).">
+                        <field name="saas_upgrade_oncall_user_id" options="{'no_create': True}"/>
+                        <div class="alert alert-warning mt8 mb-0" role="alert"
+                             invisible="saas_upgrade_oncall_user_id">
+                            No on-call user is set: delayed upgrades go to the administrator and raise a critical alert.
+                        </div>
+                    </setting>
+                </block>
+
             </xpath>
 
             <!-- Grace period: appended at the end of saas_core's "Trials &

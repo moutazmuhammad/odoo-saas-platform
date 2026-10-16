@@ -365,10 +365,18 @@ class TestPaidPlanChangeConverges(_PaidJobCase):
         self.assertNotEqual(self.inst.package_applied, want)
         self.assertFalse(self.applied)
 
+        # C6.4: a paid change's failure schedules its own fast retry, at an
+        # exact time (the reconciler would only re-find the same job).
+        retry = self._jobs(self.inst, '_do_converge_package')
+        self.assertEqual(len(retry), 1)
+        self.assertEqual(retry.run_after, self.inst.package_next_retry)
+        self.assertLessEqual(self.inst.package_next_retry,
+                             fields.Datetime.now() + timedelta(minutes=1, seconds=5))
         self.fault = False
-        self.inst.package_next_retry = fields.Datetime.now() - timedelta(seconds=1)
+        retry.run_after = self.inst.package_next_retry = fields.Datetime.now() - timedelta(seconds=1)
         self.env['saas.instance']._converge_packages()
-        self._run(self._jobs(self.inst, '_do_converge_package'))
+        self.assertEqual(len(self._jobs(self.inst, '_do_converge_package')), 1)
+        self._run(retry)
         self.assertEqual(self.inst.package_status, 'applying', "accepted, then verified (C6.3)")
         self.inst._verify_package()
         self.assertEqual(self.inst.package_status, 'in_sync')

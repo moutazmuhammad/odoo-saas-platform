@@ -9,3 +9,4 @@ from . import test_upgrade_gate
 from . import test_volume_never_shrinks
 from . import test_package_messages
 from . import test_capture_on_delivery
+from . import test_upgrade_window

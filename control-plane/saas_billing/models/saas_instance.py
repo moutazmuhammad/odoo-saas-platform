@@ -296,6 +296,20 @@ class SaasInstance(models.Model):
     # servers freely — deleting frees a slot for reuse, it never refunds or
     # lowers the count. These hold a reservation purchase until its invoice
     # is paid, at which point the slots are granted (mirrors storage blocks).
+    # C6.4: the window a paid upgrade or storage purchase is delivered in,
+    # set when its funds are secured (C6.10). T1 = completion target shown to
+    # the customer, T2 = operational deadline (C6.D1).
+    upgrade_invoice_id = fields.Many2one(
+        'account.move', string='Upgrade Invoice', copy=False, readonly=True,
+        ondelete='set null', help='The latest paid-for upgrade or storage purchase.')
+    upgrade_authorized_at = fields.Datetime(string='Upgrade Funded', copy=False, readonly=True)
+    upgrade_target_at = fields.Datetime(string='Upgrade Target (T1)', copy=False, readonly=True)
+    upgrade_deadline_at = fields.Datetime(string='Upgrade Deadline (T2)', copy=False, readonly=True)
+    upgrade_customer_status = fields.Selection(
+        [('in_progress', 'In progress'), ('delayed', 'Delayed'),
+         ('action_available', 'Action available'), ('complete', 'Complete')],
+        string='Upgrade Status', compute='_compute_upgrade_customer_status',
+        help='What the customer is told about the latest paid-for upgrade.')
     order_invoice_id = fields.Many2one(
         'account.move', string='Order Invoice', copy=False, ondelete='set null',
         help='The initial order invoice of a new server, until it is captured '
@@ -3194,6 +3208,82 @@ class SaasInstance(models.Model):
     # new package while billing still describes the old plan.
     _CAPTURE_WINDOW_HOURS = 108  # under Visa's merchant-initiated 4 d 18 h [DOC Stripe]
 
+    @api.model
+    def _upgrade_window_minutes(self):
+        """(T1, T2) in minutes from saas_master.upgrade_target_minutes /
+        upgrade_deadline_minutes (C6.D1 defaults 15 and 120)."""
+        icp = self.env['ir.config_parameter'].sudo()
+
+        def minutes(key, default):
+            try:
+                value = int(icp.get_param(key, default))
+            except (TypeError, ValueError):
+                return default
+            return value if value > 0 else default
+        target = minutes('saas_master.upgrade_target_minutes', 15)
+        return target, max(minutes('saas_master.upgrade_deadline_minutes', 120), target)
+
+    def _compute_upgrade_customer_status(self):
+        now = fields.Datetime.now()
+        for rec in self:
+            rec.upgrade_customer_status = rec._upgrade_status_at(now)
+
+    def _upgrade_status_at(self, now):
+        self.ensure_one()
+        invoice = self.upgrade_invoice_id
+        if not invoice or invoice.saas_released_at or invoice.state == 'cancel' \
+                or not self.upgrade_target_at:
+            return False
+        if invoice.saas_delivered_at:
+            return 'complete'
+        if now < self.upgrade_target_at:
+            return 'in_progress'
+        if now < self.upgrade_deadline_at:
+            return 'delayed'
+        return 'action_available'
+
+    def _upgrade_status(self):
+        """The customer-facing upgrade status (no infrastructure terms), or
+        None when there is no paid-for upgrade to tell about."""
+        self.ensure_one()
+        status = self.upgrade_customer_status
+        if not status:
+            return None
+        invoice = self.upgrade_invoice_id
+        return {
+            'status': status,
+            'target_at': self.upgrade_target_at,
+            'deadline_at': self.upgrade_deadline_at,
+            'completed_at': invoice.saas_delivered_at,
+            'charged': invoice.saas_capture_mode == 'immediate'
+                or invoice.payment_state in ('paid', 'in_payment'),
+            'can_cancel': False,  # the customer cancel arrives with C6.2
+        }
+
+    def _upgrade_escalated(self):
+        """Hook (C6.5): a named on-call user owns this delayed upgrade."""
+        return False
+
+    def _package_retry_plan(self, attempts, now):
+        """A paid, undelivered change is retried fast (C6.4): 1, 2, 4 ...
+        min, at most a quarter of T1 apart so a fault cleared halfway still
+        completes before T1, never later than T1 or T2, and not at all after
+        T2 unless it is escalated (C6.5)."""
+        invoice = self.upgrade_invoice_id
+        if not (invoice and invoice.saas_funds_secured_at and not invoice.saas_delivered_at
+                and not invoice.saas_released_at and self.upgrade_target_at):
+            return super()._package_retry_plan(attempts, now)
+        target_min, _deadline_min = self._upgrade_window_minutes()
+        step = min(2 ** min(attempts - 1, 10), max(target_min / 4.0, 1.0))
+        retry_at = now + timedelta(minutes=step)
+        if now < self.upgrade_target_at:
+            return min(retry_at, self.upgrade_target_at), True
+        if now < self.upgrade_deadline_at:
+            return min(retry_at, self.upgrade_deadline_at), True
+        if self._upgrade_escalated():
+            return super()._package_retry_plan(attempts, now)
+        return False, False
+
     def _change_invoice_kind(self, invoice):
         """'plan' or 'storage' when ``invoice`` pays for this instance's
         pending plan change or storage purchase, else None."""
@@ -3301,6 +3391,14 @@ class SaasInstance(models.Model):
         if mode == 'manual':
             vals['saas_capture_deadline'] = now + timedelta(hours=self._CAPTURE_WINDOW_HOURS)
         invoice.sudo().write(vals)
+        if kind in ('plan', 'storage'):
+            target_min, deadline_min = self._upgrade_window_minutes()
+            self.write({
+                'upgrade_invoice_id': invoice.id,
+                'upgrade_authorized_at': now,
+                'upgrade_target_at': now + timedelta(minutes=target_min),
+                'upgrade_deadline_at': now + timedelta(minutes=deadline_min),
+            })
         label = self._change_label(kind)
         self._append_log("Funds secured for %s (invoice %s, %s)." % (label, invoice.name, mode))
         if kind == 'order' and mode == 'manual':

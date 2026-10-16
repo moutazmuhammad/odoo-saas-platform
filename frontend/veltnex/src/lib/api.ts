@@ -413,6 +413,17 @@ export interface ProjectPriceResult extends PriceResult {
   project_total: number;
 }
 
+/** A paid-for upgrade's progress, in customer terms only (C6.4). */
+export interface ApiUpgradeStatus {
+  status: "in_progress" | "delayed" | "action_available" | "complete";
+  target_at: string;
+  deadline_at: string;
+  completed_at: string;
+  /** false while the payment is only authorized (captured on delivery) */
+  charged: boolean;
+  can_cancel: boolean;
+}
+
 export interface ApiInstance extends RuntimeHealth {
   permissions?: string[];
   can_manage_access?: boolean;
@@ -437,6 +448,8 @@ export interface ApiInstance extends RuntimeHealth {
   is_trial: boolean;
   usage: ApiUsage;
   access_token: string;
+  // C6.4: the latest paid-for upgrade (false when there is none)
+  upgrade?: ApiUpgradeStatus | false;
   // environments
   environment: EnvironmentType;
   environment_label: string;

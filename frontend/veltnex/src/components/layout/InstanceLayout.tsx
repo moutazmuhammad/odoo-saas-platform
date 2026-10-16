@@ -7,6 +7,7 @@ import { RuntimeStatusBadge } from "@/components/RuntimeStatusBadge";
 import { CopyButton } from "@/components/CopyButton";
 import { Spinner } from "@/components/Spinner";
 import { ReactivateBanner } from "@/components/ReactivateBanner";
+import { UpgradeStatusBanner } from "@/components/UpgradeStatusBanner";
 
 /** Shared layout for a single instance: a PERSISTENT header (identity + status +
  *  the live URL) that stays put while the section content below swaps in place —
@@ -82,6 +83,7 @@ export default function InstanceLayout() {
       )}
 
       {inst && <ReactivateBanner project={inst} />}
+      {inst && <UpgradeStatusBanner project={inst} />}
 
       <PermissionContext.Provider value={inst ? { id: instanceId, permissions: inst.permissions } : null}><Outlet /></PermissionContext.Provider>
     </div>

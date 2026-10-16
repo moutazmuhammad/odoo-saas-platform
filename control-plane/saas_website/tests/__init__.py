@@ -4,3 +4,4 @@ from . import test_no_financial_data_leak
 from . import test_api_datetime
 from . import test_dashboard_summary
 from . import test_reactivate_page
+from . import test_upgrade_status_api

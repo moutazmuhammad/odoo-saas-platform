@@ -2257,6 +2257,14 @@ class SaasApi(http.Controller):
             **inst._runtime_status_dict(),
         }
 
+    @staticmethod
+    def _serialize_upgrade(instance):
+        status = instance._upgrade_status()
+        if not status:
+            return False
+        return dict(status, **{key: _utc_datetime(status[key]) if status[key] else ''
+                               for key in ('target_at', 'deadline_at', 'completed_at')})
+
     def _serialize_instance(self, instance, detail=False):
         if detail:
             instance._refresh_runtime_health()
@@ -2296,6 +2304,8 @@ class SaasApi(http.Controller):
             # Project rows show this (Active/Unpaid/Suspended/Cancelled),
             # never the production server's runtime availability.
             'project_status': instance._project_status(),
+            # C6.4: the latest paid-for upgrade, in customer terms only.
+            'upgrade': self._serialize_upgrade(instance),
             **instance._runtime_status_dict(),
         }
         if self._is_staff():

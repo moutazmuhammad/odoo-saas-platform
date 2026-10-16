@@ -6416,23 +6416,45 @@ END $$;
         self.ensure_one()
         now = fields.Datetime.now()
         attempts = self.package_attempts + 1
-        delay = min(self._PACKAGE_RETRY_BASE_MIN * 2 ** min(attempts - 1, 16),
-                    self._PACKAGE_RETRY_MAX_MIN)
+        retry_at, scheduled = self._package_retry_plan(attempts, now)
         self.write({
             'package_status': 'pending',
             'package_attempts': attempts,
             'package_pending_since': self.package_pending_since or now,
-            'package_next_retry': now + datetime.timedelta(minutes=delay),
+            'package_next_retry': retry_at or False,
             'package_error': str(error)[-1000:],
         })
-        self._append_log(
-            "Package not applied (attempt %d): %s — retrying in %d min."
-            % (attempts, str(error)[-300:], delay))
+        if not retry_at:
+            self._append_log(
+                "Package not applied (attempt %d): %s — no further retry until "
+                "it is escalated." % (attempts, str(error)[-300:]))
+        else:
+            self._append_log(
+                "Package not applied (attempt %d): %s — retrying in %d min."
+                % (attempts, str(error)[-300:],
+                   round((retry_at - now).total_seconds() / 60)))
+            if scheduled:
+                # A paid change is retried at that exact time, not at the
+                # next reconcile run (same key: the cron never doubles it).
+                self.env['saas.job'].sudo().enqueue(
+                    self, '_do_converge_package', channel='deploy',
+                    idempotency_key='package:inst%s:%s' % (self.id, attempts),
+                    lock_key='instance:%s' % self.id, idempotent=True,
+                    max_attempts=1, eta=retry_at, transactional=True)
         if attempts == self._PACKAGE_ALERT_AT:
             self.env['saas.alert']._notify(
                 'package_not_applied',
                 '%s: package failed to apply %d times' % (self.subdomain, attempts),
                 level='error', detail=str(error)[-500:])
+
+    def _package_retry_plan(self, attempts, now):
+        """When to retry a failed apply: ``(datetime or False, scheduled)``.
+        The C6.1 back-off (5, 10, 20 ... min, capped at 6 h), picked up by the
+        reconciler. Billing overrides it for a paid change (C6.4)."""
+        self.ensure_one()
+        delay = min(self._PACKAGE_RETRY_BASE_MIN * 2 ** min(attempts - 1, 16),
+                    self._PACKAGE_RETRY_MAX_MIN)
+        return now + datetime.timedelta(minutes=delay), False
 
     def _delivery_verdict(self):
         """C6.11: whether this instance is delivered, as ``(verdict, reason,
